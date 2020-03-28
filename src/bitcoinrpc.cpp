@@ -281,6 +281,7 @@ static const CRPCCommand vRPCCommands[] =
     { "stop",                   &stop,                   true,   true },
     { "getbestblockhash",       &getbestblockhash,       true,   false },
     { "getblockcount",          &getblockcount,          true,   false },
+    { "getwalletinfo",          &getwalletinfo,          true,   false },
 #ifdef WIN32
     { "getblockcountt",         &getcurrentblockandtime, true,   false },
 #endif
@@ -966,7 +967,23 @@ public:
 
     JSONRequest() { id = Value::null; }
     void parse(const Value& valRequest);
+    void convertParameterObjectToArray(string method, Value& valParams);
 };
+
+void JSONRequest::convertParameterObjectToArray(string method, Value& valParams){
+    printf("rpc.convert\n");
+    params = Array();
+    printf("Converting to array\n");
+    if(method == "importprivkey"){
+        printf("params privkey\n");
+        params.push_back(find_value(valParams.get_obj(), "privkey"));
+        printf("params label\n");
+        params.push_back(find_value(valParams.get_obj(), "label"));
+        printf("params done\n");
+    } else if (method == "getblockcount" || method == "getwalletinfo" || method == "stop") {
+        printf("params empty array\n");
+    }
+}
 
 void JSONRequest::parse(const Value& valRequest)
 {
@@ -994,12 +1011,15 @@ void JSONRequest::parse(const Value& valRequest)
 
     // Parse params
     Value valParams = find_value(request, "params");
-    if (valParams.type() == array_type)
+    if(valParams.type() == obj_type) {
+        convertParameterObjectToArray(valMethod.get_str(), valParams);
+    } else if (valParams.type() == array_type) {
         params = valParams.get_array();
-    else if (valParams.type() == null_type)
+    } else if (valParams.type() == null_type) {
         params = Array();
-    else
+    } else {
         throw JSONRPCError(RPC_INVALID_REQUEST, "Params must be an array");
+    }
 }
 
 static Object JSONRPCExecOne(const Value& req)

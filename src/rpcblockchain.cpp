@@ -179,6 +179,34 @@ Value getblockcount(const Array& params, bool fHelp)
     return nBestHeight;
 }
 
+Value getwalletinfo(const Array& params, bool fHelp)
+{
+    printf("rpc.getwalletinfo\n");
+    if (fHelp)
+        throw runtime_error(
+            "getwalletinfo\n"
+            "Returns wallet information:\n"
+            "walletname\n"
+            "walletversion\n"
+            "balance\n"
+            "unconfirmed_balance\n"
+            "immature_balance\n"
+            "txcount\n"
+            "keypoololdest\n"
+            "keypoolsize\n");
+
+    Object obj;
+    obj.push_back(Pair("walletname", "YacoinWallet"));
+    obj.push_back(Pair("walletversion", (int)1));
+    obj.push_back(Pair("balance", (int)10));
+    obj.push_back(Pair("unconfirmed_balance",(int)1));
+    obj.push_back(Pair("immature_balance", (int)1));
+    obj.push_back(Pair("txcount", (int)1));
+    obj.push_back(Pair("keypoololdest", (int64_t)1));
+    obj.push_back(Pair("keypoolsize",   (int64_t)1));
+    return obj;
+}
+
 double doGetYACprice()
 {
     // first call gets BTC/YAC ratio
