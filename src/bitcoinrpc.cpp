@@ -267,6 +267,25 @@ Value stop(const Array& params, bool fHelp)
     return "YaCoin server stopping";
 }
 
+Value getrpcinfo(const Array& params, bool fHelp){
+    if(fHelp){
+        throw runtime_error(
+            "getrpcinfo\n"
+            "Returns details of the RPC server.\n");
+    }    
+    
+    Object command;
+    command.push_back(Pair("method","getrpcinfo"));
+    command.push_back(Pair("duration",1));
+    
+    Array commands;
+    commands.push_back(command);
+
+    Object res;
+    res.push_back(Pair("active_commands",commands));
+    res.push_back(Pair("logpath",GetDebugLogPathName()));
+    return res;
+}
 
 
 //
@@ -282,6 +301,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getbestblockhash",       &getbestblockhash,       true,   false },
     { "getblockcount",          &getblockcount,          true,   false },
     { "getwalletinfo",          &getwalletinfo,          true,   false },
+    { "getrpcinfo",             &getrpcinfo,             true,   false },
 #ifdef WIN32
     { "getblockcountt",         &getcurrentblockandtime, true,   false },
 #endif
