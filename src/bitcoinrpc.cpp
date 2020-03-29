@@ -71,7 +71,11 @@ void ThreadRPCServer3(void* parg);
 
 static inline unsigned short GetDefaultRPCPort()
 {
+#if defined(Yac1dot0)
+    return GetBoolArg("-testnet", false)? 7787: 17787;
+#else
     return GetBoolArg("-testnet", false)? 7687: 17687;
+#endif
 }
 
 Object JSONRPCError(int code, const string& message)
@@ -743,7 +747,7 @@ private:
 void ThreadRPCServer(void* parg)
 {
     // Make this thread recognisable as the RPC listener
-    RenameThread("yacoin-rpclist");
+    RenameThread("yacoin-rpclistener");
 
     try
     {
@@ -839,7 +843,7 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, 
 
 void ThreadRPCServer2(void* parg)
 {
-    printf("ThreadRPCServer started\n");
+    printf("ThreadRPCServer2 started\n");
 
     strRPCUserColonPass = mapArgs["-rpcuser"] + ":" + mapArgs["-rpcpassword"];
     if (mapArgs["-rpcpassword"] == "")
@@ -883,7 +887,7 @@ void ThreadRPCServer2(void* parg)
         if (filesystem::exists(pathCertFile)) 
             context.use_certificate_chain_file(pathCertFile.string());
         else 
-            printf("ThreadRPCServer ERROR: missing server certificate file %s\n", 
+            printf("ThreadRPCServer2 ERROR: missing server certificate file %s\n", 
                    pathCertFile.string().c_str()
                   );
 
@@ -894,7 +898,7 @@ void ThreadRPCServer2(void* parg)
         if (filesystem::exists(pathPKFile)) 
             context.use_private_key_file(pathPKFile.string(), ssl::context::pem); // causes exceptions???
         else 
-            printf("ThreadRPCServer ERROR: missing server private key file %s\n", 
+            printf("ThreadRPCServer2 ERROR: missing server private key file %s\n", 
                    pathPKFile.string().c_str()
                   );
 
@@ -1114,7 +1118,7 @@ void ThreadRPCServer3(void* parg)
         }
         if (!HTTPAuthorized(mapHeaders))
         {
-            printf("ThreadRPCServer incorrect password attempt from %s\n", conn->peer_address_to_string().c_str());
+            printf("ThreadRPCServer3 incorrect password attempt from %s\n", conn->peer_address_to_string().c_str());
             /* Deter brute-forcing short passwords.
                If this results in a DOS the user really
                shouldn't have their RPC port exposed.*/
@@ -1157,11 +1161,6 @@ void ThreadRPCServer3(void* parg)
         catch (Object& objError)
         {
             ErrorReply(conn->stream(), objError, jreq.id);
-            break;
-        }
-        catch (const std::invalid_argument& ia) 
-        {
-            ErrorReply(conn->stream(), JSONRPCError(RPC_PARSE_ERROR, ia.what()), jreq.id);
             break;
         }
         catch (std::exception& e)
@@ -1207,10 +1206,6 @@ json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_s
             }
         }
         return result;
-    }
-    catch (std::invalid_argument& ia)
-    {
-        throw JSONRPCError(RPC_MISC_ERROR, ia.what());
     }
     catch (std::exception& e)
     {
@@ -1298,6 +1293,10 @@ void ConvertTo(Value& value, bool fAllowNull=false)
     }
 }
 
+//
+// Call Table
+//
+
 // Convert strings to command-specific RPC representation
 Array RPCConvertValues(std::string &strMethod, const std::vector<std::string> &strParams)
 {
@@ -1328,7 +1327,12 @@ Array RPCConvertValues(std::string &strMethod, const std::vector<std::string> &s
     if (strMethod == "listreceivedbyaccount"  && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getbalance"             && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "getblock"               && n > 1) ConvertTo<bool>(params[1]);
-    if (strMethod == "getblockbynumber"       && n > 0) ConvertTo<boost::int64_t>(params[0]);
+
+    if (strMethod == "getblocktimes"          && n > 0) 
+        ConvertTo<int>(params[0]);
+    if (strMethod == "getblockbynumber"       && n > 0) 
+        ConvertTo<int>(params[0]);
+
     if (strMethod == "getblockbynumber"       && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getblockhash"           && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "move"                   && n > 2) ConvertTo<double>(params[2]);
@@ -1436,16 +1440,6 @@ int CommandLineRPC(int argc, char *argv[])
             PrintException(NULL, "CommandLineRPC()");
             nRet = 88;
         }
-    }
-    catch (const std::runtime_error& e) 
-    {
-        strPrint = string("error: ") + e.what();
-        nRet = 85;  //WTFK
-    }
-    catch (const std::invalid_argument& ia) 
-    {
-        strPrint = string("error: ") + ia.what();
-        nRet = 86;  //WTFK
     }
     catch (std::exception& e)
     {
