@@ -351,6 +351,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getrawmempool",          &getrawmempool,          true,   false },
     { "getblock",               &getblock,               false,  false },
     { "getblockbynumber",       &getblockbynumber,       false,  false },
+    { "getblocktimes",          &getblocktimes,          false,  false },
     { "getblockhash",           &getblockhash,           false,  false },
     { "gettransaction",         &gettransaction,         false,  false },
     { "listtransactions",       &listtransactions,       false,  false },
@@ -994,18 +995,14 @@ public:
     void convertParameterObjectToArray(string method, Value& valParams);
 };
 
-void JSONRequest::convertParameterObjectToArray(string method, Value& valParams){
-    printf("rpc.convert\n");
+void JSONRequest::convertParameterObjectToArray(string method, Value& valParams){    
     params = Array();
-    printf("Converting to array\n");
     if(method == "importprivkey"){
-        printf("params privkey\n");
+        // copy those params in the order as expected by the improvprivkey function
         params.push_back(find_value(valParams.get_obj(), "privkey"));
-        printf("params label\n");
         params.push_back(find_value(valParams.get_obj(), "label"));
-        printf("params done\n");
     } else if (method == "getblockcount" || method == "getwalletinfo" || method == "stop") {
-        printf("params empty array\n");
+        // these methods do not require any parameter
     }
 }
 
