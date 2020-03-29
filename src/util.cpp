@@ -241,9 +241,9 @@ uint256 GetRandHash()
 }
 
 
-
-
-
+std::string GetDebugLogPathName(){
+    return (GetDataDir() / "debug.log").string();
+}
 
 static FILE* fileout = NULL;
 

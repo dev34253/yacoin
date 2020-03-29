@@ -256,6 +256,7 @@ int GetFilesize(FILE* file);
 bool RenameOver(boost::filesystem::path src, boost::filesystem::path dest);
 boost::filesystem::path GetDefaultDataDir();
 const boost::filesystem::path &GetDataDir(bool fNetSpecific = true);
+std::string GetDebugLogPathName();
 boost::filesystem::path GetConfigFile();
 boost::filesystem::path GetPidFile();
 #ifndef WIN32
