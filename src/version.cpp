@@ -12,11 +12,15 @@
  #include "version.h"
 #endif
 
-#define DISPLAY_VERSION_MAJOR       1
-#define DISPLAY_VERSION_MINOR       0
-#define DISPLAY_VERSION_REVISION    0
-#define DISPLAY_VERSION_BUILD       01
-#define DISPLAY_VERSION_TESTING     1
+#define DISPLAY_VERSION_MAJOR       0
+#define DISPLAY_VERSION_MINOR       5
+#define DISPLAY_VERSION_REVISION    7
+                                    // 4 for new versioning to be more aligned with btc standards
+                                    // 5 for #define DEBUG_LOCKORDER
+                                    // 5 for #define DEBUG_LOCKORDER
+                                    // 6     20160 block length
+#define DISPLAY_VERSION_BUILD       2
+#define DISPLAY_VERSION_TESTING     01
 
 const int
     DISPLAY_VERSION_MAJOR_for_Qt    = DISPLAY_VERSION_MAJOR   ,

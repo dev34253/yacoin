@@ -254,7 +254,7 @@ void FileCommit(FILE *fileout);
 int GetFilesize(FILE* file);
 bool RenameOver(boost::filesystem::path src, boost::filesystem::path dest);
 boost::filesystem::path GetDefaultDataDir();
-const boost::filesystem::path &GetDataDir(bool fNetSpecific = true);
+const boost::filesystem::path &GetDataDir(bool fTest_or_Main_Net_is_decided = true);
 std::string GetDebugLogPathName();
 boost::filesystem::path GetConfigFile();
 boost::filesystem::path GetPidFile();
