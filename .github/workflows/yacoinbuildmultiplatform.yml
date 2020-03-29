@@ -11,7 +11,8 @@ jobs:
         run: |
           docker pull dev34253/yacoin-build:ubuntu.16.04
           docker run -v /home/runner/work/yacoin/yacoin:/src dev34253/yacoin-build:ubuntu.16.04
-          docker run -v /home/runner/work/yacoin/yacoin:/yacoin --entrypoint /yacoin/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 /yacoin/test/functional/feature_help.py
+          docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 /src/test/functional/feature_help.py
+          docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 /src/test/functional/interface_rpc.py
   build-ubuntu-1804:
     runs-on: ubuntu-latest  
     steps:
