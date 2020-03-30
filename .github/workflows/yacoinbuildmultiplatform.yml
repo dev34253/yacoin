@@ -37,10 +37,6 @@ jobs:
         run: |
           docker pull dev34253/yacoin-build:windows.2
           docker run -v %CD%:c:\src dev34253/yacoin-build:windows.2
-          dir
-          dir src
-          cd src
-          dir qt
         shell: cmd
       - uses: actions/upload-artifact@v1
         with:
