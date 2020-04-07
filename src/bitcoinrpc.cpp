@@ -291,6 +291,18 @@ Value getrpcinfo(const Array& params, bool fHelp){
     return res;
 }
 
+Value setmocktime(const Array& params, bool fHelp){
+    if(fHelp){
+        throw runtime_error(
+            "setmocktime <timestamp>\n"
+            "<timestamp> mocktimestamp to be set\n");
+    }
+
+    SetMockTime(params[0].get_int64());
+
+    return Value::null;
+}
+
 //
 // HTTP protocol
 //
@@ -884,6 +896,10 @@ void JSONRequest::convertParameterObjectToArray(string method, Value& valParams)
         // copy those params in the order as expected by the improvprivkey function
         params.push_back(find_value(valParams.get_obj(), "privkey"));
         params.push_back(find_value(valParams.get_obj(), "label"));
+    } else if(method == "generatetoaddress"){
+        params.push_back(find_value(valParams.get_obj(), "nblocks"));
+        params.push_back(find_value(valParams.get_obj(), "address"));
+        params.push_back(find_value(valParams.get_obj(), "maxtries"));
     } else if (method == "getblockcount" || method == "getwalletinfo" || method == "stop") {
         // these methods do not require any parameter
     }
@@ -1186,6 +1202,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getblockcount",          &getblockcount,          true,   false },
     { "getwalletinfo",          &getwalletinfo,          true,   false },
     { "getrpcinfo",             &getrpcinfo,             true,   false },
+    { "setmocktime",            &setmocktime,            true,   false },
 #ifdef WIN32
     { "getblockcountt",         &getcurrentblockandtime, true,   false },
 #endif
@@ -1199,6 +1216,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getinfo",                &getinfo,                true,   false },
     { "getgenerate",            &getgenerate,            true,   false },
     { "setgenerate",            &setgenerate,            true,   false },
+    { "generatetoaddress",      &generatetoaddress,      true,   false },
     { "getsubsidy",             &getsubsidy,             true,   false },
     { "gethashespersec",        &gethashespersec,        true,   false },
     { "getmininginfo",          &getmininginfo,          true,   false },

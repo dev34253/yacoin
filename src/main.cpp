@@ -64,7 +64,7 @@ using std::multimap;
 
 const ::int64_t 
     nSimulatedMOneySupplyAtFork = 124460820773591,  //124,460,820.773591 YAC
-    nChainStartTime = 1367991200,           // unix time???? ~ Wed May 08 2013 05:33:20
+    nChainStartTime = 1367991200, // 1296688602           // unix time???? ~ Wed May 08 2013 05:33:20
     //nChainStartTimeTestNet = 1464123328;    //Tue, 24 May 2016 20:55:28 GMT
                                             // 1464373956  Fri, 27 May 2016 18:32:36 GMT
     nChainStartTimeTestNet = 1546300800;    // 1546116950 ~12/29/2018
@@ -92,7 +92,9 @@ const uint256
   hashGenesisMerkleRootTestNet( "0x7e23f7b1ed2db1d5bb1b1f12fc499de0d24b35fb533d9cd04e4fdba9b0ec8143" ),
                             // new 0.5.5
   //hashGenesisMerkleRootMainNet( "0x678b76419ff06676a591d3fa9d57d7f7b26d8021b7cc69dde925f39d4cf2244f" );
-  hashGenesisMerkleRootMainNet( "0x97a5a4d34dc12eff03febfd7c906b31740ac3412c820950a431b25ee1b874cb6" );
+//   hashGenesisMerkleRootMainNet( "0x97a5a4d34dc12eff03febfd7c906b31740ac3412c820950a431b25ee1b874cb6" );
+//   hashGenesisMerkleRootMainNet( "0x5b1c7339ef15a2c8ad96b672e345a8cd316cc8ee019ea7edeef4f0cd1e8116eb");
+  hashGenesisMerkleRootMainNet( "0x97a5a4d34dc12eff03febfd7c906b31740ac3412c820950a431b25ee1b874cb6");
 
 const ::uint32_t 
     nTestNetGenesisNonce = 0x1F656; // = 128,598 decimal
@@ -132,7 +134,7 @@ map<uint256, CBlockIndex*> mapBlockIndex;
 set<pair<COutPoint, unsigned int> > setStakeSeen;
 
 // are all of these undocumented numbers a function of Nfactor?  Cpu power? Other???
-CBigNum bnProofOfWorkLimit(~uint256(0) >> 20); 
+CBigNum bnProofOfWorkLimit(~uint256(0) >> 3); 
 
 CBigNum bnProofOfStakeLegacyLimit(~uint256(0) >> 24); 
 CBigNum bnProofOfStakeLimit(~uint256(0) >> 27); 
@@ -2143,13 +2145,10 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits)
     CBigNum bnTarget;
     bnTarget.SetCompact(nBits);
 
+    printf("CheckProofOfWork: nBits: %d\n",nBits);
     // Check range
-    if (
-        (bnTarget <= 0 )
-        || 
-        (bnTarget > ( fTestNet? bnProofOfWorkLimitTestNet: bnProofOfWorkLimit) )
-       )
-        return error("CheckProofOfWork() : nBits below minimum work");
+    if ((bnTarget <= 0 )|| (bnTarget > ( fTestNet? bnProofOfWorkLimitTestNet: bnProofOfWorkLimit) ))
+        return error("CheckProofOfWork() : nBits %d below minimum work", nBits);
     // Check proof of work matches claimed amount
     if (hash > bnTarget.getuint256())
         return error("CheckProofOfWork() : hash > target nBits");
@@ -3388,8 +3387,10 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
             return DoS(50, error("CheckBlock () : proof of work failed"));
 
         // Check timestamp
-        if (GetBlockTime() > FutureDrift(GetAdjustedTime()))
+        if (GetBlockTime() > FutureDrift(GetAdjustedTime())){
+            printf("Block timestamp in future: blocktime %d futuredrift %d",GetBlockTime(),FutureDrift(GetAdjustedTime()));
             return error("CheckBlock () : block timestamp too far in the future");
+        }
 
         // Check coinbase timestamp
         if (GetBlockTime() < PastDrift((::int64_t)vtx[0].nTime))
@@ -4960,6 +4961,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     else if (pfrom->nVersion == 0)
     {
         // Must have a version message before anything else
+        printf("Misbehaving received version = 0\n");
         (void)pfrom->Misbehaving(1);      // tell me what the 1 means? Or intends?? If anything???
         return false;
     }

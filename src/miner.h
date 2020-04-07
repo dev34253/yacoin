@@ -35,5 +35,8 @@ void SHA256Transform(void* pstate, void* pinput, const void* pinit);
 extern double dHashesPerSec;
 extern ::int64_t nHPSTimerStart;
 
-void GenerateYacoins(bool fGenerate, CWallet* pwallet);
+void GenerateYacoins(bool fGenerate, CWallet* pwallet, int nblocks=-10);
+
+std::string mineSingleBlock(std::string address, int maxtries);
+
 #endif // NOVACOIN_MINER_H
