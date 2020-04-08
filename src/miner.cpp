@@ -1116,15 +1116,14 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
 
     while ( fGenerateBitcoins && nBlocksToGenerate!=0)
     {
-        while (
-               IsInitialBlockDownload() 
-            //    || 
-            //    (
-            //     vNodes.empty() 
-            //     //&& !fTestNet               //TestNet can mine stand alone!
-            //     // could be that if there is more than one stand alone mining
-            //     // forks on the blockchain can't be resolved?
-            //    )
+        while (IsInitialBlockDownload() 
+               || 
+               (
+                vNodes.empty() 
+                && !fTestNet               //TestNet can mine stand alone!
+                // could be that if there is more than one stand alone mining
+                // forks on the blockchain can't be resolved?
+               )
               )
         {
             //printf("vNodes.size() == %d, IsInitialBlockDownload() == %d\n", vNodes.size(), IsInitialBlockDownload());
