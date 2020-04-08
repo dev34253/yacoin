@@ -1098,104 +1098,6 @@ bool
     return false;
 }
 
-std::string mineSingleBlock(std::string address, int maxtries){
-    fGenerateBitcoins = true;
-    CReserveKey reservekey(pwalletMain);
-
-    unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
-    unsigned int nExtraNonce = 0;
-
-    CBlockIndex * pindexPrev = pindexBest;
-
-    auto_ptr<CBlock> pblock(CreateNewBlock(pwalletMain, false));
-
-    if (!pblock.get())      // means what, I wonder?
-        return "";
-    IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
-
-    bool fNotYac1dot0BlockOrTx = true;
-    if( (pindexPrev->nHeight + 1) >= nTestNetNewLogicBlockNumber )
-    {
-        fNotYac1dot0BlockOrTx = false;
-    }
-    printf("Running YACoinMiner with %d transaction%s in block (%u bytes)\n"
-            , pblock->vtx.size()
-            , pblock->vtx.size() > 1? "s": ""
-            , ::GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION)
-            );
-
-    //
-    // Pre-build hash buffers
-    //
-    char pmidstatebuf[32+16]; char* pmidstate = alignup<16>(pmidstatebuf);
-    char pdatabuf[128+16];    char* pdata     = alignup<16>(pdatabuf);
-    char phash1buf[64+16];    char* phash1    = alignup<16>(phash1buf);
-
-    FormatHashBuffers(pblock.get(), pmidstate, pdata, phash1);
-
-    unsigned int& nBlockTime = *(unsigned int*)(pdata + 64 + 4);
-    unsigned int& nBlockNonce = *(unsigned int*)(pdata + 64 + 12);
-
-    Big.randomize_the_nonce( nBlockNonce ); // lazy initialization performed here
-
-    //
-    // Search
-    //
-    ::int64_t nStart = GetTime();
-
-    uint256 hashTarget = (CBigNum().SetCompact(pblock->nBits)).getuint256(); // PoW hashTarget
-
-    (void)printf("Hash target %s\n", hashTarget.GetHex().substr(0,16).c_str());
-
-    block_header res_header;
-
-    uint256 result;
-    unsigned int nHashesDone = 0;
-
-    (void)printf("Starting single block mining\n");
-
-    while( true )
-    {
-        unsigned int nNonceFound;
-
-        nNonceFound = scanhash_scrypt(
-                                        (block_header *)&pblock->nVersion,
-                                        //max_nonce,
-                                        nHashesDone,
-                                        UBEGIN(result),
-                                        &res_header,
-                                        GetNfactor(pblock->nTime, fNotYac1dot0BlockOrTx)
-                                        , pindexPrev
-                                        , &hashTarget
-                                        );
-        // Check if something found
-        pblock->nNonce = nNonceFound;
-        (void)printf("hash count %d\n", nHashesDone);
-        if (result <= hashTarget)
-        {   // Found a solution
-            Yassert(result == pblock->GetHash());
-            if (!pblock->SignBlock(*pwalletMain))   // wallet is locked
-            {
-                printf("Could not sign block");
-                strMintWarning = strMintMessage;
-                break;
-            }
-            strMintWarning = "";
-
-            if( CheckWork(pblock.get(), *pwalletMain, reservekey) )
-            {
-                printf("\nCPUMiner : proof-of-work block found \n %s \n\n\a", pblock->GetHash().ToString().c_str()); 
-            } else {
-                printf("CPUMiner: proof-of-work block not accepted");
-            }
-
-            break;
-        }
-    }
-    (void)printf("Mining block done\n");
-    return pblock->GetHash().GetHex();
-}
-
 //_____________________________________________________________________________
 static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
 {
@@ -1214,7 +1116,6 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
 
     while ( fGenerateBitcoins && nBlocksToGenerate!=0)
     {
-        printf("1\n");
         while (
                IsInitialBlockDownload() 
             //    || 
@@ -1235,7 +1136,6 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
                )        // someone shut off the miner
                 break;
         }
-        printf("2\n");
         if (
             fShutdown
             ||
@@ -1249,7 +1149,6 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
             Sleep(nMillisecondsPerSecond);
         }
         strMintWarning = "";
-        printf("3\n");
         //
         // Create new block
         //
@@ -1265,7 +1164,7 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
         if (!pblock.get())      // means what, I wonder?
             return;
         IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
-printf("4\n");
+
         bool 
             fNotYac1dot0BlockOrTx = true;
         if( (pindexPrev->nHeight + 1) >= nTestNetNewLogicBlockNumber )
@@ -1585,7 +1484,7 @@ void GenerateYacoins(bool fGenerate, CWallet* pwallet, int nblocks)
                 printf("Error: NewThread(ThreadBitcoinMiner) failed\n");
             Sleep( nTenMilliseconds );
         }
-        
+
         while(nBlocksToGenerate>0) {
             Sleep(nMillisecondsPerSecond);
         }

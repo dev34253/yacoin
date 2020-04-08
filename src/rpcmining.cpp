@@ -118,7 +118,6 @@ Value generatetoaddress(const Array& params, bool fHelp){
         maxtries = params[2].get_int();
     }
     
-    Sleep(20*nMillisecondsPerSecond);
     Array res;
     // for(int i=0;i<nblocks;i++){
     //     std::string hash = mineSingleBlock(address, maxtries);
