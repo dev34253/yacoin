@@ -48,18 +48,25 @@ class MiningTest(BitcoinTestFramework):
 
     def mine_chain(self):
         self.log.info('Create some old blocks')
-        for t in range(TIME_GENESIS_BLOCK, TIME_GENESIS_BLOCK + 200 * 600, 600):
+        for t in range(TIME_GENESIS_BLOCK, TIME_GENESIS_BLOCK + 5 * 120, 120):
             self.nodes[0].setmocktime(t)
             self.nodes[0].generate(1)
             time.sleep(3)
         mining_info = self.nodes[0].getmininginfo()
-        assert_equal(mining_info['blocks'], 200)
+        assert_equal(mining_info['blocks'], 5)
         assert_equal(mining_info['currentblocktx'], 0)
         # assert_equal(mining_info['currentblockweight'], 4000)
         self.restart_node(0)
         connect_nodes(self.nodes[0], 1)
 
     def run_test(self):
+        self.mine_chain()
+        node = self.nodes[0]
+        self.log.info('getmininginfo')
+        mining_info = node.getmininginfo()
+        assert_equal(mining_info['blocks'], 5)
+
+    def run_test2(self):
         self.mine_chain()
         node = self.nodes[0]
 

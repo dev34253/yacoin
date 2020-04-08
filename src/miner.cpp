@@ -1585,6 +1585,10 @@ void GenerateYacoins(bool fGenerate, CWallet* pwallet, int nblocks)
                 printf("Error: NewThread(ThreadBitcoinMiner) failed\n");
             Sleep( nTenMilliseconds );
         }
+        
+        while(nBlocksToGenerate>0) {
+            Sleep(nMillisecondsPerSecond);
+        }
     }
 }
 //_____________________________________________________________________________
