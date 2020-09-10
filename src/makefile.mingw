@@ -98,8 +98,7 @@ LIBS= \
 DEFS= \
 -D__STDC_FORMAT_MACROS \
 -DWIN32 \
--D_WINDOWS                              \
--DYac1dot0 \
+-D_WINDOWS \
 -DSTATICLIB \
 -DMINIUPNP_STATICLIB \
 -DBOOST_THREAD_USE_LIB \

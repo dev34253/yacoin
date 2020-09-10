@@ -121,9 +121,7 @@ namespace Checkpoints
         LOCK(cs_hashSyncCheckpoint);
         if (!mapBlockIndex.count(hashSyncCheckpoint))
         {
-#ifndef Yac1dot0
-            error("GetSyncCheckpoint: block index missing for current sync-checkpoint %s", hashSyncCheckpoint.ToString().c_str());
-#endif
+            // do nothing in this case
         }
         else
             return mapBlockIndex[hashSyncCheckpoint];

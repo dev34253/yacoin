@@ -49,9 +49,8 @@ class CNode;
 //
 // Global state
 //
-#if defined(Yac1dot0)
-       const ::uint32_t Nfactor_1dot0 = 17;
-#endif
+const ::uint32_t Nfactor_1dot0 = 17;
+
 extern int 
     nStatisticsNumberOfBlocks2000,
     nStatisticsNumberOfBlocks1000,
@@ -1181,11 +1180,7 @@ public:
             }
             else    // is TestNet
             {
-#if defined(Yac1dot0)
                 nfactor = Nfactor_1dot0;
-#else
-                nfactor = 4;
-#endif
             }
 
             if(

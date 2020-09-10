@@ -1165,12 +1165,7 @@ unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx)
         ( nTimestamp <= (fTestNet? nChainStartTimeTestNet: nChainStartTime) )
         || fTestNet
        )    //was just nTimestamp <= nChainStartTime)
-#if defined(Yac1dot0)
             return Nfactor_1dot0;
-#else
-            return minNfactor;
-#endif
-
     ::int64_t
         nAgeOfBlockOrTxInSeconds = nTimestamp - (fTestNet? nChainStartTimeTestNet: nChainStartTime);
         //nChainStartTime, nSavedAgeOfBlockOrTxInSeconds = nAgeOfBlockOrTxInSeconds;
@@ -1317,7 +1312,6 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
 // miner's coin base reward based on nBits
 ::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, bool fGetRewardOfBestHeightBlock)
 {
-#ifdef Yac1dot0
     if (pindexBest && (pindexBest->nHeight + 1) >= nMainnetNewLogicBlockNumber)
     {
         // Get reward of current best height block
@@ -1375,7 +1369,6 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
         }
         return nBlockRewardExcludeFees;
     }
-#endif
     CBigNum bnSubsidyLimit = MAX_MINT_PROOF_OF_WORK;
 
     CBigNum bnTarget;
@@ -4385,9 +4378,8 @@ bool LoadBlockIndex(bool fAllowNew)
         //txNew.vout[0].nValue = nSimulatedMOneySupplyAtFork; //estimate 1/25/2019 7:00PM EST
         //txNew.vout[0].scriptPubKey << reservekey.GetReservedKey() << OP_CHECKSIG;
 
-#ifdef Yac1dot0
         txNew.print();
-#endif
+
         CBlock 
             block;
 

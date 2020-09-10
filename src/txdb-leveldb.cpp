@@ -374,21 +374,13 @@ bool CTxDB::LoadBlockIndex()
      #endif
 #ifdef WIN32
     const int
-#ifdef Yac1dot0
   #ifdef _DEBUG
         nREFRESH = 10;    // generally resfresh rates are chosen to give ~1 update/sec
   #else
         // seems to be slowing down??
         nREFRESH = 20;
   #endif
-#else
-  #ifdef _DEBUG
-        nREFRESH = 2000;    // generally resfresh rates are chosen to give ~1 update/sec
-  #else
-        // seems to be slowing down??
-        nREFRESH = 12000;
-  #endif
-#endif
+
     int
         nMaxHeightGuess = 1,
         nCounter = 0,

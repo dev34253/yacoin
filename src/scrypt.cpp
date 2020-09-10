@@ -232,13 +232,8 @@ const ::uint32_t
     }
 
     highestZeroBitsSet <<= 1;
-#ifdef Yac1dot0
-    (void)printf(
-                 "test mask %02x\n"
-                 ""
-                 , nMask
-                );
-#endif
+    (void)printf("test mask %02x\n", nMask);
+
     // here we should have already seeked to a random position in the file
     while (true) 
     {
@@ -268,7 +263,6 @@ const ::uint32_t
         }
         if( 0 == (hash_count % NArbitraryHashCount) )
         {               // really we should hash for a while, then check
-#ifdef Yac1dot0
     #ifdef _DEBUG
             (void)printf(
                          "hash count is %d\n"
@@ -276,7 +270,7 @@ const ::uint32_t
                          , hash_count
                         );
     #endif
-#endif
+
             if (
                 (pindexPrev != pindexBest) ||
                 fShutdown

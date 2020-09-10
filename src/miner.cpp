@@ -1072,12 +1072,7 @@ bool
         fShutdown
        )
     {
-#ifdef Yac1dot0 
-    (void)printf(
-                 "new block or shutdown!\n"
-                 ""
-                );
-#endif
+       (void)printf("new block or shutdown!\n");
        return true;
     }
     return false;
@@ -1221,13 +1216,7 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
                                          );
             // Check if something found
             pblock->nNonce = nNonceFound;
-#ifdef Yac1dot0
-            (void)printf(
-                         "hash count %d"
-                         "\n"
-                         , nHashesDone
-                        );
-#endif
+            (void)printf("hash count %d\n", nHashesDone);
             if (result <= hashTarget)
             {   // Found a solution
 #ifdef _MSC_VER
@@ -1285,13 +1274,8 @@ static void YacoinMiner(CWallet *pwallet)  // here fProofOfStake is always false
             nHashCounter += nHashesDone;
             nHashesDone = 0;
                 
-#ifdef Yac1dot0
-            (void)printf(
-                         "hash counter %" PRId64 ""
-                         "\n"
-                         , nHashCounter
-                        );
-#endif
+            (void)printf("hash counter %" PRId64 "\n", nHashCounter);
+            
             ::int64_t 
                 nNow = GetTimeMillis();
 
