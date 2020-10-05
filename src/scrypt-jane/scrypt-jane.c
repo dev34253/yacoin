@@ -38,7 +38,7 @@ extern "C" {
 static void NORETURN
 scrypt_fatal_error_default(const char *msg) {
 	fprintf(stderr, "%s\n", msg);
-	exit(1);
+	exit(21);
 }
 
 static scrypt_fatal_errorfn scrypt_fatal_error = scrypt_fatal_error_default;
@@ -139,7 +139,9 @@ scrypt_alloc(uint64_t size)
 	aa.mem = (uint8_t *)malloc((size_t)size);
 	aa.ptr = (uint8_t *)(((size_t)aa.mem + (SCRYPT_BLOCK_BYTES - 1)) & ~(SCRYPT_BLOCK_BYTES - 1));
 	if (!aa.mem)
+	{
 		scrypt_fatal_error("scrypt: out of memory");
+	}
 	return aa;
 }
 

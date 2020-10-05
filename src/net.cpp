@@ -38,10 +38,10 @@
 #endif
 
 #ifdef USE_UPNP
-#include <miniupnpc.h>
+#include <miniupnpc/miniupnpc.h>
 //#include <miniwget.h> 
-#include <upnpcommands.h>
-#include <upnperrors.h>
+#include <miniupnpc/upnpcommands.h>
+#include <miniupnpc/upnperrors.h>
 #endif
 
 using namespace boost;
@@ -2144,8 +2144,8 @@ void ThreadOpenConnections2(void* parg)
         if (fShutdown)
             return;
 
-        // Add seed nodes if IRC isn't working
-        if (
+        // Add seed nodes if IRC isn't working        
+        if ( false && // AO: Don't add seed nodes for evaluating tests.
             !IsLimited(NET_IPV4) && 
             addrman.size()==0 && 
             (GetTime() - nStart > 60) &&    // why 60? 60 what?
@@ -2585,17 +2585,13 @@ void ThreadMessageHandler2(void* parg)
 {
     printf("ThreadMessageHandler2 started\n");
     SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL);
-    int
-        nLoopCounter = 0;
+    int nLoopCounter = 0;
     while (!fShutdown)
-    {
-        if( fDebug )
-        {
-               (void)printf(
-                             "ThreadMessageHandler2 is looping"
-                             "\n"
-                            );
+    {        
+        if( fDebug && nLoopCounter%100 == 0) {
+            printf("ThreadMessageHandler2 is looping\n");
         }
+        nLoopCounter++;
         bool fHaveSyncNode = false;
         vector<CNode*> vNodesCopy;
         {
@@ -2615,8 +2611,7 @@ void ThreadMessageHandler2(void* parg)
             StartSync(vNodesCopy);
 *******************/
         // Poll the connected nodes for messages
-        CNode
-            * pnodeTrickle = NULL;
+        CNode* pnodeTrickle = NULL;
 
         if (!vNodesCopy.empty())
             pnodeTrickle = vNodesCopy[GetRand(vNodesCopy.size())];
@@ -2685,7 +2680,7 @@ void ThreadMessageHandler2(void* parg)
             }
             return;
         }
-        Sleep( 100 * nMillisecondsPerSecond );
+        Sleep( nMillisecondsPerSecond );
     }
     if( fDebug )
     {
@@ -2699,7 +2694,7 @@ void ThreadMessageHandler2(void* parg)
 
 bool BindListenPort(const CService &addrBind, string& strError)
 {
-    LOCK(cs_net);
+//    LOCK(cs_net);
     {
     strError = "";
     u_long
@@ -2965,11 +2960,12 @@ void StartNode(void* parg)
     if (!NewThread(ThreadDumpAddress, NULL))
         printf("Error; NewThread(ThreadDumpAddress) failed\n");
 
-#if !defined(Yac1dot0)
-    // ppcoin: mint proof-of-stake blocks in the background
-    if (!NewThread(ThreadStakeMinter, pwalletMain))
-        printf("Error: NewThread(ThreadStakeMinter) failed\n");
-#endif
+    if (!pindexBest || (pindexBest->nHeight + 1) < nMainnetNewLogicBlockNumber)
+    {
+        // ppcoin: mint proof-of-stake blocks in the background
+        if (!NewThread(ThreadStakeMinter, pwalletMain))
+            printf("Error: NewThread(ThreadStakeMinter) failed\n");
+    }
 
     // Generate coins in the background
     GenerateYacoins(GetBoolArg("-gen", false), pwalletMain);
@@ -3052,7 +3048,8 @@ bool StopNode()
     while (
         (vnThreadsRunning[THREAD_MESSAGEHANDLER] > 0) || 
         (vnThreadsRunning[THREAD_RPCHANDLER] > 0) || 
-        (vnThreadsRunning[THREAD_SCRIPTCHECK] > 0)
+        (vnThreadsRunning[THREAD_SCRIPTCHECK] > 0) ||
+        (vnThreadsRunning[THREAD_ADDEDCONNECTIONS] > 0)
           )
       //Sleep(20);      // again, related to above?  Or not? Or ...???
         Sleep(2 * nTenMilliseconds);      // again, related to above?  Or not? Or ...???

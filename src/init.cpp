@@ -254,7 +254,11 @@ bool AppInit(int argc, char* argv[])
                                                 
                                                 // this is documentation!
 
-        if (mapArgs.count("-?") || mapArgs.count("--h") || mapArgs.count("--help"))
+        if(mapArgs.count("--version") || mapArgs.count("-v")){
+            std::string msg = "Yacoin version: " + FormatFullVersion() + "\n\n";
+            fprintf(stdout, "%s", msg.c_str());
+            exit(0);
+        } else if (mapArgs.count("-?") || mapArgs.count("-h") || mapArgs.count("--help"))
         {
             // First part of help message is specific to yacoind / RPC client
             std::string strUsage = _("Yacoin version") + " " + FormatFullVersion() + "\n\n" +
@@ -270,8 +274,8 @@ bool AppInit(int argc, char* argv[])
 #ifdef _MSC_VER
             fRet = false;
             //Shutdown(NULL);
-#else
-            return false;
+#else            
+            exit(0);
 #endif
         }
         else
@@ -325,7 +329,7 @@ int main(int argc, char* argv[])
 
     fRet = AppInit(argc, argv);
 
-    if (fRet && fDaemon)
+    if (fRet)
         return 0;
 
     return 1;
@@ -367,6 +371,7 @@ std::string HelpMessage()
 {
     string strUsage = _("Options:") + "\n" +
         "  -?                     " + _("This help message") + "\n" +
+        "  -v                     " + _("Yacoin version") + "\n" +
         "  -conf=<file>           " + _("Specify configuration file (default: yacoin.conf)") + "\n" +
         "  -pid=<file>            " + _("Specify pid file (default: yacoind.pid)") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
@@ -464,10 +469,6 @@ std::string HelpMessage()
         "  -checklevel=<n>        " + _("How thorough the block verification is (0-6, default: 1)") + "\n" +
         "  -par=N                 " + _("Set the number of script verification threads (1-16, 0=auto, default: 0)") + "\n" +
         "  -loadblock=<file>      " + _("Imports blocks from external blk000?.dat file") + "\n" +
-                                      "\n" + _("Block creation options:") + "\n" +
-        "  -blockminsize=<n>      "   + _("Set minimum block size in bytes (default: 0)") + "\n" +
-        "  -blockmaxsize=<n>      "   + _("Set maximum block size in bytes (default: 250000)") + "\n" +
-        "  -blockprioritysize=<n> "   + _("Set maximum size of high-priority/low-fee transactions in bytes (default: 27000)") + "\n" +
                                         "\n" + _("SSL options: (see the Bitcoin Wiki for SSL setup instructions)") + "\n" +
         "  -rpcssl                                  " + _("Use OpenSSL (https) for JSON-RPC connections") + "\n" +
         "  -rpcsslcertificatechainfile=<file.cert>  " + _("Server certificate file (default: server.cert)") + "\n" +
@@ -580,10 +581,10 @@ bool AppInit2()
     {
         SoftSetBoolArg("-irc", true);
     }
-    else    // not Test Net
-    {
-        return InitError( _("Yac1.0 must be set for testNet.") );
-    }
+    // else    // not Test Net
+    // {
+    //     return InitError( _("Yac1.0 must be set for testNet.") );
+    // }
 
     if (mapArgs.count("-bind")) {
         // when specifying an explicit binding address, you want to listen on it
@@ -661,6 +662,9 @@ bool AppInit2()
 #endif
     fPrintToDebugger = GetBoolArg("-printtodebugger");
     fLogTimestamps = GetBoolArg("-logtimestamps");
+
+    nEpochInterval = (uint32_t)(GetArg("-epochinterval", 21000));
+    nDifficultyInterval = nEpochInterval;
 
     if (mapArgs.count("-timeout"))
     {
@@ -1194,6 +1198,9 @@ bool AppInit2()
     }
 
 
+    nMainnetNewLogicBlockNumber = GetArg("-testnetNewLogicBlockNumber", 0);
+    MAXIMUM_YAC1DOT0_N_FACTOR = GetArg("-nFactorAtHardfork", 21);
+
     printf("Loading block index...\n");
     bool fLoaded = false;
     while (!fLoaded) 
@@ -1242,18 +1249,15 @@ bool AppInit2()
     }
     printf(" block index %15" PRId64 "ms\n", GetTimeMillis() - nStart);
 
-    nTestNetNewLogicBlockNumber = GetArg("-testnetNewLogicBlockNumber", 0);
-    if (0 == nTestNetNewLogicBlockNumber)
-        nTestNetNewLogicBlockNumber = pindexBest->nHeight;
     if (fDebug)
     {
 #ifdef WIN32
         (void)printf(
                      "\n"
-                     "nTestNetNewLogicBlockNumber is \n"
+                     "nMainnetNewLogicBlockNumber is \n"
                      "%d"
                      "\n"
-                     , nTestNetNewLogicBlockNumber
+                     , nMainnetNewLogicBlockNumber
                     );
 #endif
     }
