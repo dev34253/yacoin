@@ -202,6 +202,11 @@ enum
     SCRIPT_VERIFY_LOW_S     = (1U << 2), // enforce low S values in signatures (depends on STRICTENC)
     SCRIPT_VERIFY_NOCACHE   = (1U << 3), // do not store results in signature cache (but do query it)
     SCRIPT_VERIFY_NULLDUMMY = (1U << 4), // verify dummy stack item consumed by CHECKMULTISIG is of zero-length
+
+    // Verify CHECKLOCKTIMEVERIFY
+    //
+    // See BIP65 for details.
+    SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY = (1U << 9),
 };
 
 // Strict verification:
@@ -223,7 +228,7 @@ static const unsigned int MANDATORY_SCRIPT_VERIFY_FLAGS = SCRIPT_VERIFY_P2SH;
 // Standard script verification flags that standard transactions will comply
 // with. However scripts violating these flags may still be present in valid
 // blocks and we must accept those blocks.
-static const unsigned int STRICT_FLAGS = MANDATORY_SCRIPT_VERIFY_FLAGS | STRICT_FORMAT_FLAGS;
+static const unsigned int STRICT_FLAGS = MANDATORY_SCRIPT_VERIFY_FLAGS | STRICT_FORMAT_FLAGS | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
 
 // Soft verifications, no extended signature format checkings
 static const unsigned int SOFT_FLAGS = STRICT_FLAGS & ~STRICT_FORMAT_FLAGS;
@@ -367,6 +372,7 @@ enum opcodetype
     // expansion
     OP_NOP1 = 0xb0,
     OP_NOP2 = 0xb1,
+	OP_CHECKLOCKTIMEVERIFY = OP_NOP2,
     OP_NOP3 = 0xb2,
     OP_NOP4 = 0xb3,
     OP_NOP5 = 0xb4,
