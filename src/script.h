@@ -393,7 +393,7 @@ const char* GetOpName(opcodetype opcode);
 inline std::string ValueString(const std::vector<unsigned char>& vch)
 {
     if (vch.size() <= 4)
-        return strprintf("%d", CBigNum(vch).getint32());
+        return strprintf("%d", CScriptNum(vch).getint());
     else
         return HexStr(vch);
 }
@@ -422,22 +422,7 @@ protected:
         }
         else
         {
-            CBigNum bn(n);
-            *this << bn.getvch();
-        }
-        return *this;
-    }
-
-    CScript& push_uint64(::uint64_t n)
-    {
-        if (n >= 1 && n <= 16)
-        {
-            push_back((::uint8_t)n + (OP_1 - 1));
-        }
-        else
-        {
-            CBigNum bn(n);
-            *this << bn.getvch();
+        	*this << CScriptNum::serialize(n);
         }
         return *this;
     }
@@ -463,30 +448,21 @@ public:
         return ret;
     }
 
-    explicit CScript(::int8_t  b) { operator<<(b); }
-    explicit CScript(::int16_t b) { operator<<(b); }
-    explicit CScript(::int32_t b) { operator<<(b); }
-    explicit CScript(::int64_t b) { operator<<(b); }
-
-    explicit CScript(::uint8_t  b) { operator<<(b); }
-    explicit CScript(::uint16_t b) { operator<<(b); }
-    explicit CScript(::uint32_t b) { operator<<(b); }
-    explicit CScript(::uint64_t b) { operator<<(b); }
+    CScript(int64_t b)        { operator<<(b); }
 
     explicit CScript(opcodetype b)     { operator<<(b); }
     explicit CScript(const uint256& b) { operator<<(b); }
+    explicit CScript(const CScriptNum& b) { operator<<(b); }
     explicit CScript(const CBigNum& b) { operator<<(b); }
     explicit CScript(const std::vector< ::uint8_t>& b) { operator<<(b); }
 
-    CScript& operator<<(::int8_t  b) { return push_int64(b); }
-    CScript& operator<<(::int16_t b) { return push_int64(b); }
-    CScript& operator<<(::int32_t b) { return push_int64(b); }
-    CScript& operator<<(::int64_t b) { return push_int64(b); }
+    CScript& operator<<(int64_t b) { return push_int64(b); }
 
-    CScript& operator<<(::uint8_t  b) { return push_uint64(b); }
-    CScript& operator<<(::uint16_t b) { return push_uint64(b); }
-    CScript& operator<<(::uint32_t b) { return push_uint64(b); }
-    CScript& operator<<(::uint64_t b) { return push_uint64(b); }
+    CScript& operator<<(const CScriptNum& b)
+    {
+        *this << b.getvch();
+        return *this;
+    }
 
     CScript& operator<<(opcodetype opcode)
     {
