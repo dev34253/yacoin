@@ -27,7 +27,7 @@ using std::map;
 using std::set;
 
 bool CheckSig(vector<unsigned char> vchSig, const vector<unsigned char> &vchPubKey, const CScript &scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType, int flags);
-bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum& nLockTime) const;
+bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum& nLockTime);
 
 static const valtype vchFalse(0);
 static const valtype vchZero(0);
@@ -1321,7 +1321,7 @@ public:
     }
 };
 
-bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum& nLockTime) const
+bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum& nLockTime)
 {
     // There are two times of nLockTime: lock-by-blockheight
     // and lock-by-blocktime, distinguished by whether
