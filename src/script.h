@@ -14,10 +14,6 @@
  #include "keystore.h"
 #endif
 
-#ifndef BITCOIN_BIGNUM_H
- #include "bignum.h"
-#endif
-
 typedef std::vector< ::uint8_t> valtype;
 
 class CTransaction;
@@ -453,7 +449,6 @@ public:
     explicit CScript(opcodetype b)     { operator<<(b); }
     explicit CScript(const uint256& b) { operator<<(b); }
     explicit CScript(const CScriptNum& b) { operator<<(b); }
-    explicit CScript(const CBigNum& b) { operator<<(b); }
     explicit CScript(const std::vector< ::uint8_t>& b) { operator<<(b); }
 
     CScript& operator<<(int64_t b) { return push_int64(b); }
@@ -490,12 +485,6 @@ public:
     {
         std::vector< ::uint8_t> vchKey = key.Raw();
         return (*this) << vchKey;
-    }
-
-    CScript& operator<<(const CBigNum& b)
-    {
-        *this << b.getvch();
-        return *this;
     }
 
     CScript& operator<<(const std::vector< ::uint8_t>& b)
