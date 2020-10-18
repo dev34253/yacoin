@@ -893,6 +893,57 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     return CBitcoinAddress(innerID).ToString();
 }
 
+Value addcltvaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 2 || params.size() > 3)
+    {
+        string msg = "addcltvaddress <yacoinprivkey> <lock_time> [account]\n"
+            "Add a P2SH address which lock coins until lock_time\n";
+        throw runtime_error(msg);
+    }
+
+    // Use private key to get public key
+    string strSecret = params[0].get_str();
+    CBitcoinSecret vchSecret;
+    bool fGood = vchSecret.SetString(strSecret);
+
+	if (!fGood)
+		throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
+
+    CKey key;
+    bool fCompressed;
+    CSecret secret = vchSecret.GetSecret(fCompressed);
+    key.SetSecret(secret, fCompressed);
+    CPubKey pubkey = key.GetPubKey();
+
+    // Get lock time
+    int nLockTime = params[1].get_int();
+
+    string strAccount;
+    if (params.size() > 2)
+        strAccount = AccountFromValue(params[2]);
+
+    // Construct using pay-to-script-hash:
+    CScript inner;
+    inner.SetCltv(nLockTime, pubkey);
+
+    if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
+    throw runtime_error(
+        strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
+
+    CScriptID innerID = inner.GetID();
+    pwalletMain->AddCScript(inner);
+
+    CBitcoinAddress address(innerID);
+
+    Object result;
+    result.push_back(Pair("address", address.ToString()));
+    result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
+
+    pwalletMain->SetAddressBookName(innerID, strAccount);
+    return CBitcoinAddress(innerID).ToString();
+}
+
 Value addredeemscript(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)

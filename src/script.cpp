@@ -2251,6 +2251,15 @@ void CScript::SetMultisig(int nRequired, const std::vector<CKey>& keys)
         *this << key.GetPubKey();
     *this << EncodeOP_N((int)(keys.size())) << OP_CHECKMULTISIG;
 }
+
+void CScript::SetCltv(int nLockTime, const CPubKey& pubKey)
+{
+    this->clear();
+
+    *this << nLockTime;
+    *this << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
+	*this << pubKey << OP_CHECKSIG;
+}
 #ifdef _MSC_VER
     #include "msvc_warnings.pop.h"
 #endif

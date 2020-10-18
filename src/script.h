@@ -690,7 +690,7 @@ public:
 
     void SetDestination(const CTxDestination& address);
     void SetMultisig(int nRequired, const std::vector<CKey>& keys);
-
+    void SetCltv(int nLockTime, const CPubKey& pubKey);
 
     void PrintHex() const
     {
