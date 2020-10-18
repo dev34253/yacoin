@@ -941,7 +941,7 @@ Value addcltvaddress(const Array& params, bool fHelp)
     result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
 
     pwalletMain->SetAddressBookName(innerID, strAccount);
-    return CBitcoinAddress(innerID).ToString();
+    return result;
 }
 
 Value addredeemscript(const Array& params, bool fHelp)
