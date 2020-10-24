@@ -1467,6 +1467,9 @@ bool Solver(
         // Sender provides N pubkeys, receivers provides M signatures
         mTemplates.insert(make_pair(TX_MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
 
+        // CLTV transaction, sender provides hash of pubkey, receiver provides redeemscript and signature
+        mTemplates.insert(make_pair(TX_CLTV, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
+
         if (!fUseOld044Rules)
         {   // Empty, provably prunable, data-carrying output
             mTemplates.insert(make_pair(TX_NULL_DATA, CScript() << OP_RETURN << OP_SMALLDATA));
@@ -1816,6 +1819,14 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
         if (HaveKeys(keys, keystore) == keys.size())
             return MINE_SPENDABLE;
         break;
+    }
+    case TX_CLTV:
+    {
+       keyID = CPubKey(vSolutions[0]).GetID();
+        if (keystore.HaveKey(keyID))
+        {
+            return MINE_SPENDABLE;
+        }
     }
     }
 

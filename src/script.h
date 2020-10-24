@@ -241,6 +241,7 @@ enum txnouttype
     TX_PUBKEYHASH,
     TX_SCRIPTHASH,
     TX_MULTISIG,
+	TX_CLTV,
     TX_NULL_DATA,
 };
 
