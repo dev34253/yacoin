@@ -1330,6 +1330,7 @@ bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     // We want to compare apples to apples, so fail the script
     // unless the type of nLockTime being tested is the same as
     // the nLockTime in the transaction.
+    printf("CheckLockTime(), locktime of cltv address = %d, transaction time = %d\n", nLockTime, txTo.nLockTime);
     if (!(
         (txTo.nLockTime <  LOCKTIME_THRESHOLD && nLockTime <  LOCKTIME_THRESHOLD) ||
         (txTo.nLockTime >= LOCKTIME_THRESHOLD && nLockTime >= LOCKTIME_THRESHOLD)
@@ -1339,7 +1340,10 @@ bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     // Now that we know we're comparing apples-to-apples, the
     // comparison is a simple numeric one.
     if (nLockTime > (int64_t)txTo.nLockTime)
+    {
+        printf("CheckLockTime(), coins are still being locked, can't use them until reaching lock time\n");
         return false;
+    }
 
     // Finally the nLockTime feature can be disabled and thus
     // CHECKLOCKTIMEVERIFY bypassed if every txin has been
