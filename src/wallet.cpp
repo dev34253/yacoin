@@ -1481,7 +1481,7 @@ int64_t CWallet::GetImmatureWatchOnlyBalance() const
 }
 
 // populate vCoins with vector of spendable COutputs
-void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, const CScript *fromScriptPubKey) const
+void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, const CScript *fromScriptPubKey, bool fCountCltv) const
 {
     vCoins.clear();
 
@@ -1510,7 +1510,7 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
 				bool isSpendableCltv = IsSpendableCltvUTXO(pcoin->vout[i]);
 
 				if (!(pcoin->IsSpent(i)) && (mine != MINE_NO)
-						&& ((!fromScriptPubKey && !isSpendableCltv) // If not specific address, not select coins from cltv address
+						&& ((!fromScriptPubKey && (fCountCltv || !isSpendableCltv)) // If not specific address, not select coins from cltv address
 								|| (fromScriptPubKey && pcoin->vout[i].scriptPubKey == *fromScriptPubKey)) // If there is a specific address, only select coins in that address
 						&& (pcoin->vout[i].nValue >= nMinimumInputValue)
 						&& ((!coinControl) || !(coinControl->HasSelected())

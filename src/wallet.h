@@ -170,7 +170,7 @@ public:
     bool CanSupportFeature(enum WalletFeature wf) { return nWalletMaxVersion >= wf; }
 
     void AvailableCoinsMinConf(std::vector<COutput>& vCoins, int nConf, ::int64_t nMinValue, ::int64_t nMaxValue) const;
-    void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl *coinControl=NULL, const CScript *fromScriptPubKey=NULL) const;
+    void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl *coinControl=NULL, const CScript *fromScriptPubKey=NULL, bool fCountCltv=false) const;
     bool SelectCoinsMinConf(::int64_t nTargetValue, int64_t nSpendTime, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, ::int64_t& nValueRet) const;
     // keystore implementation
     // Generate a new key
