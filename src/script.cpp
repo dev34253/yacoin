@@ -1700,6 +1700,7 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
         return -1;
     case TX_NULL_DATA:
         return 1;
+    case TX_CLTV:
     case TX_PUBKEY:
         return 1;
     case TX_PUBKEYHASH:
