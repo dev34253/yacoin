@@ -1505,11 +1505,13 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
 
             for (unsigned int i = 0; i < pcoin->vout.size(); ++i)
             {
-                isminetype 
-                    mine = IsMine(pcoin->vout[i]);
+				isminetype mine = IsMine(pcoin->vout[i]);
+
+				bool isSpendableCltv = IsSpendableCltvUTXO(pcoin->vout[i]);
 
 				if (!(pcoin->IsSpent(i)) && (mine != MINE_NO)
-						&& ((!fromScriptPubKey) || pcoin->vout[i].scriptPubKey == *fromScriptPubKey) // Only use coins in a specific address
+						&& ((!fromScriptPubKey && !isSpendableCltv) // If not specific address, not select coins from cltv address
+								|| (fromScriptPubKey && pcoin->vout[i].scriptPubKey == *fromScriptPubKey)) // If there is a specific address, only select coins in that address
 						&& (pcoin->vout[i].nValue >= nMinimumInputValue)
 						&& ((!coinControl) || !(coinControl->HasSelected())
 								|| coinControl->IsSelected((*it).first, i)))

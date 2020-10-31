@@ -1772,6 +1772,41 @@ isminetype IsMine(const CKeyStore &keystore, const CTxDestination& dest)
     return IsMine(keystore, script);
 }
 
+bool IsSpendableCltvUTXO(const CKeyStore &keystore,
+		const CScript &scriptPubKey)
+{
+	vector<valtype> vSolutions;
+	txnouttype whichType;
+	if (!Solver(scriptPubKey, whichType, vSolutions)) {
+		return false;
+	}
+
+	switch (whichType)
+	{
+	case TX_SCRIPTHASH:
+	{
+		CScriptID scriptID = CScriptID(uint160(vSolutions[0]));
+		CScript subscript;
+		if (keystore.GetCScript(scriptID, subscript))
+		{
+			return IsSpendableCltvUTXO(keystore, subscript);
+		}
+		break;
+	}
+	case TX_CLTV:
+	{
+		CKeyID keyID = CPubKey(vSolutions[0]).GetID();
+		if (keystore.HaveKey(keyID))
+		{
+			return true;
+		}
+		break;
+	}
+	}
+
+	return false;
+}
+
 isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
 {
     vector<valtype> vSolutions;
@@ -1828,6 +1863,7 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
         {
             return MINE_SPENDABLE;
         }
+        break;
     }
     }
 

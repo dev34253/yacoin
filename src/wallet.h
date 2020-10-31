@@ -293,6 +293,10 @@ public:
     {
         return ::IsMine(*this, txout.scriptPubKey);
     }
+    bool IsSpendableCltvUTXO(const CTxOut& txout) const
+    {
+        return ::IsSpendableCltvUTXO(*this, txout.scriptPubKey);
+    }
     ::int64_t GetCredit(const CTxOut& txout, const isminefilter& filter) const
     {
         if (!MoneyRange(txout.nValue))
