@@ -895,7 +895,7 @@ Value addmultisigaddress(const Array& params, bool fHelp)
 
 Value spendcltv(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() != 3)
+	if (fHelp || params.size() < 3 || params.size() > 5)
     {
         string msg = "spendcltv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
             "send coin from cltv address to another address\n";
@@ -917,7 +917,7 @@ Value spendcltv(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid destination address");
 
     // Check if number coins in cltv address is enough to spend
-    int64_t nAmount = params[2].get_int();
+    int64_t nAmount = AmountFromValue(params[2]);
     int64_t nTotalValue = 0;
     for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
     {
