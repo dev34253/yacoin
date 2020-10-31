@@ -1505,30 +1505,19 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
 
             for (unsigned int i = 0; i < pcoin->vout.size(); ++i)
             {
-            	// CHECK CLTV ADDRESS WITH VOUT ADDRESS HERE
                 isminetype 
                     mine = IsMine(pcoin->vout[i]);
 
-                if (
-                    !(pcoin->IsSpent(i)) && 
-                    (mine != MINE_NO) && 
-                    (pcoin->vout[i].nValue >= nMinimumInputValue) &&
-                    ( 
-                     (!coinControl) || 
-                     !(coinControl->HasSelected() ) || 
-                     coinControl->IsSelected((*it).first, i)
-                    )
-                   )
-                {
-                    vCoins.push_back(
-                                     COutput(
-                                             pcoin, 
-                                             i, 
-                                             pcoin->GetDepthInMainChain(), 
-                                             mine == MINE_SPENDABLE
-                                            )
-                                    );
-                }
+				if (!(pcoin->IsSpent(i)) && (mine != MINE_NO)
+						&& ((!fromScriptPubKey) || pcoin->vout[i].scriptPubKey == *fromScriptPubKey) // Only use coins in a specific address
+						&& (pcoin->vout[i].nValue >= nMinimumInputValue)
+						&& ((!coinControl) || !(coinControl->HasSelected())
+								|| coinControl->IsSelected((*it).first, i)))
+				{
+					vCoins.push_back(
+							COutput(pcoin, i, pcoin->GetDepthInMainChain(),
+									mine == MINE_SPENDABLE));
+				}
             }
         }
     }
