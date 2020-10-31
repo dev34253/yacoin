@@ -1668,6 +1668,7 @@ bool Solver(
     case TX_NULL_DATA:  // this is not in 0.4.4 code
         return false;
     case TX_PUBKEY:
+    case TX_CLTV:
         keyID = CPubKey(vSolutions[0]).GetID();
         return Sign1(keyID, keystore, hash, nHashType, scriptSigRet);
     case TX_PUBKEYHASH:
@@ -1995,7 +1996,7 @@ bool SignSignature(const CKeyStore &keystore, const CScript& fromPubKey, CTransa
 
         txnouttype subType;
         bool fSolved =
-            Solver(keystore, subscript, hash2, nHashType, txin.scriptSig, subType) && subType != TX_SCRIPTHASH;
+            Solver(keystore, subscript, hash2, nHashType, txin.scriptSig, subType) && subType != TX_SCRIPTHASH; // IMPORTANT HERE
         // Append serialized subscript whether or not it is completely signed:
         txin.scriptSig << static_cast<valtype>(subscript);
         if (!fSolved) return false;
@@ -2011,7 +2012,7 @@ bool SignSignature(const CKeyStore &keystore, const CTransaction& txFrom, CTrans
     CTxIn& txin = txTo.vin[nIn];
     Yassert(txin.prevout.COutPointGet_n() < txFrom.vout.size());
     Yassert(txin.prevout.COutPointGetHash() == txFrom.GetHash());
-    const CTxOut& txout = txFrom.vout[txin.prevout.COutPointGet_n()];
+    const CTxOut& txout = txFrom.vout[txin.prevout.COutPointGet_n()]; // Get UTXO
 
     return SignSignature(keystore, txout.scriptPubKey, txTo, nIn, nHashType);
 }
