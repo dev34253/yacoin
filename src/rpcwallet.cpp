@@ -895,9 +895,9 @@ Value addmultisigaddress(const Array& params, bool fHelp)
 
 Value spendcltv(const Array& params, bool fHelp)
 {
-	if (fHelp || params.size() < 3 || params.size() > 5)
+    if (fHelp || params.size() < 3 || params.size() > 6)
     {
-        string msg = "spendcltv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
+	    string msg = "spendcltv <cltv_address> <destination_address> <amount> [comment] [comment-to] [spending_time]\n"
             "send coin from cltv address to another address\n";
         throw runtime_error(msg);
     }
@@ -944,7 +944,10 @@ Value spendcltv(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     // Set current time for nLockTime
-    wtx.nLockTime = GetAdjustedTime();
+    if (params.size() > 5 && params[5].type() != null_type)
+        wtx.nLockTime = params[5].get_int();
+    else
+        wtx.nLockTime = GetAdjustedTime();
 
     string strError = pwalletMain->SendMoneyToDestination(destAddress.Get(), nAmount, wtx, false, &scriptPubKey);
     if (strError != "")
