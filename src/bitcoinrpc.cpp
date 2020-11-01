@@ -1251,7 +1251,7 @@ static const CRPCCommand vRPCCommands[] =
     { "sendfrom",               &sendfrom,               false,  false },
     { "sendmany",               &sendmany,               false,  false },
     { "addmultisigaddress",     &addmultisigaddress,     false,  false },
-	{ "addcltvaddress",     	&addcltvaddress,	     false,  false },
+	{ "createcltvaddress",     	&createcltvaddress,	     false,  false },
 	{ "spendcltv",     			&spendcltv,	     		 false,  false },
     { "addredeemscript",        &addredeemscript,        false,  false },
     { "getrawmempool",          &getrawmempool,          true,   false },
@@ -1379,7 +1379,7 @@ Array RPCConvertValues(std::string &strMethod, const std::vector<std::string> &s
     if (strMethod == "reservebalance"         && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "addmultisigaddress"     && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "addmultisigaddress"     && n > 1) ConvertTo<Array>(params[1]);
-    if (strMethod == "addcltvaddress"         && n > 1) ConvertTo<boost::int64_t>(params[1]);
+    if (strMethod == "createcltvaddress"      && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "spendcltv"         	  && n > 2) ConvertTo<boost::int64_t>(params[2]);
     if (strMethod == "listunspent"            && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "listunspent"            && n > 1) ConvertTo<boost::int64_t>(params[1]);

@@ -953,35 +953,29 @@ Value spendcltv(const Array& params, bool fHelp)
     return wtx.GetHash().GetHex();
 }
 
-Value addcltvaddress(const Array& params, bool fHelp)
+Value createcltvaddress(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 2 || params.size() > 3)
+    if (fHelp || params.size() < 1 || params.size() > 2)
     {
-        string msg = "addcltvaddress <yacoinprivkey> <lock_time> [account]\n"
-            "Add a P2SH address which lock coins until lock_time\n";
+        string msg = "createcltvaddress <lock_time> [account]\n"
+            "Create a P2SH address which lock coins until lock_time\n";
         throw runtime_error(msg);
     }
 
-    // Use private key to get public key
-    string strSecret = params[0].get_str();
-    CBitcoinSecret vchSecret;
-    bool fGood = vchSecret.SetString(strSecret);
+    // Generate a new key that is added to wallet
+    if (!pwalletMain->IsLocked())
+        pwalletMain->TopUpKeyPool();
 
-	if (!fGood)
-		throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
-
-    CKey key;
-    bool fCompressed;
-    CSecret secret = vchSecret.GetSecret(fCompressed);
-    key.SetSecret(secret, fCompressed);
-    CPubKey pubkey = key.GetPubKey();
+    CPubKey pubkey;
+    if (!pwalletMain->GetKeyFromPool(pubkey, false))
+        throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out, please call keypoolrefill first");
 
     // Get lock time
-    int nLockTime = params[1].get_int();
+    int nLockTime = params[0].get_int();
 
     string strAccount;
-    if (params.size() > 2)
-        strAccount = AccountFromValue(params[2]);
+    if (params.size() > 1)
+        strAccount = AccountFromValue(params[1]);
 
     // Construct using pay-to-script-hash:
     CScript inner;
@@ -997,7 +991,7 @@ Value addcltvaddress(const Array& params, bool fHelp)
     CBitcoinAddress address(innerID);
 
     Object result;
-    result.push_back(Pair("address", address.ToString()));
+    result.push_back(Pair("cltv address", address.ToString()));
     result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
 
     pwalletMain->SetAddressBookName(innerID, strAccount);
@@ -1375,7 +1369,7 @@ Value listaccounts(const Array& params, bool fHelp)
 
     for (
         map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); 
-        it != pwalletMain->mapWallet.end(); 
+        it != pwalletMain->mapWallet.end();
         ++it
         )
     {
