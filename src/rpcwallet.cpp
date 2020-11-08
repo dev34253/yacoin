@@ -897,9 +897,9 @@ Value addmultisigaddress(const Array& params, bool fHelp)
 
 Value spendcltv(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 3 || params.size() > 6)
+    if (fHelp || params.size() < 3 || params.size() > 5)
     {
-	    string msg = "spendcltv <cltv_address> <destination_address> <amount> [comment] [comment-to] [spending_time]\n"
+	    string msg = "spendcltv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
             "send coin from cltv address to another address\n";
         throw runtime_error(msg);
     }
@@ -912,6 +912,24 @@ Value spendcltv(const Array& params, bool fHelp)
     scriptPubKey.SetDestination(address.Get());
     if (!IsMine(*pwalletMain,scriptPubKey))
     	throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet doesn't manage coins in this address");
+
+    // Get redeemscript
+    CTxDestination tmpAddr;
+    CScript redeemScript;
+    if (ExtractDestination(scriptPubKey, tmpAddr))
+    {
+        const CScriptID& hash = boost::get<CScriptID>(tmpAddr);
+        if (!pwalletMain->GetCScript(hash, redeemScript))
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet doesn't manage redeemscript of this address");
+    }
+
+    // Scan information from redeemscript to get lock time
+    CScript::const_iterator pc = redeemScript.begin();
+    opcodetype opcode;
+    vector<unsigned char> vch;
+    if (!redeemScript.GetOp(pc, opcode, vch))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet can't get lock time from redeemscript");
+    const CScriptNum nLockTime(vch);
 
     // Check if destination address is valid
     CBitcoinAddress destAddress(params[1].get_str());
@@ -946,8 +964,8 @@ Value spendcltv(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     // Set current time for nLockTime
-    if (params.size() > 5 && params[5].type() != null_type)
-        wtx.nLockTime = params[5].get_int();
+    if (nLockTime < LOCKTIME_THRESHOLD)
+        wtx.nLockTime = nBestHeight;
     else
         wtx.nLockTime = GetAdjustedTime();
 
