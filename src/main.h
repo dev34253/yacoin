@@ -600,7 +600,7 @@ public:
         if (nLockTime == 0)
             return true;
         if (nBlockHeight == 0)
-            nBlockHeight = nBestHeight;
+            nBlockHeight = nBestHeight + 1;
         if (nBlockTime == 0)
             nBlockTime = GetAdjustedTime();
         if ((::int64_t)nLockTime < ((::int64_t)nLockTime < LOCKTIME_THRESHOLD ? (::int64_t)nBlockHeight : nBlockTime))
