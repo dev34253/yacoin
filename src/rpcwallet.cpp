@@ -20,6 +20,8 @@
  #include "init.h"
 #endif
 
+#include <sstream>
+
 using namespace json_spirit;
 
 using std::runtime_error;
@@ -993,9 +995,19 @@ Value createcltvaddress(const Array& params, bool fHelp)
 
     CBitcoinAddress address(innerID);
 
+    std::string warnMsg = "Any coins sent to this cltv address will be locked until ";
+    if (nLockTime < LOCKTIME_THRESHOLD)
+    {
+        std::stringstream ss;
+        ss << nLockTime;
+        warnMsg += "block height " + ss.str();
+    }
+    else
+        warnMsg += DateTimeStrFormat(nLockTime);
     Object result;
     result.push_back(Pair("cltv address", address.ToString()));
     result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
+    result.push_back(Pair("Warning", warnMsg));
 
     pwalletMain->SetAddressBookName(innerID, strAccount);
     return result;
