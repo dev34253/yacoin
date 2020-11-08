@@ -775,6 +775,12 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (!fTestNet && !tx.IsStandard(strNonStd))
         return error("CTxMemPool::accept() : nonstandard transaction (%s)", strNonStd.c_str());
 
+    // Only accept nLockTime-using transactions that can be mined in the next
+    // block; we don't want our mempool filled up with transactions that can't
+    // be mined yet.
+    if (!tx.IsFinal())
+        return error("CTxMemPool::accept() : non-final transaction");
+
     // Do we already have it?
     uint256 hash = tx.GetHash();
     {
