@@ -214,7 +214,20 @@ extern unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx = 
 unsigned int GetProofOfWorkMA(const CBlockIndex* pIndexLast);
 unsigned int GetProofOfWorkSMA(const CBlockIndex* pIndexLast);
 
+/**
+ * Check if transaction is final per BIP 68 sequence numbers and can be included in a block.
+ * Consensus critical. Takes as input a list of heights at which tx's inputs (in order) confirmed.
+ */
+bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int>* prevHeights, const CBlockIndex& block);
 
+/**
+ * Check if transaction will be BIP 68 final in the next block to be created.
+ *
+ * Calls SequenceLocks() with data from the tip of the current active chain.
+ *
+ * See consensus/consensus.h for flag definitions.
+ */
+bool CheckSequenceLocks(const CTransaction &tx, int flags);
 
 
 
