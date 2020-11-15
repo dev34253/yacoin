@@ -1930,7 +1930,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
                 BOOST_FOREACH(const PAIRTYPE(const CWalletTx*,unsigned int)& coin, setCoins)
                 {
                 	// In order nLockTime and OP_CHECKLOCKTIMEVERIFY can work, set nSequence to another value which different with maxint
-                	unsigned int nSequenceIn = std::numeric_limits<unsigned int>::max();
+                    unsigned int nSequenceIn = CTxIn::SEQUENCE_FINAL;
                 	if (IsSpendableCltvUTXO(coin.first->vout[coin.second]))
                 	{
                 		nSequenceIn = 0;
