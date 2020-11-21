@@ -972,6 +972,16 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
             return false;
         }
 
+        // Only accept BIP68 sequence locked transactions that can be mined in the next
+        // block; we don't want our mempool filled up with transactions that can't
+        // be mined yet.
+        // Must keep pool.cs for this unless we change CheckSequenceLocks to take a
+        // CoinsViewCache instead of create its own
+        if (!CheckSequenceLocks(tx, STANDARD_LOCKTIME_VERIFY_FLAGS))
+        {
+            return error("CTxMemPool::accept() : non-BIP68-final transaction");
+        }
+
         // Check for non-standard pay-to-script-hash in inputs
         if (!tx.AreInputsStandard(mapInputs) && !fTestNet)
             return error("CTxMemPool::accept() : nonstandard transaction input");
@@ -2952,10 +2962,43 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
         else
         {
             bool fInvalid;
-            if (!tx.FetchInputs(txdb, mapQueuedChanges, true, false, mapInputs, fInvalid)) // ===> pass map of prevheights to this function
+            if (!tx.FetchInputs(txdb, mapQueuedChanges, true, false, mapInputs, fInvalid))
                 return false;
 
-            // ADD LOGIC TO CALL SequenceLocks HERE
+            // Check that transaction is BIP68 final
+            // BIP68 lock checks (as opposed to nLockTime checks) must
+            // be in ConnectBlock because they require the UTXO set
+            std::vector<int> prevheights;
+            prevheights.resize(tx.vin.size());
+            int nLockTimeFlags = 0;
+            for (unsigned int i = 0; i < tx.vin.size(); ++i)
+            {
+                COutPoint
+                    prevout = tx.vin[i].prevout;
+                CTransaction tx;
+                uint256 hashBlock = 0;
+                if (GetTransaction(prevout.COutPointGetHash(), tx, hashBlock))
+                {
+                    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hashBlock);
+                    if (mi != mapBlockIndex.end() && (*mi).second)
+                    {
+                        CBlockIndex* pTmpIndex = (*mi).second;
+                        prevheights[i] = pTmpIndex->nHeight;
+                    }
+                    else
+                    {
+                        prevheights[i] = pindex->nHeight;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            if (!SequenceLocks(tx, nLockTimeFlags, &prevheights, *pindex))
+            {
+                return DoS(100, error("ConnectBlock(): contains a non-BIP68-final transaction", __func__));
+            }
 
             // Add in sigops done by pay-to-script-hash inputs;
             // this is to prevent a "rogue miner" from creating
