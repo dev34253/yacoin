@@ -1559,6 +1559,9 @@ bool Solver(
         // CLTV transaction, sender provides hash of pubkey, receiver provides redeemscript and signature
         mTemplates.insert(make_pair(TX_CLTV, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
 
+        // CSV transaction, sender provides hash of pubkey, receiver provides redeemscript and signature
+        mTemplates.insert(make_pair(TX_CSV, CScript() << OP_SMALLDATA << OP_NOP3 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
+
         if (!fUseOld044Rules)
         {   // Empty, provably prunable, data-carrying output
             mTemplates.insert(make_pair(TX_NULL_DATA, CScript() << OP_RETURN << OP_SMALLDATA));
@@ -1947,6 +1950,7 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
         break;
     }
     case TX_CLTV:
+    case TX_CSV:
     {
        keyID = CPubKey(vSolutions[0]).GetID();
         if (keystore.HaveKey(keyID))
@@ -2397,6 +2401,15 @@ void CScript::SetCltv(int nLockTime, const CPubKey& pubKey)
     *this << nLockTime;
     *this << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
 	*this << pubKey << OP_CHECKSIG;
+}
+
+void CScript::SetCsv(::uint32_t nSequence, const CPubKey& pubKey)
+{
+    this->clear();
+
+    *this << (CScriptNum)nSequence;
+    *this << OP_CHECKSEQUENCEVERIFY << OP_DROP;
+    *this << pubKey << OP_CHECKSIG;
 }
 #ifdef _MSC_VER
     #include "msvc_warnings.pop.h"
