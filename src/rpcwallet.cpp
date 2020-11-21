@@ -1031,6 +1031,72 @@ Value createcltvaddress(const Array& params, bool fHelp)
     return result;
 }
 
+Value createcsvaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 3)
+    {
+        string msg = "createcsvaddress <lock_time> [isBlockHeightLock] [account]\n"
+            "reates a P2SH address with a relative csv timelock script\n";
+        throw runtime_error(msg);
+    }
+
+    // Generate a new key that is added to wallet
+    if (!pwalletMain->IsLocked())
+        pwalletMain->TopUpKeyPool();
+
+    CPubKey pubkey;
+    if (!pwalletMain->GetKeyFromPool(pubkey, false))
+        throw runtime_error("Error: Keypool ran out, please call keypoolrefill first");
+
+    // Get lock time
+    ::uint32_t nLockTime = params[0].get_int();
+    if (nLockTime < 1 || nLockTime > CTxIn::SEQUENCE_LOCKTIME_MASK)
+        throw runtime_error("<lock_time> should be between 1 and 65535");
+
+    bool fBlockHeightLock = false;
+    if (params.size() > 1)
+        fBlockHeightLock = params[1].get_bool();
+
+    string strAccount;
+    if (params.size() > 2)
+        strAccount = AccountFromValue(params[2]);
+
+    // Construct using pay-to-script-hash:
+    CScript inner;
+    ::uint32_t nSequence = fBlockHeightLock? nLockTime: (nLockTime | CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG);
+    inner.SetCsv(nSequence, pubkey);
+
+    if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
+    throw runtime_error(
+        strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
+
+    CScriptID innerID = inner.GetID();
+    pwalletMain->AddCScript(inner);
+
+    CBitcoinAddress address(innerID);
+
+    std::string warnMsg = "Any coins sent to this csv address will be locked within ";
+    if (fBlockHeightLock)
+    {
+        std::stringstream ss;
+        ss << nLockTime;
+        warnMsg += ss.str() + " blocks";
+    }
+    else
+    {
+        std::stringstream ss;
+        ss << (nLockTime * 512);
+        warnMsg += ss.str() + " seconds";
+    }
+    Object result;
+    result.push_back(Pair("csv address", address.ToString()));
+    result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
+    result.push_back(Pair("Warning", warnMsg));
+
+    pwalletMain->SetAddressBookName(innerID, strAccount);
+    return result;
+}
+
 Value addredeemscript(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
