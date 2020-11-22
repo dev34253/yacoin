@@ -976,6 +976,63 @@ Value spendcltv(const Array& params, bool fHelp)
     return wtx.GetHash().GetHex();
 }
 
+Value spendcsv(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 3 || params.size() > 5)
+    {
+        string msg = "spendcsv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
+            "send coin from csv address to another address\n";
+        throw runtime_error(msg);
+    }
+
+    // Check if csv address exist in the wallet
+    CBitcoinAddress address = CBitcoinAddress(params[0].get_str());
+    CScript scriptPubKey;
+    if (!address.IsValid())
+        throw runtime_error("Invalid csv address");
+    scriptPubKey.SetDestination(address.Get());
+    if (!IsMine(*pwalletMain,scriptPubKey))
+        throw runtime_error("Wallet doesn't manage coins in this address");
+
+    // Check if destination address is valid
+    CBitcoinAddress destAddress(params[1].get_str());
+    if (!destAddress.IsValid())
+        throw runtime_error("Invalid destination address");
+
+    // Check if number coins in csv address is enough to spend
+    int64_t nAmount = AmountFromValue(params[2]);
+    int64_t nTotalValue = 0;
+    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    {
+        const CWalletTx& wtx = (*it).second;
+        if (wtx.IsCoinBase() || wtx.IsCoinStake() || !wtx.IsFinal())
+            continue;
+
+        BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+            if (txout.scriptPubKey == scriptPubKey)
+                nTotalValue += txout.nValue;
+    }
+
+    if (nTotalValue < nAmount)
+        throw runtime_error("Not enough coin in the wallet to spend");
+
+    // Wallet comments
+    CWalletTx wtx;
+    if (params.size() > 3 && params[3].type() != null_type && !params[3].get_str().empty())
+        wtx.mapValue["comment"] = params[3].get_str();
+    if (params.size() > 4 && params[4].type() != null_type && !params[4].get_str().empty())
+        wtx.mapValue["to"]      = params[4].get_str();
+
+    if (pwalletMain->IsLocked())
+        throw runtime_error("Error: Please enter the wallet passphrase with walletpassphrase first.");
+
+    string strError = pwalletMain->SendMoneyToDestination(destAddress.Get(), nAmount, wtx, false, &scriptPubKey);
+    if (strError != "")
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+
+    return wtx.GetHash().GetHex();
+}
+
 Value createcltvaddress(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)

@@ -1481,7 +1481,7 @@ int64_t CWallet::GetImmatureWatchOnlyBalance() const
 }
 
 // populate vCoins with vector of spendable COutputs
-void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, const CScript *fromScriptPubKey, bool fCountCltv) const
+void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, const CScript *fromScriptPubKey, bool fCountCltvOrCsv) const
 {
     vCoins.clear();
 
@@ -1507,10 +1507,10 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
             {
 				isminetype mine = IsMine(pcoin->vout[i]);
 
-				bool isSpendableCltv = IsSpendableCltvUTXO(pcoin->vout[i]);
+				bool isSpendableCltvOrCsv = IsSpendableCltvUTXO(pcoin->vout[i]) | IsSpendableCsvUTXO(pcoin->vout[i]);
 
 				if (!(pcoin->IsSpent(i)) && (mine != MINE_NO)
-						&& ((!fromScriptPubKey && (fCountCltv || !isSpendableCltv)) // If not specific address, not select coins from cltv address
+						&& ((!fromScriptPubKey && (fCountCltvOrCsv || !isSpendableCltvOrCsv)) // If not specific address, not select coins from cltv and csv address
 								|| (fromScriptPubKey && pcoin->vout[i].scriptPubKey == *fromScriptPubKey)) // If there is a specific address, only select coins in that address
 						&& (pcoin->vout[i].nValue >= nMinimumInputValue)
 						&& ((!coinControl) || !(coinControl->HasSelected())
@@ -1929,14 +1929,40 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
                 // Fill vin
                 BOOST_FOREACH(const PAIRTYPE(const CWalletTx*,unsigned int)& coin, setCoins)
                 {
-                	// In order nLockTime and OP_CHECKLOCKTIMEVERIFY can work, set nSequence to another value which different with maxint
+                    // In order nLockTime and OP_CHECKLOCKTIMEVERIFY can work, set nSequence to another value which different with maxint
                     unsigned int nSequenceIn = CTxIn::SEQUENCE_FINAL;
-                	if (IsSpendableCltvUTXO(coin.first->vout[coin.second]))
-                	{
-                		nSequenceIn = 0;
-                	}
-					wtxNew.vin.push_back(
-							CTxIn(coin.first->GetHash(), coin.second, CScript(), nSequenceIn));
+                    const CTxOut& txout = coin.first->vout[coin.second];
+                    if (IsSpendableCltvUTXO(txout))
+                    {
+                        nSequenceIn = 0;
+                    }
+                    else if (IsSpendableCsvUTXO(txout)) // In order nSequence and OP_CHECKSEQUENCEVERIFY can work, set nSequence of input = nSequence of csv address
+                    {
+                        // Get redeemscript
+                        CTxDestination tmpAddr;
+                        CScript redeemScript;
+                        if (ExtractDestination(txout.scriptPubKey, tmpAddr))
+                        {
+                            const CScriptID& hash = boost::get<CScriptID>(tmpAddr);
+                            if (!GetCScript(hash, redeemScript))
+                            {
+                                printf("CWallet::CreateTransaction, wallet doesn't manage redeemscript of this address\n");
+                                return false;
+                            }
+                        }
+
+                        // Scan information from redeemscript to get nSequence
+                        CScript::const_iterator pc = redeemScript.begin();
+                        opcodetype opcode;
+                        vector<unsigned char> vch;
+                        if (!redeemScript.GetOp(pc, opcode, vch))
+                        {
+                            printf("CWallet::CreateTransaction, Wallet can't get lock time from redeemscript\n");
+                        }
+                        nSequenceIn = CScriptNum(vch).getint();
+                    }
+                    wtxNew.vin.push_back(
+                            CTxIn(coin.first->GetHash(), coin.second, CScript(), nSequenceIn));
                 }
 
                 // Sign
