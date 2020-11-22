@@ -192,6 +192,7 @@ extern json_spirit::Value addmultisigaddress(const json_spirit::Array& params, b
 extern json_spirit::Value createcltvaddress(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value spendcltv(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value createcsvaddress(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value spendcsv(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value addredeemscript(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value listreceivedbyaddress(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value listreceivedbyaccount(const json_spirit::Array& params, bool fHelp);
