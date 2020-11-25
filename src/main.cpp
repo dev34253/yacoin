@@ -427,7 +427,7 @@ static std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG)
         {
             CBlockIndex *pbi = FindBlockByHeight(std::max(nCoinHeight - 1, 0));
-            int64_t nCoinTime = pbi->GetMedianTimePast();
+            int64_t nCoinTime = pbi->GetBlockTime();
             // NOTE: Subtract 1 to maintain nLockTime semantics
             // BIP 68 relative lock times have the semantics of calculating
             // the first block or time at which the transaction would be
@@ -455,7 +455,7 @@ static std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
 static bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> lockPair)
 {
     assert(block.pprev);
-    int64_t nBlockTime = block.pprev->GetMedianTimePast();
+    int64_t nBlockTime = block.pprev->GetBlockTime();
     if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime)
         return false;
 
