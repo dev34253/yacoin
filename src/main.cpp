@@ -456,8 +456,20 @@ static bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64
 {
     assert(block.pprev);
     int64_t nBlockTime = block.pprev->GetBlockTime();
-    if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime)
+    if (lockPair.first >= block.nHeight)
+    {
+        printf("EvaluateSequenceLocks, failed to use relative time-lock coins, current block height  = %d"
+                ", the coin inputs can only be used in a block with height > %d\n", block.nHeight, lockPair.first);
         return false;
+    }
+    else if (lockPair.second >= nBlockTime)
+    {
+        printf("EvaluateSequenceLocks, failed to use relative time-lock coins, current block time  = %ld"
+                ", the coin inputs can only be used after a block with block time > %d was mined\n",
+                DateTimeStrFormat(nBlockTime),
+                DateTimeStrFormat(lockPair.second));
+        return false;
+    }
 
     return true;
 }
