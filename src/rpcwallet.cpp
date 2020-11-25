@@ -981,7 +981,13 @@ Value spendcsv(const Array& params, bool fHelp)
     if (fHelp || params.size() < 3 || params.size() > 5)
     {
         string msg = "spendcsv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
-            "send coin from csv address to another address\n";
+            "send coin from csv address to another address\n"
+            "<csv_address>: required param. csv address containing locked coins. This address is created by \"createcsvaddress\" rpc command\n"
+            "<destination_address>: required param. Coins will be sent to this address\n"
+            "<amount>: required param. Number coins will be sent to <destination_address>. It excludes the transaction fee, so that it must be smaller"
+                    " than number of locked coins in csv address. The remaining coins (= locked coins - <amount> - transaction fee) will be sent to a newly"
+                    " generated address which manages by wallet (same behaviour as \"sendtoaddress\" rpc command)\n"
+            "[comment], [comment-to]: optional param. Wallet comments\n";
         throw runtime_error(msg);
     }
 
@@ -1093,7 +1099,10 @@ Value createcsvaddress(const Array& params, bool fHelp)
     if (fHelp || params.size() < 1 || params.size() > 3)
     {
         string msg = "createcsvaddress <lock_time> [isBlockHeightLock] [account]\n"
-            "reates a P2SH address with a relative csv timelock script\n";
+            "Create a P2SH address which lock coins within a number of blocks/seconds\n"
+            "<lock_time>: required param. Specify time in seconds or number of blocks which coins will be locked within. Valid range 1->1073741823\n"
+            "[isBlockHeightLock]: optional true/false param. Determine <lock_time> is number of blocks or seconds. By default isBlockHeightLock=false\n"
+            "[account]: optional param. Account name corresponds to csv address\n";
         throw runtime_error(msg);
     }
 
@@ -1108,7 +1117,7 @@ Value createcsvaddress(const Array& params, bool fHelp)
     // Get lock time
     ::uint32_t nLockTime = params[0].get_int();
     if (nLockTime < 1 || nLockTime > CTxIn::SEQUENCE_LOCKTIME_MASK)
-        throw runtime_error("<lock_time> should be between 1 and 65535");
+        throw runtime_error("<lock_time> must be between 1 and 1073741823");
 
     bool fBlockHeightLock = false;
     if (params.size() > 1)
@@ -1142,7 +1151,7 @@ Value createcsvaddress(const Array& params, bool fHelp)
     else
     {
         std::stringstream ss;
-        ss << (nLockTime * 512);
+        ss << (nLockTime * (1 << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY));
         warnMsg += ss.str() + " seconds";
     }
     Object result;
