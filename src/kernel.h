@@ -54,21 +54,26 @@ bool CheckStakeKernelHash(
 
 // you can't think that the above is an intelligible sentence!  I can't figure out
 // what it is saying, so it is pretty useless
-bool GetKernelStakeModifier(uint256 hashBlockFrom, ::uint64_t& nStakeModifier);
+bool GetKernelStakeModifier(
+                            uint256 hashBlockFrom
+                            , ::uint64_t& nStakeModifier
+                            , int& nStakeModifierHeight
+                            , ::int64_t& nStakeModifierTime 
+                           );
 
 // Check whether stake kernel meets hash target
 // Sets hashProofOfStake on success return
-bool CheckStakeKernelHash(
-                          unsigned int nBits, 
-                          const CBlock& blockFrom, 
-                          ::uint32_t nTxPrevOffset, 
-                          const CTransaction& txPrev, 
-                          const COutPoint& prevout, 
-                          ::uint32_t nTimeTx, 
-                          uint256& hashProofOfStake, 
-                          uint256& targetProofOfStake, 
-                          bool fPrintProofOfStake=false
-                         );
+//bool CheckStakeKernelHash(
+//                          unsigned int nBits, 
+//                          const CBlock& blockFrom, 
+//                          ::uint32_t nTxPrevOffset, 
+//                          const CTransaction& txPrev, 
+//                          const COutPoint& prevout, 
+//                          ::uint32_t nTimeTx, 
+//                          uint256& hashProofOfStake, 
+//                          uint256& targetProofOfStake, 
+//                          bool fPrintProofOfStake=false
+//                         );
 
 
 // Scan given coins set for kernel solution
@@ -85,6 +90,6 @@ bool CheckProofOfStake(const CTransaction& tx, unsigned int nBits, uint256& hash
 bool CheckStakeModifierCheckpoints(int nHeight, ::uint32_t nStakeModifierChecksum);
 
 // Get time weight using supplied timestamps
-int64_t GetWeight(::int64_t nIntervalBeginning, ::int64_t nIntervalEnd);
+::int64_t GetWeight(::int64_t nIntervalBeginning, ::int64_t nIntervalEnd);
 
 #endif // PPCOIN_KERNEL_H
