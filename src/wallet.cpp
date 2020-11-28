@@ -54,6 +54,12 @@ struct CompareValueOnly
     }
 };
 
+bool compareUTXO(COutput u1, COutput u2)
+{
+    return (u1.nDepth > u2.nDepth);
+}
+
+
 CPubKey CWallet::GenerateNewKey()
 {
     bool fCompressed = CanSupportFeature(FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
@@ -1674,7 +1680,7 @@ bool CWallet::SelectCoinsMinConf(int64_t nTargetValue, int64_t nSpendTime, int n
     vector<pair< int64_t, pair<const CWalletTx*,unsigned int> > > vValue;
     int64_t nTotalLower = 0;
 
-    random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
+    sort(vCoins.begin(), vCoins.end(), compareUTXO);
 
     BOOST_FOREACH(const COutput &output, vCoins)
     {
