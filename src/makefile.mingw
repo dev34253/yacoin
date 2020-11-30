@@ -116,12 +116,13 @@ LIBS= \
 # -l db_cxx \
 # -l ssl \
 # -l crypto
+#-DUSE_LEVELDB \
 #
 
 DEFS= \
 -D__STDC_FORMAT_MACROS \
 -DWIN32 \
--D_WINDOWS                              \
+-D_WINDOWS                \
 -DYac1dot0 \
 -DSTATICLIB \
 -DMINIUPNP_STATICLIB \
@@ -199,20 +200,25 @@ endif
 # I built leveldb libraries from the Qt build, which does work!
 
 ifdef USE_LEVELDB
- DEFS += -DUSE_LEVELDB
-SOURCES += src/txdb-leveldb.cpp  
-OBJS += obj/txdb-leveldb.o
+    DEFS += -DUSE_LEVELDB
+#SOURCES += src/txdb-leveldb.cpp  
+#OBJS += obj/txdb-leveldb.o
+
+#touch .genleveldb; cd leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT="-msse2" make libleveldb.a libmemenv.a; }
+
 leveldb/libleveldb.a:
 	cd leveldb; TARGET_OS=NATIVE_WINDOWS make libleveldb.a libmemenv.a; cd ..
-obj/txdb-leveldb.o	: txdb-leveldb.cpp
-	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
-	@echo TEST LEVELDB $(DEFS)
+
+#obj/txdb-leveldb.o	: txdb-leveldb.cpp
+#	#$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+#@echo TEST LEVELDB $(DEFS)
 else
-SOURCES += src/txdb-bdb.cpp
-OBJS += obj/txdb-bdb.o
-obj/txdb-bdb.o	: txdb-bdb.cpp
-	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
-	@echo TEST BDB $(DEFS)	
+
+#SOURCES += src/txdb-bdb.cpp
+#OBJS += obj/txdb-bdb.o
+#obj/txdb-bdb.o	: txdb-bdb.cpp
+#	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+   @echo TEST BDB $(DEFS)
 endif
 ######################
 
@@ -309,6 +315,9 @@ obj/scrypt-arm.o : scrypt-arm.S
 
 obj/%.o: %.cpp $(HEADERS)
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+.genleveldb:
+	touch .genleveldb; cd leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT="-msse2" make libleveldb.a libmemenv.a; }
 
 yacoind.exe: $(OBJS:obj/%=obj/%)
 	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ $(LIBPATHS) $^ $(LIBS) -s

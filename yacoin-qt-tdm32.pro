@@ -114,13 +114,12 @@ INCLUDEPATH += src/leveldb/include src/leveldb/helpers
 LIBS += $$PWD/src/leveldb/libleveldb.a $$PWD/src/leveldb/libmemenv.a
 SOURCES += src/txdb-leveldb.cpp
 genleveldb.target = .genleveldb
-genleveldb.commands = touch .genleveldb; cd $$PWD/src/leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT=\"-msse2\" make libleveldb.a libmemenv.a; }
+genleveldb.commands = touch .genleveldb; cd src/leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT=\"-msse2\" make libleveldb.a libmemenv.a; }
 PRE_TARGETDEPS += .genleveldb
 QMAKE_EXTRA_TARGETS += genleveldb
 QMAKE_CLEAN += .genleveldb
 
-#genleveldb.commands = touch .genleveldb; cd $$PWD/src/leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT=\"-std=gnu++0x -msse2\" make libleveldb.a libmemenv.a; }
-
+genleveldb.commands = touch .genleveldb; cd src/leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT=\"-std=gnu++0x -msse2\" make libleveldb.a libmemenv.a; }
 
 genminiupnpc.target = src/miniupnpc/miniupnpc.h
 genminiupnpc.commands = mkdir -p src/miniupnpc; cp $$MINIUPNPC_INCLUDE_PATH/*.h src/miniupnpc
