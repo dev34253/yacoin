@@ -374,13 +374,20 @@ bool CTxDB::LoadBlockIndex()
      #endif
 #ifdef WIN32
     const int
+#ifdef Yac1dot0
   #ifdef _DEBUG
-        nREFRESH = 10;    // generally resfresh rates are chosen to give ~1 update/sec
+        nREFRESH = 1000;    // generally resfresh rates are chosen to give ~1 update/sec
+  #else
+        nREFRESH = 10000;
+  #endif
+#else
+  #ifdef _DEBUG
+        nREFRESH = 2000;    // generally resfresh rates are chosen to give ~1 update/sec
   #else
         // seems to be slowing down??
-        nREFRESH = 20;
+        nREFRESH = 12000;
   #endif
-
+#endif
     int
         nMaxHeightGuess = 1,
         nCounter = 0,
@@ -519,13 +526,13 @@ bool CTxDB::LoadBlockIndex()
             iterator->Next();        
             continue;
         }
-        pindexNew->pprev          = InsertBlockIndex(diskindex.hashPrev);
+        pindexNew->pprev          = InsertBlockIndex(diskindex.getHashPrev());
 
 #ifdef WIN32
         n64timeStart9 = GetTimeMillis(); 
         nDelta9 += (n64timeStart9 - n64timeStart8);
 #endif
-        pindexNew->pnext          = InsertBlockIndex(diskindex.hashNext);
+        pindexNew->pnext          = InsertBlockIndex(diskindex.getHashNext());
 
 #ifdef WIN32
         n64timeStart10 = GetTimeMillis(); 
@@ -547,15 +554,28 @@ bool CTxDB::LoadBlockIndex()
         pindexNew->nBits          = diskindex.nBits;
         pindexNew->nNonce         = diskindex.nNonce;
 
-        if (pindexNew->nHeight >= bestEpochIntervalHeight &&
-            ((pindexNew->nHeight % nEpochInterval == 0) || (pindexNew->nHeight == nMainnetNewLogicBlockNumber)))
+        if (
+            pindexNew->nHeight >= bestEpochIntervalHeight &&
+            (
+             (pindexNew->nHeight % nEpochInterval == 0) ||
+             (pindexNew->nHeight == nMainnetNewLogicBlockNumber)
+            )
+           )
         {
             bestEpochIntervalHeight = pindexNew->nHeight;
             bestEpochIntervalHash = blockHash;
         }
         // Find the minimum ease (highest difficulty) when starting node
         // It will be used to calculate min difficulty (maximum ease)
-        if ((pindexNew->nHeight >= nMainnetNewLogicBlockNumber) && (nMinEase > pindexNew->nBits))
+
+        // Shouldn't this say that this asks
+        // if the height is >= newlogic start height (in MainNet only?) and
+        // nMInEase is > current ease, then
+        // set the nMinEase to the current ease (i.e max difficulty)
+        if (
+            (pindexNew->nHeight >= nMainnetNewLogicBlockNumber) &&
+            (nMinEase > pindexNew->nBits)
+           )
         {
             nMinEase = pindexNew->nBits;
         }
@@ -755,7 +775,7 @@ bool CTxDB::LoadBlockIndex()
 
 #ifdef WIN32
     if (fPrintToConsole) 
-        (void)printf( "Sorting by height...\n" );        
+        (void)printf( "Sorting by height..." );        
     #ifdef QT_GUI
     uiInterface.InitMessage(
                             _("Sorting by height...")
@@ -773,7 +793,8 @@ bool CTxDB::LoadBlockIndex()
         //vSortedByHeight.resize( mapBlockIndex.size() );
 
         int
-            nUpdatePeriod = 10000;
+            nUpdatePeriod = 50000;  // aiming for ~ 1 update/sec
+
         BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
         {
             CBlockIndex
@@ -782,13 +803,13 @@ bool CTxDB::LoadBlockIndex()
             vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
 #ifdef WIN32
             ++nCounter;
-            if( 0 == (nCounter % nUpdatePeriod) )
+            if( 0 == (nCounter % (10 * nUpdatePeriod)) )
             {
     #ifdef QT_GUI
-                uiInterface.InitMessage( strprintf( _("%7d"), nCounter ) );
+                uiInterface.InitMessage( _(".") );
     #else
                 if (fPrintToConsole) 
-                    printf( "%7d\r", nCounter );
+                    printf( "." );
     #endif
             }
 #endif        
@@ -796,11 +817,11 @@ bool CTxDB::LoadBlockIndex()
         sort(vSortedByHeight.begin(), vSortedByHeight.end());
 #ifdef WIN32
         if (fPrintToConsole) 
-            (void)printf( "\ndone\nChecking stake checksums...\n" );
+            (void)printf( "done\nChecking stake checksums...\n" );
     #ifdef _DEBUG
-        nUpdatePeriod /= 4; // speed up update for debug mode
+        nUpdatePeriod /= 20;
     #else
-        nUpdatePeriod *= 5; // slow down update for release mode
+        nUpdatePeriod /= 2;
     #endif
     #ifdef QT_GUI
         uiInterface.InitMessage( _("done") );

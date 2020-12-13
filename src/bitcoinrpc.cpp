@@ -71,7 +71,11 @@ void ThreadRPCServer3(void* parg);
 
 static inline unsigned short GetDefaultRPCPort()
 {
-    return GetBoolArg("-testnet", false)? 17687 :  7687;
+#if defined(Yac1dot0)
+    return GetBoolArg("-testnet", false)? GetArg("-port", 17787) : GetArg("-port", 7787);
+#else
+    return GetBoolArg("-testnet", false)? 17687 : 7687;
+#endif
 }
 
 Object JSONRPCError(int code, const string& message)
@@ -140,7 +144,8 @@ Value ValueFromAmount(::int64_t amount)
 
 std::string HexBits(unsigned int nBits)
 {
-    union {
+    union
+    {
         ::int32_t nBits;
         char cBits[4];
     } uBits;
@@ -242,7 +247,10 @@ Value help(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
     {
-        throw runtime_error( "help [command]\n" "List commands, or get help for a command." );
+        throw runtime_error(
+                            "help [command]\n"
+                            "List commands, or get help for a command."
+                           );
       //throw invalid_argument( "help [command]\n" "List commands, or get help for a command." );
     }
     string strCommand = "";
@@ -284,6 +292,7 @@ Value getrpcinfo(const Array& params, bool fHelp){
     Object res;
     res.push_back(Pair("active_commands",commands));
     res.push_back(Pair("logpath",GetDebugLogPathName()));
+    res.push_back(Pair("RPCport", GetDefaultRPCPort() ));
     return res;
 }
 
@@ -462,7 +471,8 @@ bool HTTPAuthorized(map<string, string>& mapHeaders)
         return false;
     string strUserPass64 = strAuth.substr(6); boost::trim(strUserPass64);
     string strUserPass = DecodeBase64(strUserPass64);
-    return TimingResistantEqual(strUserPass, strRPCUserColonPass);
+    return strUserPass == strRPCUserColonPass;
+  //return TimingResistantEqual(strUserPass, strRPCUserColonPass);
 }
 
 //
@@ -771,30 +781,30 @@ void ThreadRPCServer2(void* parg)
     {
         context.set_options(ssl::context::no_sslv2);
 
-        filesystem::path 
+        filesystem::path
             pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
 
         if (!pathCertFile.is_complete()) 
             pathCertFile = filesystem::path(GetDataDir()) / pathCertFile;
-        if (filesystem::exists(pathCertFile)) 
+        if (filesystem::exists(pathCertFile))
             context.use_certificate_chain_file(pathCertFile.string());
-        else 
-            printf("ThreadRPCServer2 ERROR: missing server certificate file %s\n", 
+        else
+            printf("ThreadRPCServer2 ERROR: missing server certificate file %s\n",
                    pathCertFile.string().c_str()
                   );
 
-        filesystem::path 
+        filesystem::path
             pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
-        if (!pathPKFile.is_complete()) 
+        if (!pathPKFile.is_complete())
             pathPKFile = filesystem::path(GetDataDir()) / pathPKFile;
-        if (filesystem::exists(pathPKFile)) 
+        if (filesystem::exists(pathPKFile))
             context.use_private_key_file(pathPKFile.string(), ssl::context::pem); // causes exceptions???
-        else 
-            printf("ThreadRPCServer2 ERROR: missing server private key file %s\n", 
+        else
+            printf("ThreadRPCServer2 ERROR: missing server private key file %s\n",
                    pathPKFile.string().c_str()
                   );
 
-        string 
+        string
             strCiphers = GetArg("-rpcsslciphers", "TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!AH:!3DES:@STRENGTH");
         SSL_CTX_set_cipher_list(context.impl(), strCiphers.c_str());
     }
@@ -861,16 +871,33 @@ void ThreadRPCServer2(void* parg)
         strerr = strprintf(_("An error occurred while setting up the RPC port %u for listening on IPv4: %s"), endpoint.port(), e.what());
     }
 
-    if (!fListening) {
-        uiInterface.ThreadSafeMessageBox(strerr, _("Error"), CClientUIInterface::OK | CClientUIInterface::MODAL);
+    if (!fListening)
+    {
+        uiInterface.ThreadSafeMessageBox(
+                                         strerr,
+                                         _("Error"),
+                                         CClientUIInterface::OK | CClientUIInterface::MODAL
+                                        );
         StartShutdown();
         return;
     }
 
-    vnThreadsRunning[THREAD_RPCLISTENER]--;
-    while (!fShutdown)
-        io_service.run_one();
-    vnThreadsRunning[THREAD_RPCLISTENER]++;
+    --vnThreadsRunning[THREAD_RPCLISTENER];
+    while( true )
+    {
+        try
+        {
+        while (!fShutdown)
+            io_service.run_one();
+        }
+        catch (std::exception& e)
+        {
+            (void)printf( "ThreadRPCServer2 exception %s" "\n", e.what());
+        }
+        if( fShutdown )
+            break;
+    }
+    ++vnThreadsRunning[THREAD_RPCLISTENER];
     StopRequests();
 }
 
@@ -933,13 +960,20 @@ void JSONRequest::parse(const Value& valRequest)
 
     // Parse params
     Value valParams = find_value(request, "params");
-    if(valParams.type() == obj_type) {
+    if(valParams.type() == obj_type)
+    {
         convertParameterObjectToArray(valMethod.get_str(), valParams);
-    } else if (valParams.type() == array_type) {
+    }
+    else if (valParams.type() == array_type)
+    {
         params = valParams.get_array();
-    } else if (valParams.type() == null_type) {
+    }
+    else if (valParams.type() == null_type)
+    {
         params = Array();
-    } else {
+    }
+    else
+    {
         throw JSONRPCError(RPC_INVALID_REQUEST, "Params must be an array");
     }
 }
@@ -949,7 +983,8 @@ static Object JSONRPCExecOne(const Value& req)
     Object rpc_result;
 
     JSONRequest jreq;
-    try {
+    try
+    {
         jreq.parse(req);
 
         Value result = tableRPC.execute(jreq.strMethod, jreq.params);
@@ -982,7 +1017,7 @@ static CCriticalSection cs_THREAD_RPCHANDLER;
 void ThreadRPCServer3(void* parg)
 {
     // Make this thread recognisable as the RPC handler
-    RenameThread("yacoin-rpchand");
+    RenameThread("yacoin-rpchandler");
 
     {
         LOCK(cs_THREAD_RPCHANDLER);
@@ -1097,10 +1132,8 @@ json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_s
                 result = pcmd->actor(params, false);
             else 
             {
-                {
-                    LOCK2(cs_main, pwalletMain->cs_wallet);
-                    result = pcmd->actor(params, false);
-                }
+                LOCK2(cs_main, pwalletMain->cs_wallet);
+                result = pcmd->actor(params, false);
             }
         }
         return result;
@@ -1199,7 +1232,7 @@ static const CRPCCommand vRPCCommands[] =
 { //  name                      function                 safemd  unlocked
   //  ------------------------  -----------------------  ------  --------
     { "help",                   &help,                   true,   false },
-    { "stop",                   &stop,                   true,   true },
+    { "stop",                   &stop,                   true,   true  },
     { "getbestblockhash",       &getbestblockhash,       true,   false },
     { "getblockcount",          &getblockcount,          true,   false },
     { "getwalletinfo",          &getwalletinfo,          true,   false },
@@ -1218,7 +1251,7 @@ static const CRPCCommand vRPCCommands[] =
     { "getinfo",                &getinfo,                true,   false },
     { "getgenerate",            &getgenerate,            true,   false },
     { "setgenerate",            &setgenerate,            true,   false },
-    { "generatetoaddress",      &generatetoaddress,      true,   true },
+    { "generatetoaddress",      &generatetoaddress,      true,   true  },
     { "getsubsidy",             &getsubsidy,             true,   false },
     { "gethashespersec",        &gethashespersec,        true,   false },
     { "getmininginfo",          &getmininginfo,          true,   false },
@@ -1280,12 +1313,12 @@ static const CRPCCommand vRPCCommands[] =
     { "signrawtransaction",     &signrawtransaction,     false,  false },
     { "sendrawtransaction",     &sendrawtransaction,     false,  false },
     { "getcheckpoint",          &getcheckpoint,          true,   false },
-    { "reservebalance",         &reservebalance,         false,  true},
-    { "checkwallet",            &checkwallet,            false,  true},
-    { "repairwallet",           &repairwallet,           false,  true},
-    { "resendtx",               &resendtx,               false,  true},
-    { "makekeypair",            &makekeypair,            false,  true},
-    { "sendalert",              &sendalert,              false,  false}
+    { "reservebalance",         &reservebalance,         false,  true  },
+    { "checkwallet",            &checkwallet,            false,  true  },
+    { "repairwallet",           &repairwallet,           false,  true  },
+    { "resendtx",               &resendtx,               false,  true  },
+    { "makekeypair",            &makekeypair,            false,  true  },
+    { "sendalert",              &sendalert,              false,  false }
 };
 
 CRPCTable::CRPCTable()
@@ -1338,12 +1371,8 @@ Array RPCConvertValues(std::string &strMethod, const std::vector<std::string> &s
     if (strMethod == "listreceivedbyaccount"  && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getbalance"             && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "getblock"               && n > 1) ConvertTo<bool>(params[1]);
-
-    if (strMethod == "getblocktimes"          && n > 0) 
-        ConvertTo<int>(params[0]);
-    if (strMethod == "getblockbynumber"       && n > 0) 
-        ConvertTo<int>(params[0]);
-
+    if (strMethod == "getblocktimes"          && n > 0) ConvertTo<int>(params[0]);
+    if (strMethod == "getblockbynumber"       && n > 0) ConvertTo<int>(params[0]);
     if (strMethod == "getblockbynumber"       && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "getblockhash"           && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "move"                   && n > 2) ConvertTo<double>(params[2]);
