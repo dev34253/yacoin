@@ -22,7 +22,8 @@
                                     // 6     20160 block length
                                     // 7 quan's changes
                                     // 8 in search of Windows Socket bug
-#define DISPLAY_VERSION_BUILD       6
+#define DISPLAY_VERSION_BUILD       7
+                                    // 6, 7 above just for testing git build
                                     // 2
 #define DISPLAY_VERSION_TESTING     01
 
