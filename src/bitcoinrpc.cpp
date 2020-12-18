@@ -1256,6 +1256,7 @@ static const CRPCCommand vRPCCommands[] =
 	{ "createcsvaddress",       &createcsvaddress,       false,  false },
 	{ "spendcsv",               &spendcsv,               false,  false },
     { "addredeemscript",        &addredeemscript,        false,  false },
+    { "describeredeemscript",   &describeredeemscript,   false,  false },
     { "getrawmempool",          &getrawmempool,          true,   false },
     { "getblock",               &getblock,               false,  false },
     { "getblockbynumber",       &getblockbynumber,       false,  false },
