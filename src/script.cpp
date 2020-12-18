@@ -231,8 +231,8 @@ const char* GetOpName(opcodetype opcode)
 
     // expanson
     case OP_NOP1                   : return "OP_NOP1";
-    case OP_NOP2                   : return "OP_NOP2";
-    case OP_NOP3                   : return "OP_NOP3";
+    case OP_CHECKLOCKTIMEVERIFY    : return "OP_CHECKLOCKTIMEVERIFY";
+    case OP_CHECKSEQUENCEVERIFY    : return "OP_CHECKSEQUENCEVERIFY";
     case OP_NOP4                   : return "OP_NOP4";
     case OP_NOP5                   : return "OP_NOP5";
     case OP_NOP6                   : return "OP_NOP6";
@@ -2440,7 +2440,7 @@ void CScript::SetCltv(int nLockTime, const CPubKey& pubKey)
 {
     this->clear();
 
-    *this << nLockTime;
+    *this << (CScriptNum)nLockTime;
     *this << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
 	*this << pubKey << OP_CHECKSIG;
 }
