@@ -20,6 +20,8 @@
  #include "init.h"
 #endif
 
+#include <sstream>
+
 using namespace json_spirit;
 
 using std::runtime_error;
@@ -893,6 +895,142 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     return CBitcoinAddress(innerID).ToString();
 }
 
+Value spendcltv(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 3 || params.size() > 5)
+    {
+	    string msg = "spendcltv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
+            "send coin from cltv address to another address\n";
+        throw runtime_error(msg);
+    }
+
+    // Check if cltv address exist in the wallet
+    CBitcoinAddress address = CBitcoinAddress(params[0].get_str());
+    CScript scriptPubKey;
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid cltv address");
+    scriptPubKey.SetDestination(address.Get());
+    if (!IsMine(*pwalletMain,scriptPubKey))
+    	throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet doesn't manage coins in this address");
+
+    // Get redeemscript
+    CTxDestination tmpAddr;
+    CScript redeemScript;
+    if (ExtractDestination(scriptPubKey, tmpAddr))
+    {
+        const CScriptID& hash = boost::get<CScriptID>(tmpAddr);
+        if (!pwalletMain->GetCScript(hash, redeemScript))
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet doesn't manage redeemscript of this address");
+    }
+
+    // Scan information from redeemscript to get lock time
+    CScript::const_iterator pc = redeemScript.begin();
+    opcodetype opcode;
+    vector<unsigned char> vch;
+    if (!redeemScript.GetOp(pc, opcode, vch))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet can't get lock time from redeemscript");
+    const CScriptNum nLockTime(vch);
+
+    // Check if destination address is valid
+    CBitcoinAddress destAddress(params[1].get_str());
+    if (!destAddress.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid destination address");
+
+    // Check if number coins in cltv address is enough to spend
+    int64_t nAmount = AmountFromValue(params[2]);
+    int64_t nTotalValue = 0;
+    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    {
+        const CWalletTx& wtx = (*it).second;
+        if (wtx.IsCoinBase() || wtx.IsCoinStake() || !wtx.IsFinal())
+            continue;
+
+        BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+            if (txout.scriptPubKey == scriptPubKey)
+            	nTotalValue += txout.nValue;
+    }
+
+    if (nTotalValue < nAmount)
+    	throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Not enough coin in the wallet to spend");
+
+    // Wallet comments
+    CWalletTx wtx;
+    if (params.size() > 3 && params[3].type() != null_type && !params[3].get_str().empty())
+        wtx.mapValue["comment"] = params[3].get_str();
+    if (params.size() > 4 && params[4].type() != null_type && !params[4].get_str().empty())
+        wtx.mapValue["to"]      = params[4].get_str();
+
+    if (pwalletMain->IsLocked())
+        throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
+
+    // Set current time for nLockTime
+    if (nLockTime < LOCKTIME_THRESHOLD)
+        wtx.nLockTime = nBestHeight;
+    else
+        wtx.nLockTime = GetAdjustedTime();
+
+    string strError = pwalletMain->SendMoneyToDestination(destAddress.Get(), nAmount, wtx, false, &scriptPubKey);
+    if (strError != "")
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+
+    return wtx.GetHash().GetHex();
+}
+
+Value createcltvaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+    {
+        string msg = "createcltvaddress <lock_time> [account]\n"
+            "Create a P2SH address which lock coins until lock_time\n";
+        throw runtime_error(msg);
+    }
+
+    // Generate a new key that is added to wallet
+    if (!pwalletMain->IsLocked())
+        pwalletMain->TopUpKeyPool();
+
+    CPubKey pubkey;
+    if (!pwalletMain->GetKeyFromPool(pubkey, false))
+        throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out, please call keypoolrefill first");
+
+    // Get lock time
+    int nLockTime = params[0].get_int();
+
+    string strAccount;
+    if (params.size() > 1)
+        strAccount = AccountFromValue(params[1]);
+
+    // Construct using pay-to-script-hash:
+    CScript inner;
+    inner.SetCltv(nLockTime, pubkey);
+
+    if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
+    throw runtime_error(
+        strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
+
+    CScriptID innerID = inner.GetID();
+    pwalletMain->AddCScript(inner);
+
+    CBitcoinAddress address(innerID);
+
+    std::string warnMsg = "Any coins sent to this cltv address will be locked until ";
+    if (nLockTime < LOCKTIME_THRESHOLD)
+    {
+        std::stringstream ss;
+        ss << nLockTime;
+        warnMsg += "block height " + ss.str();
+    }
+    else
+        warnMsg += DateTimeStrFormat(nLockTime);
+    Object result;
+    result.push_back(Pair("cltv address", address.ToString()));
+    result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
+    result.push_back(Pair("Warning", warnMsg));
+
+    pwalletMain->SetAddressBookName(innerID, strAccount);
+    return result;
+}
+
 Value addredeemscript(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
@@ -1264,7 +1402,7 @@ Value listaccounts(const Array& params, bool fHelp)
 
     for (
         map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); 
-        it != pwalletMain->mapWallet.end(); 
+        it != pwalletMain->mapWallet.end();
         ++it
         )
     {
