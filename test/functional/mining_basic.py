@@ -58,7 +58,7 @@ class MiningTest(BitcoinTestFramework):
         self.log.info('Nfactor '+str(mining_info['Nfactor']))
         self.log.info('N '+str(mining_info['N']))
 
-        assert_equal(mining_info['blocks'], 0)
+        assert_equal(mining_info['blocks'], 1)
         assert_equal(mining_info['currentblocktx'], 0)
         # assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0002441371325370'))
         # assert_equal(mining_info['currentblocksize'], 1000)
