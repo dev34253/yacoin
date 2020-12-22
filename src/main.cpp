@@ -3577,7 +3577,12 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 
     // Size limits
     if (vtx.empty() || vtx.size() > GetMaxSize(MAX_BLOCK_SIZE) || ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE))
+    {
+        if (vtx.empty()) printf("vtx.empty\n");
+        if (vtx.size() > GetMaxSize(MAX_BLOCK_SIZE)) printf("vtx.size > getmaxsize\n");
+        if (::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE)) printf("vtx getserialsize\n");
         return DoS(100, error("CheckBlock () : size limits failed"));
+    }
 
     bool fProofOfStake = IsProofOfStake();
 

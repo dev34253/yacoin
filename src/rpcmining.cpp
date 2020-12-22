@@ -108,7 +108,12 @@ Value generatetoaddress(const Array& params, bool fHelp){
                 "nblocks - How many blocks are generated immediately.\n"
                 "address - The address to send the newly generated bitcoin to.\n"
                 "maxtries - How many iterations to try.");
-    int nblocks = params[0].get_int();
+    int nblocks = -1;
+    try {
+        nblocks = params[0].get_int();
+    } catch(...) {
+        nblocks = atoi(params[0].get_str().c_str());
+    }
     std::string address = "";
     int maxtries = -1;
     if(params.size()>1) {
