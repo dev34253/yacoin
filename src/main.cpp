@@ -134,7 +134,11 @@ map<uint256, CBlockIndex*> mapBlockIndex;
 set<pair<COutPoint, unsigned int> > setStakeSeen;
 
 // are all of these undocumented numbers a function of Nfactor?  Cpu power? Other???
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
 CBigNum bnProofOfWorkLimit(~uint256(0) >> 20);
+#else
+CBigNum bnProofOfWorkLimit(~uint256(0) >> 3);
+#endif
 
 CBigNum bnProofOfStakeLegacyLimit(~uint256(0) >> 24); 
 CBigNum bnProofOfStakeLimit(~uint256(0) >> 27); 
@@ -158,7 +162,12 @@ bool recalculateMinEase = false;
 
 static CBigNum bnProofOfStakeTestnetLimit(~uint256(0) >> 20);
 
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
 static CBigNum bnInitialHashTarget(~uint256(0) >> 20);
+#else
+static CBigNum bnInitialHashTarget(~uint256(0) >> 8);
+#endif
+
 static CBigNum bnInitialHashTargetTestNet(~uint256(0) >> 8);    // test
 //static CBigNum bnInitialHashTarget(~uint256(0) >> 16);
 
