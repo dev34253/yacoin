@@ -37,7 +37,7 @@ jobs:
         with:
           name: yacoind-low-difficulty-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoind-low-difficulty
-    build-ubuntu-1804:
+  build-ubuntu-1804:
     runs-on: ubuntu-latest  
     steps:
       - uses: actions/checkout@v2
