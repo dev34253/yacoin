@@ -19,12 +19,13 @@ jobs:
           echo $GITHUB_SHA
           docker pull dev34253/yacoin-build:ubuntu.16.04
           docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER dev34253/yacoin-build:ubuntu.16.04
-          mv /home/runner/work/yacoin/yacoin/release/yacoind /home/runner/work/yacoin/yacoin/yacoind-release
+          ls /home/runner/work/yacoin/yacoin/release/yacoind 
+          # /home/runner/work/yacoin/yacoin/yacoind-release
           # Testing commented for now since the test is long running due to high nFactor
           docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /bin/bash /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 -c "cd src && make clean && ./autogen.sh && ./configure --enable-low-difficulty-for-development && make"          
           # docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 -j 1
-          mv /home/runner/work/yacoin/yacoin/release/yacoind /home/runner/work/yacoin/yacoin/release/yacoind-low-difficulty
-          mv /home/runner/work/yacoin/yacoin/yacoind-release /home/runner/work/yacoin/yacoin/release/yacoind 
+          # mv /home/runner/work/yacoin/yacoin/release/yacoind /home/runner/work/yacoin/yacoin/release/yacoind-low-difficulty
+          # mv /home/runner/work/yacoin/yacoin/yacoind-release /home/runner/work/yacoin/yacoin/release/yacoind 
       - uses: actions/upload-artifact@v1
         with:
           name: yacoind-ubuntu-16.04
