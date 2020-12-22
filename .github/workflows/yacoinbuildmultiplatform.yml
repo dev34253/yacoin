@@ -27,10 +27,6 @@ jobs:
         with:
           name: yacoin-qt-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
-      - uses: actions/upload-artifact@v1
-        with:
-          name: yacoind-low-difficulty-16.04
-          path: /home/runner/work/yacoin/yacoin/release/yacoind-low-difficulty
   build-ubuntu-1604-low-difficulty:
     runs-on: ubuntu-latest  
     steps:
@@ -39,7 +35,7 @@ jobs:
         run: |
           docker pull dev34253/yacoin-build:ubuntu.16.04
           docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /bin/bash dev34253/yacoin-build:ubuntu.16.04 -c "cd src && make clean && ./autogen.sh && ./configure --enable-low-difficulty-for-development && make"
-          # docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 -j 1
+          docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 -j 1 /src/test/functional/feature_help.py 
       - uses: actions/upload-artifact@v1
         with:
           name: yacoind-low-difficulty-16.04
