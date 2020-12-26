@@ -159,9 +159,9 @@ Value getmininginfo(const Array& params, bool fHelp)
     obj.push_back(Pair("difficulty",    diff));
 
     // YACOIN TODO - May need to re-enable blockvalue if used in any custom api's
-    // obj.push_back(Pair("blockvalue",    (uint64_t)GetProofOfWorkReward(GetLastBlockIndex(pindexBest, false)->nBits)));
+    obj.push_back(Pair("blockvalue",    GetProofOfWorkReward(GetLastBlockIndex(pindexBest, false)->nBits)));
     // WM - Report current Proof-of-Work block reward.
-    obj.push_back(Pair("powreward", (Value_type)GetProofOfWorkReward(GetLastBlockIndex(pindexBest, false)->nBits, 0, true) / 1000000.0));
+    obj.push_back(Pair("powreward", ((double)GetProofOfWorkReward(GetLastBlockIndex(pindexBest, false)->nBits, 0, true) / (double)COIN)));
     obj.push_back(Pair("netmhashps",     GetPoWMHashPS()));
     obj.push_back(Pair("netstakeweight", GetPoSKernelPS()));
     obj.push_back(Pair("errors",        GetWarnings("statusbar")));

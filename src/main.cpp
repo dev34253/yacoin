@@ -1506,6 +1506,11 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
                 currentBlockReward =
                     (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
             }
+#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT
+            if(currentBlockReward == 0) { // this is an edge case when starting the chain
+                currentBlockReward = (::int64_t)1E13;
+            }
+#endif
             return currentBlockReward;
         }
 
@@ -1548,6 +1553,11 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
                 }
             }
         }
+#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT
+        if(nBlockRewardExcludeFees == 0) { // this is an edge case when starting the chain
+            nBlockRewardExcludeFees = (::int64_t)1E13;
+        }
+#endif        
         return nBlockRewardExcludeFees;
     }
 #endif
