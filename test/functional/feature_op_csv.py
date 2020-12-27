@@ -77,7 +77,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         self.log.info('Balance node 0: '+str(balance_0))
         self.log.info('Balance node 1: '+str(balance_1))
         
-        csv_info = self.nodes[1].createcsvaddress(1200, 'csv_1')
+        csv_info = self.nodes[1].createcsvaddress(1200, False, 'csv_1')
         csv_address = csv_info['csv address']
         csv_redeemscript = csv_info['redeemScript']
         testaddress=self.nodes[1].getaddressesbyaccount('csv_1')[0]
@@ -103,7 +103,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         # self.setmocktimeforallnodes(TIME_GENESIS_BLOCK + 40*60+1)
         self.mine_blocks(0, 10)
         self.sync_all()
-        self.mine_blocks(1,10)
+        self.mine_blocks(1, 10)
         self.sync_all()
         # assert_equal(self.nodes[0].getblockcount(), 40)
         # assert_equal(self.nodes[1].getblockcount(), 40)
@@ -113,12 +113,12 @@ class OP_CSV_Test(BitcoinTestFramework):
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
 
-        self.mine_blocks(0, 6)
+        self.mine_blocks(0, 10)
         self.sync_all()
         # assert_equal(self.nodes[0].getblockcount(), 46)
         # assert_equal(self.nodes[1].getblockcount(), 46)
 
-        receiver_balance = self.node[0].getreceivedbyaccount('receiver')
+        receiver_balance = self.nodes[0].getreceivedbyaccount('receiver')
         assert_equal(receiver_balance, Decimal('10.0'))
 
 if __name__ == '__main__':
