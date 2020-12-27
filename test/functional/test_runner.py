@@ -71,6 +71,7 @@ BASE_SCRIPTS = [
     'interface_rpc.py',
     'mining_basic.py',
     'feature_op_cltv.py',
+    'feature_basic_transfer.py',
     'feature_block_reward.py',
     'rpc_check.py',
     'feature_set_min_fee.py'

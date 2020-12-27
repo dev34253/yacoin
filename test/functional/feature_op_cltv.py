@@ -47,21 +47,24 @@ class OP_CLTV_Test(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.supports_cli = False
         self.mocktime = TIME_GENESIS_BLOCK
-        
+
+    def setmocktimeforallnodes(self, mocktime):
+        self.mocktime = mocktime
+        for node in self.nodes:
+            node.setmocktime(mocktime)
+
     def mine_blocks(self, nodeId, numberOfBlocks):
         timeBetweenBlocks = 60
         for i in range(numberOfBlocks):
-            self.nodes[nodeId].setmocktime(self.mocktime)
+            self.setmocktimeforallnodes(self.mocktime)
             self.mocktime=self.mocktime+timeBetweenBlocks      
             self.nodes[nodeId].generate(1)
 
     def run_test(self):
-        print('1')
         self.mine_blocks(0, 10)
         self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 10)
         assert_equal(self.nodes[1].getblockcount(), 10)
-        print('2')
         self.mine_blocks(1, 10)
         self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 20)
@@ -74,7 +77,7 @@ class OP_CLTV_Test(BitcoinTestFramework):
         self.log.info('Balance node 0: '+str(balance_0))
         self.log.info('Balance node 1: '+str(balance_1))
         
-        cltv_info = self.nodes[1].createcltvaddress(TIME_GENESIS_BLOCK+60*60, 'cltv_1')
+        cltv_info = self.nodes[1].createcltvaddress(TIME_GENESIS_BLOCK+40*60, 'cltv_1')
         cltv_address = cltv_info['cltv address']
         cltv_redeemscript = cltv_info['redeemScript']
         testaddress=self.nodes[1].getaddressesbyaccount('cltv_1')[0]
@@ -91,6 +94,30 @@ class OP_CLTV_Test(BitcoinTestFramework):
         received_coins = self.nodes[1].getreceivedbyaccount('cltv_1')
         assert_equal(received_coins, Decimal('100.0'))
 
+        receiver_address = self.nodes[0].getnewaddress('receiver')
+        receiver_balance = self.nodes[0].getreceivedbyaccount('receiver')
+        assert_equal(receiver_balance, Decimal('0.0'))
+
+        assert_raises_rpc_error(-1, "unknown!?", self.nodes[1].spendcltv,cltv_address, receiver_address, 10.0)
+
+        self.setmocktimeforallnodes(TIME_GENESIS_BLOCK + 40*60+1)
+        self.mine_blocks(0, 1)
+        self.sync_all()
+        assert_equal(self.nodes[0].getblockcount(), 31)
+        assert_equal(self.nodes[1].getblockcount(), 31)
+
+        transaction_id_cltv = self.nodes[1].spendcltv(cltv_address, receiver_address, 10.0)
+        tx_details = self.nodes[1].gettransaction(transaction_id_cltv)
+        assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
+        assert_equal(tx_details['confirmations'], Decimal('0'))
+
+        self.mine_blocks(0, 6)
+        self.sync_all()
+        assert_equal(self.nodes[0].getblockcount(), 37)
+        assert_equal(self.nodes[1].getblockcount(), 37)
+
+        receiver_balance = self.node[0].getreceivedbyaccount('receiver')
+        assert_equal(receiver_balance, Decimal('10.0'))
 
 if __name__ == '__main__':
     OP_CLTV_Test().main()
