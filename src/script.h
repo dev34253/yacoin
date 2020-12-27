@@ -265,6 +265,7 @@ enum txnouttype
     TX_SCRIPTHASH,
     TX_MULTISIG,
 	TX_CLTV,
+	TX_CSV,
     TX_NULL_DATA,
 };
 
@@ -716,6 +717,7 @@ public:
     void SetDestination(const CTxDestination& address);
     void SetMultisig(int nRequired, const std::vector<CKey>& keys);
     void SetCltv(int nLockTime, const CPubKey& pubKey);
+    void SetCsv(::uint32_t nSequence, const CPubKey& pubKey);
 
     void PrintHex() const
     {
@@ -767,6 +769,7 @@ bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType);
 isminetype IsMine(const CKeyStore& keystore, const CScript& scriptPubKey);
 isminetype IsMine(const CKeyStore& keystore, const CTxDestination& dest);
 bool IsSpendableCltvUTXO(const CKeyStore &keystore, const CScript& scriptPubKey);
+bool IsSpendableCsvUTXO(const CKeyStore &keystore, const CScript& scriptPubKey);
 void ExtractAffectedKeys(const CKeyStore &keystore, const CScript& scriptPubKey, std::vector<CKeyID> &vKeys);
 bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet);
 bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<CTxDestination>& addressRet, int& nRequiredRet);

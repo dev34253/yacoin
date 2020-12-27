@@ -399,7 +399,7 @@ unsigned int LimitOrphanTxSize(unsigned int nMaxOrphans)
 }
 
 /**
- * Calculates the block height and previous block's median time past at
+ * Calculates the block height and previous block's time at
  * which the transaction will be considered final in the context of BIP 68.
  * Also removes from the vector of input heights any entries which did not
  * correspond to sequence locked inputs as they do not affect the calculation.
@@ -448,8 +448,7 @@ static std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx,
 
             // Time-based relative lock-times are measured from the
             // smallest allowed timestamp of the block containing the
-            // txout being spent, which is the median time past of the
-            // block prior.
+            // txout being spent, which is the time of the block prior.
             nMinTime = std::max(nMinTime, nCoinTime + (int64_t)((txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_MASK) << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY) - 1);
         }
         else
@@ -473,10 +472,10 @@ static bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64
     }
     else if (lockPair.second >= nBlockTime)
     {
-        printf("EvaluateSequenceLocks, failed to use relative time-lock coins, current block time  = %ld"
-                ", the coin inputs can only be used after a block with block time > %d was mined\n",
-                DateTimeStrFormat(nBlockTime),
-                DateTimeStrFormat(lockPair.second));
+        printf("EvaluateSequenceLocks, failed to use relative time-lock coins, current block time  = %ld (%s)"
+                ", the coin inputs can only be used after a block with block time > %ld (%s) is mined\n",
+                nBlockTime, DateTimeStrFormat(nBlockTime).c_str(),
+                lockPair.second, DateTimeStrFormat(lockPair.second).c_str());
         return false;
     }
 
@@ -494,12 +493,12 @@ bool CheckSequenceLocks(const CTransaction &tx, int flags)
 
     CBlockIndex index;
     index.pprev = pindexBest;
-    // CheckSequenceLocks() uses chainActive.Height()+1 to evaluate
+    // CheckSequenceLocks() uses pindexBest->nHeight+1 to evaluate
     // height based locks because when SequenceLocks() is called within
-    // CBlock::AcceptBlock(), the height of the block *being*
-    // evaluated is what is used. Thus if we want to know if a
-    // transaction can be part of the *next* block, we need to call
-    // SequenceLocks() with one more than chainActive.Height().
+    // ConnectBlock(), the height of the block *being*
+    // evaluated is what is used.
+    // Thus if we want to know if a transaction can be part of the
+    // *next* block, we need to use one more than pindexBest->nHeight
     index.nHeight = pindexBest->nHeight + 1;
 
     std::vector<int> prevheights;
@@ -996,8 +995,6 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
         // Only accept BIP68 sequence locked transactions that can be mined in the next
         // block; we don't want our mempool filled up with transactions that can't
         // be mined yet.
-        // Must keep pool.cs for this unless we change CheckSequenceLocks to take a
-        // CoinsViewCache instead of create its own
         if (!CheckSequenceLocks(tx, STANDARD_LOCKTIME_VERIFY_FLAGS))
         {
             return error("CTxMemPool::accept() : non-BIP68-final transaction");

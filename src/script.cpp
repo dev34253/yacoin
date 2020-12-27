@@ -231,8 +231,8 @@ const char* GetOpName(opcodetype opcode)
 
     // expanson
     case OP_NOP1                   : return "OP_NOP1";
-    case OP_NOP2                   : return "OP_NOP2";
-    case OP_NOP3                   : return "OP_NOP3";
+    case OP_CHECKLOCKTIMEVERIFY    : return "OP_CHECKLOCKTIMEVERIFY";
+    case OP_CHECKSEQUENCEVERIFY    : return "OP_CHECKSEQUENCEVERIFY";
     case OP_NOP4                   : return "OP_NOP4";
     case OP_NOP5                   : return "OP_NOP5";
     case OP_NOP6                   : return "OP_NOP6";
@@ -1423,6 +1423,8 @@ bool CheckSequence(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     const int64_t txToSequenceMasked = txToSequence & nLockTimeMask;
     const CScriptNum nSequenceMasked = nSequence & nLockTimeMask;
 
+    printf("CheckLockTime(), sequence of csv address = %d, sequence number of the input = %ld\n", nSequence, txToSequence);
+
     // There are two kinds of nSequence: lock-by-blockheight
     // and lock-by-blocktime, distinguished by whether
     // nSequenceMasked < CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG.
@@ -1441,7 +1443,10 @@ bool CheckSequence(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     // Now that we know we're comparing apples-to-apples, the
     // comparison is a simple numeric one.
     if (nSequenceMasked > txToSequenceMasked)
+    {
+        printf("CheckSequence(), coins are still being locked, can't use them until reaching lock time\n");
         return false;
+    }
 
     return true;
 }
@@ -1558,6 +1563,9 @@ bool Solver(
 
         // CLTV transaction, sender provides hash of pubkey, receiver provides redeemscript and signature
         mTemplates.insert(make_pair(TX_CLTV, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
+
+        // CSV transaction, sender provides hash of pubkey, receiver provides redeemscript and signature
+        mTemplates.insert(make_pair(TX_CSV, CScript() << OP_SMALLDATA << OP_NOP3 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
 
         if (!fUseOld044Rules)
         {   // Empty, provably prunable, data-carrying output
@@ -1758,6 +1766,7 @@ bool Solver(
         return false;
     case TX_PUBKEY:
     case TX_CLTV:
+    case TX_CSV:
         keyID = CPubKey(vSolutions[0]).GetID();
         return Sign1(keyID, keystore, hash, nHashType, scriptSigRet);
     case TX_PUBKEYHASH:
@@ -1790,6 +1799,7 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
     case TX_NULL_DATA:
         return 1;
     case TX_CLTV:
+    case TX_CSV:
     case TX_PUBKEY:
         return 1;
     case TX_PUBKEYHASH:
@@ -1897,6 +1907,41 @@ bool IsSpendableCltvUTXO(const CKeyStore &keystore,
 	return false;
 }
 
+bool IsSpendableCsvUTXO(const CKeyStore &keystore,
+        const CScript &scriptPubKey)
+{
+    vector<valtype> vSolutions;
+    txnouttype whichType;
+    if (!Solver(scriptPubKey, whichType, vSolutions)) {
+        return false;
+    }
+
+    switch (whichType)
+    {
+    case TX_SCRIPTHASH:
+    {
+        CScriptID scriptID = CScriptID(uint160(vSolutions[0]));
+        CScript subscript;
+        if (keystore.GetCScript(scriptID, subscript))
+        {
+            return IsSpendableCsvUTXO(keystore, subscript);
+        }
+        break;
+    }
+    case TX_CSV:
+    {
+        CKeyID keyID = CPubKey(vSolutions[0]).GetID();
+        if (keystore.HaveKey(keyID))
+        {
+            return true;
+        }
+        break;
+    }
+    }
+
+    return false;
+}
+
 isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
 {
     vector<valtype> vSolutions;
@@ -1947,6 +1992,7 @@ isminetype IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
         break;
     }
     case TX_CLTV:
+    case TX_CSV:
     {
        keyID = CPubKey(vSolutions[0]).GetID();
         if (keystore.HaveKey(keyID))
@@ -2394,9 +2440,18 @@ void CScript::SetCltv(int nLockTime, const CPubKey& pubKey)
 {
     this->clear();
 
-    *this << nLockTime;
+    *this << (CScriptNum)nLockTime;
     *this << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
 	*this << pubKey << OP_CHECKSIG;
+}
+
+void CScript::SetCsv(::uint32_t nSequence, const CPubKey& pubKey)
+{
+    this->clear();
+
+    *this << (CScriptNum)nSequence;
+    *this << OP_CHECKSEQUENCEVERIFY << OP_DROP;
+    *this << pubKey << OP_CHECKSIG;
 }
 #ifdef _MSC_VER
     #include "msvc_warnings.pop.h"

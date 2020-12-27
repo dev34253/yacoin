@@ -1253,7 +1253,10 @@ static const CRPCCommand vRPCCommands[] =
     { "addmultisigaddress",     &addmultisigaddress,     false,  false },
 	{ "createcltvaddress",     	&createcltvaddress,	     false,  false },
 	{ "spendcltv",     			&spendcltv,	     		 false,  false },
+	{ "createcsvaddress",       &createcsvaddress,       false,  false },
+	{ "spendcsv",               &spendcsv,               false,  false },
     { "addredeemscript",        &addredeemscript,        false,  false },
+    { "describeredeemscript",   &describeredeemscript,   false,  false },
     { "getrawmempool",          &getrawmempool,          true,   false },
     { "getblock",               &getblock,               false,  false },
     { "getblockbynumber",       &getblockbynumber,       false,  false },
@@ -1381,6 +1384,9 @@ Array RPCConvertValues(std::string &strMethod, const std::vector<std::string> &s
     if (strMethod == "addmultisigaddress"     && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "createcltvaddress"      && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "spendcltv"         	  && n > 2) ConvertTo<boost::int64_t>(params[2]);
+    if (strMethod == "createcsvaddress"       && n > 0) ConvertTo<boost::int64_t>(params[0]);
+    if (strMethod == "createcsvaddress"       && n > 1) ConvertTo<bool>(params[1]);
+    if (strMethod == "spendcsv"               && n > 2) ConvertTo<boost::int64_t>(params[2]);
     if (strMethod == "listunspent"            && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "listunspent"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "listunspent"            && n > 2) ConvertTo<Array>(params[2]);
