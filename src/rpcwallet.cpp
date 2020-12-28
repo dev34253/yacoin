@@ -1071,12 +1071,6 @@ Value spendcltv(const Array& params, bool fHelp)
     if (pwalletMain->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
-    // Set current time for nLockTime
-    if (nLockTime < LOCKTIME_THRESHOLD)
-        wtx.nLockTime = nBestHeight;
-    else
-        wtx.nLockTime = GetAdjustedTime();
-
     string strError = pwalletMain->SendMoneyToDestination(destAddress.Get(), nAmount, wtx, false, &scriptPubKey);
     if (strError != "")
         throw JSONRPCError(RPC_WALLET_ERROR, strError);

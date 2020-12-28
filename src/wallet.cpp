@@ -1938,11 +1938,10 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
                     // In order nLockTime and OP_CHECKLOCKTIMEVERIFY can work, set nSequence to another value which different with maxint
                     unsigned int nSequenceIn = CTxIn::SEQUENCE_FINAL;
                     const CTxOut& txout = coin.first->vout[coin.second];
-                    if (IsSpendableCltvUTXO(txout))
-                    {
-                        nSequenceIn = 0;
-                    }
-                    else if (IsSpendableCsvUTXO(txout)) // In order nSequence and OP_CHECKSEQUENCEVERIFY can work, set nSequence of input = nSequence of csv address
+                    bool isSpendableCltv = IsSpendableCltvUTXO(txout);
+                    bool isSpendableCsv = IsSpendableCsvUTXO(txout);
+
+                    if (isSpendableCltv || isSpendableCsv)
                     {
                         // Get redeemscript
                         CTxDestination tmpAddr;
@@ -1965,7 +1964,17 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
                         {
                             printf("CWallet::CreateTransaction, Wallet can't get lock time from redeemscript\n");
                         }
-                        nSequenceIn = CScriptNum(vch).getint();
+
+                        if (isSpendableCltv)
+                        {
+                            nSequenceIn = 0;
+                            wtxNew.nLockTime = CScriptNum(vch).getint();
+                        }
+                        else //isSpendableCsv
+                        {
+                            nSequenceIn = CScriptNum(vch).getint();
+                        }
+
                     }
                     wtxNew.vin.push_back(
                             CTxIn(coin.first->GetHash(), coin.second, CScript(), nSequenceIn));
