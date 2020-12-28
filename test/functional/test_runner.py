@@ -72,6 +72,7 @@ BASE_SCRIPTS = [
     'mining_basic.py',
     'feature_op_cltv.py',
     'feature_op_csv.py',
+    'feature_describe_redeemscript.py',
     'feature_basic_transfer.py',
     'feature_block_reward.py',
     'rpc_check.py',

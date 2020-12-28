@@ -114,12 +114,13 @@ class OP_CSV_Test(BitcoinTestFramework):
         self.log.info(str(tx_details))
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
+        
         self.mine_blocks(1, 10)
         self.log_accounts("after spendcsv")
 
         tx_details = self.nodes[1].gettransaction(transaction_id_csv)
         self.log.info(str(tx_details))
-        assert_equal(tx_details['confirmations'], Decimal('0'))
+        assert_equal(tx_details['confirmations'], Decimal('10'))
 
         receiver_balance = self.nodes[0].getreceivedbyaccount('receiver')
         self.log.info('Receiver balance: '+str(receiver_balance))
