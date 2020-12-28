@@ -13,7 +13,6 @@ import time
 from decimal import Decimal
 
 from test_framework.blocktools import (
-    create_coinbase,
     TIME_GENESIS_BLOCK,
 )
 from test_framework.messages import (
@@ -59,14 +58,18 @@ class OP_CSV_Test(BitcoinTestFramework):
             self.setmocktimeforallnodes(self.mocktime)
             self.mocktime=self.mocktime+timeBetweenBlocks      
             self.nodes[nodeId].generate(1)
+        self.sync_all()
+
+    def log_accounts(self, description):
+        node_0_accounts = self.nodes[0].listaccounts()
+        node_1_accounts = self.nodes[1].listaccounts()
+        self.log.info('List accounts 0 '+description+': '+str(node_0_accounts))
+        self.log.info('List accounts 1 '+description+': '+str(node_1_accounts))
 
     def run_test(self):
+        self.log_accounts("init")
         self.mine_blocks(0, 10)
-        self.sync_all()
-        assert_equal(self.nodes[0].getblockcount(), 10)
-        assert_equal(self.nodes[1].getblockcount(), 10)
         self.mine_blocks(1, 10)
-        self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 20)
         assert_equal(self.nodes[1].getblockcount(), 20)
         
@@ -100,25 +103,30 @@ class OP_CSV_Test(BitcoinTestFramework):
 
         assert_raises_rpc_error(-1, "unknown!?", self.nodes[1].spendcsv,csv_address, receiver_address, 10.0)
 
-        # self.setmocktimeforallnodes(TIME_GENESIS_BLOCK + 40*60+1)
         self.mine_blocks(0, 10)
         self.sync_all()
         self.mine_blocks(1, 10)
         self.sync_all()
-        # assert_equal(self.nodes[0].getblockcount(), 40)
-        # assert_equal(self.nodes[1].getblockcount(), 40)
 
+        self.log_accounts("before spendcsv")
         transaction_id_csv = self.nodes[1].spendcsv(csv_address, receiver_address, 10.0)
         tx_details = self.nodes[1].gettransaction(transaction_id_csv)
+        self.log.info(str(tx_details))
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
+        self.mine_blocks(1, 10)
+        self.log_accounts("after spendcsv")
 
-        self.mine_blocks(0, 10)
-        self.sync_all()
-        # assert_equal(self.nodes[0].getblockcount(), 46)
-        # assert_equal(self.nodes[1].getblockcount(), 46)
+        tx_details = self.nodes[1].gettransaction(transaction_id_csv)
+        self.log.info(str(tx_details))
+        assert_equal(tx_details['confirmations'], Decimal('0'))
 
         receiver_balance = self.nodes[0].getreceivedbyaccount('receiver')
+        self.log.info('Receiver balance: '+str(receiver_balance))
+
+        balance_csv_1 = self.nodes[1].getreceivedbyaccount('csv_1')
+        self.log.info('csv_1 balance: '+str(balance_csv_1))
+
         assert_equal(receiver_balance, Decimal('10.0'))
 
 if __name__ == '__main__':

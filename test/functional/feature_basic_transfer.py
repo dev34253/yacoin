@@ -56,26 +56,33 @@ class BasicTransfer_Test(BitcoinTestFramework):
             self.setmocktimeforallnodes(self.mocktime)
             self.mocktime=self.mocktime+timeBetweenBlocks      
             self.nodes[nodeId].generate(1)
+        self.sync_all()
+
+    def log_accounts(self, description):        
+        node_0_accounts = self.nodes[0].listaccounts()
+        node_1_accounts = self.nodes[1].listaccounts()
+        self.log.info('List accounts 0 '+description+': '+str(node_0_accounts))
+        self.log.info('List accounts 1 '+description+': '+str(node_1_accounts))
 
     def run_test(self):
+        address_0 = self.nodes[0].getaccountaddress('')
+        address_1 = self.nodes[1].getaccountaddress('')
+        self.log.info('Address 0: '+str(address_0))
+        self.log.info('Address 1: '+str(address_1))
+
         self.mine_blocks(0, 10)
-        self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 10)
         assert_equal(self.nodes[1].getblockcount(), 10)
         
         balance_0 = self.nodes[0].getbalance()
         balance_1 = self.nodes[1].getbalance()
-        assert(balance_0 > 10000)
+        assert_equal(balance_0, Decimal('50000000.0'))
         assert_equal(balance_1, Decimal('0.0'))
 
         self.log.info('Balances after initial mining')
         self.log.info('Balance node 0: '+str(balance_0))
         self.log.info('Balance node 1: '+str(balance_1))
-
-        address_0 = self.nodes[0].getaccountaddress('""')
-        address_1 = self.nodes[1].getaccountaddress('""')
-        self.log.info('Address 0: '+str(address_0))
-        self.log.info('Address 1: '+str(address_1))
+        self.log_accounts("after 10")
 
         transaction_id = self.nodes[0].sendtoaddress(address_1, 100.0)
         tx_details = self.nodes[0].gettransaction(transaction_id)
@@ -83,13 +90,23 @@ class BasicTransfer_Test(BitcoinTestFramework):
         assert_equal(tx_details['vout'][1]['value'],Decimal('100.0'))
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0],address_1)
         assert_equal(tx_details['confirmations'],Decimal('0'))
-        
-        self.sync_all()
-        self.mine_blocks(0, 10)
-        self.sync_all()
+                
+        self.mine_blocks(0, 10)        
+        self.log_accounts("after 20")
         assert_equal(self.nodes[0].getblockcount(), 20)
-        new_balance_1 = self.nodes[1].getbalance()
-        assert_equal(new_balance_1, Decimal('100.0'))
+        balance_0 = self.nodes[0].getbalance()
+        balance_1 = self.nodes[1].getbalance()
+        assert_approx(balance_0, 89999920.523877)
+        assert_equal(balance_1, Decimal('100.0'))
+        node_0_accounts = self.nodes[0].listaccounts()
+        node_1_accounts = self.nodes[1].listaccounts()
+        assert_equal(node_0_accounts[''],balance_0)
+        assert_equal(node_1_accounts[''],balance_1)
+
+        tx_details = self.nodes[0].gettransaction(transaction_id)
+        self.log.info(str(tx_details))
+        assert_equal(tx_details['confirmations'],Decimal('10'))
+        
 
 if __name__ == '__main__':
     BasicTransfer_Test().main()
