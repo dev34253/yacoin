@@ -197,13 +197,14 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
 
-    CReserveKey 
-        reservekey(pwallet);
-
     if (fProofOfStake)
     {
         txNew.vout[0].SetEmpty();
     }
+
+    CReserveKey 
+        reservekey(pwallet);
+
     txNew.vout[0].scriptPubKey << reservekey.GetReservedKey() << OP_CHECKSIG;
 
     // Add our coinbase tx as first transaction
@@ -224,7 +225,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
         * pindexPrev = pindexBest;
 /*********************/
     // ppcoin: if coinstake available add coinstake tx
-    static int64_t 
+    static ::int64_t 
         nLastCoinStakeSearchTime = GetAdjustedTime();  // only initialized at startup
     //CBlockIndex* pindexPrev = pindexBest;
 
@@ -235,8 +236,8 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
         CTransaction 
             txCoinStake;    // uses real time
 
-        int64_t 
-            nSearchTime = (int64_t)txCoinStake.nTime; // search to current time
+        ::int64_t 
+            nSearchTime = (::int64_t)txCoinStake.nTime; // search to current time
 
         if (
             (nSearchTime > nLastCoinStakeSearchTime)
@@ -313,10 +314,10 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
             // This vector will be sorted into a priority queue:
             vector<TxPriority> 
                 vecPriority;
-            vecPriority.reserve(mempool.mapTx.size());
+            vecPriority.reserve(mempool.size());
             for (
-                 map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); 
-                 mi != mempool.mapTx.end(); 
+                 map<uint256, CTransaction>::iterator mi = mempool.get_mapTx().begin(); 
+                 mi != mempool.get_mapTx().end(); 
                  ++mi
                 )
             {
@@ -343,7 +344,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
                     {   // This should never happen; all transactions in the memory
                         // pool should connect to either transactions in the chain
                         // or other transactions in the memory pool.
-                        if (!mempool.mapTx.count(txin.prevout.COutPointGetHash()))
+                        if (!mempool.exists(txin.prevout.COutPointGetHash()))
                         {
                             printf("ERROR: mempool transaction missing input\n");
                             if (fDebug) 
@@ -365,7 +366,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
                         }
                         mapDependers[txin.prevout.COutPointGetHash()].push_back(porphan);
                         porphan->setDependsOn.insert(txin.prevout.COutPointGetHash());
-                        nTotalIn += mempool.mapTx[txin.prevout.COutPointGetHash()].vout[txin.prevout.COutPointGet_n()].nValue;
+                        nTotalIn += mempool.get_mapTx()[txin.prevout.COutPointGetHash()].vout[txin.prevout.COutPointGet_n()].nValue;
                         continue;
                     }
                     ::int64_t 
@@ -558,10 +559,10 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
         // This vector will be sorted into a priority queue:
         vector<TxPriority> 
             vecPriority;
-        vecPriority.reserve(mempool.mapTx.size());
+        vecPriority.reserve(mempool.size());
         for (
-             map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); 
-             mi != mempool.mapTx.end(); 
+             map<uint256, CTransaction>::iterator mi = mempool.get_mapTx().begin(); 
+             mi != mempool.get_mapTx().end(); 
              ++mi
             )
         {
@@ -584,7 +585,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
                     // This should never happen; all transactions in the memory
                     // pool should connect to either transactions in the chain
                     // or other transactions in the memory pool.
-                    if (!mempool.mapTx.count(txin.prevout.COutPointGetHash()))
+                    if (!mempool.exists(txin.prevout.COutPointGetHash()))
                     {
                         printf("ERROR: mempool transaction missing input\n");
                         //if (fDebug) 
@@ -604,7 +605,7 @@ CBlock* CreateNewBlock(CWallet* pwallet, bool fProofOfStake)
                     }
                     mapDependers[txin.prevout.COutPointGetHash()].push_back(porphan);
                     porphan->setDependsOn.insert(txin.prevout.COutPointGetHash());
-                    nTotalIn += mempool.mapTx[txin.prevout.COutPointGetHash()].vout[txin.prevout.COutPointGet_n()].nValue;
+                    nTotalIn += mempool.get_mapTx()[txin.prevout.COutPointGetHash()].vout[txin.prevout.COutPointGet_n()].nValue;
                     continue;
                 }
                 int64_t nValueIn = txPrev.vout[txin.prevout.COutPointGet_n()].nValue;
@@ -770,7 +771,6 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     Yassert(pblock->vtx[0].vin[0].scriptSig.size() <= 100);
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
-
 
 void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1)
 {

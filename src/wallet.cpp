@@ -381,7 +381,7 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         if (fFileBacked)
         {
             if (!pwalletdbEncryption->TxnCommit())
-            exit(24); //We now have keys encrypted in memory, but no on disk...die to avoid confusion and let the user reload their unencrypted wallet.
+                exit(24); //We now have keys encrypted in memory, but no on disk...die to avoid confusion and let the user reload their unencrypted wallet.
 
             delete pwalletdbEncryption;
             pwalletdbEncryption = NULL;
@@ -638,7 +638,10 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
                 wtx.hashBlock = wtxIn.hashBlock;
                 fUpdated = true;
             }
-            if (wtxIn.nIndex != -1 && (wtxIn.vMerkleBranch != wtx.vMerkleBranch || wtxIn.nIndex != wtx.nIndex))
+            if (
+                wtxIn.CMerkleTx::nIndex != -1 &&
+                (wtxIn.vMerkleBranch != wtx.vMerkleBranch || wtxIn.nIndex != wtx.nIndex)
+               )
             {
                 wtx.vMerkleBranch = wtxIn.vMerkleBranch;
                 wtx.nIndex = wtxIn.nIndex;
@@ -1999,8 +2002,8 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
                 int64_t nMinFee = wtxNew.GetMinFee(nBytes);
 
                 printf("CWallet::CreateTransaction, nBytes = %d, "
-                       "nPayFee = %ld, "
-                       "nMinFee = %ld\n",
+                       "nPayFee = %" PRI64d ", "
+                       "nMinFee = %" PRI64d "\n",
                        nBytes, nPayFee, nMinFee);
                 if (nFeeRet < max(nPayFee, nMinFee))
                 {
@@ -2009,11 +2012,11 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
                 }
 
                 printf("CWallet::CreateTransaction, nBytes = %d, "
-                                               "total UTXO value = %ld, "
-                                               "send %ld, "
-                                               "change %ld, "
-                                               "expected fee = %ld, "
-                                               "nFeeRet = %ld\n",
+                                               "total UTXO value = %" PRI64d ", "
+                                               "send %" PRI64d ", "
+                                               "change %" PRI64d ", "
+                                               "expected fee = %" PRI64d ", "
+                                               "nFeeRet = %" PRI64d "\n",
                        nBytes, nValueIn, nValue, nChange, nValueIn - nValue - nChange, nFeeRet);
 
                 // Fill vtxPrev by copying from previous transactions vtxPrev
@@ -2374,13 +2377,10 @@ bool CWallet::CreateCoinStake(
         {           // All this takes quite a long time, and only needs to be done once for each input.
             ::uint64_t
                 nStakeModifier = 0;
-
             int 
                 nStakeModifierHeight = 0;
-
             ::int64_t
                 nStakeModifierTime = 0;
-
             uint256 
                 hashBlockFrom;
             // Calculate the block header hash
@@ -2390,9 +2390,8 @@ bool CWallet::CreateCoinStake(
                 GetKernelStakeModifier(
                                         hashBlockFrom, 
                                         nStakeModifier
-                                        //, 
-                                        //nStakeModifierHeight, 
-                                        //nStakeModifierTime
+                                        , nStakeModifierHeight
+                                        , nStakeModifierTime
                                       )
                ) 
             {
@@ -2666,9 +2665,16 @@ bool CWallet::CreateCoinStake(
                 return false;
 
             {
-                CTxIndex txindex;
-                CBlock block;
-                for(CoinsSet::iterator pcoin = setCoins.begin(); pcoin != setCoins.end(); pcoin++)
+                int 
+                    nStakeModifierHeight = 0;
+                ::int64_t
+                    nStakeModifierTime = 0;
+                CTxIndex 
+                    txindex;
+                CBlock 
+                    block;
+
+                for(CoinsSet::iterator pcoin = setCoins.begin(); pcoin != setCoins.end(); ++pcoin)
                 {
                     // Load transaction index item
                     if (!txdb.ReadTxIndex(pcoin->first->GetHash(), txindex))
@@ -2680,7 +2686,14 @@ bool CWallet::CreateCoinStake(
                         continue;
 
                     uint64_t nStakeModifier = 0;
-                    if (!GetKernelStakeModifier(block.GetHash(), nStakeModifier))
+                    if (
+                        !GetKernelStakeModifier(
+                                                block.GetHash(),
+                                                nStakeModifier
+                                                , nStakeModifierHeight
+                                                , nStakeModifierTime
+                                               )
+                       )
                         continue;
 
                     // Add meta record

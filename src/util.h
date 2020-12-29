@@ -41,7 +41,8 @@
 
 static const ::int64_t COIN = 1000000;
 //THEREFORE
-       const int COINdecimalPower = 16;     // i.e. log10( COIN )
+     //const int COINdecimalPower = 16;     // i.e. log10( COIN )
+const int COINdecimalPower = (int)log10((double)COIN ); 
 static const ::int64_t CENT = 10000;
 
 #define BEGIN(a)            ((char*)&(a))
@@ -186,6 +187,7 @@ extern bool
     fLogTimestamps,
     fReopenDebugLog;
 extern ::int32_t 
+    nTestNetNewLogicBlockNumber,
 	nMainnetNewLogicBlockNumber,
     nYac20BlockNumberTime;
 extern ::uint32_t
@@ -228,6 +230,7 @@ bool ATTR_WARN_PRINTF(1,2) error(const char *format, ...);
  */
 #define printf OutputDebugStringF
 
+extern unsigned long long getTotalSystemMemory( void );
 void LogException(std::exception* pex, const char* pszThread);
 void PrintException(std::exception* pex, const char* pszThread);
 void PrintExceptionContinue(std::exception* pex, const char* pszThread);

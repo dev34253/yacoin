@@ -57,7 +57,15 @@ extern "C" {
 #define SCRYPT_BUFFER_SIZE (131072 + 63)
 //                          (1<<17) + ((1<<6) -1) representing what, exactly??????
 
+#ifdef WIN32
+ #ifdef USE_ASM
+  extern "C" void scrypt_core(unsigned int *X, unsigned int *V);
+ #else
+  extern     void scrypt_core(unsigned int *X, unsigned int *V);
+ #endif
+#else
 extern "C" void scrypt_core(unsigned int *X, unsigned int *V);
+#endif
 
 /* cpu and memory intensive function to transform a 80 byte buffer into a 32 byte output
    scratchpad size needs to be at least 63 + (128 * r * p) + (256 * r + 64) + (128 * r * N) bytes
@@ -110,11 +118,29 @@ uint256 scrypt_hash(const void* input, size_t inputlen)
 }
 
 //YACOIN
-void scrypt_hash(const void* input, size_t inputlen, ::uint32_t *res, unsigned char Nfactor)
+//void scrypt_hash(const void* input, size_t inputlen, ::uint32_t *res, unsigned char Nfactor)
+bool scrypt_hash(
+                 const void* input,
+                 size_t inputlen,
+                 ::uint32_t *res,
+                 unsigned char Nfactor
+                )
 {
-    return scrypt((const unsigned char*)input, inputlen,
-                  (const unsigned char*)input, inputlen,
-                  Nfactor, 0, 0, (unsigned char*)res, 32);
+    if(
+       0 != scrypt(
+                   (const unsigned char *)input,
+                   inputlen,
+                   (const unsigned char *)input,
+                   inputlen,
+                   Nfactor,
+                   0,
+                   0,
+                   (unsigned char*)res,
+                   32
+                  )
+      )
+        return true;
+    return false;
 }
 
 uint256 scrypt_salted_hash(const void* input, size_t inputlen, const void* salt, size_t saltlen)
@@ -220,6 +246,11 @@ const ::uint32_t
         *hashc = (unsigned char *) &hash,
       //highestZeroBitsSet = 0xe0;
         // Hash target can't be smaller than bnProofOfWorkLimit which is 00000fffff000000
+        // Aren't you saying here that it can't be bigger? Because you're not testing for it!!!
+        // and isn't this directly related to bnProofOfWorkLimit which is a maximum ease, 
+        // or equivalently, a minimum difficulty?
+        // if you actually mean can't be smaller, then this is a maximum difficulty, 
+        // and if the difficulty eases, this can't test for it?
         nMask = 0x00,
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT        
         highestZeroBitsSet = ~(hasht[ 29 ]),
@@ -243,20 +274,25 @@ const ::uint32_t
                  , nMask
                 );
 #endif
-    // here we should have already seeked to a random position in the file
+    size_t
+        nHeaderSize;
+
+    if (new_block_data.version >= VERSION_of_block_for_yac_05x_new) // 64-bit nTime
+        nHeaderSize = sizeof(struct block_header);
+    else                                                            // 32-bit nTime
+        nHeaderSize = sizeof(old_block_header);
     while (true) 
     {
         //++n;
         *nOnce = Big.get_a_nonce( *nOnce );
         //data.nonce = n;
 
-        if (new_block_data.version >= VERSION_of_block_for_yac_05x_new) // 64-bit nTime
+        if( scrypt_hash(data, nHeaderSize, UINTBEGIN(hash), Nfactor) )
         {
-            scrypt_hash(data, sizeof(struct block_header), UINTBEGIN(hash), Nfactor);
         }
-        else // 32-bit nTime
+        else
         {
-            scrypt_hash(data, sizeof(old_block_header), UINTBEGIN(hash), Nfactor);
+            return 0;
         }
         ++hash_count;
         // Hash target can't be smaller than bnProofOfWorkLimit which is 00000fffff000000
@@ -290,8 +326,8 @@ const ::uint32_t
     #endif
 #endif
             if (
-                (pindexPrev != pindexBest) ||
-                fShutdown
+                (pindexPrev != pindexBest) ||        // a new block has been rx'd, or
+                fShutdown                            // a shutdown
                )
                 break;
         }

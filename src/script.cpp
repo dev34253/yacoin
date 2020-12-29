@@ -1264,6 +1264,7 @@ public:
         //LOCK(cs_sigcache);
 
         sigdata_type044 k(hash, vchSig, pubKey);
+
         std::set<sigdata_type>::iterator mi = setValid.find(k);
         if (mi != setValid.end())
             return true;
@@ -1279,6 +1280,7 @@ public:
         boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
 
         sigdata_type k(hash, vchSig, pubKey);
+
         std::set<sigdata_type>::iterator mi = setValid.find(k);
         if (mi != setValid.end())
             return true;
@@ -1299,8 +1301,7 @@ public:
         if (nMaxCacheSize <= 0) return;
 
         // We must use unique_lock, instead of shared_lock for writer
-//        boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
-        //LOCK(cs_sigcache);
+//      boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
         boost::unique_lock< boost::shared_mutex > lock(cs_sigcache);
 
         while (static_cast< ::int64_t>(setValid.size()) > nMaxCacheSize)
@@ -1336,7 +1337,7 @@ public:
         if (nMaxCacheSize <= 0) return;
 
         // We must use unique_lock, instead of shared_lock for writer
-//        boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
+//      boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
         boost::unique_lock< boost::shared_mutex > lock(cs_sigcache);
 
         while (static_cast< ::int64_t>(setValid.size()) > nMaxCacheSize)
