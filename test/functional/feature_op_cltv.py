@@ -59,14 +59,13 @@ class OP_CLTV_Test(BitcoinTestFramework):
             self.setmocktimeforallnodes(self.mocktime)
             self.mocktime=self.mocktime+timeBetweenBlocks      
             self.nodes[nodeId].generate(1)
+        self.sync_all()
 
     def run_test(self):
         self.mine_blocks(0, 10)
-        self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 10)
         assert_equal(self.nodes[1].getblockcount(), 10)
         self.mine_blocks(1, 10)
-        self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 20)
         assert_equal(self.nodes[1].getblockcount(), 20)
         
@@ -86,8 +85,7 @@ class OP_CLTV_Test(BitcoinTestFramework):
         assert_equal(balance_cltv_1, Decimal('0.0000'))
 
         transaction_id = self.nodes[0].sendtoaddress(cltv_address, 100.0)
-        self.mine_blocks(0,10)
-        self.sync_all()
+        self.mine_blocks(0,10)        
         assert_equal(self.nodes[0].getblockcount(), 30)
         assert_equal(self.nodes[1].getblockcount(), 30)
         
@@ -102,7 +100,6 @@ class OP_CLTV_Test(BitcoinTestFramework):
 
         self.setmocktimeforallnodes(TIME_GENESIS_BLOCK + 40*60+1)
         self.mine_blocks(0, 1)
-        self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 31)
         assert_equal(self.nodes[1].getblockcount(), 31)
 
@@ -111,12 +108,12 @@ class OP_CLTV_Test(BitcoinTestFramework):
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
 
-        self.mine_blocks(0, 6)
-        self.sync_all()
-        assert_equal(self.nodes[0].getblockcount(), 37)
-        assert_equal(self.nodes[1].getblockcount(), 37)
+        self.mine_blocks(1, 10)
+        self.mine_blocks(0, 10)
+        tx_details = self.nodes[1].gettransaction(transaction_id_cltv)
+        assert_equal(tx_details['confirmations'], Decimal('20'))
 
-        receiver_balance = self.node[0].getreceivedbyaccount('receiver')
+        receiver_balance = self.nodes[0].getreceivedbyaccount('receiver')
         assert_equal(receiver_balance, Decimal('10.0'))
 
 if __name__ == '__main__':

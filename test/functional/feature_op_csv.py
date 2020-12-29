@@ -90,7 +90,6 @@ class OP_CSV_Test(BitcoinTestFramework):
 
         transaction_id = self.nodes[0].sendtoaddress(csv_address, 100.0)
         self.mine_blocks(0,10)
-        self.sync_all()
         assert_equal(self.nodes[0].getblockcount(), 30)
         assert_equal(self.nodes[1].getblockcount(), 30)
         
@@ -104,9 +103,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         assert_raises_rpc_error(-1, "unknown!?", self.nodes[1].spendcsv,csv_address, receiver_address, 10.0)
 
         self.mine_blocks(0, 10)
-        self.sync_all()
         self.mine_blocks(1, 10)
-        self.sync_all()
 
         self.log_accounts("before spendcsv")
         transaction_id_csv = self.nodes[1].spendcsv(csv_address, receiver_address, 10.0)
@@ -114,7 +111,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         self.log.info(str(tx_details))
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
-        
+
         self.mine_blocks(1, 10)
         self.log_accounts("after spendcsv")
 
