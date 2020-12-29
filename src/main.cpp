@@ -594,6 +594,7 @@ bool CTransaction::oldIsStandard(string& strReason) const
 	// 2) At the time happening hardfork
 	// Need update this line at next yacoin version
     if (nVersion > CTransaction::CURRENT_VERSION_of_Tx_for_yac_new)
+  //if (nVersion > CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
     {
         strReason = "version";
         return false;
@@ -661,6 +662,7 @@ bool CTransaction::IsStandard044( string& strReason ) const
 	// 2) At the time happening hardfork
 	// Need update this line at next yacoin version
     if (nVersion > CTransaction::CURRENT_VERSION_of_Tx_for_yac_new) // same as in 0.4.4!?
+  //if (nVersion > CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
     {                                                   // if we test differently,
         strReason = "version(in 0.4.4)";                // then shouldn't 0.4.5 be 
         return false;                                   // different?
@@ -906,6 +908,18 @@ bool CTransaction::CheckTransaction() const
     return (nBytes * MIN_TX_FEE) / 1000;
 }
 
+void CTxMemPool::addUnchecked(const uint256& hash, CTransaction &tx)
+{
+    // Add to memory pool without checking anything.  Don't call this directly,
+    // call CTxMemPool::accept to properly check the transaction first.
+    {
+        mapTx[hash] = tx;
+        for (unsigned int i = 0; i < tx.vin.size(); ++i)
+            mapNextTx[tx.vin[i].prevout] = CInPoint(&mapTx[hash], i);
+        ++nTransactionsUpdated;
+    }
+    return;
+}
 
 bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
                         bool* pfMissingInputs)
@@ -943,7 +957,8 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     uint256 hash = tx.GetHash();
     {
         LOCK(cs);
-        if (mapTx.count(hash))
+      //if (mapTx.count(hash))
+        if (exists(hash))
             return false;
     }
     if (fCheckInputs)
@@ -952,7 +967,7 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
     // Check for conflicts with in-memory transactions
     CTransaction* ptxOld = NULL;
-    for (unsigned int i = 0; i < tx.vin.size(); i++)
+    for (unsigned int i = 0; i < tx.vin.size(); ++i)
     {
         COutPoint outpoint = tx.vin[i].prevout;
         if (mapNextTx.count(outpoint))
@@ -1056,7 +1071,8 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
     printf("CTxMemPool::accept() : accepted %s (poolsz %" PRIszu ")\n",
            hash.ToString().substr(0,10).c_str(),
-           mapTx.size());
+         //mapTx.size());
+           size());
 #ifdef QT_GUI
     {
         LOCK(cs);
@@ -1074,35 +1090,21 @@ bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMi
     return mempool.accept(txdb, *this, fCheckInputs, pfMissingInputs);
 }
 
-bool CTxMemPool::addUnchecked(const uint256& hash, CTransaction &tx)
+void CTxMemPool::remove(CTransaction &tx)
 {
-    // Add to memory pool without checking anything.  Don't call this directly,
-    // call CTxMemPool::accept to properly check the transaction first.
-    {
-        mapTx[hash] = tx;
-        for (unsigned int i = 0; i < tx.vin.size(); i++)
-            mapNextTx[tx.vin[i].prevout] = CInPoint(&mapTx[hash], i);
-        nTransactionsUpdated++;
-    }
-    return true;
-}
-
-
-bool CTxMemPool::remove(CTransaction &tx)
-{
-    // Remove transaction from memory pool
     {
         LOCK(cs);
         uint256 hash = tx.GetHash();
-        if (mapTx.count(hash))
+      //if (mapTx.count(hash))
+        if (exists(hash))
         {
             BOOST_FOREACH(const CTxIn& txin, tx.vin)
                 mapNextTx.erase(txin.prevout);
             mapTx.erase(hash);
-            nTransactionsUpdated++;
+            ++nTransactionsUpdated;
         }
     }
-    return true;
+    return;
 }
 
 void CTxMemPool::clear()
@@ -1113,13 +1115,13 @@ void CTxMemPool::clear()
     ++nTransactionsUpdated;
 }
 
-void CTxMemPool::queryHashes(std::vector<uint256>& vtxid)
+void CTxMemPool::queryHashes(std::vector<uint256>& vtxid) const
 {
     vtxid.clear();
 
     LOCK(cs);
-    vtxid.reserve(mapTx.size());
-    for (map<uint256, CTransaction>::iterator mi = mapTx.begin(); mi != mapTx.end(); ++mi)
+    vtxid.reserve(size());
+    for (map<uint256, CTransaction>::const_iterator mi = mapTx.begin(); mi != mapTx.end(); ++mi)
         vtxid.push_back((*mi).first);
 }
 
@@ -1156,7 +1158,9 @@ int CMerkleTx::GetBlocksToMaturity() const
 {
     if (!(IsCoinBase() || IsCoinStake()))
         return 0;
-    return max(0, nCoinbaseMaturity - GetDepthInMainChain());
+    return max( 0, (nCoinbaseMaturity +  0) - GetDepthInMainChain()
+              //:(nCoinbaseMaturity + 20) - GetDepthInMainChain()    // why is this 20?
+              );                                                    // what is this 20 from? For?
 }
 
 
@@ -1339,6 +1343,7 @@ unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx)
        )    //was just nTimestamp <= nChainStartTime)
 #if defined(Yac1dot0)
             return Nfactor_1dot0;
+          //return minNfactor;
 #else
             return minNfactor;
 #endif
@@ -1495,7 +1500,7 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
         // Get reward of current best height block
         if (fGetRewardOfBestHeightBlock)
         {
-            int64_t currentBlockReward = nBlockRewardPrev;
+            ::int64_t currentBlockReward = nBlockRewardPrev;
             if (!nBlockRewardPrev)
             {
                 const CBlockIndex* pindexMoneySupplyBlock =
@@ -1613,6 +1618,7 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
             break;
 
         case MAX_BLOCK_SIGOPS:
+          //nMaxSize = max(nMaxSize, (::uint64_t)DEFAULT_MAX_BLOCK_SIGOPS);
             nMaxSize = max(nMaxSize, (::uint64_t)MAX_GENESIS_BLOCK_SIZE) / 50;
             break;
 
@@ -1846,7 +1852,8 @@ bool HaveWeSwitchedToNewLogicRules( bool &fUsingOld044Rules )
            fTestNet &&    // may use new rules, ATM only in TestNet
            (
             fTestNetNewLogic &&
-            (nMainnetNewLogicBlockNumber <= nBestHeight)
+          //(nMainnetNewLogicBlockNumber <= nBestHeight)
+            (nTestNetNewLogicBlockNumber < nBestHeight)    // changed 9/1/2020 test
            )
           )
         {
@@ -2355,8 +2362,12 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits)
 {
     CBigNum bnTarget;
     bnTarget.SetCompact(nBits);
-
-    printf("CheckProofOfWork: nBits: %d\n",nBits);
+    if( fDebug )
+    {
+        if (fPrintToConsole)
+             (void)printf( "\n" );
+        printf("CheckProofOfWork: nBits: %d\n",nBits);
+    }
     // Check range
     if (
         (bnTarget <= 0 )
@@ -2663,7 +2674,8 @@ bool CTransaction::ConnectInputs(
                                  bool fBlock, 
                                  bool fMiner, 
                                  bool fScriptChecks, 
-                                 unsigned int flags, std::vector<CScriptCheck> *pvChecks
+                                 unsigned int flags,
+                                 std::vector<CScriptCheck> *pvChecks
                                 )
 {
     // Take over previous transactions' spent pointers
@@ -2899,7 +2911,7 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     if (pindex->pprev)
     {
         CDiskBlockIndex blockindexPrev(pindex->pprev);
-        blockindexPrev.hashNext = 0;
+        blockindexPrev.getHashNext() = 0;
         if (!txdb.WriteBlockIndex(blockindexPrev))
             return error("DisconnectBlock() : WriteBlockIndex failed");
     }
@@ -2951,13 +2963,21 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
     unsigned int nTxPos;
     if (fJustCheck)
         // FetchInputs treats CDiskTxPos(1,1,1) as a special "refer to memorypool" indicator
-        // Since we're just checking the block and not actually connecting it, it might not (and probably shouldn't) be on the disk to get the transaction from
+        // Since we're just checking the block and not actually connecting it,
+        // it might not (and probably shouldn't) be on the disk to get the transaction from
         nTxPos = 1;
     else
-        nTxPos = pindex->nBlockPos + ::GetSerializeSize(CBlock(), SER_DISK, CLIENT_VERSION) - (2 * GetSizeOfCompactSize(0)) + GetSizeOfCompactSize(vtx.size());
+        nTxPos = pindex->nBlockPos +
+                 ::GetSerializeSize(
+                                    CBlock(),
+                                    SER_DISK,
+                                    CLIENT_VERSION
+                                   ) - 
+                 (2 * GetSizeOfCompactSize(0)) +
+                 GetSizeOfCompactSize(vtx.size());
 
     map<uint256, CTxIndex> mapQueuedChanges;
-    CCheckQueueControl<CScriptCheck> control(fScriptChecks && nScriptCheckThreads ? &scriptcheckqueue : NULL);
+    CCheckQueueControl<CScriptCheck> control( (fScriptChecks && nScriptCheckThreads) ? &scriptcheckqueue : NULL);
 
     ::int64_t nFees = 0;
     ::int64_t nValueIn = 0;
@@ -3043,7 +3063,20 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
                 nFees += nTxValueIn - nTxValueOut;
 
             std::vector<CScriptCheck> vChecks;
-            if (!tx.ConnectInputs(txdb, mapInputs, mapQueuedChanges, posThisTx, pindex, true, false, fScriptChecks, SCRIPT_VERIFY_NOCACHE | SCRIPT_VERIFY_P2SH, nScriptCheckThreads ? &vChecks : NULL))
+            if (
+                !tx.ConnectInputs(
+                                  txdb, 
+                                  mapInputs, 
+                                  mapQueuedChanges,
+                                  posThisTx,
+                                  pindex,
+                                  true,
+                                  false,
+                                  fScriptChecks,
+                                  SCRIPT_VERIFY_NOCACHE | SCRIPT_VERIFY_P2SH,
+                                  nScriptCheckThreads ? &vChecks : NULL
+                                 )
+               )
                 return false;
             control.Add(vChecks);
         }
@@ -3098,7 +3131,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
     if (pindex->pprev)
     {
         CDiskBlockIndex blockindexPrev(pindex->pprev);
-        blockindexPrev.hashNext = pindex->GetBlockHash();
+        blockindexPrev.getHashNext() = pindex->GetBlockHash();
         if (!txdb.WriteBlockIndex(blockindexPrev))
             return error("ConnectBlock() : WriteBlockIndex failed");
     }
@@ -3431,7 +3464,8 @@ bool CTransaction::GetCoinAge(CTxDB& txdb, ::uint64_t& nCoinAge) const
         bnCentSecond += CBigNum(nValueIn) * (nTime-txPrev.nTime) / CENT;
 
         if (fDebug && GetBoolArg("-printcoinage"))
-            printf("coin age nValueIn=%" PRId64 " nTimeDiff=%ld bnCentSecond=%s\n", nValueIn, nTime - txPrev.nTime, bnCentSecond.ToString().c_str());
+            printf("coin age nValueIn=%" PRId64 " nTimeDiff=%" PRId64 " bnCentSecond=%s\n", nValueIn, nTime - txPrev.nTime, bnCentSecond.ToString().c_str());
+          //printf("coin age nValueIn=%" PRId64 " nTimeDiff=%ld bnCentSecond=%s\n", nValueIn, nTime - txPrev.nTime, bnCentSecond.ToString().c_str());
     }
 
     CBigNum bnCoinDay = bnCentSecond * CENT / COIN / (24 * 60 * 60);
@@ -3618,7 +3652,8 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 
         // Check coinstake timestamp
         if (GetBlockTime() != (::int64_t)vtx[1].nTime)
-            return DoS(50, error("CheckBlock () : coinstake timestamp violation nTimeBlock=%" PRId64 " nTimeTx=%ld", GetBlockTime(), vtx[1].nTime));
+            return DoS(50, error("CheckBlock () : coinstake timestamp violation nTimeBlock=%" PRId64 " nTimeTx=%" PRId64, GetBlockTime(), vtx[1].nTime));
+          //return DoS(50, error("CheckBlock () : coinstake timestamp violation nTimeBlock=%" PRId64 " nTimeTx=%ld", GetBlockTime(), vtx[1].nTime));
 
         // Check timestamp  06/04/2018 missing test in this 0.4.5-0.48 code.  Thanks Joe! ;>
         if (GetBlockTime() > FutureDrift(GetAdjustedTime()))
@@ -5079,6 +5114,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (pfrom->nVersion != 0)
         {
             (void)pfrom->Misbehaving(1);
+            if( fDebug )
+                printf( 
+                        "\n" 
+                        "Misbehaving"
+                        "\n" 
+                        "\n" 
+                      );
             return false;
         }
 
@@ -5091,7 +5133,12 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         {
             // Since February 20, 2012, the protocol is initiated at version 209,
             // and earlier versions are no longer supported
-            printf("partner %s using obsolete version %i; disconnecting\n", pfrom->addr.ToString().c_str(), pfrom->nVersion);
+            if( fDebug )
+                printf(
+                       "partner %s using obsolete version %i; disconnecting\n",
+                       pfrom->addr.ToString().c_str(),
+                       pfrom->nVersion
+                      );
             pfrom->fDisconnect = true;
             return false;
         }
@@ -5114,14 +5161,29 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         // Disconnect if we connected to ourself
         if (nNonce == nLocalHostNonce && nNonce > 1)
         {
-            printf("connected to self at %s, disconnecting\n", pfrom->addr.ToString().c_str());
+            if( fDebug )
+                printf(
+                        "\n" 
+                        "connected to self at %s, disconnecting"
+                        "\n" 
+                        "\n",
+                        pfrom->addr.ToString().c_str()
+                      );
             pfrom->fDisconnect = true;
             return true;
         }
 
         if (pfrom->nVersion < MIN_PEER_BUGGY_VERSION)   // i.e. 60005 and lower disconnected.
         {
-            printf("partner %s using a buggy client %d, disconnecting\n", pfrom->addr.ToString().c_str(), pfrom->nVersion);
+            if( fDebug )
+                printf(
+                        "\n" 
+                        "partner %s using a buggy client %d, disconnecting"
+                        "\n" 
+                        "\n",
+                        pfrom->addr.ToString().c_str(),
+                        pfrom->nVersion
+                      );
             pfrom->fDisconnect = true;
             return true;
         }
@@ -5214,13 +5276,21 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         pfrom->fSuccessfullyConnected = true;
 
-        printf("receive version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", 
-                pfrom->nVersion, 
-                pfrom->nStartingHeight, 
-                addrMe.ToString().c_str(), 
-                addrFrom.ToString().c_str(), 
-                pfrom->addr.ToString().c_str()
-              );
+        if( fDebug )
+            if( fPrintToConsole )
+                printf(
+                       "\n"
+                       "received version message: version %d, blocks=%d, "
+                       "\n"
+                       "us=%s, them=%s, peer=%s"
+                       "\n"
+                       "\n"
+                       , pfrom->nVersion,
+                       pfrom->nStartingHeight,
+                       addrMe.ToString().c_str(),
+                       addrFrom.ToString().c_str(),
+                       pfrom->addr.ToString().c_str()
+                      );
 
         cPeerBlockCounts.input(pfrom->nStartingHeight);
 
@@ -5234,7 +5304,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     else if (pfrom->nVersion == 0)
     {
         // Must have a version message before anything else
-        printf("Misbehaving received version = 0\n");
+        if( fDebug )       
+            printf(
+                   "\n" 
+                   "Misbehaving received version = 0"
+                   "\n" 
+                   "\n"
+                  );
         (void)pfrom->Misbehaving(1);      // tell me what the 1 means? Or intends?? If anything???
         return false;
     }
@@ -5983,15 +6059,23 @@ void ProcessMessages(CNode* pfrom)
     //  (x) data
     //
 
+    ::uint64_t nSize = SendBufferSize();
     while (true)
-    {
-        // Don't bother if send buffer is too full to respond anyway
-        if (pfrom->vSend.size() >= SendBufferSize())
+    {   // Don't bother if send buffer is too full to respond
+        ::uint64_t nLength = pfrom->vSend.size();
+        if (nLength > nSize)
+        {
+            //Sleep(nOneMillisecond);     // which of these 3 possibilities is correct?
+            //continue;
             break;
-
+        }
         // Scan for message start
         CDataStream::iterator 
-            pstart = search(vRecv.begin(), vRecv.end(), BEGIN(pchMessageStart), END(pchMessageStart));
+            pstart = search(vRecv.begin(),
+                            vRecv.end(),
+                            BEGIN(pchMessageStart),
+                            END(pchMessageStart)
+                           );
 
         int 
             nHeaderSize = vRecv.GetSerializeSize(CMessageHeader());
@@ -6069,21 +6153,25 @@ void ProcessMessages(CNode* pfrom)
         vRecv.ignore(nMessageSize);
 
         // Process message
-        bool fRet = false;
+        //nLength = pfrom->vSend.size();
+        //if (nLength <= nSize)                // Process message
+        //{
+        bool 
+            fRet = false;
+
         try
         {
-            {{
+            {
                 LOCK(cs_main);
                 fRet = ProcessMessage(pfrom, strCommand, vMsg);
-            }}
+            }
             if (fShutdown)
                 return;
         }
         catch (std::ios_base::failure& e)
         {
             if (strstr(e.what(), "end of data"))
-            {
-                // Allow exceptions from under-length message on vRecv
+            {   // Allow exceptions from under-length message on vRecv
                 printf(
                         "ProcessMessages(%s, %u bytes) : "
                         "Exception '%s' caught, normally caused by "
@@ -6097,8 +6185,7 @@ void ProcessMessages(CNode* pfrom)
             else 
             {
                 if (strstr(e.what(), "size too large"))
-                {
-                    // Allow exceptions from over-long size
+                {   // Allow exceptions from over-long size
                     printf(
                             "ProcessMessages(%s, %u bytes) : Exception '%s' caught\n", 
                             strCommand.c_str(), 
@@ -6123,6 +6210,7 @@ void ProcessMessages(CNode* pfrom)
 
         if (!fRet)
             printf("ProcessMessage(%s, %u bytes) FAILED\n", strCommand.c_str(), nMessageSize);
+        //}
     }
 
     vRecv.Compact();
@@ -6175,7 +6263,7 @@ void SendMessages(CNode* pto, bool fSendTrickle)
             ((GetTime() - nLastRebroadcast) > nBroadcastInterval)
            )
         {
-            {{
+            {
                 LOCK(cs_vNodes);
                 BOOST_FOREACH(CNode* pnode, vNodes)
                 {
@@ -6191,7 +6279,7 @@ void SendMessages(CNode* pto, bool fSendTrickle)
                             pnode->PushAddress(addr);
                     }
                 }
-            }}
+            }
             nLastRebroadcast = GetTime();
         }
 
@@ -6346,7 +6434,7 @@ public:
     #ifdef _DEBUG
                 nUpdatePeriod = 100,
     #else
-                nUpdatePeriod = 3000, //10000,   // pure guess for a decent update period ~1 second
+                nUpdatePeriod = 300, //3000, //10000,   // pure guess for a decent update period ~1 second
     #endif
                 nEstimate;
 
@@ -6365,12 +6453,15 @@ public:
     #ifdef _MSC_VER
                     ++nCount;
                     nEstimate = (unsigned int)( ( 100 * nCount ) / nSize );
-                    if( 0 == (nCount % nUpdatePeriod) )
+                    if (fPrintToConsole)
                     {
-                        (void)printf( "~CMainCleanup() progess ~%-u%%" 
-                                      "\r",
-                                      nEstimate
-                                    );
+                        if( 0 == (nCount % nUpdatePeriod) )
+                        {
+                            (void)printf( "~CMainCleanup() progess ~%-u%%" 
+                                          "\r",
+                                          nEstimate
+                                        );
+                        }
                     }
     #endif
                 }
@@ -6379,9 +6470,12 @@ public:
             if (fDebug)
             {
     #ifdef _MSC_VER
-                (void)printf( "~CMainCleanup() progess ~100%%" 
-                              "\r"
-                            );
+                if (fPrintToConsole)
+                {
+                    (void)printf( "~CMainCleanup() progess ~100%%" 
+                                  "\r"
+                                );
+                }
     #endif
             }
 
@@ -6398,7 +6492,8 @@ public:
         if (fDebug)
         {
 #ifdef _MSC_VER
-            (void)printf( "\ndone\n" );
+            if (fPrintToConsole)
+                (void)printf( "\ndone\n" );
 #endif
         }
     }

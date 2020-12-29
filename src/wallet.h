@@ -92,14 +92,22 @@ public:
 class CWallet : public CCryptoKeyStore
 {
 private:
-	bool SelectCoinsSimple(::int64_t nTargetValue, ::int64_t nMinValue,
-			::int64_t nMaxValue, int64_t nSpendTime, int nMinConf,
-			std::set<std::pair<const CWalletTx*, unsigned int> > &setCoinsRet,
-			::int64_t &nValueRet) const;
-	bool SelectCoins(::int64_t nTargetValue, int64_t nSpendTime,
-			std::set<std::pair<const CWalletTx*, unsigned int> > &setCoinsRet,
-			::int64_t &nValueRet, const CCoinControl *coinControl = NULL,
-			const CScript *fromScriptPubKey = NULL) const;
+    bool SelectCoinsSimple(
+                            ::int64_t nTargetValue,
+                            ::int64_t nMinValue,
+                            ::int64_t nMaxValue,
+                            int64_t nSpendTime,
+                            int nMinConf,
+                            std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet,
+                            ::int64_t& nValueRet
+                          ) const;
+    bool SelectCoins(
+                    ::int64_t nTargetValue,
+                    int64_t nSpendTime,
+                    std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet,
+                    ::int64_t& nValueRet,
+                    const CCoinControl *coinControl=NULL
+                    ) const;
 
     CWalletDB *pwalletdbEncryption, *pwalletdbDecryption;
 

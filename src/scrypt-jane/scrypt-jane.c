@@ -4,8 +4,13 @@
 	Public Domain or MIT License, whichever is easier
 */
 
-#include <string.h>
+#ifdef _MSC_VER
+    #include <stdint.h>
+#endif
 
+#include <stdlib.h>
+
+// below required by gcc daemon compile?
 #if defined( _WINDOWS )
 #if !defined( QT_GUI )
 extern "C" {
@@ -33,36 +38,92 @@ extern "C" {
 #define scrypt_maxpfactor 25  /* (1 << 25) = ~33 million */
 
 #include <stdio.h>
-//#include <malloc.h>
+
+typedef struct scrypt_aligned_alloc_t {
+	uint8_t *mem, *ptr;
+} scrypt_aligned_alloc;
 
 static void NORETURN
-scrypt_fatal_error_default(const char *msg) {
+scrypt_fatal_error_default(const char *msg)
+{
 	fprintf(stderr, "%s\n", msg);
 	exit(21);
 }
 
-static scrypt_fatal_errorfn scrypt_fatal_error = scrypt_fatal_error_default;
+static scrypt_fatal_errorfn
+    scrypt_fatal_error = scrypt_fatal_error_default;
 
-void
-scrypt_set_fatal_error(scrypt_fatal_errorfn fn) {
+void scrypt_set_fatal_error(scrypt_fatal_errorfn fn)
+{
 	scrypt_fatal_error = fn;
 }
 
-static int
-scrypt_power_on_self_test(void) {
+#if defined(SCRYPT_TEST_SPEED)
+static uint8_t *mem_base = (uint8_t *)0;
+static size_t mem_bump = 0;
+
+/* allocations are assumed to be multiples of 64 bytes and total allocations not to exceed ~1.01gb */
+static scrypt_aligned_alloc scrypt_alloc(uint64_t size)
+{
+	scrypt_aligned_alloc aa;
+	if (!mem_base)
+    {
+		mem_base = (uint8_t *)malloc((1024 * 1024 * 1024) + (1024 * 1024) + (SCRYPT_BLOCK_BYTES - 1));
+		if (!mem_base)
+			scrypt_fatal_error("scrypt: out of memory");
+		mem_base = (uint8_t *)(((size_t)mem_base + (SCRYPT_BLOCK_BYTES - 1)) & ~(SCRYPT_BLOCK_BYTES - 1));
+	}
+	aa.mem = mem_base + mem_bump;
+	aa.ptr = aa.mem;
+	mem_bump += (size_t)size;
+	return aa;
+}
+
+static void scrypt_free(scrypt_aligned_alloc *aa)
+{
+	mem_bump = 0;
+}
+#else
+static scrypt_aligned_alloc scrypt_alloc(uint64_t size) 
+{
+	static const size_t
+        max_alloc = (size_t)-1;
+	scrypt_aligned_alloc
+        aa;
+
+    size += (SCRYPT_BLOCK_BYTES - 1);
+	if (size > max_alloc)
+		scrypt_fatal_error("scrypt: not enough address space on this CPU to allocate required memory");
+	aa.mem = (uint8_t *)malloc((size_t)size);
+	if (!aa.mem)
+		scrypt_fatal_error("scrypt: out of memory");
+	aa.ptr = (uint8_t *)(((size_t)aa.mem + (SCRYPT_BLOCK_BYTES - 1)) & ~(SCRYPT_BLOCK_BYTES - 1));
+	return aa;
+}
+
+static void scrypt_free(scrypt_aligned_alloc *aa) 
+{
+	free(aa->mem);
+}
+#endif
+
+static int scrypt_power_on_self_test(void)
+{
 	const scrypt_test_setting *t;
 	uint8_t test_digest[64];
 	uint32_t i;
 	int res = 7, scrypt_valid;
 
-	if (!scrypt_test_mix()) {
+	if (!scrypt_test_mix())
+    {
 #if !defined(SCRYPT_TEST)
 		scrypt_fatal_error("scrypt: mix function power-on-self-test failed");
 #endif
 		res &= ~1;
 	}
 
-	if (!scrypt_test_hash()) {
+	if (!scrypt_test_hash())
+    {
 #if !defined(SCRYPT_TEST)
 		scrypt_fatal_error("scrypt: hash function power-on-self-test failed");
 #endif
@@ -72,18 +133,24 @@ scrypt_power_on_self_test(void) {
 	for (i = 0, scrypt_valid = 1; post_settings[i].pw; ++i)
     {
 		t = post_settings + i;
-		scrypt(
-               (uint8_t *)t->pw, 
-               strlen(t->pw), 
-               (uint8_t *)t->salt, 
-               strlen(t->salt), 
-               t->Nfactor, 
-               t->rfactor, 
-               t->pfactor, 
-               test_digest, 
-               sizeof(test_digest)
-              );
-		scrypt_valid &= scrypt_verify(post_vectors[i], test_digest, sizeof(test_digest));
+		if( scrypt(
+                   (const uint8_t *)t->pw, 
+                   strlen(t->pw), 
+                   (const uint8_t *)t->salt, 
+                   strlen(t->salt), 
+                   t->Nfactor, 
+                   t->rfactor, 
+                   t->pfactor, 
+                   test_digest, 
+                   sizeof(test_digest)
+                  )
+          )
+		    scrypt_valid &= scrypt_verify(post_vectors[i], test_digest, sizeof(test_digest));
+        else
+        {
+            scrypt_valid = 0;
+            break;
+        }
 	}
 	
 	if (!scrypt_valid) 
@@ -96,75 +163,20 @@ scrypt_power_on_self_test(void) {
 	return res;
 }
 
-typedef struct scrypt_aligned_alloc_t {
-	uint8_t *mem, *ptr;
-} scrypt_aligned_alloc;
-
-#if defined(SCRYPT_TEST_SPEED)
-static uint8_t *mem_base = (uint8_t *)0;
-static size_t mem_bump = 0;
-
-/* allocations are assumed to be multiples of 64 bytes and total allocations not to exceed ~1.01gb */
-static scrypt_aligned_alloc
-scrypt_alloc(uint64_t size) {
-	scrypt_aligned_alloc aa;
-	if (!mem_base) {
-		mem_base = (uint8_t *)malloc((1024 * 1024 * 1024) + (1024 * 1024) + (SCRYPT_BLOCK_BYTES - 1));
-		if (!mem_base)
-			scrypt_fatal_error("scrypt: out of memory");
-		mem_base = (uint8_t *)(((size_t)mem_base + (SCRYPT_BLOCK_BYTES - 1)) & ~(SCRYPT_BLOCK_BYTES - 1));
-	}
-	aa.mem = mem_base + mem_bump;
-	aa.ptr = aa.mem;
-	mem_bump += (size_t)size;
-	return aa;
-}
-
-static void
-scrypt_free(scrypt_aligned_alloc *aa) {
-	mem_bump = 0;
-}
-#else
-static scrypt_aligned_alloc
-scrypt_alloc(uint64_t size) 
-{
-	static const size_t 
-        max_alloc = (size_t)-1;
-	scrypt_aligned_alloc 
-        aa;
-
-    size += (SCRYPT_BLOCK_BYTES - 1);
-	if (size > max_alloc)
-		scrypt_fatal_error("scrypt: not enough address space on this CPU to allocate required memory");
-	aa.mem = (uint8_t *)malloc((size_t)size);
-	aa.ptr = (uint8_t *)(((size_t)aa.mem + (SCRYPT_BLOCK_BYTES - 1)) & ~(SCRYPT_BLOCK_BYTES - 1));
-	if (!aa.mem)
-	{
-		scrypt_fatal_error("scrypt: out of memory");
-	}
-	return aa;
-}
-
-static void
-scrypt_free(scrypt_aligned_alloc *aa) 
-{
-	free(aa->mem);
-}
-#endif
-
-
-void
-scrypt(
-       const uint8_t *password, 
-       size_t password_len, 
-       const uint8_t *salt, 
-       size_t salt_len, 
-       uint8_t Nfactor, 
-       uint8_t rfactor, 
-       uint8_t pfactor, 
-       uint8_t *out, 
-       size_t bytes
-      ) 
+//void scrypt(
+#define True 1
+#define False 0
+int scrypt(
+            const unsigned char *password, 
+            size_t password_len, 
+            const unsigned char *salt, 
+            size_t salt_len, 
+            uint8_t Nfactor, 
+            uint8_t rfactor, 
+            uint8_t pfactor, 
+            uint8_t *out, 
+            size_t bytes
+          ) 
 {
 	scrypt_aligned_alloc 
         YX, 
@@ -206,8 +218,17 @@ scrypt(
 
 	chunk_bytes = SCRYPT_BLOCK_BYTES * r * 2;
     V = scrypt_alloc((uint64_t)N * chunk_bytes);
-	YX = scrypt_alloc((p + 1) * chunk_bytes);
-
+    if( V.mem )
+    {
+	    YX = scrypt_alloc((p + 1) * chunk_bytes);
+        if( YX.mem )
+        {
+        }
+        else
+            return False;
+    }
+    else
+        return False;
 	/* 1: X = PBKDF2(password, salt) */
 	Y = YX.ptr;
 	X = Y + chunk_bytes;
@@ -232,7 +253,9 @@ scrypt(
 
 	scrypt_free(&YX);
 	scrypt_free(&V);
+    return True;
 }
+// below required by gcc daemon compile?
 #if defined( _WINDOWS )
 #if !defined( QT_GUI )
  }
