@@ -625,9 +625,41 @@ public:
         return (vin.empty() && vout.empty());
     }
 
+    const uint256 GetNormalizedHash() const
+    {
+        // Coinbase transactions cannot be malleated and may not change after
+        // publication. We cannot zero out the scripts, otherwise we get collisions
+        // among coinbase transactions by the same miner.
+        if (IsCoinBase())
+        {
+            return SerializeHash(*this);
+        }
+        else
+        {
+            CTransaction tmp(*this);
+            // Replace scriptSigs in inputs with empty strings
+            for (unsigned int i = 0; i < tmp.vin.size(); i++)
+            {
+                tmp.vin[i].scriptSig = CScript();
+            }
+
+            CHashWriter ss(SER_GETHASH, 0);
+            ss << tmp;
+            return ss.GetHash();
+        }
+    }
+
     uint256 GetHash() const
     {
-        return SerializeHash(*this);
+        // transaction with version >=2 fixes tx malleability
+        if (this->nVersion >= CURRENT_VERSION_of_Tx_for_yac_new)
+        {
+            return GetNormalizedHash();
+        }
+        else
+        {
+            return SerializeHash(*this);
+        }
     }
 
     bool IsFinal(int nBlockHeight=0, ::int64_t nBlockTime=0) const
