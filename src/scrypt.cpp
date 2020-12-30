@@ -57,14 +57,10 @@ extern "C" {
 #define SCRYPT_BUFFER_SIZE (131072 + 63)
 //                          (1<<17) + ((1<<6) -1) representing what, exactly??????
 
-#ifdef WIN32
- #ifdef USE_ASM
+#ifdef USE_ASM
   extern "C" void scrypt_core(unsigned int *X, unsigned int *V);
- #else
-  extern     void scrypt_core(unsigned int *X, unsigned int *V);
- #endif
 #else
-extern "C" void scrypt_core(unsigned int *X, unsigned int *V);
+  extern     void scrypt_core(unsigned int *X, unsigned int *V);
 #endif
 
 /* cpu and memory intensive function to transform a 80 byte buffer into a 32 byte output
