@@ -59,7 +59,6 @@ class TXMalleability_Test(BitcoinTestFramework):
         self.sync_all()
 
     def log_accounts(self, description):
-        self.log.info('================= log accounts')
         node_0_accounts = self.nodes[0].listaccounts()
         node_1_accounts = self.nodes[1].listaccounts()
         self.log.info('List accounts 0 '+description+': '+str(node_0_accounts))
@@ -68,9 +67,12 @@ class TXMalleability_Test(BitcoinTestFramework):
         self.log.info('Balance 1: '+str(self.nodes[1].getbalance()))
 
     def run_test(self):
+        # setup and mine some coins
         self.mine_blocks(0,10)
         address_1 = self.nodes[1].getnewaddress('account1')
-        txid_original = self.nodes[0].sendtoaddress(address_1, 10)
+
+        # create original transaction
+        txid_original = self.nodes[0].sendtoaddress(address_1, 100)
         self.log.info('Original transaction ID: '+str(txid_original))
         transaction_raw = self.nodes[0].getrawtransaction(txid_original)
         self.log.info('Original transaction raw: '+str(transaction_raw))
@@ -78,6 +80,8 @@ class TXMalleability_Test(BitcoinTestFramework):
         scriptSig = transaction_details['vin'][0]['scriptSig']['hex']
         self.log.info("Original transaction details: "+str(transaction_details))
         self.log.info("Original transaction scriptSig: "+str(scriptSig))
+        
+        # modifiy transaction
         index = transaction_raw.index(scriptSig)
         lengthbyte = transaction_raw[index-2:index]
         self.log.info('ScriptSig length byte: '+str(lengthbyte))
@@ -86,29 +90,33 @@ class TXMalleability_Test(BitcoinTestFramework):
         transaction_raw_modified = transaction_raw[:index-2]+newlengthbyte+'4c'+transaction_raw[index:]
         self.log.info('Modified raw transaction: '+str(transaction_raw_modified))
         assert(transaction_raw != transaction_raw_modified)
+
+        # check that original transaction id not available on node 1
+        assert_raises_rpc_error(-1, 'unknown!?', self.nodes[1].gettransaction, txid_original)
+        # send transaction
         txid_modified = self.nodes[1].sendrawtransaction(transaction_raw_modified)
         self.log.info('Modified transaction ID: '+str(txid_original))
         assert(txid_original != txid_modified)
-        # original transaction id not available on this node
-        assert_raises_rpc_error(-1, 'unknown!?', self.nodes[1].gettransaction, txid_original)
-   
-        # put it onto the blockchain
+        # mine it into the blockchain
         self.mine_blocks(1,10)
 
-        # check if the modified txid can be found
+        # check if the modified txid is confirmed and synced across the network
         transaction_details = self.nodes[1].gettransaction(txid_modified)
         self.log.info('Modified transaction found on node 1: '+str(transaction_details))
         transaction_details = self.nodes[0].gettransaction(txid_modified)
         assert_equal(transaction_details['confirmations'],Decimal('10'))
         self.log.info('Modified transaction found on node 0: '+str(transaction_details))
         assert_equal(transaction_details['confirmations'],Decimal('10'))
+        # check that coins have been transferred
+        assert_equal(self.nodes[1].getreceivedbyaccount('account1'), Decimal('100.0'))
 
-        # check that the original one did not get confirmed or synced across the network
+        # check that the original transaction did not get confirmed or synced across the network
         transaction_details = self.nodes[0].gettransaction(txid_original)
         self.log.info('Original transaction still found on node 0: '+str(transaction_details))
         assert_equal(transaction_details['confirmations'],Decimal('0'))
 
         assert_raises_rpc_error(-1, 'unknown!?', self.nodes[1].gettransaction, txid_original)
+
 
 if __name__ == '__main__':
     TXMalleability_Test().main()
