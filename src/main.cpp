@@ -775,6 +775,12 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (!fTestNet && !tx.IsStandard(strNonStd))
         return error("CTxMemPool::accept() : nonstandard transaction (%s)", strNonStd.c_str());
 
+    // Only accept nLockTime-using transactions that can be mined in the next
+    // block; we don't want our mempool filled up with transactions that can't
+    // be mined yet.
+    if (!tx.IsFinal())
+        return error("CTxMemPool::accept() : non-final transaction");
+
     // Do we already have it?
     uint256 hash = tx.GetHash();
     {
@@ -4371,7 +4377,7 @@ bool LoadBlockIndex(bool fAllowNew)
             CScript()           // what is being constructed here?????
             << (!fTestNet?  486604799:      // is this a time? 1985?
                             1464032600)  // how about a more current time????  If it is a time???????
-            << CBigNum(9999)    // what is this??
+            << CScriptNum(9999)    // what is this??
             << vector<unsigned char>((const unsigned char*)pszTimestamp, 
                                      (const unsigned char*)pszTimestamp + strlen(pszTimestamp)
                                     );

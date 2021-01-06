@@ -90,8 +90,6 @@ static const int
 //    CURRENT_VERSION_previous = VERSION_of_block_for_yac_044_old;
 
 inline bool MoneyRange(::int64_t nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
-// Threshold for nLockTime: below this value it is interpreted as block number, otherwise as UNIX timestamp.
-static const unsigned int LOCKTIME_THRESHOLD = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 // Maximum number of script-checking threads allowed
 static const int MAX_SCRIPTCHECK_THREADS = 16;
 
@@ -602,7 +600,7 @@ public:
         if (nLockTime == 0)
             return true;
         if (nBlockHeight == 0)
-            nBlockHeight = nBestHeight;
+            nBlockHeight = nBestHeight + 1;
         if (nBlockTime == 0)
             nBlockTime = GetAdjustedTime();
         if ((::int64_t)nLockTime < ((::int64_t)nLockTime < LOCKTIME_THRESHOLD ? (::int64_t)nBlockHeight : nBlockTime))

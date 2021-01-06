@@ -1481,7 +1481,7 @@ int64_t CWallet::GetImmatureWatchOnlyBalance() const
 }
 
 // populate vCoins with vector of spendable COutputs
-void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl) const
+void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const CCoinControl *coinControl, const CScript *fromScriptPubKey, bool fCountCltv) const
 {
     vCoins.clear();
 
@@ -1505,29 +1505,21 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
 
             for (unsigned int i = 0; i < pcoin->vout.size(); ++i)
             {
-                isminetype 
-                    mine = IsMine(pcoin->vout[i]);
+				isminetype mine = IsMine(pcoin->vout[i]);
 
-                if (
-                    !(pcoin->IsSpent(i)) && 
-                    (mine != MINE_NO) && 
-                    (pcoin->vout[i].nValue >= nMinimumInputValue) &&
-                    ( 
-                     (!coinControl) || 
-                     !(coinControl->HasSelected() ) || 
-                     coinControl->IsSelected((*it).first, i)
-                    )
-                   )
-                {
-                    vCoins.push_back(
-                                     COutput(
-                                             pcoin, 
-                                             i, 
-                                             pcoin->GetDepthInMainChain(), 
-                                             mine == MINE_SPENDABLE
-                                            )
-                                    );
-                }
+				bool isSpendableCltv = IsSpendableCltvUTXO(pcoin->vout[i]);
+
+				if (!(pcoin->IsSpent(i)) && (mine != MINE_NO)
+						&& ((!fromScriptPubKey && (fCountCltv || !isSpendableCltv)) // If not specific address, not select coins from cltv address
+								|| (fromScriptPubKey && pcoin->vout[i].scriptPubKey == *fromScriptPubKey)) // If there is a specific address, only select coins in that address
+						&& (pcoin->vout[i].nValue >= nMinimumInputValue)
+						&& ((!coinControl) || !(coinControl->HasSelected())
+								|| coinControl->IsSelected((*it).first, i)))
+				{
+					vCoins.push_back(
+							COutput(pcoin, i, pcoin->GetDepthInMainChain(),
+									mine == MINE_SPENDABLE));
+				}
             }
         }
     }
@@ -1779,11 +1771,14 @@ bool CWallet::SelectCoinsMinConf(int64_t nTargetValue, int64_t nSpendTime, int n
     return true;
 }
 
-bool CWallet::SelectCoins(int64_t nTargetValue, int64_t nSpendTime, set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64_t& nValueRet, const CCoinControl* coinControl) const
+bool CWallet::SelectCoins(int64_t nTargetValue, int64_t nSpendTime,
+		set<pair<const CWalletTx*, unsigned int> > &setCoinsRet,
+		int64_t &nValueRet, const CCoinControl *coinControl,
+		const CScript *fromScriptPubKey) const
 {
     vector<COutput> vCoins;
     
-    AvailableCoins(vCoins, true, coinControl);
+    AvailableCoins(vCoins, true, coinControl, fromScriptPubKey);
 
     // coin control -> return all selected outputs (we want all selected to go into the transaction for sure)
     if (coinControl && coinControl->HasSelected())
@@ -1853,7 +1848,9 @@ bool CWallet::SelectCoinsSimple(int64_t nTargetValue, int64_t nMinValue, int64_t
     return true;
 }
 
-bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, int64_t& nFeeRet, const CCoinControl* coinControl)
+bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> > &vecSend,
+		CWalletTx &wtxNew, CReserveKey &reservekey, int64_t &nFeeRet,
+		const CCoinControl *coinControl, const CScript *fromScriptPubKey)
 {
     int64_t nValue = 0;
     BOOST_FOREACH (const PAIRTYPE(CScript, int64_t)& s, vecSend)
@@ -1887,7 +1884,7 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> >& vecSend, 
                 // Choose coins to use
                 set<pair<const CWalletTx*,unsigned int> > setCoins;
                 int64_t nValueIn = 0;
-                if (!SelectCoins(nTotalValue, wtxNew.nTime, setCoins, nValueIn, coinControl))
+                if (!SelectCoins(nTotalValue, wtxNew.nTime, setCoins, nValueIn, coinControl, fromScriptPubKey))
                     return false;
                 BOOST_FOREACH(PAIRTYPE(const CWalletTx*, unsigned int) pcoin, setCoins)
                 {
@@ -1931,7 +1928,16 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> >& vecSend, 
 
                 // Fill vin
                 BOOST_FOREACH(const PAIRTYPE(const CWalletTx*,unsigned int)& coin, setCoins)
-                    wtxNew.vin.push_back(CTxIn(coin.first->GetHash(),coin.second));
+                {
+                	// In order nLockTime and OP_CHECKLOCKTIMEVERIFY can work, set nSequence to another value which different with maxint
+                	unsigned int nSequenceIn = std::numeric_limits<unsigned int>::max();
+                	if (IsSpendableCltvUTXO(coin.first->vout[coin.second]))
+                	{
+                		nSequenceIn = 0;
+                	}
+					wtxNew.vin.push_back(
+							CTxIn(coin.first->GetHash(), coin.second, CScript(), nSequenceIn));
+                }
 
                 // Sign
                 int nIn = 0;
@@ -1980,11 +1986,13 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64_t> >& vecSend, 
     return true;
 }
 
-bool CWallet::CreateTransaction(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNew, CReserveKey& reservekey, int64_t& nFeeRet, const CCoinControl* coinControl)
+bool CWallet::CreateTransaction(CScript scriptPubKey, int64_t nValue,
+		CWalletTx &wtxNew, CReserveKey &reservekey, int64_t &nFeeRet,
+		const CCoinControl *coinControl, const CScript *fromScriptPubKey)
 {
     vector< pair<CScript, int64_t> > vecSend;
     vecSend.push_back(make_pair(scriptPubKey, nValue));
-    return CreateTransaction(vecSend, wtxNew, reservekey, nFeeRet, coinControl);
+    return CreateTransaction(vecSend, wtxNew, reservekey, nFeeRet, coinControl, fromScriptPubKey);
 }
 
 void CWallet::GetStakeWeightFromValue(const int64_t& nTime, const int64_t& nValue, uint64_t& nWeight)
@@ -2898,7 +2906,7 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 
 
 
-string CWallet::SendMoney(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNew, bool fAskFee)
+string CWallet::SendMoney(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNew, bool fAskFee, const CScript* fromScriptPubKey)
 {
     CReserveKey reservekey(this);
     int64_t nFeeRequired;
@@ -2915,7 +2923,7 @@ string CWallet::SendMoney(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNe
         printf("SendMoney() : %s", strError.c_str());
         return strError;
     }
-    if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired))
+    if (!CreateTransaction(scriptPubKey, nValue, wtxNew, reservekey, nFeeRequired, NULL, fromScriptPubKey))
     {
         string strError;
         if (nValue + nFeeRequired > GetBalance())
@@ -2937,7 +2945,7 @@ string CWallet::SendMoney(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNe
 
 
 
-string CWallet::SendMoneyToDestination(const CTxDestination& address, int64_t nValue, CWalletTx& wtxNew, bool fAskFee)
+string CWallet::SendMoneyToDestination(const CTxDestination& address, int64_t nValue, CWalletTx& wtxNew, bool fAskFee, const CScript* fromScriptPubKey)
 {
     // Check amount
     if (nValue <= 0)
@@ -2949,7 +2957,7 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64_t nV
     CScript scriptPubKey;
     scriptPubKey.SetDestination(address);
 
-    return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee);
+    return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee, fromScriptPubKey);
 }
 
 
