@@ -163,11 +163,11 @@ static CBigNum bnInitialHashTargetTestNet(~uint256(0) >> 8);    // test
 //static CBigNum bnInitialHashTarget(~uint256(0) >> 16);
 
 int
-    nCoinbaseMaturityInBlocks = 6;
+    nCoinbaseMaturityInBlocks = 500;
 
 int 
-    nCoinbaseMaturity = nCoinbaseMaturityInBlocks;  // 6;
-                                                    // @~1 blk/minute, ~6 minutes
+    nCoinbaseMaturity = nCoinbaseMaturityInBlocks;  //500;
+                                                    // @~1 blk/minute, ~8.33 hrs        
 CBlockIndex* pindexGenesisBlock = NULL;
 int nBestHeight = -1;
 
@@ -1147,7 +1147,12 @@ int CMerkleTx::GetBlocksToMaturity() const
 {
     if (!(IsCoinBase() || IsCoinStake()))
         return 0;
-    return max(0, nCoinbaseMaturity - GetDepthInMainChain());
+    return max(
+                0, 
+                fTestNet?
+                (nCoinbaseMaturity +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
+                (nCoinbaseMaturity + 20) - GetDepthInMainChain()    // why is this 20?
+              );                                                    // what is this 20 from? For?
 }
 
 
