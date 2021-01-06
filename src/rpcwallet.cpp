@@ -73,6 +73,79 @@ void WalletTxToJSON(const CWalletTx& wtx, Object& entry)
         entry.push_back(Pair(item.first, item.second));
 }
 
+void LockTimeRedeemScriptToJSON(const CScript& redeemScript, txnouttype type, Object& out)
+{
+    vector<CTxDestination> addresses;
+    uint32_t nLockTime = 0;
+    std::string addressType = "";
+    std::string lockCondition = "";
+    bool isTimeBasedLock = false;
+    std::string redeemScriptFormat = redeemScript.ToString();
+
+    out.push_back(Pair("RedeemScript hex", HexStr(redeemScript.begin(), redeemScript.end())));
+    out.push_back(Pair("RedeemScript format", redeemScriptFormat));
+
+    // Get locktime and public key
+    std::string delimiter = " ";
+    std::string data;
+    size_t pos = 0;
+    bool firstPos = true;
+    while ((pos = redeemScriptFormat.find(delimiter)) != std::string::npos)
+    {
+        data = redeemScriptFormat.substr(0, pos);
+        if (firstPos)
+        {
+            nLockTime = atoi(data.c_str());
+            firstPos = false;
+        }
+        redeemScriptFormat.erase(0, pos + delimiter.length());
+    }
+    out.push_back(Pair("Public key", data));
+
+    // Convert to address
+    CScriptID redeemScriptID = redeemScript.GetID();
+    if (type == TX_CLTV)
+    {
+        addressType += "cltv address";
+        if (nLockTime < LOCKTIME_THRESHOLD)
+        {
+            std::stringstream ss;
+            ss << nLockTime;
+            lockCondition += "locked until block height " + ss.str();
+            isTimeBasedLock = false;
+        }
+        else
+        {
+            lockCondition += "locked until " + DateTimeStrFormat(nLockTime);
+            isTimeBasedLock = true;
+        }
+    }
+    else // TX_CSV
+    {
+        addressType += "csv address";
+        if (nLockTime & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG)
+        {
+            std::stringstream ss;
+            ss << ((nLockTime & CTxIn::SEQUENCE_LOCKTIME_MASK) << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY);
+            lockCondition += "locked for a period of " + ss.str() + " seconds";
+            isTimeBasedLock = true;
+        }
+        else
+        {
+            std::stringstream ss;
+            ss << nLockTime;
+            lockCondition += "locked within " + ss.str() + " blocks";
+            isTimeBasedLock = false;
+        }
+    }
+    out.push_back(Pair("Lock type", isTimeBasedLock ? "Time-based lock" : "Block-based lock"));
+    out.push_back(Pair(addressType, CBitcoinAddress(redeemScriptID).ToString()));
+    out.push_back(Pair("Description", "This is a redeemscript of " + addressType + "."
+                                    + " Any coins sent to this " + addressType + " will be " + lockCondition + "."
+                                    + " After the lock time, if anyone has a signature signed by private key matching"
+                                      " with public key then they can spend coins from this address"));
+}
+
 string AccountFromValue(const Value& value)
 {
     string strAccount = value.get_str();
@@ -895,6 +968,41 @@ Value addmultisigaddress(const Array& params, bool fHelp)
     return CBitcoinAddress(innerID).ToString();
 }
 
+Value describeredeemscript(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 1)
+    {
+        string msg = "describeredeemscript <redeemScript>\n"
+            "Parse redeem script and give more information\n";
+        throw runtime_error(msg);
+    }
+
+    // Construct using pay-to-script-hash:
+    vector<unsigned char> innerData = ParseHexV(params[0], "redeemScript");
+    CScript redeemScript(innerData.begin(), innerData.end());
+
+    // Check if it is CLTV/CSV redeemscript
+    vector<valtype> vSolutions;
+    txnouttype whichType;
+    if (!Solver(redeemScript, whichType, vSolutions))
+    {
+        string msg = "This is non-standard redeemscript\n";
+        throw runtime_error(msg);
+    }
+
+    if (whichType != TX_CLTV && whichType != TX_CSV)
+    {
+        string msg = "This is not CLTV/CSV redeemscript\n";
+        throw runtime_error(msg);
+    }
+
+    // Parse redeemscript
+    Object output;
+    LockTimeRedeemScriptToJSON(redeemScript, whichType, output);
+
+    return output;
+}
+
 Value spendcltv(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 3 || params.size() > 5)
@@ -1141,18 +1249,18 @@ Value createcsvaddress(const Array& params, bool fHelp)
 
     CBitcoinAddress address(innerID);
 
-    std::string warnMsg = "Any coins sent to this csv address will be locked within ";
+    std::string warnMsg = "Any coins sent to this csv address will be locked ";
     if (fBlockHeightLock)
     {
         std::stringstream ss;
         ss << nLockTime;
-        warnMsg += ss.str() + " blocks";
+        warnMsg += "within " + ss.str() + " blocks";
     }
     else
     {
         std::stringstream ss;
         ss << (nLockTime * (1 << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY));
-        warnMsg += ss.str() + " seconds";
+        warnMsg += "for a period of " + ss.str() + " seconds";
     }
     Object result;
     result.push_back(Pair("csv address", address.ToString()));
