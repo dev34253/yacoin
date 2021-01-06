@@ -976,6 +976,69 @@ Value spendcltv(const Array& params, bool fHelp)
     return wtx.GetHash().GetHex();
 }
 
+Value spendcsv(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 3 || params.size() > 5)
+    {
+        string msg = "spendcsv <cltv_address> <destination_address> <amount> [comment] [comment-to]\n"
+            "send coin from csv address to another address\n"
+            "<csv_address>: required param. csv address containing locked coins. This address is created by \"createcsvaddress\" rpc command\n"
+            "<destination_address>: required param. Coins will be sent to this address\n"
+            "<amount>: required param. Number coins will be sent to <destination_address>. It excludes the transaction fee, so that it must be smaller"
+                    " than number of locked coins in csv address. The remaining coins (= locked coins - <amount> - transaction fee) will be sent to a newly"
+                    " generated address which manages by wallet (same behaviour as \"sendtoaddress\" rpc command)\n"
+            "[comment], [comment-to]: optional param. Wallet comments\n";
+        throw runtime_error(msg);
+    }
+
+    // Check if csv address exist in the wallet
+    CBitcoinAddress address = CBitcoinAddress(params[0].get_str());
+    CScript scriptPubKey;
+    if (!address.IsValid())
+        throw runtime_error("Invalid csv address");
+    scriptPubKey.SetDestination(address.Get());
+    if (!IsMine(*pwalletMain,scriptPubKey))
+        throw runtime_error("Wallet doesn't manage coins in this address");
+
+    // Check if destination address is valid
+    CBitcoinAddress destAddress(params[1].get_str());
+    if (!destAddress.IsValid())
+        throw runtime_error("Invalid destination address");
+
+    // Check if number coins in csv address is enough to spend
+    int64_t nAmount = AmountFromValue(params[2]);
+    int64_t nTotalValue = 0;
+    for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    {
+        const CWalletTx& wtx = (*it).second;
+        if (wtx.IsCoinBase() || wtx.IsCoinStake() || !wtx.IsFinal())
+            continue;
+
+        BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+            if (txout.scriptPubKey == scriptPubKey)
+                nTotalValue += txout.nValue;
+    }
+
+    if (nTotalValue < nAmount)
+        throw runtime_error("Not enough coin in the wallet to spend");
+
+    // Wallet comments
+    CWalletTx wtx;
+    if (params.size() > 3 && params[3].type() != null_type && !params[3].get_str().empty())
+        wtx.mapValue["comment"] = params[3].get_str();
+    if (params.size() > 4 && params[4].type() != null_type && !params[4].get_str().empty())
+        wtx.mapValue["to"]      = params[4].get_str();
+
+    if (pwalletMain->IsLocked())
+        throw runtime_error("Error: Please enter the wallet passphrase with walletpassphrase first.");
+
+    string strError = pwalletMain->SendMoneyToDestination(destAddress.Get(), nAmount, wtx, false, &scriptPubKey);
+    if (strError != "")
+        throw JSONRPCError(RPC_WALLET_ERROR, strError);
+
+    return wtx.GetHash().GetHex();
+}
+
 Value createcltvaddress(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 2)
@@ -1024,6 +1087,75 @@ Value createcltvaddress(const Array& params, bool fHelp)
         warnMsg += DateTimeStrFormat(nLockTime);
     Object result;
     result.push_back(Pair("cltv address", address.ToString()));
+    result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
+    result.push_back(Pair("Warning", warnMsg));
+
+    pwalletMain->SetAddressBookName(innerID, strAccount);
+    return result;
+}
+
+Value createcsvaddress(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 3)
+    {
+        string msg = "createcsvaddress <lock_time> [isBlockHeightLock] [account]\n"
+            "Create a P2SH address which lock coins within a number of blocks/seconds\n"
+            "<lock_time>: required param. Specify time in seconds or number of blocks which coins will be locked within. Valid range 1->1073741823\n"
+            "[isBlockHeightLock]: optional true/false param. Determine <lock_time> is number of blocks or seconds. By default isBlockHeightLock=false\n"
+            "[account]: optional param. Account name corresponds to csv address\n";
+        throw runtime_error(msg);
+    }
+
+    // Generate a new key that is added to wallet
+    if (!pwalletMain->IsLocked())
+        pwalletMain->TopUpKeyPool();
+
+    CPubKey pubkey;
+    if (!pwalletMain->GetKeyFromPool(pubkey, false))
+        throw runtime_error("Error: Keypool ran out, please call keypoolrefill first");
+
+    // Get lock time
+    ::uint32_t nLockTime = params[0].get_int();
+    if (nLockTime < 1 || nLockTime > CTxIn::SEQUENCE_LOCKTIME_MASK)
+        throw runtime_error("<lock_time> must be between 1 and 1073741823");
+
+    bool fBlockHeightLock = false;
+    if (params.size() > 1)
+        fBlockHeightLock = params[1].get_bool();
+
+    string strAccount;
+    if (params.size() > 2)
+        strAccount = AccountFromValue(params[2]);
+
+    // Construct using pay-to-script-hash:
+    CScript inner;
+    ::uint32_t nSequence = fBlockHeightLock? nLockTime: (nLockTime | CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG);
+    inner.SetCsv(nSequence, pubkey);
+
+    if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
+    throw runtime_error(
+        strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
+
+    CScriptID innerID = inner.GetID();
+    pwalletMain->AddCScript(inner);
+
+    CBitcoinAddress address(innerID);
+
+    std::string warnMsg = "Any coins sent to this csv address will be locked within ";
+    if (fBlockHeightLock)
+    {
+        std::stringstream ss;
+        ss << nLockTime;
+        warnMsg += ss.str() + " blocks";
+    }
+    else
+    {
+        std::stringstream ss;
+        ss << (nLockTime * (1 << CTxIn::SEQUENCE_LOCKTIME_GRANULARITY));
+        warnMsg += ss.str() + " seconds";
+    }
+    Object result;
+    result.push_back(Pair("csv address", address.ToString()));
     result.push_back(Pair("redeemScript", HexStr(inner.begin(), inner.end())));
     result.push_back(Pair("Warning", warnMsg));
 
