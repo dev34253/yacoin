@@ -941,6 +941,9 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (pfMissingInputs)
         *pfMissingInputs = false;
 
+    if (tx.nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
+        return error("CTxMemPool::accept() : Not accept transaction with old version");
+
     if (!tx.CheckTransaction())
         return error("CTxMemPool::accept() : CheckTransaction failed");
 
@@ -3743,6 +3746,26 @@ bool CBlock::AcceptBlock()
         return DoS(10, error("AcceptBlock () : prev block not found"));
     CBlockIndex* pindexPrev = (*mi).second;
     int nHeight = pindexPrev->nHeight+1;
+
+    // Since hardfork block, new blocks don't accept transactions with version 1 anymore
+    if (nHeight >= nMainnetNewLogicBlockNumber)
+    {
+        bool fProofOfStake = IsProofOfStake();
+
+        if (vtx[0].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
+            return DoS(vtx[0].nDoS, error("AcceptBlock () : Not accept coinbase transaction with version 1"));
+
+        if(fProofOfStake && vtx[1].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
+            return DoS(vtx[1].nDoS, error("AcceptBlock () : Not accept coinstake transaction with version 1"));
+
+        // Iterate all transactions starting from second for proof-of-stake block
+        //    or first for proof-of-work block
+        for (unsigned int i = (fProofOfStake ? 2 : 1); i < vtx.size(); ++i)
+        {
+            if (vtx[i].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
+                return DoS(vtx[i].nDoS, error("AcceptBlock () : Not accept transaction with version 1"));
+        }
+    }
 
     // Check proof-of-work or proof-of-stake
     if (nBits != GetNextTargetRequired(pindexPrev, IsProofOfStake()))
