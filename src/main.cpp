@@ -1522,26 +1522,22 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
     return bnProofOfStakeHardLimit; // YAC has always been 30 
 }
 
-// miner's coin base reward based on nBits
-::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, bool fGetRewardOfBestHeightBlock)
+// Before hardfork, miner's coin base reward based on nBits
+// After hardfork, calculate coinbase reward based on nHeight. If not specify nHeight, always
+// calculate coinbase reward based on pindexBest->nHeight + 1 (reward of next best block)
+::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, unsigned int nHeight)
 {
 #ifdef Yac1dot0
+    // Get reward of a specific block height
+    if (nHeight >= nMainnetNewLogicBlockNumber)
+    {
+        ::int32_t startEpochBlockHeight = (nHeight / nEpochInterval) * nEpochInterval;
+        const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
+        return (pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
+    }
+
     if (pindexBest && (pindexBest->nHeight + 1) >= nMainnetNewLogicBlockNumber)
     {
-        // Get reward of current best height block
-        if (fGetRewardOfBestHeightBlock)
-        {
-            int64_t currentBlockReward = nBlockRewardPrev;
-            if (!nBlockRewardPrev)
-            {
-                const CBlockIndex* pindexMoneySupplyBlock =
-                    FindBlockByHeight(nMainnetNewLogicBlockNumber ? nMainnetNewLogicBlockNumber - 1 : 0);
-                currentBlockReward =
-                    (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-            }
-            return currentBlockReward;
-        }
-
         // Get reward of current mining block
         ::int64_t nBlockRewardExcludeFees;
         if (recalculateBlockReward) // Reorg through two or many epochs
