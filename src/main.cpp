@@ -168,6 +168,10 @@ int
 int 
     nCoinbaseMaturity = nCoinbaseMaturityInBlocks;  //500;
                                                     // @~1 blk/minute, ~8.33 hrs        
+
+int
+    nCoinbaseMaturityAfterHardfork = 6;
+
 CBlockIndex* pindexGenesisBlock = NULL;
 int nBestHeight = -1;
 
@@ -542,8 +546,41 @@ bool CheckSequenceLocks(const CTransaction &tx, int flags)
     return EvaluateSequenceLocks(index, lockPair);
 }
 
+int GetCoinbaseMaturity()
+{
+    if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+    {
+        return nCoinbaseMaturityAfterHardfork;
+    }
+    else
+    {
+        return nCoinbaseMaturity;
+    }
+}
 
+int GetCoinbaseMaturityOffset()
+{
+    if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+    {
+        return 0;
+    }
+    else
+    {
+        return 20;
+    }
+}
 
+bool isHardforkHappened()
+{
+    if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
 //////////////////////////////////////////////////////////////////////////////
 //
 // CTransaction and CTxIndex
@@ -1150,8 +1187,8 @@ int CMerkleTx::GetBlocksToMaturity() const
     return max(
                 0, 
                 fTestNet?
-                (nCoinbaseMaturity +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
-                (nCoinbaseMaturity + 20) - GetDepthInMainChain()    // why is this 20?
+                (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
+                (GetCoinbaseMaturity() + GetCoinbaseMaturityOffset()) - GetDepthInMainChain()    // why is this 20?
               );                                                    // what is this 20 from? For?
 }
 
@@ -2694,7 +2731,7 @@ bool CTransaction::ConnectInputs(
                 for (
                      const CBlockIndex
                         * pindex = pindexBlock;
-                     pindex && ((pindexBlock->nHeight - pindex->nHeight) < nCoinbaseMaturity); 
+                     pindex && ((pindexBlock->nHeight - pindex->nHeight) < GetCoinbaseMaturity());
                      pindex = pindex->pprev
                     )
                     if (

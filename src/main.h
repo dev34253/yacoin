@@ -225,7 +225,20 @@ bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int>* prevHeig
  */
 bool CheckSequenceLocks(const CTransaction &tx, int flags);
 
+/**
+ * Get minimum confirmations to use coinbase
+ */
+int GetCoinbaseMaturity();
 
+/**
+ * Get an extra confirmations to add coinbase to balance
+ */
+int GetCoinbaseMaturityOffset();
+
+/**
+ * Check if the hardfork happens
+ */
+bool isHardforkHappened();
 
 //bool GetWalletFile(CWallet* pwallet, std::string &strWalletFileOut);
 
