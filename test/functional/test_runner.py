@@ -77,7 +77,8 @@ BASE_SCRIPTS = [
     'feature_basic_transfer.py',
     'feature_uptime.py',
     'rpc_check.py',
-    'feature_set_min_fee.py'
+    'feature_set_min_fee.py',
+    'feature_epoch_transfer.py'
 ]
 
 EXTENDED_SCRIPTS = []
