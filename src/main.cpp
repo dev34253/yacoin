@@ -172,11 +172,15 @@ static CBigNum bnInitialHashTargetTestNet(~uint256(0) >> 8);    // test
 //static CBigNum bnInitialHashTarget(~uint256(0) >> 16);
 
 int
-    nCoinbaseMaturityInBlocks = 6;
+    nCoinbaseMaturityInBlocks = 500;
 
 int 
-    nCoinbaseMaturity = nCoinbaseMaturityInBlocks;  // 6;
-                                                    // @~1 blk/minute, ~6 minutes
+    nCoinbaseMaturity = nCoinbaseMaturityInBlocks;  //500;
+                                                    // @~1 blk/minute, ~8.33 hrs        
+
+int
+    nCoinbaseMaturityAfterHardfork = 6;
+
 CBlockIndex* pindexGenesisBlock = NULL;
 int nBestHeight = -1;
 
@@ -551,8 +555,29 @@ bool CheckSequenceLocks(const CTransaction &tx, int flags)
     return EvaluateSequenceLocks(index, lockPair);
 }
 
+int GetCoinbaseMaturity()
+{
+    if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+    {
+        return nCoinbaseMaturityAfterHardfork;
+    }
+    else
+    {
+        return nCoinbaseMaturity;
+    }
+}
 
-
+bool isHardforkHappened()
+{
+    if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
 //////////////////////////////////////////////////////////////////////////////
 //
 // CTransaction and CTxIndex
@@ -913,6 +938,9 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (pfMissingInputs)
         *pfMissingInputs = false;
 
+    if (tx.nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
+        return error("CTxMemPool::accept() : Not accept transaction with old version");
+
     if (!tx.CheckTransaction())
         return error("CTxMemPool::accept() : CheckTransaction failed");
 
@@ -1156,7 +1184,12 @@ int CMerkleTx::GetBlocksToMaturity() const
 {
     if (!(IsCoinBase() || IsCoinStake()))
         return 0;
-    return max(0, nCoinbaseMaturity - GetDepthInMainChain());
+    return max(
+                0, 
+                fTestNet?
+                (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
+                (GetCoinbaseMaturity() + 20) - GetDepthInMainChain()    // why is this 20?
+              );                                                    // what is this 20 from? For?
 }
 
 
@@ -1492,7 +1525,7 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
 #ifdef Yac1dot0
     if (pindexBest && (pindexBest->nHeight + 1) >= nMainnetNewLogicBlockNumber)
     {
-        // Get reward of current best height block
+        // Get reward of current best height block, currently this condition is only used for getmininginfo
         if (fGetRewardOfBestHeightBlock)
         {
             int64_t currentBlockReward = nBlockRewardPrev;
@@ -2717,7 +2750,7 @@ bool CTransaction::ConnectInputs(
                 for (
                      const CBlockIndex
                         * pindex = pindexBlock;
-                     pindex && ((pindexBlock->nHeight - pindex->nHeight) < nCoinbaseMaturity); 
+                     pindex && ((pindexBlock->nHeight - pindex->nHeight) < GetCoinbaseMaturity());
                      pindex = pindex->pprev
                     )
                     if (
@@ -3606,6 +3639,9 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
     if (!vtx[0].IsCoinBase())
         return DoS(100, error("CheckBlock () : first tx is not coinbase"));
 
+    if (vtx[0].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
+        return DoS(vtx[0].nDoS, error("CheckBlock () : Not accept coinbase transaction with old version"));
+
     if (!vtx[0].CheckTransaction())
         return DoS(vtx[0].nDoS, error("CheckBlock () : CheckTransaction failed on coinbase"));
 
@@ -3646,6 +3682,9 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 
             return DoS(100, error("CheckBlock () : bad proof-of-stake block signature"));
         }
+
+        if (vtx[1].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
+            return DoS(vtx[1].nDoS, error("CheckBlock () : Not accept coinstake transaction with old version"));
 
         if (!vtx[1].CheckTransaction())
             return DoS(vtx[1].nDoS, error("CheckBlock () : CheckTransaction failed on coinstake"));
@@ -3693,6 +3732,9 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
         // Check transaction timestamp
         if (GetBlockTime() < (::int64_t)tx.nTime)
             return DoS(50, error("CheckBlock () : block timestamp earlier than transaction timestamp"));
+
+        if (tx.nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
+            return DoS(tx.nDoS, error("CheckBlock () : Not accept transaction with old version"));
 
         // Check transaction consistency
         if (!tx.CheckTransaction())

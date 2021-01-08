@@ -71,10 +71,12 @@ class MiningTest(BitcoinTestFramework):
         # mine block 6
         self.nodes[0].setmocktime(mocktime)
         mocktime=mocktime+timeBetweenBlocksInSeconds
-        self.nodes[0].generate(1)
+        self.nodes[0].generate(2)
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
-        assert_equal(mining_info['blocks'], 6)
+        accounts=self.nodes[0].listaccounts()
+        groupings=self.nodes[0].listaddressgroupings()
+        assert_equal(mining_info['blocks'], 7)
         assert_equal(balance,Decimal('10000000'))
 
         # mine till block 9 (epoch)
