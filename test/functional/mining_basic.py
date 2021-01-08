@@ -68,15 +68,14 @@ class MiningTest(BitcoinTestFramework):
             # powreward is set to 1000000 (only applies if the yacoin version is started like this, so only for testing)
             assert_equal(mining_info['powreward'], Decimal('10000000'))
             assert_equal(balance,Decimal('0.0'))
+        
         # mine block 6
         self.nodes[0].setmocktime(mocktime)
         mocktime=mocktime+timeBetweenBlocksInSeconds
-        self.nodes[0].generate(2)
+        self.nodes[0].generate(1)
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
-        accounts=self.nodes[0].listaccounts()
-        groupings=self.nodes[0].listaddressgroupings()
-        assert_equal(mining_info['blocks'], 7)
+        assert_equal(mining_info['blocks'], 6)
         assert_equal(balance,Decimal('10000000'))
 
         # mine till block 9 (epoch)

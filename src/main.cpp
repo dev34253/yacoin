@@ -1184,12 +1184,13 @@ int CMerkleTx::GetBlocksToMaturity() const
 {
     if (!(IsCoinBase() || IsCoinStake()))
         return 0;
-    return max(
-                0, 
-                fTestNet?
-                (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
-                (GetCoinbaseMaturity() + 20) - GetDepthInMainChain()    // why is this 20?
-              );                                                    // what is this 20 from? For?
+    return max(0,(GetCoinbaseMaturity() +  0) - GetDepthInMainChain());
+    // return max(
+    //             0, 
+    //             fTestNet?
+    //             (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
+    //             (GetCoinbaseMaturity() + 20) - GetDepthInMainChain()    // why is this 20?
+    //           );                                                    // what is this 20 from? For?
 }
 
 
