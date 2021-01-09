@@ -1539,18 +1539,13 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
             }
 
             // If getmininginfo is called at the last block before new epoch, need to recalculate blockreward
-            // if ((pindexBest->nHeight + 1) % nEpochInterval == 0)
-            // {
-            //     ::int32_t startEpochBlockHeight = (pindexBest->nHeight / nEpochInterval) * nEpochInterval;
-            //     const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
-            //     currentBlockReward = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-            // }
-
-#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT
-            if(currentBlockReward == 0) { // this is an edge case when starting the chain
-                currentBlockReward = (::int64_t)1E13;
+            if ((pindexBest->nHeight + 1) % nEpochInterval == 0)
+            {
+                ::int32_t startEpochBlockHeight = (pindexBest->nHeight / nEpochInterval) * nEpochInterval;
+                const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
+                currentBlockReward = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
             }
-#endif
+
             return currentBlockReward;
         }
 
@@ -1593,11 +1588,6 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
                 }
             }
         }
-#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT
-        if(nBlockRewardExcludeFees == 0) { // this is an edge case when starting the chain
-            nBlockRewardExcludeFees = (::int64_t)1E13;
-        }
-#endif        
         return nBlockRewardExcludeFees;
     }
 #endif
@@ -2766,7 +2756,7 @@ bool CTransaction::ConnectInputs(
 
             // ppcoin: check transaction timestamp
             if (txPrev.nTime > nTime)
-                return DoS(100, error("ConnectInputs() : transaction timestamp earlier than input transaction"));
+                return DoS(100, error("ConnectInputs() : transaction timestamp earlier than input transaction %ld %ld", txPrev.nTime, nTime));
 
             // Check for negative or overflow input values
             nValueIn += txPrev.vout[prevout.COutPointGet_n()].nValue;
