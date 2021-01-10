@@ -51,11 +51,19 @@ class Hardfork_Test(BitcoinTestFramework):
         for node in self.nodes:
             node.setmocktime(mocktime)
 
-    def mine_blocks(self, nodeId, numberOfBlocksAtOnce):
+    def mine_blocks_once(self, nodeId, numberOfBlocksAtOnce):
         timeBetweenBlocks = 60
         self.setmocktimeforallnodes(self.mocktime)        
         self.nodes[nodeId].generate(numberOfBlocksAtOnce)
         self.mocktime=self.mocktime+timeBetweenBlocks*numberOfBlocksAtOnce
+        self.sync_all()
+
+    def mine_blocks(self, nodeId, numberOfBlocks):
+        timeBetweenBlocks = 60
+        for _ in range(numberOfBlocks):
+            self.setmocktimeforallnodes(self.mocktime)        
+            self.nodes[nodeId].generate(1)
+            self.mocktime=self.mocktime+timeBetweenBlocks
         self.sync_all()
 
     def log_accounts(self, description):
@@ -67,15 +75,16 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info('Balance 1: '+str(self.nodes[1].getbalance()))
 
     def run_test(self):
-        self.mine_blocks(0, 14)
-        assert_equal(self.nodes[0].getblockcount(), 14)
+        self.mine_blocks(0, self.block_fork_1_0-1)
+        
+        assert_equal(self.nodes[0].getblockcount(), self.block_fork_1_0-1)
         mininginfo = self.nodes[0].getmininginfo()
         info=self.nodes[0].getinfo()
         moneSupply_before_fork = float(info['moneysupply'])
 
         self.log.info(mininginfo)
         self.log.info(info)
-        assert_equal(int(self.nodes[0].getbalance()), 0)
+        assert(int(self.nodes[0].getbalance()) > 0)
 
         # coinbase transaction is version 1 before fork
         blockhash=self.nodes[0].getblockhash(14)
@@ -83,11 +92,12 @@ class Hardfork_Test(BitcoinTestFramework):
         transaction_version=self.nodes[0].gettransaction(transactionid)['version']        
         assert_equal(transaction_version, 1)
 
-        self.mine_blocks(0,1)
-        assert_equal(self.nodes[0].getblockcount(), 15)
-        assert_equal(self.nodes[1].getblockcount(), 15)
 
         # FORK
+        self.mine_blocks(0,1)
+        assert_equal(self.nodes[0].getblockcount(), self.block_fork_1_0)
+        assert_equal(self.nodes[1].getblockcount(), self.block_fork_1_0)
+
         blockhash=self.nodes[0].getblockhash(15)
         transactionid=self.nodes[0].getblock(blockhash)['tx'][0]
         transaction_version=self.nodes[0].gettransaction(transactionid)['version']
@@ -104,8 +114,8 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info("Balance after fork: "+str(self.nodes[0].getbalance()))
         self.mine_blocks(0,6)
         self.log.info("Balance after 6 blocks after fork: "+str(self.nodes[0].getbalance()))
-        assert_equal(self.nodes[0].getblockcount(), 21)
-        assert_equal(self.nodes[1].getblockcount(), 21)
+        assert_equal(self.nodes[0].getblockcount(), self.block_fork_1_0 + 6)
+        assert_equal(self.nodes[1].getblockcount(), self.block_fork_1_0 + 6)
 
         # coinbase transactions are v2 after fork
         blockhash=self.nodes[0].getblockhash(16)

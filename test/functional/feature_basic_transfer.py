@@ -71,9 +71,9 @@ class BasicTransfer_Test(BitcoinTestFramework):
         self.log.info('Address 0: '+str(address_0))
         self.log.info('Address 1: '+str(address_1))
 
-        self.mine_blocks(0, 10)
-        assert_equal(self.nodes[0].getblockcount(), 10)
-        assert_equal(self.nodes[1].getblockcount(), 10)
+        self.mine_blocks(0, 30)
+        assert_equal(self.nodes[0].getblockcount(), 30)
+        assert_equal(self.nodes[1].getblockcount(), 30)
         
         balance_0 = float(self.nodes[0].getbalance())
         balance_1 = float(self.nodes[1].getbalance())
@@ -92,9 +92,8 @@ class BasicTransfer_Test(BitcoinTestFramework):
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0],address_1)
         assert_equal(tx_details['confirmations'],Decimal('0'))
 
-        self.mine_blocks(0, 10)        
-        self.log_accounts("after 20")
-        assert_equal(self.nodes[0].getblockcount(), 20)
+        self.mine_blocks(0, 10)
+        assert_equal(self.nodes[0].getblockcount(), 40)
         balance_0 = self.nodes[0].getbalance()
         balance_1 = self.nodes[1].getbalance()
         assert_equal(balance_1, Decimal('2'))

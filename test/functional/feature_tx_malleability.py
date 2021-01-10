@@ -45,7 +45,7 @@ class TXMalleability_Test(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.supports_cli = False
         self.mocktime = TIME_GENESIS_BLOCK
-        self.block_fork_1_0 = 25
+        self.block_fork_1_0 = 0
         
     def setmocktimeforallnodes(self, mocktime):
         for node in self.nodes:

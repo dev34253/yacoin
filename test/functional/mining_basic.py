@@ -46,10 +46,24 @@ class MiningTest(BitcoinTestFramework):
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.supports_cli = False
-   
+        self.mocktime=TIME_GENESIS_BLOCK
+
+    def setmocktimeforallnodes(self, mocktime):
+        self.mocktime = mocktime
+        for node in self.nodes:
+            node.setmocktime(mocktime)
+
+    def mine_blocks_init(self, nodeId, numberOfBlocks):
+        timeBetweenBlocks = 60
+        self.setmocktimeforallnodes(self.mocktime)
+        self.mocktime=self.mocktime+timeBetweenBlocks+timeBetweenBlocks*numberOfBlocks      
+        self.nodes[nodeId].generate(numberOfBlocks)
+        self.sync_all()
+
     def run_test(self):
         # mine a few blocks and check that the balance is available after block 6
-        mocktime=TIME_GENESIS_BLOCK
+        self.mine_blocks_init(0, 20)
+        mocktime=self.mocktime
         timeBetweenBlocksInSeconds=120            
 
         for i in range(5):
@@ -59,11 +73,11 @@ class MiningTest(BitcoinTestFramework):
             self.nodes[0].generate(1)
             mining_info = self.nodes[0].getmininginfo()
             balance = self.nodes[0].getbalance()
-            assert_equal(mining_info['blocks'], (i+1))
+            assert_equal(mining_info['blocks'], (20+i+1))
             assert_equal(mining_info['currentblocksize'], 1000)
             assert_equal(mining_info['N'], 32)
             # the low difficulty is only valid because of the low difficulty flag
-            assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000596046448'))
+            assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000009536743164'))
             # low nfactor is set for testing
             assert_equal(mining_info['Nfactor'], 4)
             # powreward is based on 100,000,000 initial money supply for testing
@@ -76,7 +90,7 @@ class MiningTest(BitcoinTestFramework):
         self.nodes[0].generate(1)
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
-        assert_equal(mining_info['blocks'], 6)
+        assert_equal(mining_info['blocks'], 26)
         assert_approx(balance,3.80257)
 
         # mine till block 9 (epoch)
@@ -85,8 +99,8 @@ class MiningTest(BitcoinTestFramework):
             mocktime=mocktime+timeBetweenBlocksInSeconds
             self.nodes[0].generate(1)
             mining_info = self.nodes[0].getmininginfo()
-            assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000596046448'))
-        assert_equal(mining_info['blocks'], 9)
+            assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000009536743164'))
+        assert_equal(mining_info['blocks'], 29)
         assert_approx(mining_info['powreward'], 3.8025705377)
 
         # mine block 10 (epoch calculation) and difficulty change
@@ -95,8 +109,8 @@ class MiningTest(BitcoinTestFramework):
         self.nodes[0].generate(1)
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
-        assert_equal(mining_info['blocks'], 10)
-        assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000380457032'))
+        assert_equal(mining_info['blocks'], 30)
+        assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000003178914388'))
         assert_approx(mining_info['powreward'], 3.8025705377)
         assert_approx(float(balance), 19.01285)
 
@@ -104,11 +118,11 @@ class MiningTest(BitcoinTestFramework):
         for i in range(5):
             self.nodes[0].setmocktime(mocktime)
             mocktime=mocktime+timeBetweenBlocksInSeconds
-            self.nodes[0].generate(1)            
+            self.nodes[0].generate(1)
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
-        assert_equal(mining_info['blocks'], 15)
-        assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000380457032'))
+        assert_equal(mining_info['blocks'], 35)
+        assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000003178914388'))
         assert_approx(balance, 38.0257)
 
 if __name__ == '__main__':
