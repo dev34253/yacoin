@@ -1529,7 +1529,7 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
 {
 #ifdef Yac1dot0
     // Get reward of a specific block height
-    if (nHeight >= nMainnetNewLogicBlockNumber)
+    if (nHeight != 0 && nHeight >= nMainnetNewLogicBlockNumber)
     {
         ::int32_t startEpochBlockHeight = (nHeight / nEpochInterval) * nEpochInterval;
         const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
