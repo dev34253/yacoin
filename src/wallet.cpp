@@ -1798,7 +1798,7 @@ bool CWallet::SelectCoins(int64_t nTargetValue, int64_t nSpendTime,
         }
         return (nValueRet >= nTargetValue);
     }
-
+    
     return (SelectCoinsMinConf(nTargetValue, nSpendTime, 1, 6, vCoins, setCoinsRet, nValueRet) ||
             SelectCoinsMinConf(nTargetValue, nSpendTime, 1, 1, vCoins, setCoinsRet, nValueRet) ||
             SelectCoinsMinConf(nTargetValue, nSpendTime, 0, 1, vCoins, setCoinsRet, nValueRet));

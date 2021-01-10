@@ -1539,12 +1539,12 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
             }
 
             // If getmininginfo is called at the last block before new epoch, need to recalculate blockreward
-            if ((pindexBest->nHeight + 1) % nEpochInterval == 0)
-            {
-                ::int32_t startEpochBlockHeight = (pindexBest->nHeight / nEpochInterval) * nEpochInterval;
-                const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
-                currentBlockReward = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-            }
+            // if ((pindexBest->nHeight + 1) % nEpochInterval == 0)
+            // {
+            //     ::int32_t startEpochBlockHeight = (pindexBest->nHeight / nEpochInterval) * nEpochInterval;
+            //     const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
+            //     currentBlockReward = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
+            // }
 
             return currentBlockReward;
         }

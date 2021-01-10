@@ -50,7 +50,8 @@ class MiningTest(BitcoinTestFramework):
     def run_test(self):
         # mine a few blocks and check that the balance is available after block 6
         mocktime=TIME_GENESIS_BLOCK
-        timeBetweenBlocksInSeconds=120
+        timeBetweenBlocksInSeconds=120            
+
         for i in range(5):
             self.log.info(">>> MINING block "+str(i+1))            
             self.nodes[0].setmocktime(mocktime)
@@ -65,8 +66,8 @@ class MiningTest(BitcoinTestFramework):
             assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000596046448'))
             # low nfactor is set for testing
             assert_equal(mining_info['Nfactor'], 4)
-            # powreward is set to 1000000 (only applies if the yacoin version is started like this, so only for testing)
-            assert_equal(mining_info['powreward'], Decimal('10000000'))
+            # powreward is based on 100,000,000 initial money supply for testing
+            assert_approx(mining_info['powreward'], 3.80257)
             assert_equal(balance,Decimal('0.0'))
         
         # mine block 6
@@ -76,7 +77,7 @@ class MiningTest(BitcoinTestFramework):
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 6)
-        assert_equal(balance,Decimal('10000000'))
+        assert_approx(balance,3.80257)
 
         # mine till block 9 (epoch)
         for i in range(3):
@@ -86,7 +87,7 @@ class MiningTest(BitcoinTestFramework):
             mining_info = self.nodes[0].getmininginfo()
             assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000596046448'))
         assert_equal(mining_info['blocks'], 9)
-        assert_approx(mining_info['powreward'], 3.422313)
+        assert_approx(mining_info['powreward'], 3.8025705377)
 
         # mine block 10 (epoch calculation) and difficulty change
         self.nodes[0].setmocktime(mocktime)
@@ -96,8 +97,8 @@ class MiningTest(BitcoinTestFramework):
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 10)
         assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000380457032'))
-        assert_approx(mining_info['powreward'], 3.422313)
-        assert_equal(balance,Decimal('50000000'))
+        assert_approx(mining_info['powreward'], 3.8025705377)
+        assert_approx(float(balance), 19.01285)
 
         # mine block 15 (pow reward available)
         for i in range(5):
@@ -108,7 +109,7 @@ class MiningTest(BitcoinTestFramework):
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 15)
         assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000380457032'))
-        assert_approx(balance,90000003.422313)
+        assert_approx(balance, 38.0257)
 
 if __name__ == '__main__':
     MiningTest().main()

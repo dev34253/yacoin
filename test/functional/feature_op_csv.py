@@ -75,7 +75,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         
         balance_0 = self.nodes[0].getbalance()
         balance_1 = self.nodes[1].getbalance()
-        assert(balance_0 > 10000)
+        assert(balance_0 > 10)
         self.log.info('Balances after initial mining')
         self.log.info('Balance node 0: '+str(balance_0))
         self.log.info('Balance node 1: '+str(balance_1))
@@ -88,13 +88,14 @@ class OP_CSV_Test(BitcoinTestFramework):
         balance_csv_1 = self.nodes[1].getreceivedbyaccount('csv_1')
         assert_equal(balance_csv_1, Decimal('0.0000'))
 
-        transaction_id = self.nodes[0].sendtoaddress(csv_address, 100.0)
+        transaction_id = self.nodes[0].sendtoaddress(csv_address, 10.0)
+        assert_equal(int(self.nodes[0].gettransaction(transaction_id)['version']), 2)
         self.mine_blocks(0,10)
         assert_equal(self.nodes[0].getblockcount(), 30)
         assert_equal(self.nodes[1].getblockcount(), 30)
         
         received_coins = self.nodes[1].getreceivedbyaccount('csv_1')
-        assert_equal(received_coins, Decimal('100.0'))
+        assert_equal(received_coins, Decimal('10.0'))
 
         receiver_address = self.nodes[0].getnewaddress('receiver')
         receiver_balance = self.nodes[0].getreceivedbyaccount('receiver')
@@ -106,11 +107,12 @@ class OP_CSV_Test(BitcoinTestFramework):
         self.mine_blocks(1, 10)
 
         self.log_accounts("before spendcsv")
-        transaction_id_csv = self.nodes[1].spendcsv(csv_address, receiver_address, 10.0)
+        transaction_id_csv = self.nodes[1].spendcsv(csv_address, receiver_address, 2.0)
         tx_details = self.nodes[1].gettransaction(transaction_id_csv)
         self.log.info(str(tx_details))
         assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
+        assert_equal(tx_details['version'], 2)
 
         self.mine_blocks(1, 10)
         self.log_accounts("after spendcsv")
@@ -125,7 +127,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         balance_csv_1 = self.nodes[1].getreceivedbyaccount('csv_1')
         self.log.info('csv_1 balance: '+str(balance_csv_1))
 
-        assert_equal(receiver_balance, Decimal('10.0'))
+        assert_equal(receiver_balance, Decimal('2.0'))
 
 if __name__ == '__main__':
     OP_CSV_Test().main()
