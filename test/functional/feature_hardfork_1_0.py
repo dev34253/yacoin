@@ -45,7 +45,7 @@ class Hardfork_Test(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.supports_cli = False
         self.mocktime = TIME_GENESIS_BLOCK
-        self.block_fork_1_0 = 15
+        self.block_fork_1_0 = 35
         
     def setmocktimeforallnodes(self, mocktime):
         for node in self.nodes:
@@ -84,7 +84,7 @@ class Hardfork_Test(BitcoinTestFramework):
 
         self.log.info(mininginfo)
         self.log.info(info)
-        assert(int(self.nodes[0].getbalance()) > 0)
+        assert_equal(int(self.nodes[0].getbalance()), 0)
 
         # coinbase transaction is version 1 before fork
         blockhash=self.nodes[0].getblockhash(14)
@@ -118,7 +118,7 @@ class Hardfork_Test(BitcoinTestFramework):
         assert_equal(self.nodes[1].getblockcount(), self.block_fork_1_0 + 6)
 
         # coinbase transactions are v2 after fork
-        blockhash=self.nodes[0].getblockhash(16)
+        blockhash=self.nodes[0].getblockhash(self.block_fork_1_0+1)
         transactionid=self.nodes[0].getblock(blockhash)['tx'][0]
         transaction_version=self.nodes[0].gettransaction(transactionid)['version']        
         assert_equal(transaction_version, 2)
