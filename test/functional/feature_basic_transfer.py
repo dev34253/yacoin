@@ -77,7 +77,7 @@ class BasicTransfer_Test(BitcoinTestFramework):
         
         balance_0 = float(self.nodes[0].getbalance())
         balance_1 = float(self.nodes[1].getbalance())
-        assert_approx(balance_0, 19.01285) # 3.8025705377 * 5
+        assert_approx(balance_0, 95.064278) # 3.8025705377 * 5
         assert_equal(balance_1, Decimal('0.0'))
 
         self.log.info('Balances after initial mining')

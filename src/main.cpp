@@ -567,6 +567,18 @@ int GetCoinbaseMaturity()
     }
 }
 
+int GetCoinbaseMaturityOffset()
+{
+    if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+    {
+        return 0;
+    }
+    else
+    {
+        return 20;
+    }
+}
+
 bool isHardforkHappened()
 {
     if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
@@ -1188,7 +1200,7 @@ int CMerkleTx::GetBlocksToMaturity() const
                 0, 
                 fTestNet?
                 (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
-                (GetCoinbaseMaturity() + 20) - GetDepthInMainChain()    // why is this 20?
+                (GetCoinbaseMaturity() + GetCoinbaseMaturityOffset()) - GetDepthInMainChain()    // why is this 20?
               );                                                    // what is this 20 from? For?
 }
 
@@ -1519,35 +1531,22 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
     return bnProofOfStakeHardLimit; // YAC has always been 30 
 }
 
-// miner's coin base reward based on nBits
-::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, bool fGetRewardOfBestHeightBlock)
+// Before hardfork, miner's coin base reward based on nBits
+// After hardfork, calculate coinbase reward based on nHeight. If not specify nHeight, always
+// calculate coinbase reward based on pindexBest->nHeight + 1 (reward of next best block)
+::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, unsigned int nHeight)
 {
 #ifdef Yac1dot0
+    // Get reward of a specific block height
+    if (nHeight != 0 && nHeight >= nMainnetNewLogicBlockNumber)
+    {
+        ::int32_t startEpochBlockHeight = (nHeight / nEpochInterval) * nEpochInterval;
+        const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
+        return (pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
+    }
+
     if (pindexBest && (pindexBest->nHeight + 1) >= nMainnetNewLogicBlockNumber)
     {
-        // Get reward of current best height block, currently this condition is only used for getmininginfo
-        if (fGetRewardOfBestHeightBlock)
-        {
-            int64_t currentBlockReward = nBlockRewardPrev;
-            if (!nBlockRewardPrev)
-            {
-                const CBlockIndex* pindexMoneySupplyBlock =
-                    FindBlockByHeight(nMainnetNewLogicBlockNumber ? nMainnetNewLogicBlockNumber - 1 : 0);
-                currentBlockReward =
-                    (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-            }
-
-            // If getmininginfo is called at the last block before new epoch, need to recalculate blockreward
-            // if ((pindexBest->nHeight + 1) % nEpochInterval == 0)
-            // {
-            //     ::int32_t startEpochBlockHeight = (pindexBest->nHeight / nEpochInterval) * nEpochInterval;
-            //     const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
-            //     currentBlockReward = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-            // }
-
-            return currentBlockReward;
-        }
-
         // Get reward of current mining block
         ::int64_t nBlockRewardExcludeFees;
         if (recalculateBlockReward) // Reorg through two or many epochs
@@ -3616,21 +3615,13 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 
     // Size limits
     if (vtx.empty() || vtx.size() > GetMaxSize(MAX_BLOCK_SIZE) || ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE))
-    {
-        if (vtx.empty()) printf("vtx.empty\n");
-        if (vtx.size() > GetMaxSize(MAX_BLOCK_SIZE)) printf("vtx.size > getmaxsize\n");
-        if (::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE)) printf("vtx getserialsize\n");
         return DoS(100, error("CheckBlock () : size limits failed"));
-    }
 
     bool fProofOfStake = IsProofOfStake();
 
     // First transaction must be coinbase, the rest must not be
     if (!vtx[0].IsCoinBase())
         return DoS(100, error("CheckBlock () : first tx is not coinbase"));
-
-    if (vtx[0].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
-        return DoS(vtx[0].nDoS, error("CheckBlock () : Not accept coinbase transaction with old version"));
 
     if (!vtx[0].CheckTransaction())
         return DoS(vtx[0].nDoS, error("CheckBlock () : CheckTransaction failed on coinbase"));
@@ -3672,9 +3663,6 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 
             return DoS(100, error("CheckBlock () : bad proof-of-stake block signature"));
         }
-
-        if (vtx[1].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
-            return DoS(vtx[1].nDoS, error("CheckBlock () : Not accept coinstake transaction with old version"));
 
         if (!vtx[1].CheckTransaction())
             return DoS(vtx[1].nDoS, error("CheckBlock () : CheckTransaction failed on coinstake"));
@@ -3723,9 +3711,6 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
         if (GetBlockTime() < (::int64_t)tx.nTime)
             return DoS(50, error("CheckBlock () : block timestamp earlier than transaction timestamp"));
 
-        if (tx.nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
-            return DoS(tx.nDoS, error("CheckBlock () : Not accept transaction with old version"));
-
         // Check transaction consistency
         if (!tx.CheckTransaction())
             return DoS(tx.nDoS, error("CheckBlock () : CheckTransaction failed"));
@@ -3766,6 +3751,26 @@ bool CBlock::AcceptBlock()
         return DoS(10, error("AcceptBlock () : prev block not found"));
     CBlockIndex* pindexPrev = (*mi).second;
     int nHeight = pindexPrev->nHeight+1;
+
+    // Since hardfork block, new blocks don't accept transactions with version 1 anymore
+    if (nHeight >= nMainnetNewLogicBlockNumber)
+    {
+        bool fProofOfStake = IsProofOfStake();
+
+        if (vtx[0].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
+            return DoS(vtx[0].nDoS, error("AcceptBlock () : Not accept coinbase transaction with version 1"));
+
+        if(fProofOfStake && vtx[1].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
+            return DoS(vtx[1].nDoS, error("AcceptBlock () : Not accept coinstake transaction with version 1"));
+
+        // Iterate all transactions starting from second for proof-of-stake block
+        //    or first for proof-of-work block
+        for (unsigned int i = (fProofOfStake ? 2 : 1); i < vtx.size(); ++i)
+        {
+            if (vtx[i].nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old)
+                return DoS(vtx[i].nDoS, error("AcceptBlock () : Not accept transaction with version 1"));
+        }
+    }
 
     // Check proof-of-work or proof-of-stake
     if (nBits != GetNextTargetRequired(pindexPrev, IsProofOfStake()))

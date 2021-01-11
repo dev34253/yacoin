@@ -92,7 +92,6 @@ class Hardfork_Test(BitcoinTestFramework):
         transaction_version=self.nodes[0].gettransaction(transactionid)['version']        
         assert_equal(transaction_version, 1)
 
-
         # FORK
         self.mine_blocks(0,1)
         assert_equal(self.nodes[0].getblockcount(), self.block_fork_1_0)
@@ -108,8 +107,8 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info(mininginfo)
         self.log.info(info)
         powreward = float(mininginfo['powreward'])
-        expected_reward = moneSupply_before_fork * 0.02 / (365*24*60 + 6*60)
-        assert_approx(powreward, expected_reward)
+        expected_reward = float(info['moneysupply']) * 0.02 / (365*24*60 + 6*60)
+        assert_approx(float(powreward), expected_reward)
         
         self.log.info("Balance after fork: "+str(self.nodes[0].getbalance()))
         self.mine_blocks(0,6)

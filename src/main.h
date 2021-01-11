@@ -193,7 +193,7 @@ void ThreadScriptCheckQuit();
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits);
 unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfStake);
-::int64_t GetProofOfWorkReward(unsigned int nBits=0, ::int64_t nFees=0, bool fGetRewardOfBestHeightBlock=false);
+::int64_t GetProofOfWorkReward(unsigned int nBits=0, ::int64_t nFees=0, unsigned int nHeight=0);
 ::int64_t GetProofOfStakeReward(::int64_t nCoinAge, unsigned int nBits, ::int64_t nTime, bool bCoinYearOnly=false);
 
 ::int64_t GetProofOfStakeReward(::int64_t nCoinAge);
@@ -235,6 +235,11 @@ bool CheckSequenceLocks(const CTransaction &tx, int flags);
  * Get minimum confirmations to use coinbase
  */
 int GetCoinbaseMaturity();
+
+/**
+ * Get an extra confirmations to add coinbase to balance
+ */
+int GetCoinbaseMaturityOffset();
 
 /**
  * Check if the hardfork happens
@@ -619,7 +624,7 @@ public:
     void SetNull()
     {
         // TODO: Need update for mainet
-        if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+        if (nBestHeight != -1 && pindexGenesisBlock && (nBestHeight + 1) >= nMainnetNewLogicBlockNumber)
         {
             nVersion = CTransaction::CURRENT_VERSION_of_Tx_for_yac_new;
         }
