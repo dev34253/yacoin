@@ -1302,6 +1302,12 @@ static CBlockIndex* pblockindexFBBHLast;
 CBlockIndex* FindBlockByHeight(int nHeight)
 {
     CBlockIndex *pblockindex;
+    // Check input parameter
+    if (nHeight <= 0)
+        return pindexGenesisBlock;
+    if (nHeight >= pindexBest->nHeight)
+        return pindexBest;
+
     if (nHeight < nBestHeight / 2)
         pblockindex = pindexGenesisBlock;
     else
