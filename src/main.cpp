@@ -2733,10 +2733,18 @@ bool CTransaction::ConnectInputs(
 
             // If prev is coinbase or coinstake, check that it's matured
             if (txPrev.IsCoinBase() || txPrev.IsCoinStake())
+            {
+                // Fix off-by-one error in coinbase maturity check after hardfork
+                int coinbaseMaturityOffset = 0;
+                if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+                {
+                    coinbaseMaturityOffset = 1;
+                }
+
                 for (
                      const CBlockIndex
                         * pindex = pindexBlock;
-                     pindex && ((pindexBlock->nHeight - pindex->nHeight) < GetCoinbaseMaturity());
+                     pindex && ((pindexBlock->nHeight - pindex->nHeight + coinbaseMaturityOffset) < GetCoinbaseMaturity());
                      pindex = pindex->pprev
                     )
                     if (
@@ -2746,8 +2754,9 @@ bool CTransaction::ConnectInputs(
                         return error(
                                      "ConnectInputs() : tried to spend %s at depth %d", 
                                      txPrev.IsCoinBase()? "coinbase": "coinstake", 
-                                     pindexBlock->nHeight - pindex->nHeight
+                                     pindexBlock->nHeight - pindex->nHeight + coinbaseMaturityOffset
                                     );
+            }
 
             // ppcoin: check transaction timestamp
             if (txPrev.nTime > nTime)
