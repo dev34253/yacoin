@@ -1310,6 +1310,12 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock)
 static CBlockIndex* pblockindexFBBHLast;
 CBlockIndex* FindBlockByHeight(int nHeight)
 {
+    if(nHeight<=0){
+        return pindexGenesisBlock;
+    }
+    if(nHeight>=pindexBest->nHeight){
+        return pindexBest;
+    }
     CBlockIndex *pblockindex;
     if (nHeight < nBestHeight / 2)
         pblockindex = pindexGenesisBlock;
