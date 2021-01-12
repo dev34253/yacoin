@@ -75,13 +75,14 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info('Balance 1: '+str(self.nodes[1].getbalance()))
 
     def run_test(self):
-        self.mine_blocks(0, self.block_fork_1_0-1)
+        self.mine_blocks(0, 29)
+        info=self.nodes[0].getinfo()
+        moneSupply_before_fork = int(info['moneysupply'])
+        self.mine_blocks(0, 5)
         
         assert_equal(self.nodes[0].getblockcount(), self.block_fork_1_0-1)
         mininginfo = self.nodes[0].getmininginfo()
         info=self.nodes[0].getinfo()
-        moneSupply_before_fork = float(info['moneysupply'])
-
         self.log.info(mininginfo)
         self.log.info(info)
         assert_equal(int(self.nodes[0].getbalance()), 0)
@@ -106,9 +107,9 @@ class Hardfork_Test(BitcoinTestFramework):
         info=self.nodes[0].getinfo()
         self.log.info(mininginfo)
         self.log.info(info)
-        powreward = float(mininginfo['powreward'])
-        expected_reward = float(info['moneysupply']) * 0.02 / (365*24*60 + 6*60)
-        assert_approx(float(powreward), expected_reward)
+        powreward = int(mininginfo['blockvalue'])
+        expected_reward = int(moneSupply_before_fork*1000000 * 0.02 / (365*24*60 + 6*60))
+        assert_approx(powreward, expected_reward)
         
         self.log.info("Balance after fork: "+str(self.nodes[0].getbalance()))
         self.mine_blocks(0,6)
