@@ -332,8 +332,8 @@ public:
 /** An outpoint - a combination of a transaction hash and an index n into its vout */
 class COutPoint
 {
-//public:
-private:
+public:
+//private:
     uint256 hash;
     ::uint32_t n;
 public:

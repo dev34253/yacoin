@@ -131,6 +131,7 @@ T* alignup(T* p)
     return u.ptr;
 }
 
+#define MSG_NOSIGNAL 0
 #ifdef WIN32
 #define MSG_NOSIGNAL        0
 #define MSG_DONTWAIT        0

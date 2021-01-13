@@ -1368,7 +1368,7 @@ bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     // We want to compare apples to apples, so fail the script
     // unless the type of nLockTime being tested is the same as
     // the nLockTime in the transaction.
-    printf("CheckLockTime(), locktime of cltv address = %d, transaction time = %d\n", nLockTime, txTo.nLockTime);
+    // printf("CheckLockTime(), locktime of cltv address = %d, transaction time = %d\n", nLockTime, txTo.nLockTime);
     if (!(
         (txTo.nLockTime <  LOCKTIME_THRESHOLD && nLockTime <  LOCKTIME_THRESHOLD) ||
         (txTo.nLockTime >= LOCKTIME_THRESHOLD && nLockTime >= LOCKTIME_THRESHOLD)
@@ -1423,7 +1423,7 @@ bool CheckSequence(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     const int64_t txToSequenceMasked = txToSequence & nLockTimeMask;
     const CScriptNum nSequenceMasked = nSequence & nLockTimeMask;
 
-    printf("CheckLockTime(), sequence of csv address = %d, sequence number of the input = %ld\n", nSequence, txToSequence);
+    // printf("CheckLockTime(), sequence of csv address = %d, sequence number of the input = %ld\n", nSequence, txToSequence);
 
     // There are two kinds of nSequence: lock-by-blockheight
     // and lock-by-blocktime, distinguished by whether
