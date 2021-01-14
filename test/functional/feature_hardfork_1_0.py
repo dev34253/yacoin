@@ -45,7 +45,7 @@ class Hardfork_Test(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.supports_cli = False
         self.mocktime = TIME_GENESIS_BLOCK
-        self.block_fork_1_0 = 35
+        self.block_fork_1_0 = 30
         
     def setmocktimeforallnodes(self, mocktime):
         for node in self.nodes:
@@ -75,7 +75,7 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info('Balance 1: '+str(self.nodes[1].getbalance()))
 
     def run_test(self):
-        self.mine_blocks(0, 29)
+        self.mine_blocks(0, 24)
         info=self.nodes[0].getinfo()
         moneSupply_before_fork = int(info['moneysupply'])
         self.mine_blocks(0, 5)
