@@ -1147,7 +1147,7 @@ public:
     void SetNull()
     {
         // TODO: Need update for mainnet
-        if (nBestHeight != -1 && pindexGenesisBlock && nBestHeight >= nMainnetNewLogicBlockNumber)
+        if (nBestHeight != -1 && pindexGenesisBlock && (nBestHeight + 1) >= nMainnetNewLogicBlockNumber)
         {
             nVersion = VERSION_of_block_for_yac_05x_new;
         }
