@@ -75,14 +75,12 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info('Balance 1: '+str(self.nodes[1].getbalance()))
 
     def run_test(self):
-        self.mine_blocks(0, 24)
-        info=self.nodes[0].getinfo()
-        moneSupply_before_fork = int(info['moneysupply'])
-        self.mine_blocks(0, 5)
-        
+        self.mine_blocks(0, self.block_fork_1_0-1)
+
         assert_equal(self.nodes[0].getblockcount(), self.block_fork_1_0-1)
         mininginfo = self.nodes[0].getmininginfo()
         info=self.nodes[0].getinfo()
+        moneSupply_before_fork = int(info['moneysupply'])
         self.log.info(mininginfo)
         self.log.info(info)
         assert_equal(int(self.nodes[0].getbalance()), 0)
@@ -91,7 +89,7 @@ class Hardfork_Test(BitcoinTestFramework):
         blockhash=self.nodes[0].getblockhash(14)
         transactionid=self.nodes[0].getblock(blockhash)['tx'][0]
         transaction_version=self.nodes[0].gettransaction(transactionid)['version']        
-        assert_equal(transaction_version, 1)
+        assert_equal(transaction_version, 1)        
 
         # FORK
         self.mine_blocks(0,1)
@@ -109,7 +107,7 @@ class Hardfork_Test(BitcoinTestFramework):
         self.log.info(info)
         powreward = int(mininginfo['blockvalue'])
         expected_reward = int(moneSupply_before_fork*1000000 * 0.02 / (365*24*60 + 6*60))
-        assert_approx(powreward, expected_reward)
+        assert_equal(powreward, expected_reward)
         
         self.log.info("Balance after fork: "+str(self.nodes[0].getbalance()))
         self.mine_blocks(0,6)
@@ -128,13 +126,14 @@ class Hardfork_Test(BitcoinTestFramework):
         transaction_id = self.nodes[0].sendtoaddress(address_1, 2.0)
         tx_details = self.nodes[0].gettransaction(transaction_id)
         assert_equal(tx_details['version'], 2)
-
-        # available after 6 blocks
-        assert_equal(int(self.nodes[1].getbalance()), 0)
-        self.mine_blocks(0,5)
-        assert_equal(self.nodes[1].getbalance(), Decimal('0'))
         self.mine_blocks(0,1)
         assert_equal(self.nodes[1].getbalance(), Decimal('2.0'))
+
+        # mining reward available after 6 blocks        
+        self.mine_blocks(1,5)
+        assert_equal(self.nodes[1].getbalance(), Decimal('2.0')) # mining reward not available yet
+        self.mine_blocks(1,1)
+        assert_approx(self.nodes[1].getbalance(), 5.802632)
 
 if __name__ == '__main__':
     Hardfork_Test().main()
