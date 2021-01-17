@@ -3057,7 +3057,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
                 }
                 else
                 {
-                    return false;
+                    prevheights[i] = pindex->nHeight;
                 }
             }
             if (!SequenceLocks(tx, nLockTimeFlags, &prevheights, *pindex))
