@@ -51,9 +51,9 @@ jobs:
       - name: dockerize
         run: |
           echo $0          
-          if [ -v ${{ secrets.DOCKER_PWD }} ]; then
+          if [ ! -z ${{secrets.DOCKER_PWD}} ]; then
             echo "Dockerize running."
-            echo "${{ secrets.DOCKER_PWD }}" | docker login -u ${{ secrets.DOCKER_USERNAME }} --password-stdin            
+            echo "${{secrets.DOCKER_PWD}}" | docker login -u ${{secrets.DOCKER_USERNAME}} --password-stdin            
             docker build -t ${{secrets.DOCKER_USERNAME}}/yacoin:latest -f contrib/docker/Dockerfile .
             docker push ${{secrets.DOCKER_USERNAME}}/yacoin:latest
           fi
