@@ -753,10 +753,7 @@ public:
      * regardless of the initial stack. This allows outputs to be pruned
      * instantly when entering the UTXO set.
      */
-    bool IsUnspendable() const
-    {
-        return (size() > 0 && *begin() == OP_RETURN) || (size() > MAX_SCRIPT_SIZE);
-    }
+    bool IsUnspendable() const;
 
     // Called by CTransaction::IsStandard.
     bool HasCanonicalPushes() const;
@@ -832,4 +829,15 @@ CScript GetScriptForDestination(const CTxDestination& dest);
 // Given two sets of signatures for scriptPubKey, possibly with OP_0 placeholders,
 // combine them intelligently and return the result.
 CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn, const CScript& scriptSig1, const CScript& scriptSig2);
+
+//! These are needed because script.h and script.cpp do not have access to tokens.h and tokens.cpp functions. This is
+//! because the make file compiles them at different times. This is becauses script files are compiled with other
+//! consensus files, and asset files are compiled with core files
+bool GetTokenAmountFromScript(const CScript& script, CAmount& nAmount);
+bool AmountFromNewTokenScript(const CScript& scriptPubKey, CAmount& nAmount);
+bool AmountFromTransferScript(const CScript& scriptPubKey, CAmount& nAmount);
+bool AmountFromReissueScript(const CScript& scriptPubKey, CAmount& nAmount);
+bool ScriptNewToken(const CScript& scriptPubKey, int& nStartingIndex);
+bool ScriptTransferToken(const CScript& scriptPubKey, int& nStartingIndex);
+bool ScriptReissueToken(const CScript& scriptPubKey, int& nStartingIndex);
 #endif

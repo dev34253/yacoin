@@ -1176,7 +1176,7 @@ void static ProcessGetData(CNode* pfrom, CConnman* connman, const std::atomic<bo
                         // conditions below.
                         CValidationState dummy;
                         CTxDB txdb;
-                        ActivateBestChain(dummy, txdb);
+                        ActivateBestChain(dummy, Params(), a_recent_block);
                     }
                     if (chainActive.Contains(mi->second)) {
                         send = true;
@@ -2805,7 +2805,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         MeasureTime processBlock;
         CValidationState state;
         bool fNewBlock = false;
-        ProcessBlock(state, pblock.get(), forceProcessing, &fNewBlock);
+        ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
         processBlock.mEnd.stamp();
 
         LogPrintf("Process block message, total time for ProcessBlock = %lu us\n",

@@ -794,7 +794,7 @@ void CTxMemPool::removeRecursive(const CTransaction &origTx, MemPoolRemovalReaso
 }
 
 // Used in case of reorg to remove any now-immature tx and any no-longer-final timelock tx
-void CTxMemPool::removeForReorg(unsigned int nMemPoolHeight, int flags)
+void CTxMemPool::removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight, int flags)
 {
     // Remove transactions spending a coinbase which are now immature and no-longer-final transactions
     LOCK(cs);
@@ -803,34 +803,18 @@ void CTxMemPool::removeForReorg(unsigned int nMemPoolHeight, int flags)
         const CTransaction& tx = it->GetTx();
         LockPoints lp = it->GetLockPoints();
         bool validLP =  TestLockPointValidity(&lp);
-        if (!tx.IsFinal() || !CheckSequenceLocks(tx, flags, &lp, validLP)) {
+        if (!CheckFinalTx(tx, flags) || !CheckSequenceLocks(tx, flags, &lp, validLP)) {
             // Note if CheckSequenceLocks fails the LockPoints may still be invalid
             // So it's critical that we remove the tx and not depend on the LockPoints.
             txToRemove.insert(it);
         } else if (it->GetSpendsCoinbase()) {
-            // Fetch all inputs
-            MapPrevTx mapInputs;
-            std::map<uint256, CTxIndex> mapUnused;
-            bool fInvalid = false;
-            CValidationState stateDummy;
-            if (!tx.FetchInputs(stateDummy, mapUnused, false, false, mapInputs, fInvalid))
-            {
-                LogPrintf("TxMemPool::removeForReorg : Can't FetchInputs for tx %s\n", tx.GetHash().ToString().substr(0,10));
-                continue;
-            }
-
             for (const CTxIn& txin : tx.vin) {
                 indexed_transaction_set::const_iterator it2 = mapTx.find(txin.prevout.hash);
                 if (it2 != mapTx.end())
                     continue;
-                COutPoint
-                    prevout = txin.prevout;
-                CTxIndex
-                    & txindex = mapInputs[prevout.COutPointGetHash()].first;
-                CTransaction
-                    & txPrev = mapInputs[prevout.COutPointGetHash()].second;
-                // txindex.vSpent[prevout.COutPointGet_n()].IsNull() = true => not spent
-                if (!txindex.vSpent[prevout.COutPointGet_n()].IsNull() || (txPrev.IsCoinBase() && ((signed long)nMemPoolHeight) - txindex.GetDepthInMainChain() < GetCoinbaseMaturity())) {
+                const Coin &coin = pcoins->AccessCoin(txin.prevout);
+                if (nCheckFrequency != 0) assert(!coin.IsSpent());
+                if (coin.IsSpent() || (coin.IsCoinBase() && ((signed long)nMemPoolHeight) - coin.nHeight < GetCoinbaseMaturity())) {
                     txToRemove.insert(it);
                     break;
                 }
@@ -928,13 +912,11 @@ void CTxMemPool::removeForBlock(const std::vector<CTransaction>& vtx, ConnectedB
     /** YAC_TOKEN START */
     if (AreTokensDeployed()) {
         // Get the newly added assets, and make sure they are in the entries
-        std::vector<const CTxMemPoolEntry*> entries;
         std::vector<CTransaction> trans;
         for (auto it : connectedBlockData.newTokensToAdd) {
             if (mapTokenToHash.count(it.token.strName)) {
                 indexed_transaction_set::iterator i = mapTx.find(mapTokenToHash.at(it.token.strName));
                 if (i != mapTx.end()) {
-                    entries.push_back(&*i);
                     trans.emplace_back(i->GetTx());
                 }
             }

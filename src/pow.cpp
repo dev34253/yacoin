@@ -96,7 +96,7 @@ static unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, ::i
                  , CBigNum( bnNewTarget ).getuint256().ToString().substr(0,16)
                 );
 
-    // Update minimum ease for next target calculation
+    // Update minimum ease (highest difficulty) for next target calculation
     ::uint32_t nNewEase = bnNewTarget.GetCompact();
     if (nMinEase > nNewEase)
     {
@@ -106,6 +106,7 @@ static unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, ::i
     return nNewEase;
 }
 
+// TODO: Refactor GetNextTargetRequired044
 static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool fProofOfStake)
 {
     // First three blocks will have following targets:

@@ -530,7 +530,7 @@ public:
     bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, setEntries &setAncestors);
 
     void removeRecursive(const CTransaction &tx, MemPoolRemovalReason reason = MemPoolRemovalReason::UNKNOWN);
-    void removeForReorg(unsigned int nMemPoolHeight, int flags); // Used in case of reorg to remove any now-immature tx and any no-longer-final timelock tx
+    void removeForReorg(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight, int flags); // Used in case of reorg to remove any now-immature tx and any no-longer-final timelock tx
     void removeConflicts(const CTransaction &tx);
     void removeForBlock(const std::vector<CTransaction>& vtx, ConnectedBlockTokenData& connectedBlockData);
 

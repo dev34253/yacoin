@@ -2577,6 +2577,154 @@ void CScript::SetCsvP2PKH(::uint32_t nSequence, const CKeyID &keyID)
     *this  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
 }
 
+bool CScript::IsUnspendable() const
+{
+    CAmount nAmount;
+    return (size() > 0 && *begin() == OP_RETURN) || (size() > 0 && *begin() == OP_YAC_TOKEN) || (size() > MAX_SCRIPT_SIZE) || (GetTokenAmountFromScript(*this, nAmount) && nAmount == 0);
+}
+
+//!--------------------------------------------------------------------------------------------------------------------------!//
+//! These are needed because script.h and script.cpp do not have access to tokens.h and tokens.cpp functions. This is
+//! because the make file compiles them at different times. The script files are compiled with other
+//! consensus files, and token files are compiled with core files.
+
+//! Used to check if a token script contains zero tokens. Is so, it should be unspendable
+bool GetTokenAmountFromScript(const CScript& script, CAmount& nAmount)
+{
+    // Placeholder strings that will get set if you successfully get the transfer or token from the script
+    std::string address = "";
+    std::string tokenName = "";
+
+    int nType = 0;
+    bool fIsOwner = false;
+    if (!script.IsTokenScript(nType, fIsOwner)) {
+        return false;
+    }
+
+    txnouttype type = txnouttype(nType);
+
+    // Get the New Token or Transfer Token from the scriptPubKey
+    if (type == TX_NEW_TOKEN && !fIsOwner) {
+        if (AmountFromNewTokenScript(script, nAmount)) {
+            return true;
+        }
+    } else if (type == TX_TRANSFER_TOKEN) {
+        if (AmountFromTransferScript(script, nAmount)) {
+            return true;
+        }
+    } else if (type == TX_NEW_TOKEN && fIsOwner) {
+            nAmount = OWNER_TOKEN_AMOUNT;
+            return true;
+    } else if (type == TX_REISSUE_TOKEN) {
+        if (AmountFromReissueScript(script, nAmount)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ScriptNewToken(const CScript& scriptPubKey, int& nStartingIndex)
+{
+    int nType = 0;
+    bool fIsOwner =false;
+    if (scriptPubKey.IsTokenScript(nType, fIsOwner, nStartingIndex)) {
+        return nType == TX_NEW_TOKEN && !fIsOwner;
+    }
+
+    return false;
+}
+
+bool ScriptTransferToken(const CScript& scriptPubKey, int& nStartingIndex)
+{
+    int nType = 0;
+    bool fIsOwner =false;
+    if (scriptPubKey.IsTokenScript(nType, fIsOwner, nStartingIndex)) {
+        return nType == TX_TRANSFER_TOKEN;
+    }
+
+    return false;
+}
+
+bool ScriptReissueToken(const CScript& scriptPubKey, int& nStartingIndex)
+{
+    int nType = 0;
+    bool fIsOwner =false;
+    if (scriptPubKey.IsTokenScript(nType, fIsOwner, nStartingIndex)) {
+        return nType == TX_REISSUE_TOKEN;
+    }
+
+    return false;
+}
+
+
+bool AmountFromNewTokenScript(const CScript& scriptPubKey, CAmount& nAmount)
+{
+    int nStartingIndex = 0;
+    if (!ScriptNewToken(scriptPubKey, nStartingIndex))
+        return false;
+
+    std::vector<unsigned char> vchNewToken;
+    vchNewToken.insert(vchNewToken.end(), scriptPubKey.begin() + nStartingIndex, scriptPubKey.end());
+    CDataStream ssToken(vchNewToken, SER_NETWORK, PROTOCOL_VERSION);
+
+    CNewToken tokenNew;
+    try {
+        ssToken >> tokenNew;
+    } catch(std::exception& e) {
+        std::cout << "Failed to get the token from the stream: " << e.what() << std::endl;
+        return false;
+    }
+
+    nAmount = tokenNew.nAmount;
+    return true;
+}
+
+bool AmountFromTransferScript(const CScript& scriptPubKey, CAmount& nAmount)
+{
+    int nStartingIndex = 0;
+    if (!ScriptTransferToken(scriptPubKey, nStartingIndex))
+        return false;
+
+    std::vector<unsigned char> vchToken;
+    vchToken.insert(vchToken.end(), scriptPubKey.begin() + nStartingIndex, scriptPubKey.end());
+    CDataStream ssToken(vchToken, SER_NETWORK, PROTOCOL_VERSION);
+
+    CTokenTransfer token;
+    try {
+        ssToken >> token;
+    } catch(std::exception& e) {
+        std::cout << "Failed to get the token from the stream: " << e.what() << std::endl;
+        return false;
+    }
+
+    nAmount = token.nAmount;
+    return true;
+}
+
+bool AmountFromReissueScript(const CScript& scriptPubKey, CAmount& nAmount)
+{
+    int nStartingIndex = 0;
+    if (!ScriptReissueToken(scriptPubKey, nStartingIndex))
+        return false;
+
+    std::vector<unsigned char> vchNewToken;
+    vchNewToken.insert(vchNewToken.end(), scriptPubKey.begin() + nStartingIndex, scriptPubKey.end());
+    CDataStream ssToken(vchNewToken, SER_NETWORK, PROTOCOL_VERSION);
+
+    CReissueToken token;
+    try {
+        ssToken >> token;
+    } catch(std::exception& e) {
+        std::cout << "Failed to get the token from the stream: " << e.what() << std::endl;
+        return false;
+    }
+
+    nAmount = token.nAmount;
+    return true;
+}
+//!--------------------------------------------------------------------------------------------------------------------------!//
+
 CScript GetScriptForDestination(const CTxDestination& dest)
 {
     CScript script;

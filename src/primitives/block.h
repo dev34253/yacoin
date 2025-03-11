@@ -482,16 +482,6 @@ public:
         LogPrintf("\n");
     }
 
-    bool DisconnectBlock(CValidationState& state, CTxDB& txdb,
-                         CBlockIndex* pindex,
-                         CTokensCache* tokensCache,
-                         bool ignoreAddressIndex = false);
-    bool ConnectBlock(CValidationState& state, CTxDB& txdb, CBlockIndex* pindex,
-                      CTokensCache* tokensCache, bool fJustCheck = false,
-                      bool ignoreAddressIndex = false);
-    bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true, bool fCheckHeader = true);
-    bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos,
-            bool fReadTransactions = true, bool fCheckHeader = true);
     bool SignBlock044(const CKeyStore& keystore);
     bool SignBlock(CWallet& keystore);
     bool CheckBlockSignature() const;
@@ -533,28 +523,6 @@ public:
     bool IsNull() const
     {
         return vHave.empty();
-    }
-};
-
-
-struct CBlockIndexWorkComparator
-{
-    bool operator()(CBlockIndex *pa, CBlockIndex *pb) {
-        // First sort by most total work, ...
-        if (pa->bnChainTrust > pb->bnChainTrust) return false;
-        if (pa->bnChainTrust < pb->bnChainTrust) return true;
-
-        // ... then by earliest time received, ...
-        if (pa->nSequenceId < pb->nSequenceId) return false;
-        if (pa->nSequenceId > pb->nSequenceId) return true;
-
-        // Use pointer address as tie breaker (should only happen with blocks
-        // loaded from disk, as those all have id 0).
-        if (pa < pb) return false;
-        if (pa > pb) return true;
-
-        // Identical blocks.
-        return false;
     }
 };
 

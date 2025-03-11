@@ -644,26 +644,6 @@ bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nD
     return Read(make_pair(string("blockhash"), make_pair(nFile, nDataPos)), blockhash);
 }
 
-bool CBlockTreeDB::ReadHashBestChain(uint256 &hashBestChain)
-{
-    return Read(string("hashBestChain"), hashBestChain);
-}
-
-bool CBlockTreeDB::WriteHashBestChain(uint256 hashBestChain)
-{
-    return Write(string("hashBestChain"), hashBestChain);
-}
-
-bool CBlockTreeDB::ReadBestInvalidTrust(CBigNum &bnBestInvalidTrust)
-{
-    return Read(string("bnBestInvalidTrust"), bnBestInvalidTrust);
-}
-
-bool CBlockTreeDB::WriteBestInvalidTrust(CBigNum bnBestInvalidTrust)
-{
-    return Write(string("bnBestInvalidTrust"), bnBestInvalidTrust);
-}
-
 bool CBlockTreeDB::ReadSyncCheckpoint(uint256 &hashCheckpoint)
 {
     return Read(string("hashSyncCheckpoint"), hashCheckpoint);
@@ -1062,10 +1042,8 @@ bool CBlockTreeDB::LoadBlockIndex()
     }
 
     LogPrintf("Read best chain\n");
-    bnBestChainTrust = chainActive.Tip()->bnChainTrust;
-
     LogPrintf("LoadBlockIndex(): hashBestChain=%s  height=%d  trust=%s  date=%s\n",
-           hashBestChain.ToString().substr(0, 20), chainActive.Height(), bnBestChainTrust.ToString(),
+           hashBestChain.ToString().substr(0, 20), chainActive.Height(), chainActive.Tip()->bnChainTrust.ToString(),
            DateTimeStrFormat("%x %H:%M:%S", chainActive.Tip()->GetBlockTime()));
 
     // NovaCoin: load hashSyncCheckpoint

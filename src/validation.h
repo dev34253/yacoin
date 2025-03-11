@@ -17,6 +17,7 @@
 #include "policy/feerate.h"
 #include "sync.h"
 #include "uint256.h"
+#include "undo.h"
 #include "txmempool.h"
 #include "timestamps.h"
 
@@ -80,9 +81,11 @@ extern int64_t nMaxTipAge;
 static const int MAX_CMPCTBLOCK_DEPTH = 5;
 
 /** Time to wait (in seconds) between writing blocks/block index to disk. */
-static const unsigned int DATABASE_WRITE_INTERVAL = 60 * 60;
+static const unsigned int DATABASE_WRITE_INTERVAL = 60 * 60; // 60 * 60 for Bitcoin
 /** Time to wait (in seconds) between flushing chainstate to disk. */
-static const unsigned int DATABASE_FLUSH_INTERVAL = 24 * 60 * 60;
+static const unsigned int DATABASE_FLUSH_INTERVAL = 60 * 60; // 24 * 60 * 60 for Bitcoin
+/** Time to wait (in seconds) between flushing to database if in initial block sync interval */
+static const unsigned int DATABASE_FLUSH_INTERVAL_INITIAL_SYNC = 10 * 60;
 
 /** Maximum number of headers to announce when relaying blocks with headers message.*/
 static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
@@ -144,12 +147,12 @@ struct BlockHasher
  */
 extern size_t nCoinCacheUsage;
 extern CCriticalSection cs_main;
+extern CCriticalSection cs_vpwalletRegistered;
+extern std::vector<CWallet*> vpwalletRegistered;
 typedef std::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
 extern BlockMap mapBlockIndex;
-extern std::set<CBlockIndex*, CBlockIndexWorkComparator> setBlockIndexCandidates;
 /** The currently-connected chain of blocks (protected by cs_main). */
 extern CChain chainActive;
-extern CBlockIndex *pindexBestInvalid;
 // Best header we've seen so far (used for getheaders queries' starting points).
 extern CBlockIndex *pindexBestHeader;
 extern bool fReindex;
@@ -163,9 +166,6 @@ extern ::int64_t nBlockRewardPrev;
 
 // Mempool
 extern CTxMemPool mempool;
-// All pairs A->B, where A (or one if its ancestors) misses transactions, but B has transactions.
-extern std::multimap<CBlockIndex*, CBlockIndex*> mapBlocksUnlinked;
-extern CBigNum bnBestChainTrust;
 extern uint256 hashBestChain;
 
 /** Global variable that points to the coins database (protected by cs_main) */
@@ -176,6 +176,10 @@ extern CCoinsViewCache *pcoinsTip;
 
 /** Global variable that points to the active block tree (protected by cs_main) */
 extern CBlockTreeDB *pblocktree;
+
+// Wallet
+extern CCriticalSection cs_vpwalletRegistered;
+extern std::vector<CWallet*> vpwalletRegistered;
 
 //
 // GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
@@ -258,7 +262,7 @@ void UnloadBlockIndex();
 /** Check whether we are doing an initial block download (synchronizing from disk or network) */
 bool IsInitialBlockDownload();
 /** Find the best known block, and make it the tip of the block chain */
-bool ActivateBestChain(CValidationState &state);
+bool ActivateBestChain(CValidationState& state, const CChainParams& chainparams, std::shared_ptr<const CBlock> pblock = std::shared_ptr<const CBlock>());
 
 /** Guess verification progress (as a fraction between 0.0=genesis and 1.0=current tip). */
 double GuessVerificationProgress(const ChainTxData& data, CBlockIndex* pindex);
@@ -274,6 +278,9 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
 
 /** Convert CValidationState to a human-readable message for logging */
 std::string FormatStateMessage(const CValidationState &state);
+
+/** Apply the effects of this transaction on the UTXO set represented by view */
+void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo& txundo, int nHeight, uint256 blockHash, CTokensCache* tokenCache = nullptr, std::pair<std::string, CBlockTokenUndo>* undoTokenData = nullptr);
 
 /** Transaction validation functions */
 
@@ -390,4 +397,5 @@ bool GetAddressUnspent(uint160 addressHash, int type,
 
 // ppcoin:
 bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& nCoinAge); // ppcoin: get transaction coin age
+extern void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = NULL, bool fUpdate = false, bool fConnect = true);
 #endif // YACOIN_VALIDATION_H

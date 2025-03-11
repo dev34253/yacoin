@@ -152,10 +152,6 @@ public:
     bool WriteBlockHash(const CDiskBlockIndex& blockindex);
     bool WriteBlockHash(const CDiskBlockPos &blockPos, uint256 hash);
     bool ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256& blockhash);
-    bool ReadHashBestChain(uint256& hashBestChain);
-    bool WriteHashBestChain(uint256 hashBestChain);
-    bool ReadBestInvalidTrust(CBigNum& bnBestInvalidTrust);
-    bool WriteBestInvalidTrust(CBigNum bnBestInvalidTrust);
     bool ReadSyncCheckpoint(uint256& hashCheckpoint);
     bool WriteSyncCheckpoint(uint256 hashCheckpoint);
     bool ReadCheckpointPubKey(std::string& strPubKey);

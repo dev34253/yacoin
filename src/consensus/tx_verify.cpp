@@ -39,7 +39,7 @@ bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
     return true;
 }
 
-std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags, std::vector<int>* prevHeights, const CBlockIndex& block)
+std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, std::vector<int>* prevHeights, const CBlockIndex& block)
 {
     assert(prevHeights->size() == tx.vin.size());
 
@@ -67,9 +67,9 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, int flags
 
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG) {
             // TODO: TACA Enforce timelock according to median time
+            // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
 //            int64_t nCoinTime = block.GetAncestor(std::max(nCoinHeight-1, 0))->GetMedianTimePast();
-            CBlockIndex *pbi = chainActive[(std::max(nCoinHeight - 1, 0))];
-            int64_t nCoinTime = pbi->GetBlockTime();
+            int64_t nCoinTime = block.GetAncestor(std::max(nCoinHeight-1, 0))->GetBlockTime();
             // NOTE: Subtract 1 to maintain nLockTime semantics
             // BIP 68 relative lock times have the semantics of calculating
             // the first block or time at which the transaction would be
@@ -96,6 +96,7 @@ bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> loc
 {
     assert(block.pprev);
     // TODO: TACA Enforce timelock according to median time
+    // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
 //    int64_t nBlockTime = block.pprev->GetMedianTimePast();
     int64_t nBlockTime = block.pprev->GetBlockTime();
     if (lockPair.first >= block.nHeight || lockPair.second >= nBlockTime)
@@ -104,9 +105,9 @@ bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> loc
     return true;
 }
 
-bool SequenceLocks(const CTransaction &tx, int flags, std::vector<int>* prevHeights, const CBlockIndex& block)
+bool SequenceLocks(const CTransaction &tx, std::vector<int>* prevHeights, const CBlockIndex& block)
 {
-    return EvaluateSequenceLocks(block, CalculateSequenceLocks(tx, flags, prevHeights, block));
+    return EvaluateSequenceLocks(block, CalculateSequenceLocks(tx, prevHeights, block));
 }
 
 unsigned int GetLegacySigOpCount(const CTransaction& tx)
