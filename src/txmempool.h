@@ -552,9 +552,6 @@ public:
     void ApplyDelta(const uint256 hash, CAmount &nFeeDelta) const;
     void ClearPrioritisation(const uint256 hash);
 
-    // Old implementation
-    bool accept(CValidationState &state, const CTransaction &tx, bool* pfMissingInputs);
-
 public:
     /** Remove a set of transactions from the mempool.
      *  If a transaction is in this set, then all in-mempool descendants must

@@ -57,6 +57,9 @@ bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType)
     return whichType != TX_NONSTANDARD;
 }
 
+/** Check for standard transaction types
+    @return True if all outputs (scriptPubKeys) use only standard transaction forms
+*/
 bool IsStandardTx(const CTransaction& tx, std::string& reason, const bool witnessEnabled)
 {
     // TODO: Temporary fix to avoid warning for yacoind 1.0.0. Because in yacoind 1.0.0, there are two times
