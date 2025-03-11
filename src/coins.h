@@ -9,6 +9,7 @@
 #define YACOIN_COINS_H
 
 #include "primitives/transaction.h"
+#include "chainparams.h"
 #include "compressor.h"
 #include "core_memusage.h"
 #include "hash.h"
@@ -42,11 +43,11 @@ public:
     //! at which height this containing transaction was included in the active block chain
     uint32_t nHeight : 31;
 
-    // ppcoin: whether transaction is a coinstake
-    bool fCoinStake;
-
     // ppcoin: transaction timestamp
     int64_t nTime;
+
+    // ppcoin: whether transaction is a coinstake
+    bool fCoinStake;
 
     //! construct a Coin from a CTxOut and height/coinbase/coinstake information.
     Coin(CTxOut&& outIn, int nHeightIn, bool fCoinBaseIn, bool fCoinStakeIn, int nTimeIn) :
@@ -79,11 +80,14 @@ public:
         uint32_t code = nHeight * 2 + fCoinBase;
         ::Serialize(s, VARINT(code));
         ::Serialize(s, CTxOutCompressor(REF(out)));
-        // ppcoin flags
-        unsigned int nFlag = fCoinStake? 1 : 0;
-        ::Serialize(s, VARINT(nFlag));
         // ppcoin transaction timestamp
         ::Serialize(s, VARINT(nTime));
+        // Not support PoS block since Heliospolis hardfork
+        if (nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+            // ppcoin flags
+            unsigned int nFlag = fCoinStake? 1 : 0;
+            ::Serialize(s, VARINT(nFlag));
+        }
     }
 
     template<typename Stream>
@@ -93,12 +97,17 @@ public:
         nHeight = code >> 1;
         fCoinBase = code & 1;
         ::Unserialize(s, REF(CTxOutCompressor(out)));
-        // ppcoin flags
-        unsigned int nFlag = 0;
-        ::Unserialize(s, VARINT(nFlag));
-        fCoinStake = nFlag & 1;
         // ppcoin transaction timestamp
         ::Unserialize(s, VARINT(nTime));
+        // Not support PoS block since Heliospolis hardfork
+        if (nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+            // ppcoin flags
+            unsigned int nFlag = 0;
+            ::Unserialize(s, VARINT(nFlag));
+            fCoinStake = nFlag & 1;
+        } else {
+            fCoinStake = false;
+        }
     }
 
     bool IsSpent() const {

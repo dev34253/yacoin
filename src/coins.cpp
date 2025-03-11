@@ -173,7 +173,7 @@ void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, uint2
         bool overwrite = check ? cache.HaveCoin(COutPoint(txid, i)) : fCoinbase;
         // Always set the possible_overwrite flag to AddCoin for coinbase txn, in order to correctly
         // deal with the pre-BIP30 occurrences of duplicate coinbase transactions.
-        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase), overwrite);
+        cache.AddCoin(COutPoint(txid, i), Coin(tx.vout[i], nHeight, fCoinbase, tx.IsCoinStake(), tx.nTime), overwrite);
 
         /** YAC_TOKEN START */
         if (AreTokensDeployed()) {
@@ -372,6 +372,7 @@ static const size_t MIN_TRANSACTION_OUTPUT_WEIGHT = ::GetSerializeSize(CTxOut(),
 const Coin& AccessByTxid(const CCoinsViewCache& view, const uint256& txid)
 {
     COutPoint iter(txid, 0);
+    // TODO: Review GetMaxSize
     while (iter.n < GetMaxSize(MAX_BLOCK_SIZE) / MIN_TRANSACTION_OUTPUT_WEIGHT) {
         const Coin& alternate = view.AccessCoin(iter);
         if (!alternate.IsSpent()) return alternate;

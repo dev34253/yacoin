@@ -26,6 +26,12 @@ public:
     template<typename Stream>
     void Serialize(Stream &s) const {
         ::Serialize(s, VARINT(txout->nHeight * 2 + (txout->fCoinBase ? 1 : 0)));
+        ::Serialize(s, VARINT(txout->nTime));
+        if (txout->nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+            // ppcoin flags
+            unsigned int nFlag = txout->fCoinStake? 1 : 0;
+            ::Serialize(s, VARINT(nFlag));
+        }
         if (txout->nHeight > 0) {
             // Required to maintain compatibility with older undo format.
             ::Serialize(s, (unsigned char)0);
@@ -47,6 +53,12 @@ public:
         ::Unserialize(s, VARINT(nCode));
         txout->nHeight = nCode / 2;
         txout->fCoinBase = nCode & 1;
+        if (txout->nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+            // ppcoin flags
+            unsigned int nFlag = 0;
+            ::Unserialize(s, VARINT(nFlag));
+            txout->fCoinStake = nFlag & 1;
+        }
         if (txout->nHeight > 0) {
             // Old versions stored the version number for the last spend of
             // a transaction's outputs. Non-final spends were indicated with
@@ -84,12 +96,33 @@ public:
         // TODO: avoid reimplementing vector deserializer
         uint64_t count = 0;
         ::Unserialize(s, COMPACTSIZE(count));
-        if (count > GetMaxSize(MAX_BLOCK_SIZE) / MIN_TRANSACTION_INPUT_WEIGHT) {
-            throw std::ios_base::failure("Too many input undo records");
+
+        // Temporary variable to hold the first deserialized Coin
+        Coin firstCoin;
+
+        if (count > 0) {
+            // Read the first Coin object to determine the block height
+            ::Unserialize(s, REF(TxInUndoDeserializer(&firstCoin)));
+            uint32_t blockHeight = firstCoin.nHeight;  // Extract block height
+
+            // Dynamically compute MAX_INPUTS_PER_BLOCK based on the extracted height
+            size_t maxInputsPerBlock = GetMaxSize(MAX_BLOCK_SIZE, blockHeight) / MIN_TRANSACTION_INPUT_WEIGHT;
+
+            // Validate the number of undo records
+            if (count > maxInputsPerBlock) {
+                throw std::ios_base::failure("Too many input undo records for block height " + std::to_string(blockHeight));
+            }
+
+            // Reserve space and add the first coin
+            vprevout.resize(count);
+            vprevout[0] = std::move(firstCoin);
+        } else {
+            vprevout.resize(count);
         }
-        vprevout.resize(count);
-        for (auto& prevout : vprevout) {
-            ::Unserialize(s, REF(TxInUndoDeserializer(&prevout)));
+
+        // Deserialize the remaining undo records
+        for (size_t i = 1; i < count; i++) {
+            ::Unserialize(s, REF(TxInUndoDeserializer(&vprevout[i])));
         }
     }
 };
