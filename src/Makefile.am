@@ -47,6 +47,9 @@ libyacoin_common_a_SOURCES= \
     tokens/tokentypes.cpp \
     tokens/tokendb.cpp \
     tokens/tokens.cpp \
+    chain.cpp \
+    chainparams.cpp \
+    chainparamsbase.cpp \
     crypto/siphash.cpp \
     crypto/chacha20.cpp \
     crypto/sha256.cpp \
@@ -55,13 +58,18 @@ libyacoin_common_a_SOURCES= \
     crypto/hmac_sha256.cpp \
     crypto/hmac_sha512.cpp \
     compat/strnlen.cpp \
+    coins.cpp \
+    compressor.cpp \
+    consensus/consensus.cpp \
+    consensus/tx_verify.cpp \
     primitives/transaction.cpp \
     primitives/block.cpp \
-    consensus/consensus.cpp \
     merkleblock.cpp \
     blockencodings.cpp \
     policy/feerate.cpp \
     policy/fees.cpp \
+    policy/policy.cpp \
+    pow.cpp \
     support/cleanse.cpp \
     dbwrapper.cpp \
     txdb.cpp \
@@ -109,6 +117,7 @@ libyacoin_common_a_SOURCES= \
     sync.cpp \
     util.cpp \
     utilstrencodings.cpp \
+    utilmoneystr.cpp \
     utiltime.cpp \
     netaddress.cpp \
     timedata.cpp \
