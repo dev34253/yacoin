@@ -48,27 +48,30 @@ const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfSta
 
 static unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, ::int64_t nFirstBlockTime)
 {
-    //if (params.fPowNoRetargeting)   // disguised testnet, again
-    //    return pindexLast->nBits;
+    // Recalculate nMinEase corresponding to highest difficulty
+    CBlockIndex* tmpBlockIndex = chainActive.Tip();
+    ::uint32_t nMinEase = bnProofOfWorkLimit.GetCompact();
+    while (tmpBlockIndex != NULL && tmpBlockIndex->nHeight >= nMainnetNewLogicBlockNumber)
+    {
+        if (nMinEase > tmpBlockIndex->nBits)
+        {
+            nMinEase = tmpBlockIndex->nBits;
+        }
 
-    const ::int64_t
-        nAverageBlockperiod = nStakeTargetSpacing;  // 1 minute in seconds
+        tmpBlockIndex = tmpBlockIndex->pprev;
+    }
 
-    ::int64_t
-        nActualTimespan = pindexLast->GetBlockTime() - nFirstBlockTime,
-        nNominalTimespan = nDifficultyInterval * nAverageBlockperiod;
-
+    const ::int64_t nAverageBlockperiod = nStakeTargetSpacing;  // 1 minute in seconds
+    ::int64_t nActualTimespan = pindexLast->GetBlockTime() - nFirstBlockTime;
+    ::int64_t nNominalTimespan = nDifficultyInterval * nAverageBlockperiod;
     if (nActualTimespan < nNominalTimespan / 4)
         nActualTimespan = nNominalTimespan / 4;
     if (nActualTimespan > nNominalTimespan * 4)
         nActualTimespan = nNominalTimespan * 4;
 
     // Calculate to target 1 minute/block for the previous 'epoch's 21,000 blocks
-    uint256
-        bnPrev = CBigNum().SetCompact(pindexLast->nBits).getuint256();
-
-    CBigNum
-        bnPrevTarget;
+    uint256  bnPrev = CBigNum().SetCompact(pindexLast->nBits).getuint256();
+    CBigNum bnPrevTarget;
     bnPrevTarget.setuint256( bnPrev );
 
     bnPrevTarget *= nActualTimespan;
@@ -94,14 +97,7 @@ static unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, ::i
                  , CBigNum( bnNewTarget ).getuint256().ToString().substr(0,16)
                 );
 
-    // Update minimum ease (highest difficulty) for next target calculation
-    ::uint32_t nNewEase = bnNewTarget.GetCompact();
-    if (nMinEase > nNewEase)
-    {
-        nMinEase = nNewEase;
-    }
-
-    return nNewEase;
+    return bnNewTarget.GetCompact();
 }
 
 // TODO: Refactor GetNextTargetRequired044
@@ -138,32 +134,14 @@ static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool
     uint256 nTarget = CBigNum().SetCompact(nEase).getuint256();
     uint256 nRelativeTargetDelta = (nTarget >> 3);  // i.e. 1/8 of the current target
 
-    // Yacoind version 1.0.0
+    // Since Heliospolis hardfork block 1890000, the target is only recalculated every 21000 blocks
     if ((pindexLast->nHeight + 1) >= nMainnetNewLogicBlockNumber)
     {
-        // Recalculate nMinEase if reorg through two or many epochs
-        if (recalculateMinEase)
-        {
-            recalculateMinEase = false;
-            ::int32_t currentEpochNumber = chainActive.Tip()->nHeight / nEpochInterval;
-            ::int32_t firstEpochNumberSinceHardfork = nMainnetNewLogicBlockNumber / nEpochInterval;
-            ::uint32_t tempMinEase = bnEasiestTargetLimit.GetCompact();
-            for (int i = firstEpochNumberSinceHardfork; i < currentEpochNumber; i++)
-            {
-                CBlockIndex* pbi = chainActive[i*nEpochInterval];
-                if (tempMinEase > pbi->nBits)
-                {
-                    tempMinEase = pbi->nBits;
-                }
-            }
-            nMinEase = tempMinEase;
-        }
-
-        // From block 3, the target is only recalculated every 21000 blocks
+        // Since Heliospolis hardfork block 1890000, the target is only recalculated every 21000 blocks
         int nBlocksToGo = (pindexLast->nHeight + 1) % nDifficultyInterval;
-        // Only change once per difficulty adjustment interval, first at block 21000
-        if (0 != nBlocksToGo) // the btc-ltc 2016 blocks
-        {                     // don't change the target
+        // Only change once per difficulty adjustment interval (every 21000 blocks)
+        if (0 != nBlocksToGo)
+        {
             bnNewTarget.setuint256(nTarget);
 
             LogPrintf("PoW constant target %s (%d block %s to go)\n",
@@ -202,6 +180,7 @@ static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool
     }
     else
     {
+        // Old logic before Heliospolis hardfork block 1890000
         // ppcoin: target change every block
         // ppcoin: retarget with exponential moving toward target spacing
         bnNewTarget.SetCompact(pindexPrev->nBits);
@@ -210,17 +189,15 @@ static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool
                 ? nStakeTargetSpacing
                 : std::min(nTargetSpacingWorkMax, (::int64_t)nStakeTargetSpacing * (1 + pindexLast->nHeight - pindexPrev->nHeight));
 
-        ::int64_t
-            nInterval = nTargetTimespan / nTargetSpacing;   // this is the one week / nTargetSpacing
+        ::int64_t nInterval = nTargetTimespan / nTargetSpacing;   // this is the one week / nTargetSpacing
 
         bnNewTarget *= (((nInterval - 1) * nTargetSpacing) + nActualSpacing + nActualSpacing);
         bnNewTarget /=  ((nInterval + 1) * nTargetSpacing);
+
+        if (bnNewTarget > bnEasiestTargetLimit)
+            bnNewTarget = bnEasiestTargetLimit;
+        return bnNewTarget.GetCompact();
     }
-
-    if (bnNewTarget > bnEasiestTargetLimit)
-        bnNewTarget = bnEasiestTargetLimit;
-
-    return bnNewTarget.GetCompact();
 }
 //_____________________________________________________________________________
 // yacoin2015 upgrade: penalize ignoring ProofOfStake blocks with high difficulty.

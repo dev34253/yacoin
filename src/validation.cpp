@@ -82,8 +82,6 @@ bool fRequireStandard = true;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
 bool fBlockHashIndex = true;
-::uint32_t nMinEase = bnProofOfWorkLimit.GetCompact();
-bool recalculateMinEase = false;
 
 //
 // GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
@@ -2157,11 +2155,6 @@ void FlushStateToDisk() {
 
 /** Update chainActive and related internal data structures. */
 void static UpdateTip(CBlockIndex *pindexNew) {
-    // Store old and new height for recalculate block reward and min target in case of reorg through two or many epochs
-    // FIXME: Fix reorg issue
-    int32_t oldHeight = chainActive.Tip() ? chainActive.Tip()->nHeight : 0;
-    int32_t newHeight = pindexNew->nHeight;
-
     // Update tip
     chainActive.SetTip(pindexNew);
 
@@ -2208,22 +2201,6 @@ void static UpdateTip(CBlockIndex *pindexNew) {
         SetBestChain(chainActive.GetLocator());
     }
     uint256 hash = pindexNew->GetBlockHash();
-
-    // Reorg through two or many epochs
-    // TODO: Refactor GetProofOfWorkReward
-    // TODO: Refactor GetNextTargetRequired044
-    // FIXME: Fix reorg issue
-    if ((abs(oldHeight - newHeight) >= 2) &&
-        (abs((::int32_t)(oldHeight / nEpochInterval) - (::int32_t)(newHeight / nEpochInterval)) >= 1))
-    {
-        recalculateMinEase = true;
-    }
-
-    // Update minimum ease (highest difficulty) for next target calculation
-    if ((pindexNew->nHeight >= nMainnetNewLogicBlockNumber) && (nMinEase > pindexNew->nBits))
-    {
-        nMinEase = pindexNew->nBits;
-    }
 
     LogPrintf("UpdateTip: new best=%s height=%d trust=%s, date=%s\n",
                 hash.ToString().substr(0,20),
@@ -3494,6 +3471,7 @@ void LoadBlockRewardAndHighestDiff()
     uint256 lastEpochChangeHash = 0;
     // Calculate minimum ease (highest difficulty)
     CBlockIndex* tmpBlockIndex = chainActive.Tip();
+    ::uint32_t nMinEase = bnProofOfWorkLimit.GetCompact();
     while (tmpBlockIndex != NULL && tmpBlockIndex->nHeight >= nMainnetNewLogicBlockNumber)
     {
         if ((tmpBlockIndex->nHeight >= lastEpochChangeHeight) && (tmpBlockIndex->nHeight % nEpochInterval == 0))

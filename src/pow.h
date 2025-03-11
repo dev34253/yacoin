@@ -14,8 +14,6 @@ class CBlockHeader;
 class CBlockIndex;
 class uint256;
 
-extern bool recalculateMinEase;
-extern ::uint32_t nMinEase; // minimum ease corresponds to highest difficulty
 extern const unsigned int nStakeTargetSpacing;
 
 /* POW FUNCTIONS */
