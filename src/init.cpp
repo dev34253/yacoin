@@ -40,6 +40,7 @@
 #endif
 #include "scheduler.h"
 #include "validationinterface.h"
+#include "policy/policy.h"
 #include "torcontrol.h"
 #include "net_processing.h"
 
@@ -63,10 +64,6 @@ std::string strWalletFileName;
 bool fConfChange;
 unsigned int nNodeLifespan;
 unsigned int nMinerSleep;
-bool fStoreBlockHashToDb;
-bool fReindexOnlyHeaderSync;
-bool fReindexBlockIndex;
-bool fReindexToken;
 bool fUseFastStakeMiner;
 bool fUseMemoryLog;
 enum Checkpoints::CPMode CheckpointsMode;
@@ -92,6 +89,29 @@ std::unique_ptr<PeerLogicValidation> peerLogic;
 // Shutdown
 //
 
+//
+// Thread management and startup/shutdown:
+//
+// The network-processing threads are all part of a thread group
+// created by AppInit() or the Qt main() function.
+//
+// A clean exit happens when StartShutdown() or the SIGTERM
+// signal handler sets fRequestShutdown, which triggers
+// the DetectShutdownThread(), which interrupts the main thread group.
+// DetectShutdownThread() then exits, which causes AppInit() to
+// continue (it .joins the shutdown thread).
+// Shutdown() is then
+// called to clean up database connections, and stop other
+// threads that should only be stopped after the main network-processing
+// threads have exited.
+//
+// Shutdown for Qt is very similar, only it uses a QTimer to detect
+// fRequestShutdown getting set, and then does the normal Qt
+// shutdown thing.
+//
+
+std::atomic<bool> fRequestShutdown(false);
+
 void ExitTimeout(void* parg)
 {
 #ifdef WIN32
@@ -112,6 +132,33 @@ bool ShutdownRequested()
 {
     return fRequestShutdown;
 }
+
+/**
+ * This is a minimally invasive approach to shutdown on LevelDB read errors from the
+ * chainstate, while keeping user interface out of the common library, which is shared
+ * between bitcoind, and bitcoin-qt and non-server tools.
+*/
+class CCoinsViewErrorCatcher : public CCoinsViewBacked
+{
+public:
+    CCoinsViewErrorCatcher(CCoinsView* view) : CCoinsViewBacked(view) {}
+    bool GetCoin(const COutPoint &outpoint, Coin &coin) const override {
+        try {
+            return CCoinsViewBacked::GetCoin(outpoint, coin);
+        } catch(const std::runtime_error& e) {
+            uiInterface.ThreadSafeMessageBox(_("Error reading from database, shutting down."), "", CClientUIInterface::MSG_ERROR);
+            LogPrintf("Error reading from database: %s\n", e.what());
+            // Starting the shutdown sequence and returning false to the caller would be
+            // interpreted as 'entry not found' (as opposed to unable to read data), and
+            // could lead to invalid interpretation. Just exit immediately, as we can't
+            // continue anyway, and all writes should be atomic.
+            abort();
+        }
+    }
+    // Writes do not need similar protection, as failure to write is handled by the caller.
+};
+
+static CCoinsViewErrorCatcher *pcoinscatcher = nullptr;
 
 void WaitForShutdown(boost::thread_group* threadGroup)
 {
@@ -293,9 +340,8 @@ std::string HelpMessage()
     strUsage += HelpMessageOpt("-loadblock=<file>", _("Imports blocks from external blk000??.dat file on startup"));
     strUsage += HelpMessageOpt("-maxorphantx=<n>", strprintf(_("Keep at most <n> unconnectable transactions in memory (default: %u)"), DEFAULT_MAX_ORPHAN_TRANSACTIONS));
     strUsage += HelpMessageOpt("-par=<n>", _("Set the number of script verification threads (1-16, 0=auto, default: 0)"));
-    strUsage += HelpMessageOpt("-reindex-onlyheadersync", _("Upgrade block index to have new field `nstatus`, it just takes a few minutes"));
-    strUsage += HelpMessageOpt("-reindex-blockindex", _("Rebuild block index and transaction index from the blk*.dat files on disk, it takes very long time (around 24->48 hours)"));
-    strUsage += HelpMessageOpt("-reindex-token", _("Rebuild token index from the blk*.dat files on disk, it takes around 6->9 hours"));
+    strUsage += HelpMessageOpt("-reindex-chainstate", _("Rebuild chain state from the currently indexed blocks"));
+    strUsage += HelpMessageOpt("-reindex", _("Rebuild chain state and block index from the blk*.dat files on disk"));
 
     strUsage += HelpMessageGroup(_("Connection options:"));
     strUsage += HelpMessageOpt("-addnode=<ip>", _("Add a node to connect to and attempt to keep the connection open"));
@@ -681,6 +727,7 @@ bool AppInitLockDataDirectory()
  */
 bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 {
+    const CChainParams& chainparams = Params();
     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
 
     std::string // note fTestNet has been set and finally we 'discover' the 'data directory'!
@@ -743,7 +790,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (fDaemon)
         fprintf(stdout, "Yacoin server starting\n");
 
-    if (nScriptCheckThreads) 
+    if (nScriptCheckThreads)
     {
         LogPrintf("Using %u threads for script verification\n", nScriptCheckThreads);
         for (int i=0; i<nScriptCheckThreads-1; ++i)
@@ -1016,17 +1063,62 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
     // ********************************************************* Step 8 was Step 7: load blockchain
 
-    fReindexOnlyHeaderSync = gArgs.GetBoolArg("-reindex-onlyheadersync", false);
-    fReindexBlockIndex = gArgs.GetBoolArg("-reindex-blockindex", false);
-    if (!fReindexBlockIndex)
-    {
-        fReindexToken = gArgs.GetBoolArg("-reindex-token", false);
-    }
-    LogPrintf("Param fReindexOnlyHeaderSync = %d, fReindexBlockIndex = %d, fReindexToken = %d\n", fReindexOnlyHeaderSync, fReindexBlockIndex, fReindexToken);
+    fReindex = gArgs.GetBoolArg("-reindex", false);
+    bool fReindexChainState = gArgs.GetBoolArg("-reindex-chainstate", false);
+
+    LogPrintf("Param fReindex = %d, fReindexChainState = %d\n", fReindex, fReindexChainState);
 
     nMainnetNewLogicBlockNumber = gArgs.GetArg("-testnetNewLogicBlockNumber", mainnetNewLogicBlockNumber);
     nTokenSupportBlockNumber = gArgs.GetArg("-tokenSupportBlockNumber", tokenSupportBlockNumber);
     LogPrintf("Param nMainnetNewLogicBlockNumber = %d\n",nMainnetNewLogicBlockNumber);
+
+    // cache size calculations
+    int64_t nTotalCache = (gArgs.GetArg("-dbcache", nDefaultDbCache) << 20);
+    nTotalCache = std::max(nTotalCache, nMinDbCache << 20); // total cache cannot be less than nMinDbCache
+    nTotalCache = std::min(nTotalCache, nMaxDbCache << 20); // total cache cannot be greater than nMaxDbcache
+    int64_t nBlockTreeDBCache = nTotalCache / 8;
+    nBlockTreeDBCache = std::min(nBlockTreeDBCache, (gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX) ? nMaxBlockDBAndTxIndexCache : nMaxBlockDBCache) << 20);
+    nTotalCache -= nBlockTreeDBCache;
+    int64_t nCoinDBCache = std::min(nTotalCache / 2, (nTotalCache / 4) + (1 << 23)); // use 25%-50% of the remainder for disk cache
+    nCoinDBCache = std::min(nCoinDBCache, nMaxCoinsDBCache << 20); // cap total coins db cache
+    nTotalCache -= nCoinDBCache;
+    nCoinCacheUsage = nTotalCache; // the rest goes to in-memory cache
+    int64_t nMempoolSizeMax = gArgs.GetArg("-maxmempool", DEFAULT_MAX_MEMPOOL_SIZE) * 1000000;
+    LogPrintf("Cache configuration:\n");
+    LogPrintf("* Using %.1fMiB for block index database\n", nBlockTreeDBCache * (1.0 / 1024 / 1024));
+    LogPrintf("* Using %.1fMiB for chain state database\n", nCoinDBCache * (1.0 / 1024 / 1024));
+    LogPrintf("* Using %.1fMiB for in-memory UTXO set (plus up to %.1fMiB of unused mempool space)\n", nCoinCacheUsage * (1.0 / 1024 / 1024), nMempoolSizeMax * (1.0 / 1024 / 1024));
+
+    // Upgrading to v1.5.0; hard-link the old blknnnn.dat files into /blocks/
+    filesystem::path blocksDir = GetDataDir() / "blocks";
+    if (!filesystem::exists(blocksDir))
+    {
+        filesystem::create_directories(blocksDir);
+        bool linked = false;
+        for (unsigned int i = 1; i < 10000; i++) {
+            filesystem::path source = GetDataDir() / strprintf("blk%04u.dat", i);
+            if (!filesystem::exists(source)) break;
+            filesystem::path dest = blocksDir / strprintf("blk%05u.dat", i-1);
+            try {
+                filesystem::create_hard_link(source, dest);
+                printf("Hardlinked %s -> %s\n", source.string().c_str(), dest.string().c_str());
+                linked = true;
+            } catch (filesystem::filesystem_error & e) {
+                // Note: hardlink creation failing is not a disaster, it just means
+                // blocks will get re-downloaded from peers.
+                printf("Error hardlinking blk%04u.dat : %s\n", i, e.what());
+                break;
+            }
+        }
+        if (linked)
+        {
+            // Store map hash when upgrading to v1.5.0 to speedup the process
+            CBlockTreeDB *pTempBlockTree = new CBlockTreeDB(nBlockTreeDBCache, false, false);
+            pTempBlockTree->BuildMapHash();
+            delete pTempBlockTree;
+            fReindex = true;
+        }
+    }
 
     if (!bitdb.Open(GetDataDir()))
     {
@@ -1036,25 +1128,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         return InitError(msg);
     }
 
-    if (gArgs.GetBoolArg("-loadblockindextest"))
-    {
-        CTxDB txdb("r");
-        txdb.LoadBlockIndex();
-        PrintBlockTree();
-        return false;
-    }
-
     MAXIMUM_YAC1DOT0_N_FACTOR = gArgs.GetArg("-nFactorAtHardfork", 21);
     LogPrintf("Param nFactorAtHardfork = %d\n", MAXIMUM_YAC1DOT0_N_FACTOR);
 
-    std::string additionalInfo = fReindexBlockIndex ? "(reindex block index)" : fReindexToken ? "(reindex token)" : "";
+    std::string additionalInfo = fReindex ? "(reindex block index and chainstate)" : fReindexChainState ? "(reindex chainstate)" : "";
     LogPrintf("Loading block index %s ...\n", additionalInfo);
     bool fLoaded = false;
-    bool fReindex = fReindexBlockIndex || fReindexToken;
     while (!fLoaded) 
     {
-        std::string 
-            strLoadError;
+        bool fReset = fReindex;
+        std::string strLoadError;
+
         // YACOIN TODO ADD SPINNER OR PROGRESS BAR
         uiInterface.InitMessage(_("<b>Loading block index, this may take several minutes...</b>"));
 
@@ -1064,6 +1148,11 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             try 
             {
                 UnloadBlockIndex();
+                delete pcoinsTip;
+                delete pcoinsdbview;
+                delete pcoinscatcher;
+                delete pblocktree;
+                pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReset);
 
                 /** YAC_TOKEN START */
                 {
@@ -1073,13 +1162,17 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                     delete ptokensCache;
 
                     // Basic tokens
-                    ptokensdb = new CTokensDB("cr+", fReindex);
+                    ptokensdb = new CTokensDB(nBlockTreeDBCache, false, fReset);
                     ptokens = new CTokensCache();
                     ptokensCache = new CLRUCache<std::string, CDatabasedTokenData>(MAX_CACHE_TOKENS_SIZE);
 
+                    // Read for fTokenIndex to make sure that we only load token address balances if it if true
+                    pblocktree->ReadFlag("tokenindex", fTokenIndex);
+
                     // Need to load tokens before we verify the database
                     if (!ptokensdb->LoadTokens()) {
-                        return InitError("Failed to load Tokens Database");
+                        strLoadError = _("Failed to load Tokens Database");
+                        break;
                     }
 
                     if (!ptokensdb->ReadReissuedMempoolState())
@@ -1090,28 +1183,120 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 }
                 /** YAC_TOKEN END */
 
-                // Don't build map hash for fReindexBlockIndex
-                if (fReindexToken)
-                {
-                    {
-                        CTxDB txdb;
-                        txdb.BuildMapHash();
-                        txdb.Close();
-                    }
-
-                }
-                if (fReindex)
-                {
-                    // Wipe the database
-                    CTxDB txdb("cr+", fReindex);
-                    fReindexToken = false;
-                    fReindexBlockIndex = false;
+                if (fReset) {
+                    pblocktree->WriteReindexing(true);
+                    //If we're reindexing in prune mode, wipe away unusable block files and all undo data files
+                    // TODO: TACA Add later
+//                    if (fPruneMode)
+//                        CleanupBlockRevFiles();
                 }
 
-                if (!LoadBlockIndex())
-                {
+                if (fRequestShutdown) break;
+
+                // LoadBlockIndex will load fTxIndex from the db, or set it if
+                // we're reindexing. It will also load fHavePruned if we've
+                // ever removed a block file from disk.
+                // Note that it also sets fReindex based on the disk flag!
+                // From here on out fReindex and fReset mean something different!
+                if (!LoadBlockIndex(chainparams)) {
                     strLoadError = _("Error loading block database");
                     break;
+                }
+
+                // If the loaded chain has a wrong genesis, bail out immediately
+                // (we're likely using a testnet datadir, or the other way around).
+                if (!mapBlockIndex.empty() && mapBlockIndex.count(hashGenesisBlock) == 0)
+                    return InitError(_("Incorrect or no genesis block found. Wrong datadir for network?"));
+
+                // Check for changed -txindex state
+                if (fTxIndex != gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX)) {
+                    strLoadError = _("You need to rebuild the database using -reindex to change -txindex");
+                    break;
+                }
+
+                // Check for changed -addressindex state
+                if (fAddressIndex != gArgs.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX)) {
+                    strLoadError = _("You need to rebuild the database using -reindex-chainstate to change -addressindex");
+                    break;
+                }
+
+                // Check for changed -prune state.  What we are concerned about is a user who has pruned blocks
+                // in the past, but is now trying to run unpruned.
+                // TODO: TACA Add later
+//                if (fHavePruned && !fPruneMode) {
+//                    strLoadError = _("You need to rebuild the database using -reindex to go back to unpruned mode.  This will redownload the entire blockchain");
+//                    break;
+//                }
+
+                // At this point blocktree args are consistent with what's on disk.
+                // If we're not mid-reindex (based on disk + args), add a genesis block on disk
+                // (otherwise we use the one already on disk).
+                // This is called again in ThreadImport after the reindex completes.
+                if (!fReindex && !LoadGenesisBlock(chainparams)) {
+                    strLoadError = _("Error initializing block database");
+                    break;
+                }
+
+                // At this point we're either in reindex or we've loaded a useful
+                // block tree into mapBlockIndex!
+                pcoinsdbview = new CCoinsViewDB(nCoinDBCache, false, fReset || fReindexChainState);
+                pcoinscatcher = new CCoinsViewErrorCatcher(pcoinsdbview);
+
+                // ReplayBlocks is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
+                if (!ReplayBlocks(chainparams, pcoinsdbview)) {
+                    strLoadError = _("Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate.");
+                    break;
+                }
+
+                // The on-disk coinsdb is now in a good state, create the cache
+                pcoinsTip = new CCoinsViewCache(pcoinscatcher);
+
+                bool is_coinsview_empty = fReset || fReindexChainState || pcoinsTip->GetBestBlock().IsNull();
+                if (!is_coinsview_empty) {
+                    // LoadChainTip sets chainActive based on pcoinsTip's best block
+                    if (!LoadChainTip(chainparams)) {
+                        strLoadError = _("Error initializing block database");
+                        break;
+                    }
+                    assert(chainActive.Tip() != nullptr);
+                }
+
+                if (!fReset) {
+                    // Note that RewindBlockIndex MUST run even if we're about to -reindex-chainstate.
+                    // It both disconnects blocks based on chainActive, and drops block data in
+                    // mapBlockIndex based on lack of available witness data.
+                    uiInterface.InitMessage(_("Rewinding blocks..."));
+                    if (!RewindBlockIndex(chainparams)) {
+                        strLoadError = _("Unable to rewind the database to a pre-fork state. You will need to redownload the blockchain");
+                        break;
+                    }
+                }
+
+                if (!is_coinsview_empty) {
+                    uiInterface.InitMessage(_("Verifying blocks..."));
+                    // TODO: TACA Add later
+//                    if (fHavePruned && gArgs.GetArg("-checkblocks", DEFAULT_CHECKBLOCKS) > MIN_BLOCKS_TO_KEEP) {
+//                        LogPrintf("Prune: pruned datadir may not have more than %d blocks; only checking available blocks",
+//                            MIN_BLOCKS_TO_KEEP);
+//                    }
+
+                    {
+                        LOCK(cs_main);
+                        CBlockIndex* tip = chainActive.Tip();
+                        RPCNotifyBlockChange(true, tip);
+                        if (tip && tip->nTime > GetAdjustedTime() + 2 * 60 * 60) {
+                            strLoadError = _("The block database contains a block which appears to be from the future. "
+                                    "This may be due to your computer's date and time being set incorrectly. "
+                                    "Only rebuild the block database if you are sure that your computer's date and time are correct");
+                            break;
+                        }
+                    }
+
+                    if (!CVerifyDB().VerifyDB(chainparams, pcoinsdbview, gArgs.GetArg("-checklevel", DEFAULT_CHECKLEVEL),
+                                  gArgs.GetArg("-checkblocks", DEFAULT_CHECKBLOCKS))) {
+                        strLoadError = _("Corrupted block database detected");
+                        break;
+                    }
                 }
             }
             catch(std::exception &e) 
