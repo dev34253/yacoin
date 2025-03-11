@@ -671,12 +671,14 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
 /** Return transaction in tx, and if it was found inside a block, its hash is placed in hashBlock */
 bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, bool fAllowSlow)
 {
+    LogPrintf("TACA ===> GetTransaction, hash = %s\n", hash.ToString());
     CBlockIndex *pindexSlow = nullptr;
 
     LOCK(cs_main);
 
     if (mempool.exists(hash))
     {
+        LogPrintf("TACA ===> GetTransaction, Found tx (%s) on mempool\n", hash.ToString());
         tx = mempool.get(hash);
         return true;
     }
@@ -684,6 +686,7 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, b
     if (fTxIndex) {
         CDiskTxPos postx;
         if (pblocktree->ReadTxIndex(hash, postx)) {
+            LogPrintf("TACA ===> GetTransaction, Found tx (%s) on transaction index\n", hash.ToString());
             CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
             if (file.IsNull())
                 return error("%s: OpenBlockFile failed", __func__);
@@ -708,6 +711,7 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, b
     }
 
     if (pindexSlow) {
+        LogPrintf("TACA ===> GetTransaction, Found tx (%s) on coin database\n", hash.ToString());
         CBlock block;
         const Consensus::Params& consensusParams = Params().GetConsensus();
         if (ReadBlockFromDisk(block, pindexSlow, consensusParams)) {
@@ -827,12 +831,14 @@ bool IsInitialBlockDownload()
 // TODO: Refactor GetProofOfWorkReward
 ::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, unsigned int nHeight)
 {
+    LogPrintf("TACA ===> GetProofOfWorkReward, nBits = %d, nFees = %d, nHeight = %d\n", nBits, nFees, nHeight);
     // NEW LOGIC SINCE V1.0.0
     // Get reward of a specific block height
     if (nHeight != 0 && nHeight >= nMainnetNewLogicBlockNumber)
     {
         ::int32_t startEpochBlockHeight = (nHeight / nEpochInterval) * nEpochInterval;
         const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
+        LogPrintf("TACA ===> GetProofOfWorkReward, Get reward of a specific block height, pindexMoneySupplyBlock->nHeight = %d\n", pindexMoneySupplyBlock->nHeight);
         return (pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
     }
 
@@ -854,6 +860,7 @@ bool IsInitialBlockDownload()
             const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(moneySupplyBlockHeight);
             nBlockRewardExcludeFees = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
             nBlockRewardPrev = nBlockRewardExcludeFees;
+            LogPrintf("TACA ===> GetProofOfWorkReward, Reorg through two or many epochs, nBlockRewardPrev = %d\n", nBlockRewardPrev);
         }
         else // normal case
         {
@@ -864,15 +871,20 @@ bool IsInitialBlockDownload()
                 // PoW reward is 2%
                 nBlockRewardExcludeFees = (::int64_t)(chainActive.Tip()->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
                 nBlockRewardPrev = nBlockRewardExcludeFees;
+                LogPrintf("TACA ===> GetProofOfWorkReward, recalculated with new epoch, nBlockRewardPrev = %d\n", nBlockRewardPrev);
             }
             else
             {
                 nBlockRewardExcludeFees = (::int64_t)nBlockRewardPrev;
+                LogPrintf("TACA ===> GetProofOfWorkReward, old epoch, nBlockRewardPrev = %d\n", nBlockRewardPrev);
                 if (!nBlockRewardPrev)
                 {
                     const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(nMainnetNewLogicBlockNumber ? nMainnetNewLogicBlockNumber - 1 : 0);
+                    LogPrintf("TACA ===> GetProofOfWorkReward, old epoch, pindexMoneySupplyBlock = %p\n", pindexMoneySupplyBlock);
+                    LogPrintf("TACA ===> GetProofOfWorkReward, old epoch, pindexMoneySupplyBlock->nHeight = %d\n", pindexMoneySupplyBlock->nHeight);
                     nBlockRewardExcludeFees =
                         (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
+                    LogPrintf("TACA ===> GetProofOfWorkReward, old epoch, nBlockRewardExcludeFees = %d\n", nBlockRewardExcludeFees);
                 }
             }
         }
@@ -3126,6 +3138,11 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
     }
 
     // Check timestamp against prev
+    int64_t blockTime = block.GetBlockTime();
+    int64_t medianTimePast = pindexPrev->GetMedianTimePast();
+    int64_t maxFutureBlockTime = block.GetBlockTime() + MAX_FUTURE_BLOCK_TIME;
+    int64_t previousBlockTime = pindexPrev->GetBlockTime();
+    LogPrintf("TACA ===> ContextualCheckBlockHeader, blockTime = %d, medianTimePast = %d, maxFutureBlockTime = %d, previousBlockTime = %d\n", blockTime, medianTimePast, maxFutureBlockTime, previousBlockTime);
     if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast() || block.GetBlockTime() + MAX_FUTURE_BLOCK_TIME < pindexPrev->GetBlockTime())
         return state.Invalid(error("ContextualCheckBlockHeader() : block's timestamp is too early"), REJECT_INVALID, "time-too-old", "block's timestamp is too early");
 
