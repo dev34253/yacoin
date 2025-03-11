@@ -28,6 +28,7 @@
 #include "net_processing.h"
 #include <boost/algorithm/string/replace.hpp>
 #include <openssl/rand.h>
+#include "consensus/validation.h"
 
 using std::list;
 using std::pair;

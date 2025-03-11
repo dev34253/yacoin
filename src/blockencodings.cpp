@@ -4,7 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "blockencodings.h"
-#include "validation.h"
+#include "consensus/validation.h"
 #include "hash.h"
 #include "random.h"
 #include "streams.h"

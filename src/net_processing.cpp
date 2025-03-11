@@ -8,7 +8,7 @@
 #include "addrman.h"
 #include "arith_uint256.h"
 #include "blockencodings.h"
-#include "validation.h"
+#include "consensus/validation.h"
 #include "hash.h"
 #include "init.h"
 #include "validation.h"

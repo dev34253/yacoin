@@ -43,6 +43,7 @@
 #include "policy/policy.h"
 #include "torcontrol.h"
 #include "net_processing.h"
+#include "consensus/validation.h"
 
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 ::int64_t

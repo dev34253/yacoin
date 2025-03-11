@@ -24,6 +24,7 @@
  #include "bitcoinrpc.h"
 #endif
 #include "streams.h"
+#include "consensus/validation.h"
 
 using namespace json_spirit;
 

@@ -23,6 +23,7 @@
 #endif
 #include "streams.h"
 #include "net_processing.h"
+#include "consensus/validation.h"
 
 using namespace boost;
 using namespace boost::assign;

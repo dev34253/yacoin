@@ -15,6 +15,7 @@
 #endif
 #include "streams.h"
 #include "price.h"
+#include "consensus/validation.h"
 
 using namespace json_spirit;
 
