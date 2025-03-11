@@ -155,8 +155,6 @@ const string strMessageMagic = "Yacoin Signed Message:\n";
     nLongAverageBP100 = 0,
     nLongAverageBP = 0;
 
-extern enum Checkpoints::CPMode CheckpointsMode;
-
 // Blocks that are in flight, and that are in the queue to be downloaded.
 // Protected by cs_main.
 struct QueuedBlock {
@@ -447,12 +445,6 @@ string GetWarnings(string strFor)
     if (strMiscWarning != "")
     {
         strStatusBar = strMiscWarning;
-    }
-
-    // if detected invalid checkpoint enter safe mode
-    if (Checkpoints::hashInvalidCheckpoint != 0)
-    {
-        strStatusBar = strRPC = _("WARNING: Invalid checkpoint found! Displayed transactions may not be correct! You may need to upgrade, or notify developers.");
     }
 
     if (strFor == "statusbar")

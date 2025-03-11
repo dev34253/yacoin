@@ -144,10 +144,6 @@ public:
     bool WriteBlockHash(const CDiskBlockIndex& blockindex);
     bool WriteBlockHash(const CDiskBlockPos &blockPos, uint256 hash);
     bool ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256& blockhash);
-    bool ReadSyncCheckpoint(uint256& hashCheckpoint);
-    bool WriteSyncCheckpoint(uint256 hashCheckpoint);
-    bool ReadCheckpointPubKey(std::string& strPubKey);
-    bool WriteCheckpointPubKey(const std::string& strPubKey);
     bool BuildMapHash();
 };
 

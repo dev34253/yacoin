@@ -68,7 +68,6 @@ std::string strWalletFileName;
 bool fConfChange;
 bool fUseFastStakeMiner;
 bool fUseMemoryLog;
-enum Checkpoints::CPMode CheckpointsMode;
 
 static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
 
@@ -469,7 +468,6 @@ std::string HelpMessage()
     strUsage += HelpMessageGroup(_("Other options:"));
     strUsage += HelpMessageOpt("-tokenindex", _("Keep an index of tokens. Requires a -reindex-token."));
     strUsage += HelpMessageOpt("-addressindex", _("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses. Require a -reindex-token or -reindex-blockindex"));
-    strUsage += HelpMessageOpt("-cppolicy", _("Sync checkpoints policy (default: strict)"));
     strUsage += HelpMessageOpt("-initSyncDownloadTimeout=<n>", _("Headers/block download timeout in seconds (default: 600)"));
     strUsage += HelpMessageOpt("-initSyncMaximumBlocksInDownloadPerPeer=<n>", _("Maximum number of blocks being downloaded at a time from one peer (default: 500)"));
     strUsage += HelpMessageOpt("-initSyncBlockDownloadWindow=<n>", _("Block download windows (default: initSyncMaximumBlocksInDownloadPerPeer * 64)"));
@@ -695,22 +693,6 @@ bool AppInitParameterInteraction()
     BLOCK_DOWNLOAD_WINDOW = gArgs.GetArg("-initSyncBlockDownloadWindow", MAX_BLOCKS_IN_TRANSIT_PER_PEER * 64);
     HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS = gArgs.GetArg("-initSyncTriggerGetBlocks", 10000);
 
-    // TODO: Improve checkpoints logic
-    CheckpointsMode = Checkpoints::STRICT_;
-    std::string strCpMode = gArgs.GetArg("-cppolicy", "strict");
-
-    if(strCpMode == "strict") {
-        CheckpointsMode = Checkpoints::STRICT_;
-    }
-
-    if(strCpMode == "advisory") {
-        CheckpointsMode = Checkpoints::ADVISORY;
-    }
-
-    if(strCpMode == "permissive") {
-        CheckpointsMode = Checkpoints::PERMISSIVE;
-    }
-
     // Good that testnet is tested here, but closer to AppInit() => ReadConfigFile() would be better
     // Old logic
     fTestNet = gArgs.GetBoolArg("-testnet");
@@ -743,13 +725,6 @@ bool AppInitParameterInteraction()
     }
 
     fConfChange = gArgs.GetBoolArg("-confchange", false);
-
-    // ppcoin: checkpoint master priv key
-    if (gArgs.IsArgSet("-checkpointkey"))
-    {
-        if (!Checkpoints::SetCheckpointPrivKey(gArgs.GetArg("-checkpointkey", "")))
-            InitError(_("Unable to sign checkpoint, wrong checkpointkey?\n"));
-    }
 
     return true;
 }

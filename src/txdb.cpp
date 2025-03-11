@@ -592,26 +592,6 @@ bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nD
     return Read(make_pair(string("blockhash"), make_pair(nFile, nDataPos)), blockhash);
 }
 
-bool CBlockTreeDB::ReadSyncCheckpoint(uint256 &hashCheckpoint)
-{
-    return Read(string("hashSyncCheckpoint"), hashCheckpoint);
-}
-
-bool CBlockTreeDB::WriteSyncCheckpoint(uint256 hashCheckpoint)
-{
-    return Write(string("hashSyncCheckpoint"), hashCheckpoint);
-}
-
-bool CBlockTreeDB::ReadCheckpointPubKey(string &strPubKey)
-{
-    return Read(string("strCheckpointPubKey"), strPubKey);
-}
-
-bool CBlockTreeDB::WriteCheckpointPubKey(const string &strPubKey)
-{
-    return Write(string("strCheckpointPubKey"), strPubKey);
-}
-
 bool CBlockTreeDB::BuildMapHash()
 {
     // The block index is an in-memory structure that maps hashes to on-disk

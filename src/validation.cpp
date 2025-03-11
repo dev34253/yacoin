@@ -3623,14 +3623,6 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
 //    if (fHavePruned)
 //        LogPrintf("LoadBlockIndexDB(): Block files have previously been pruned\n");
 
-    // Novacoin: load hashSyncCheckpoint
-    if (!pblocktree->ReadSyncCheckpoint(Checkpoints::hashSyncCheckpoint))
-    {
-        LogPrintf("LoadBlockIndexDB(): synchronized checkpoint not read\n");
-        Checkpoints::hashSyncCheckpoint = chainparams.GetConsensus().hashGenesisBlock;
-    }
-    LogPrintf("LoadBlockIndexDB(): synchronized checkpoint %s\n", Checkpoints::hashSyncCheckpoint.ToString());
-
     // Check whether we need to continue reindexing
     bool fReindexing = false;
     pblocktree->ReadReindexing(fReindexing);
