@@ -94,7 +94,6 @@ extern const uint256 entropyStore[38];
 static const ::uint64_t nMinDiskSpace = 52428800;
 
 class CReserveKey;
-class CTxDB;
 class CScriptCheck;
 class CBlockLocator;
 class CValidationState;

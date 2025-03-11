@@ -1120,7 +1120,6 @@ void CWalletTx::AddSupportingTransactions()
         for(const CTxIn& txin : vin)
             vWorkQueue.push_back(txin.prevout.COutPointGetHash());
 
-        // This critsect is OK because txdb is already open
         {
             LOCK(pwallet->cs_wallet);
             map<uint256, const CMerkleTx*> mapWalletPrev;
@@ -1466,7 +1465,7 @@ void CWallet::ReacceptWalletTransactions()
     }
 }
 
-void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
+void CWalletTx::RelayWalletTransaction()
 {
     for (const CMerkleTx& tx : vtxPrev)
     {
@@ -1487,12 +1486,6 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
             RelayTransaction(*this, g_connman.get());
         }
     }
-}
-
-void CWalletTx::RelayWalletTransaction()
-{
-   CTxDB txdb("r");
-   RelayWalletTransaction(txdb);
 }
 
 void CWallet::ResendWalletTransactions()
@@ -1522,14 +1515,13 @@ void CWallet::ResendWalletTransactions()
 
     // Rebroadcast any of our txes that aren't in a block yet
     LogPrintf("ResendWalletTransactions()\n");
-    CTxDB txdb("r");
     {
         LOCK(cs_wallet);
         // Sort them in chronological order
         multimap<unsigned int, CWalletTx*> 
             mapSorted;
 
-        BOOST_FOREACH(PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
+        for(PAIRTYPE(const uint256, CWalletTx)& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
             // Don't rebroadcast until it's had plenty of time that
@@ -1537,12 +1529,12 @@ void CWallet::ResendWalletTransactions()
             if (nTimeBestReceived - (int64_t)wtx.nTimeReceived > 5 * 60)
                 mapSorted.insert(make_pair(wtx.nTimeReceived, &wtx));
         }
-        BOOST_FOREACH(PAIRTYPE(const unsigned int, CWalletTx*)& item, mapSorted)
+        for(PAIRTYPE(const unsigned int, CWalletTx*)& item : mapSorted)
         {
             CWalletTx& wtx = *item.second;
             CValidationState state;
             if (wtx.CheckTransaction(state))
-                wtx.RelayWalletTransaction(txdb);
+                wtx.RelayWalletTransaction();
             else
                 LogPrintf("ResendWalletTransactions() : CheckTransaction failed for transaction %s\n", wtx.GetHash().ToString());
         }
@@ -2717,8 +2709,6 @@ bool CWallet::CreateTransactionAll(
         std::set<CInputCoin> setCoins;
         std::set<CInputCoin> setTokens;
         LOCK2(cs_main, cs_wallet);
-        // txdb must be opened before the mapWallet lock
-        CTxDB txdb("r");
         {
             /** YAC_TOKEN START */
             std::vector<COutput> vAvailableCoins;
@@ -2985,7 +2975,7 @@ bool CWallet::CreateTransactionAll(
                        nBytes, nValueIn, nValue, nChange, nValueIn - nValue - nChange, nFeeRet);
 
                 // Fill vtxPrev by copying from previous transactions vtxPrev
-                wtxNew.AddSupportingTransactions(txdb);
+                wtxNew.AddSupportingTransactions();
                 wtxNew.fTimeReceivedIsTxTime = true;
 
                 break;

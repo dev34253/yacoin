@@ -3550,7 +3550,7 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
         // NovaCoin: calculate stake modifier checksum
         pindex->nStakeModifierChecksum = GetStakeModifierChecksum(pindex);
         if (!CheckStakeModifierCheckpoints(pindex->nHeight, pindex->nStakeModifierChecksum))
-            LogPrintf("CTxDB::LoadBlockIndex() : Failed stake modifier checkpoint height=%d, modifier=0x%016\n" PRIx64, pindex->nHeight, pindex->nStakeModifier);
+            LogPrintf("LoadBlockIndexDB() : Failed stake modifier checkpoint height=%d, modifier=0x%016llx\n", pindex->nHeight, pindex->nStakeModifier);
 
         pindex->nTimeMax = (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime) : pindex->nTime);
         // We can link the chain of blocks for which we've received transactions at some point.

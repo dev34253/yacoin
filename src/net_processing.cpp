@@ -1175,7 +1175,6 @@ void static ProcessGetData(CNode* pfrom, CConnman* connman, const std::atomic<bo
                         // In this case, we need to run ActivateBestChain prior to checking the relay
                         // conditions below.
                         CValidationState dummy;
-                        CTxDB txdb;
                         ActivateBestChain(dummy, Params(), a_recent_block);
                     }
                     if (chainActive.Contains(mi->second)) {
@@ -2283,8 +2282,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
         std::list<CTransactionRef> lRemovedTxn;
 
-//        CTxDB txdb("r");
-//        if (!AlreadyHave(txdb, inv) && tx.AcceptToMemoryPool(state, txdb, &fMissingInputs)) {
         if (!AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, ptx, &fMissingInputs))
         {
             SyncWithWallets(tx, NULL, true);

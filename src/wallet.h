@@ -1046,8 +1046,6 @@ public:
     void AddSupportingTransactions();
 
     bool AcceptWalletTransaction();
-
-    void RelayWalletTransaction(CTxDB& txdb);
     void RelayWalletTransaction();
 };
 

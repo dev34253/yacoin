@@ -16,7 +16,6 @@
 #include "uint256.h"
 #include "utilmoneystr.h"
 
-class CTxDB;
 class CValidationState;
 class CDiskTxPos;
 class CScriptCheck;
