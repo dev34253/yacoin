@@ -19,7 +19,7 @@
 #include <leveldb/env.h>
 #include <leveldb/cache.h>
 #include <leveldb/filter_policy.h>
-#include <memenv/memenv.h>
+#include <memenv.h>
 
 using std::make_pair;
 using std::map;
