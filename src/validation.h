@@ -303,6 +303,11 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo& txund
 bool CheckFinalTx(const CTransaction &tx, int flags = -1);
 
 /**
+ * Test whether the LockPoints height and time are still valid on the current chain
+ */
+bool TestLockPointValidity(const LockPoints* lp);
+
+/**
  * Check if transaction will be BIP 68 final in the next block to be created.
  *
  * Simulates calling SequenceLocks() with data from the tip of the current active chain.
@@ -376,8 +381,6 @@ bool ReplayBlocks(const CChainParams& params, CCoinsView* view);
  * This is also true for mempool checks.
  */
 int GetSpendHeight(const CCoinsViewCache& inputs);
-
-bool AbortNode(const std::string &msg);
 
 /** Dump the mempool to disk. */
 void DumpMempool();

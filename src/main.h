@@ -67,12 +67,8 @@ static const ::int64_t MIN_TXOUT_AMOUNT = CENT/100;
 
 // Maximum number of script-checking threads allowed
 static const int MAX_SCRIPTCHECK_THREADS = 16;
-extern const uint256 
-    nPoWeasiestTargetLimitTestNet;
-extern int 
-    nConsecutiveStakeSwitchHeight;  // see timesamps.h = 420000;
-const ::int64_t 
-    nMaxClockDrift = nTwoHoursInSeconds;
+extern int nConsecutiveStakeSwitchHeight;  // see timesamps.h = 420000;
+const ::int64_t nMaxClockDrift = nTwoHoursInSeconds;
 
 inline ::int64_t PastDrift(::int64_t nTime)   
     { return nTime - nMaxClockDrift; } // up to 2 hours from the past
@@ -103,46 +99,25 @@ class CScriptCheck;
 class CBlockLocator;
 class CValidationState;
 
-arith_uint256 GetBlockProof(const CBlockIndex& block);
-int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip);
-
 /* Wallet functions */
 void Inventory(const uint256& hash);
 void RegisterWallet(CWallet* pwalletIn);
 void CloseWallets();
-
-bool ProcessMessages(CNode* pfrom);
-bool SendMessages(CNode* pto, bool fSendTrickle);
 
 // Run an instance of the script checking thread
 void ThreadScriptCheck(void* parg);
 // Stop the script checking threads
 void ThreadScriptCheckQuit();
 
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params);
-::int64_t GetProofOfStakeReward(::int64_t nCoinAge, unsigned int nBits, ::int64_t nTime, bool bCoinYearOnly=false);
-::int64_t GetProofOfStakeReward(::int64_t nCoinAge);
-
-unsigned int ComputeMinWork(unsigned int nBase, ::int64_t nTime);
-unsigned int ComputeMinStake(unsigned int nBase, ::int64_t nTime, unsigned int nBlockTime);
 int GetNumBlocksOfPeers();
 std::string GetWarnings(std::string strFor);
 
-void StakeMinter(CWallet *pwallet);
 void ResendWalletTransactions();
 
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, unsigned int flags, int nHashType);
-bool AbortNode(const std::string &msg);
-/** Increase a node's misbehavior score. */
-void Misbehaving(NodeId nodeid, int howmuch);
 
 // yacoin: calculate Nfactor using timestamp
 extern unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx = false);
-
-/**
- * Test whether the LockPoints height and time are still valid on the current chain
- */
-bool TestLockPointValidity(const LockPoints* lp);
 
 /**
  * Get minimum confirmations to use coinbase

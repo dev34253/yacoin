@@ -64,10 +64,6 @@ public:
         mode = MODE_ERROR;
         return false;
     }
-    bool Abort(const std::string &msg) {
-        AbortNode(msg);
-        return Error("abort node");
-    }
     bool IsValid() const {
         return mode == MODE_VALID;
     }

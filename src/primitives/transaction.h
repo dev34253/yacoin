@@ -479,9 +479,6 @@ public:
         LogPrintf("%s", ToString());
     }
 
-
-    bool ClientConnectInputs();
-
     /** YAC_TOKEN START */
     bool IsNewToken() const;
     bool VerifyNewToken(std::string& strError) const;

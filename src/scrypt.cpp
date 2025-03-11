@@ -246,7 +246,6 @@ const ::uint32_t
         nT = *phashTarget;
     unsigned char
       //hashTarget = (CBigNum().SetCompact(pdata->nBits)).getuint256(); // PoW hashTarget
-        //*pTestHash = (unsigned char *)&nPoWeasiestTargetLimitTestNet,
         *hasht = (unsigned char *) &nT,
         *hashc = (unsigned char *) &hash,
       //highestZeroBitsSet = 0xe0;

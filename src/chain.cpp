@@ -188,6 +188,40 @@ bool CBlockIndex::IsInMainChain() const
     return (chainActive.Contains(this) || this == chainActive.Tip());
 }
 
+arith_uint256 GetBlockProof(const CBlockIndex& block)
+{
+    arith_uint256 bnTarget;
+    bool fNegative;
+    bool fOverflow;
+    bnTarget.SetCompact(block.nBits, &fNegative, &fOverflow);
+    if (fNegative || fOverflow || bnTarget == 0)
+        return 0;
+    // We need to compute 2**256 / (bnTarget+1), but we can't represent 2**256
+    // as it's too large for an arith_uint256. However, as 2**256 is at least as large
+    // as bnTarget+1, it is equal to ((2**256 - bnTarget - 1) / (bnTarget+1)) + 1,
+    // or ~bnTarget / (nTarget+1) + 1.
+    return (~bnTarget / (bnTarget + 1)) + 1;
+}
+
+int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip)
+{
+    arith_uint256 r;
+    int sign = 1;
+    if (to.bnChainTrust > from.bnChainTrust) {
+        CBigNum result = to.bnChainTrust - from.bnChainTrust;
+        r = UintToArith256(result.getuint256());
+    } else {
+        CBigNum result = from.bnChainTrust - to.bnChainTrust;
+        r = UintToArith256(result.getuint256());
+        sign = -1;
+    }
+    r = r * arith_uint256(nPoWTargetSpacing) / GetBlockProof(tip);
+    if (r.bits() > 63) {
+        return sign * std::numeric_limits<int64_t>::max();
+    }
+    return sign * r.GetLow64();
+}
+
 /** Find the last common ancestor two blocks have.
  *  Both pa and pb must be non-NULL. */
 const CBlockIndex* LastCommonAncestor(const CBlockIndex* pa, const CBlockIndex* pb) {

@@ -22,12 +22,9 @@ CBigNum bnProofOfWorkLimit(~uint256(0) >> 20);
 #else
 CBigNum bnProofOfWorkLimit(~uint256(0) >> 3);
 #endif
-const uint256 nPoWeasiestTargetLimitTestNet = ((~uint256( 0 )) >> 3 ); // this is the number used by TestNet 0.5.0.x
-CBigNum bnProofOfWorkLimitTestNet( nPoWeasiestTargetLimitTestNet );
 
 // POS params
 CBigNum bnProofOfStakeHardLimit(~uint256(0) >> 30); // fix minimal proof of stake difficulty at 0.25
-static CBigNum bnProofOfStakeTestnetLimit(~uint256(0) >> 20);
 const unsigned int nStakeTargetSpacing = 1 * nSecondsperMinute; // 1 * 60; // 1-minute stake spacing
 
 // Target params
@@ -36,10 +33,10 @@ static CBigNum bnInitialHashTarget(~uint256(0) >> 20);
 #else
 static CBigNum bnInitialHashTarget(~uint256(0) >> 8);
 #endif
-static CBigNum bnInitialHashTargetTestNet(~uint256(0) >> 8);
 static const ::int64_t nTargetSpacingWorkMax = 12 * nStakeTargetSpacing; // 2-hour BS, 12 minutes!
 static const ::int64_t nTargetTimespan = 7 * 24 * 60 * 60;  // one week
 
+/* POW FUNCTIONS */
 // ppcoin: find last block index up to pindex
 const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfStake)
 {
@@ -112,10 +109,7 @@ static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool
     // First three blocks will have following targets:
     // genesis (zeroth) block: bnEasiestTargetLimit
     // first block and second block: bnInitialHashTarget (~uint256(0) >> 8)
-    CBigNum bnEasiestTargetLimit =
-        fProofOfStake
-            ? (fTestNet ? bnProofOfStakeTestnetLimit : bnProofOfStakeHardLimit)
-            : (fTestNet ? bnProofOfWorkLimitTestNet : bnProofOfWorkLimit);
+    CBigNum bnEasiestTargetLimit = fProofOfStake? bnProofOfStakeHardLimit : bnProofOfWorkLimit;
 
     if (pindexLast == NULL)
     {
@@ -237,19 +231,78 @@ unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfS
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params)
 {
-    bool fNegative;
-    bool fOverflow;
-    arith_uint256 bnTarget;
+    CBigNum bnTarget;
+    bnTarget.SetCompact(nBits);
 
-    bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
-
+    LogPrintf("CheckProofOfWork: nBits: %d\n",nBits);
     // Check range
-    if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
-        return false;
-
+    if ((bnTarget <= 0) || (bnTarget > (params.powLimit)))
+      return error("CheckProofOfWork() : nBits below minimum work");
     // Check proof of work matches claimed amount
-    if (UintToArith256(hash) > bnTarget)
-        return false;
+    if (hash > bnTarget.getuint256())
+        return error("CheckProofOfWork() : hash > target nBits");
 
     return true;
 }
+/* POW FUNCTIONS */
+
+/* POS FUNCTIONS */
+// select stake target limit according to hard-coded conditions
+CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
+{
+    return bnProofOfStakeHardLimit; // YAC has always been 30
+}
+
+// miner's coin stake reward based on nBits and coin age spent (coin-days)
+::int64_t GetProofOfStakeReward(::int64_t nCoinAge, unsigned int nBits, ::int64_t nTime)
+{
+    ::int64_t nRewardCoinYear, nSubsidy, nSubsidyLimit = 10 * COIN;
+
+    // Old creation amount per coin-year, 5% fixed stake mint rate
+    nRewardCoinYear = 5 * CENT;
+    nSubsidy = nCoinAge * nRewardCoinYear * 33 / (365 * 33 + 8);
+
+    if (fDebug && gArgs.GetBoolArg("-printcreation"))
+      LogPrintf("GetProofOfStakeReward(): create=%s nCoinAge=%" PRId64
+                " nBits=%d\n",
+                FormatMoney(nSubsidy), nCoinAge, nBits);
+    return nSubsidy;
+}
+
+//
+// maximum nBits value could possible be required nTime after
+//
+unsigned int ComputeMaxBits(CBigNum bnTargetLimit, unsigned int nBase, ::int64_t nTime)
+{
+    CBigNum bnResult;
+    bnResult.SetCompact(nBase);
+    bnResult *= 2;
+    while (nTime > 0 && bnResult < bnTargetLimit)
+    {
+        // Maximum 200% adjustment per day...
+        bnResult *= 2;
+        nTime -= 24 * 60 * 60;
+    }
+    if (bnResult > bnTargetLimit)
+        bnResult = bnTargetLimit;
+    return bnResult.GetCompact();
+}
+
+//
+// minimum amount of work that could possibly be required nTime after
+// minimum proof-of-work required was nBase
+//
+unsigned int ComputeMinWork(unsigned int nBase, ::int64_t nTime)
+{
+    return ComputeMaxBits(bnProofOfWorkLimit, nBase, nTime);
+}
+
+//
+// minimum amount of stake that could possibly be required nTime after
+// minimum proof-of-stake required was nBase
+//
+unsigned int ComputeMinStake(unsigned int nBase, ::int64_t nTime, unsigned int nBlockTime)
+{
+    return ComputeMaxBits(GetProofOfStakeLimit(0, nBlockTime), nBase, nTime);
+}
+/* POS FUNCTIONS */

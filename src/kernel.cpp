@@ -16,6 +16,7 @@
 #ifndef BITCOIN_TXDB_H
  #include "txdb.h"
 #endif
+#include "pow.h"
 #include "streams.h"
 #include "policy/policy.h"
 

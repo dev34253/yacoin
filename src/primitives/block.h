@@ -61,10 +61,6 @@ extern CBigNum bnProofOfWorkLimit;
 extern const int64_t INITIAL_MONEY_SUPPLY;
 extern bool fReindexOnlyHeaderSync;
 
-#if defined(Yac1dot0)
-       const ::uint32_t Nfactor_1dot0 = 17;
-#endif
-
 struct ConnectedBlockTokenData
 {
     std::set<CTokenCacheNewToken> newTokensToAdd;
@@ -203,11 +199,7 @@ public:
             }
             else    // is TestNet
             {
-#if defined(Yac1dot0)
-                nfactor = Nfactor_1dot0;
-#else
                 nfactor = 4;
-#endif
             }
 
             old_block_header oldBlock;

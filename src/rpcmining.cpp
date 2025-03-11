@@ -145,13 +145,7 @@ Value getmininginfo(const Array& params, bool fHelp)
             "getmininginfo\n"
             "Returns an object containing mining-related information.");
 
-    float 
-        nKernelsRate = 0, 
-        nCoinDaysRate = 0;
-
-    pwalletMain->GetStakeStats(nKernelsRate, nCoinDaysRate);
-
-    Object obj, diff, weight;
+    Object obj, diff;
     obj.push_back(Pair("blocks",        (int)chainActive.Height()));
     obj.push_back(Pair("currentblocksize",(Value_type)nLastBlockSize));
     obj.push_back(Pair("currentblocktx",(Value_type)nLastBlockTx));
@@ -171,13 +165,6 @@ Value getmininginfo(const Array& params, bool fHelp)
     obj.push_back(Pair("genproclimit",  (int)gArgs.GetArg("-genproclimit", -1)));
     obj.push_back(Pair("hashespersec",  gethashespersec(params, false)));
     obj.push_back(Pair("pooledtx",      (Value_type)mempool.size()));
-
-    weight.push_back(Pair("kernelsrate",   nKernelsRate));
-    weight.push_back(Pair("cdaysrate",   nCoinDaysRate));
-    obj.push_back(Pair("stakestats", weight));
-
-    obj.push_back(Pair("stakeinterest %",(Value_type)GetProofOfStakeReward(0, GetLastBlockIndex(chainActive.Tip(), true)->nBits,
-                                                                 GetLastBlockIndex(chainActive.Tip(), true)->nTime, true) / 10000));
     obj.push_back(Pair("testnet",       fTestNet));
 
     // WM - Tweaks to report current Nfactor and N.

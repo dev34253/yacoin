@@ -14,6 +14,7 @@
 #include "consensus.h"
 #include "primitives/transaction.h"
 #include "policy/fees.h"
+#include "pow.h"
 //#include "script/interpreter.h"
 #include "validation.h"
 #include <cmath>
