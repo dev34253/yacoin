@@ -181,7 +181,7 @@ private:
 public:
     CValidationState() : mode(MODE_VALID), nDoS(0), chRejectCode(0), corruptionPossible(false) {}
     bool DoS(int level, bool ret = false,
-             unsigned char chRejectCodeIn=0, const std::string &strRejectReasonIn="",
+             unsigned int chRejectCodeIn=0, const std::string &strRejectReasonIn="",
              bool corruptionIn=false,
              const std::string &strDebugMessageIn="") {
         chRejectCode = chRejectCodeIn;
@@ -195,8 +195,9 @@ public:
         return ret;
     }
     bool Invalid(bool ret = false,
-                 unsigned char _chRejectCode=0, std::string _strRejectReason="") {
-        return DoS(0, ret, _chRejectCode, _strRejectReason);
+                 unsigned int _chRejectCode=0, const std::string &_strRejectReason="",
+                 const std::string &_strDebugMessage="") {
+        return DoS(0, ret, _chRejectCode, _strRejectReason, false, _strDebugMessage);
     }
     bool Error(const std::string& strRejectReasonIn) {
         if (mode == MODE_VALID)
@@ -239,7 +240,7 @@ public:
     bool IsTransactionError() const  {
         return failedTransaction != uint256();
     }
-    unsigned char GetRejectCode() const { return chRejectCode; }
+    unsigned int GetRejectCode() const { return chRejectCode; }
     std::string GetRejectReason() const { return strRejectReason; }
     std::string GetDebugMessage() const { return strDebugMessage; }
 };
@@ -362,4 +363,6 @@ public:
 /** Replay blocks that aren't fully applied to the database. */
 bool ReplayBlocks(const CChainParams& params, CCoinsView* view);
 
+// ppcoin:
+bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& nCoinAge); // ppcoin: get transaction coin age
 #endif // YACOIN_CONSENSUS_VALIDATION_H

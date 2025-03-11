@@ -535,7 +535,6 @@ public:
     bool ReceivedBlockTransactions(CValidationState &state, unsigned int nFile, unsigned int nBlockPos, CBlockIndex *pindexNew);
     bool CheckBlock(CValidationState& state, bool fCheckPOW=true, bool fCheckMerkleRoot=true, bool fCheckSig=true) const;
     bool AcceptBlock(CValidationState &state, CBlockIndex **ppindex, bool fRequested, bool* fNewBlock, CDiskBlockPos* dbp = NULL);
-    bool GetCoinAge(::uint64_t& nCoinAge) const; // ppcoin: calculate total coin age spent in block
     bool SignBlock044(const CKeyStore& keystore);
     bool SignBlock(CWallet& keystore);
     bool CheckBlockSignature() const;

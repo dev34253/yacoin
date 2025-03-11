@@ -373,7 +373,7 @@ bool CTransaction::CheckTransaction(CValidationState &state) const
     set<COutPoint>
         vInOutPoints;
 
-    BOOST_FOREACH(const CTxIn& txin, vin)
+    for(const CTxIn& txin : vin)
     {
         if (vInOutPoints.count(txin.prevout))
             return state.DoS(100, error("CheckTransaction() : duplicate inputs"));
@@ -392,7 +392,7 @@ bool CTransaction::CheckTransaction(CValidationState &state) const
     }
     else
     {
-        BOOST_FOREACH(const CTxIn& txin, vin)
+        for(const CTxIn& txin : vin)
             if (txin.prevout.IsNull())
                 return state.DoS(10, error("CTransaction::CheckTransaction() : prevout is null"));
     }
