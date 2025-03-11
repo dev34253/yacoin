@@ -501,7 +501,7 @@ bool AppInitParameterInteraction()
     fCheckpointsEnabled = gArgs.GetBoolArg("-checkpoints", DEFAULT_CHECKPOINTS_ENABLED);
 
     nNodeLifespan = (unsigned int)(gArgs.GetArg("-addrlifespan", 7));
-    fStoreBlockHashToDb = gArgs.GetBoolArg("-storeblockhash", true);
+    fBlockHashIndex = gArgs.GetBoolArg("-blockhashindex", DEFAULT_BLOCKHASHINDEX);
     fUseMemoryLog = gArgs.GetBoolArg("-memorylog", true);
     // YAC_TOKEN START
     fTokenIndex = gArgs.GetBoolArg("-tokenindex", false);

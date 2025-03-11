@@ -281,11 +281,16 @@ public:
     // ppcoin: two types of block: proof-of-work or proof-of-stake
     bool IsProofOfStake() const
     {
+        // The original check ensures that the second transaction in a PoS block
+        // is the coinstake transaction.
+        // Since Heliopolis hardfork (block 1890000), YAC no longer supports PoS, so the number of PoS blocks remains fixed.
+        // Since v1.1.0, this check has been modified to support headers-first synchronization.
+//        return (vtx.size() > 1 && vtx[1].IsCoinStake());
         bool proofOfStake = false;
         if (nTime <= nYac10HardforkTime && nNonce == 0 &&
                 ((nBits <= 486801407 && blockHash != uint256("0x0000000009415c983b503189080df17423b193176634b6e489120e0189a6829c"))
-                        || (blockHash == uint256("0x5fc9a11b3ffd0118a0031eeb9ed2860bd8ceb8c71e3226e02e6eb82c90cbbf99"))
-                        || (blockHash == uint256("0x5dc2a000963f075f3dec7fa8f220987bff3c4a978528594e5408448155cdc8e4"))))
+                                    || (blockHash == uint256("0x5fc9a11b3ffd0118a0031eeb9ed2860bd8ceb8c71e3226e02e6eb82c90cbbf99"))
+                                    || (blockHash == uint256("0x5dc2a000963f075f3dec7fa8f220987bff3c4a978528594e5408448155cdc8e4"))))
         {
             proofOfStake = true;
         }
@@ -313,9 +318,6 @@ public:
             return nEntropyBit;
 
     }
-    bool CheckBlockHeader(CValidationState& state, bool fCheckPOW = true) const;
-    bool AcceptBlockHeader(CValidationState& state, CBlockIndex **ppindex= NULL);
-    CBlockIndex* AddToBlockIndex();
 };
 
 class CBlock : public CBlockHeader
@@ -329,6 +331,7 @@ public:
 
     // memory only
     mutable std::vector<uint256> vMerkleTree;
+    mutable bool fChecked;
 
     CBlock()
     {
@@ -363,6 +366,7 @@ public:
     {
         CBlockHeader::SetNull();
         vtx.clear();
+        fChecked = false;
         vchBlockSig.clear();
         vMerkleTree.clear();
     }
@@ -445,9 +449,6 @@ public:
         return hash;
     }
 
-
-    bool WriteToDisk(unsigned int& nFileRet, unsigned int& nBlockPosRet);
-
     void print() const
     {
         LogPrintf("CBlock(\n"
@@ -492,9 +493,6 @@ public:
     bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true, bool fCheckHeader = true);
     bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos,
             bool fReadTransactions = true, bool fCheckHeader = true);
-    bool ReceivedBlockTransactions(CValidationState &state, unsigned int nFile, unsigned int nBlockPos, CBlockIndex *pindexNew);
-    bool CheckBlock(CValidationState& state, bool fCheckPOW=true, bool fCheckMerkleRoot=true, bool fCheckSig=true) const;
-    bool AcceptBlock(CValidationState &state, CBlockIndex **ppindex, bool fRequested, bool* fNewBlock, CDiskBlockPos* dbp = NULL);
     bool SignBlock044(const CKeyStore& keystore);
     bool SignBlock(CWallet& keystore);
     bool CheckBlockSignature() const;

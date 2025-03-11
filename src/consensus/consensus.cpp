@@ -7,6 +7,13 @@
 
 #include <algorithm>
 
+/* yac: The maximum block size increases based on the block reward, which is
+ * influenced by the money supply. After each epoch interval, both the block
+ * reward and the maximum block size are adjusted.
+ * TODO: It is necessary to review all instances where this function is called
+ * to ensure the correct block height is passed, allowing for an accurate
+ * calculation of the maximum block size.
+ */
 ::uint64_t GetMaxSize(enum GetMaxSize_mode mode, unsigned int nHeight)
 {
     ::uint64_t nMaxSize = 0;

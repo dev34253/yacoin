@@ -150,6 +150,7 @@ public:
     bool ReadDiskTx(COutPoint outpoint, CTransaction& tx);
     bool WriteBlockIndex(const CDiskBlockIndex& blockindex);
     bool WriteBlockHash(const CDiskBlockIndex& blockindex);
+    bool WriteBlockHash(const CDiskBlockPos &blockPos, uint256 hash);
     bool ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256& blockhash);
     bool ReadHashBestChain(uint256& hashBestChain);
     bool WriteHashBestChain(uint256 hashBestChain);

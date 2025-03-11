@@ -538,7 +538,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
                     return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
 
                 uint256 tmpBlockhash;
-                if (fStoreBlockHashToDb && !ReadBlockHash(diskindex.nFile, diskindex.nDataPos, tmpBlockhash))
+                if (fBlockHashIndex && !ReadBlockHash(diskindex.nFile, diskindex.nDataPos, tmpBlockhash))
                 {
                     newStoredBlock++;
                     WriteBlockHash(diskindex);
@@ -557,10 +557,10 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
         }
     }
 
-    LogPrintf("CBlockTreeDB::LoadBlockIndexGuts, fStoreBlockHashToDb = %d, "
+    LogPrintf("CBlockTreeDB::LoadBlockIndexGuts, fBlockHashIndex = %d, "
            "newStoredBlock = %d, "
            "alreadyStoredBlock = %d\n",
-           fStoreBlockHashToDb,
+           fBlockHashIndex,
            newStoredBlock,
            alreadyStoredBlock);
 
@@ -632,6 +632,11 @@ bool CBlockTreeDB::WriteBlockIndex(const CDiskBlockIndex &blockindex)
 bool CBlockTreeDB::WriteBlockHash(const CDiskBlockIndex &blockindex)
 {
     return Write(make_pair(string("blockhash"), make_pair(blockindex.nFile, blockindex.nDataPos)), blockindex.GetBlockHash());
+}
+
+bool CBlockTreeDB::WriteBlockHash(const CDiskBlockPos &blockPos, uint256 hash)
+{
+    return Write(make_pair(string("blockhash"), make_pair(blockPos.nFile, blockPos.nPos)), hash);
 }
 
 bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nDataPos, uint256 &blockhash)
@@ -847,7 +852,7 @@ bool CBlockTreeDB::LoadBlockIndex()
         }
 
         uint256 tmpBlockhash;
-        if (fStoreBlockHashToDb && !ReadBlockHash(diskindex.nFile, diskindex.nBlockPos, tmpBlockhash))
+        if (fBlockHashIndex && !ReadBlockHash(diskindex.nFile, diskindex.nBlockPos, tmpBlockhash))
         {
             newStoredBlock++;
             WriteBlockHash(diskindex);
@@ -903,10 +908,10 @@ bool CBlockTreeDB::LoadBlockIndex()
     }
     delete iterator;
 
-    LogPrintf("CBlockTreeDB::LoadBlockIndex(), fStoreBlockHashToDb = %d, "
+    LogPrintf("CBlockTreeDB::LoadBlockIndex(), fBlockHashIndex = %d, "
            "newStoredBlock = %d, "
            "alreadyStoredBlock = %d\n",
-           fStoreBlockHashToDb,
+           fBlockHashIndex,
            newStoredBlock,
            alreadyStoredBlock);
 

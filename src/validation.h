@@ -129,6 +129,7 @@ static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
 static const bool DEFAULT_TXINDEX = true; // ppcoin: txindex is required for PoS calculations (might change in the future)
 static const bool DEFAULT_TOKENINDEX = false;
 static const bool DEFAULT_ADDRESSINDEX = false;
+static const bool DEFAULT_BLOCKHASHINDEX = true; // yac: blockhashindex is necessary to avoid recalculating block hash (very slow !!!) when reading block data from disk
 
 /** Default for -stopatheight */
 static const int DEFAULT_STOPATHEIGHT = 0;
@@ -156,7 +157,7 @@ extern bool fTxIndex;
 extern bool fRequireStandard;
 extern bool fCheckBlockIndex;
 extern bool fCheckpointsEnabled;
-extern bool fStoreBlockHashToDb;
+extern bool fBlockHashIndex;
 extern ::uint32_t nMinEase; // minimum ease corresponds to highest difficulty
 extern ::int64_t nBlockRewardPrev;
 
@@ -202,7 +203,29 @@ const ::uint32_t
          nNumberOfDaysPerYear) + // that 1/4 of a day for leap years
         (nAverageBlocksPerMinute * nMinutesperHour * (nHoursPerDay / 4));
 
-bool ProcessBlock(CValidationState &state, CBlock* pblock, bool fForceProcessing, bool *fNewBlock, CDiskBlockPos *dbp = NULL);
+/** Block files containing a block-height within MIN_BLOCKS_TO_KEEP of chainActive.Tip() will not be pruned. */
+static const unsigned int MIN_BLOCKS_TO_KEEP = 288;
+
+/**
+ * Process an incoming block. This only returns after the best known valid
+ * block is made active. Note that it does not, however, guarantee that the
+ * specific block passed to it has been checked for validity!
+ *
+ * If you want to *possibly* get feedback on whether pblock is valid, you must
+ * install a CValidationInterface (see validationinterface.h) - this will have
+ * its BlockChecked method called whenever *any* block completes validation.
+ *
+ * Note that we guarantee that either the proof-of-work is valid on pblock, or
+ * (and possibly also) BlockChecked will have been called.
+ *
+ * Call without cs_main held.
+ *
+ * @param[in]   pblock  The block we want to process.
+ * @param[in]   fForceProcessing Process this block even if unrequested; used for non-network block sources and whitelisted peers.
+ * @param[out]  fNewBlock A boolean which is set to indicate if the block was first received via this call
+ * @return True if state.IsValid()
+ */
+bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<const CBlock> pblock, bool fForceProcessing, bool* fNewBlock);
 
 /**
  * Process incoming block headers.
