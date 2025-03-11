@@ -3258,7 +3258,7 @@ static bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state
         // Get prev block index
         BlockMap::iterator mi = mapBlockIndex.find(block.hashPrevBlock);
         if (mi == mapBlockIndex.end())
-            return state.DoS(10, error("%s: prev block not found", __func__), 0, "prev-blk-not-found");
+            return state.DoS(10, error("%s: prev block %s not found", __func__, block.hashPrevBlock.ToString()), 0, "prev-blk-not-found");
         CBlockIndex* pindexPrev = (*mi).second;
 
         if (pindexPrev->nStatus & BLOCK_FAILED_MASK)
@@ -3380,10 +3380,7 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
 
     // ppcoin: check PoS (not do this since Heliopolis hardfork)
     if ((pindex->nHeight < nMainnetNewLogicBlockNumber) && !PoSContextualBlockChecks(block, state, pindex)) {
-        if (state.IsInvalid() && !state.CorruptionPossible()) {
-            pindex->nStatus |= BLOCK_FAILED_VALID;
-            setDirtyBlockIndex.insert(pindex);
-        }
+        // Do not mark block index invalid here as we expect this might happen during initial block sync download
         return error("%s: %s", __func__, FormatStateMessage(state));
     }
 
