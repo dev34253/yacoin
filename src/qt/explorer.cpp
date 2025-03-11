@@ -1987,10 +1987,9 @@ std::string BuildBlockinfoDetailsFrom(
     }
     //_________________________________________________________________________
 
-    bool
-        fTop = (NULL == pblockindex->pnext)? true: false;
+    CBlockIndex *pnext = chainActive.Next(pblockindex);
 
-    if( !fTop ) // there is a next block
+    if( pnext ) // there is a next block
     {
         sStandardItemModelElement = "next block";
         sTemp += "<b >" + sStandardItemModelElement + "</b >";
@@ -1998,7 +1997,7 @@ std::string BuildBlockinfoDetailsFrom(
                             pQSIMblockinfo->index( nRowCount, BLOCK_INFO_ITEM, QModelIndex() ),
                             sStandardItemModelElement.c_str()
                                );
-        sStandardItemModelElement = pblockindex->pnext->GetBlockHash().ToString();
+        sStandardItemModelElement = pnext->GetBlockHash().ToString();
         sTemp += sStandardItemModelElement + "<br />\n";
         pQSIMblockinfo->setData( 
                             pQSIMblockinfo->index( nRowCount, BLOCK_INFO_VALUE, QModelIndex() ),
@@ -2033,7 +2032,7 @@ std::string BuildBlockinfoDetailsFrom(
                            );
     sStandardItemModelElement = strprintf(
                         " (%-6d)"
-                        , pblockindex->nBlockPos
+                        , pblockindex->nDataPos
                                          );
     sTemp += sStandardItemModelElement + "<br />\n";
     pQSIMblockinfo->setData( 
@@ -2611,9 +2610,6 @@ void BlockExplorerPage::fillBlockInfoPage( int currentHeight )
 
     while (pblockindex->nHeight > currentHeight)
         pblockindex = pblockindex->pprev;
-
-    bool
-        fTop = (NULL == pblockindex->pnext)? true: false;
 
     uint256 
       //hash = pblockindex->GetHash();

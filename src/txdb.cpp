@@ -621,7 +621,7 @@ bool CBlockTreeDB::BuildMapHash()
         if (fRequestShutdown || strType != "blockindex")
             break;
 
-        CDiskBlockIndex diskindex;
+        CDiskBlockIndexOld diskindex;
         ssValue >> diskindex;
 
         uint256 blockHash = diskindex.GetBlockHash();  // the slow poke!

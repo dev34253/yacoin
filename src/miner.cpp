@@ -34,6 +34,7 @@
 #include "pow.h"
 #include "net_processing.h"
 #include "consensus/validation.h"
+#include "consensus/tx_verify.h"
 #include <openssl/sha.h>
 
 using std::auto_ptr;
@@ -417,7 +418,7 @@ bool BlockAssembler::TestPackageTransactions(const CTxMemPool::setEntries& packa
 {
     for (const CTxMemPool::txiter it : package) {
         const CTransaction& tx = it->GetTx();
-        if (!tx.IsFinal(nHeight))
+        if (!IsFinalTx(tx, nHeight, nLockTimeCutoff))
             return false;
     }
     return true;
@@ -480,12 +481,18 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
     pblock->vtx[0].vout[0].nValue = GetProofOfWorkReward(pblock->nBits);
 
     pblock->hashPrevBlock = pindexPrev->GetBlockHash();
-    pblock->nTime = max(pindexPrev->GetMedianTimePast() + 1,
-                        pblock->GetMaxTransactionTime());
+    const int64_t nMedianTimePast = pindexPrev->GetMedianTimePast();
+    pblock->nTime = max(nMedianTimePast, pblock->GetMaxTransactionTime());
     pblock->nTime = max(pblock->GetBlockTime(),  // lo & behold this is nTime!?
                         pindexPrev->GetBlockTime() - nMaxClockDrift);
+
     pblock->UpdateTime(pindexPrev);
     pblock->nNonce = 0;
+
+    // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
+    nLockTimeCutoff = (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST)
+                       ? nMedianTimePast
+                       : pblock->GetBlockTime();
 
     LogPrintf(
         "CreateNewBlock() packages: %.2fms (%d packages, %d updated "

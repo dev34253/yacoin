@@ -26,9 +26,11 @@
 
 #include "random.h"
 #include "net_processing.h"
+#include "coins.h"
 #include "consensus/validation.h"
 #include "policy/policy.h"
-#include "coins.h"
+#include "validation.h"
+#include "tx_verify.h"
 
 #include <boost/algorithm/string/replace.hpp>
 #include <openssl/rand.h>
@@ -843,7 +845,7 @@ bool CWallet::IsTimelockUTXOExpired(const CInputCoin& inputCoin, txnouttype utxo
     tempWalletTx.vin.push_back(CTxIn(inputCoin.outpoint, CScript(), nSequenceIn));
 
     // Check if nLockTime and BIP68 sequence locked satisfy
-    if (!tempWalletTx.IsFinal() || !CheckSequenceLocks(tempWalletTx, STANDARD_LOCKTIME_VERIFY_FLAGS))
+    if (!CheckFinalTx(tempWalletTx) || !CheckSequenceLocks(tempWalletTx, STANDARD_LOCKTIME_VERIFY_FLAGS))
     {
         return false;
     }
@@ -1164,6 +1166,50 @@ void CWalletTx::AddSupportingTransactions()
     reverse(vtxPrev.begin(), vtxPrev.end());
 }
 
+bool CWalletTx::IsTrusted() const
+{
+    // Quick answer in most cases
+    if (!CheckFinalTx(*this))
+        return false;
+    if (GetDepthInMainChain() >= 1)
+        return true;
+    if (fConfChange || !IsFromMe(MINE_ALL)) // using wtx's cached debit
+        return false;
+
+    // If no confirmations but it's from us, we can still
+    // consider it confirmed if all dependencies are confirmed
+    std::map<uint256, const CMerkleTx*> mapPrev;
+    std::vector<const CMerkleTx*> vWorkQueue;
+    vWorkQueue.reserve(vtxPrev.size()+1);
+    vWorkQueue.push_back(this);
+    for (unsigned int i = 0; i < vWorkQueue.size(); i++)
+    {
+        const CMerkleTx* ptx = vWorkQueue[i];
+
+        if (!CheckFinalTx(*ptx))
+            return false;
+        if (ptx->GetDepthInMainChain() >= 1)
+            continue;
+        if (!pwallet->IsFromMe(*ptx))
+            return false;
+
+        if (mapPrev.empty())
+        {
+            for(const CMerkleTx& tx : vtxPrev)
+                mapPrev[tx.GetHash()] = &tx;
+        }
+
+        for(const CTxIn& txin : ptx->vin)
+        {
+            if (!mapPrev.count(txin.prevout.COutPointGetHash()))
+                return false;
+            vWorkQueue.push_back(mapPrev[txin.prevout.COutPointGetHash()]);
+        }
+    }
+
+    return true;
+}
+
 bool CWalletTx::WriteToDisk()
 {
     return CWalletDB(pwallet->strWalletFile).WriteTx(GetHash(), *this);
@@ -1368,13 +1414,13 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
         {
             CBlock block;
             block.ReadFromDisk(pindex, true, false);
-            BOOST_FOREACH(CTransaction& tx, block.vtx)
+            for(CTransaction& tx : block.vtx)
             {
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
                     //ret++;
                     ++ret;
             }
-            pindex = pindex->pnext;
+            pindex = chainActive.Next(pindex);
             // Stop the scan if shutting down
             if(
                fShutdown ||
@@ -1591,7 +1637,7 @@ int64_t CWallet::GetUnconfirmedBalance() const
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         {
             const CWalletTx* pcoin = &(*it).second;
-            if (!pcoin->IsFinal() || !pcoin->IsTrusted())
+            if (!CheckFinalTx(*pcoin) || !pcoin->IsTrusted())
                 nTotal += pcoin->GetAvailableCredit();
         }
     }
@@ -1606,7 +1652,7 @@ int64_t CWallet::GetUnconfirmedWatchOnlyBalance() const
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         {
             const CWalletTx* pcoin = &(*it).second;
-            if (!pcoin->IsFinal() || !pcoin->IsTrusted())
+            if (!CheckFinalTx(*pcoin) || !pcoin->IsTrusted())
                 nTotal += pcoin->GetAvailableWatchCredit();
         }
     }
@@ -1713,7 +1759,7 @@ void CWallet::AvailableCoinsAll(
       const uint256& wtxid = entry.first;
       const CWalletTx* pcoin = &entry.second;
 
-      if (!pcoin->IsFinal()) continue;
+      if (!CheckFinalTx(*pcoin)) continue;
 
       if (pcoin->IsCoinBase() && (pcoin->GetBlocksToMaturity() > 0)) continue;
 
@@ -1920,7 +1966,7 @@ void CWallet::AvailableCoinsMinConf(vector<COutput>& vCoins, int nConf, int64_t 
         {
             const CWalletTx* pcoin = &(*it).second;
 
-            if (!pcoin->IsFinal())
+            if (!CheckFinalTx(*pcoin))
                 continue;
 
             if(pcoin->GetDepthInMainChain() < nConf)
@@ -3588,7 +3634,7 @@ std::map<CTxDestination, int64_t> CWallet::GetAddressBalances()
         {
             CWalletTx *pcoin = &walletEntry.second;
 
-            if (!pcoin->IsFinal() || !pcoin->IsTrusted())
+            if (!CheckFinalTx(*pcoin) || !pcoin->IsTrusted())
                 continue;
 
             if ((pcoin->IsCoinBase() || pcoin->IsCoinStake()) && pcoin->GetBlocksToMaturity() > 0)

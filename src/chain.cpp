@@ -12,36 +12,23 @@
 //
 // CChain implementation
 //
-/** Efficiently check whether a block is present in this chain. */
-bool CChain::Contains(const CBlockIndex *pindex) const {
-    return (*this)[pindex->nHeight] == pindex;
-}
-
-/** Find the successor of a block in this chain, or NULL if the given index is not found or is the tip. */
-CBlockIndex *CChain::Next(const CBlockIndex *pindex) const {
-    if (Contains(pindex))
-        return (*this)[pindex->nHeight + 1];
-    else
-        return NULL;
-}
-
-CBlockIndex *CChain::SetTip(CBlockIndex *pindex) {
-    if (pindex == NULL) {
+void CChain::SetTip(CBlockIndex *pindex) {
+    if (pindex == nullptr) {
         vChain.clear();
-        return NULL;
+        return;
     }
     vChain.resize(pindex->nHeight + 1);
     while (pindex && vChain[pindex->nHeight] != pindex) {
         vChain[pindex->nHeight] = pindex;
         pindex = pindex->pprev;
     }
-    return pindex;
 }
 
 CBlockLocator CChain::GetLocator(const CBlockIndex *pindex) const {
     int nStep = 1;
     std::vector<uint256> vHave;
     vHave.reserve(32);
+
     if (!pindex)
         pindex = Tip();
     while (pindex) {
@@ -61,24 +48,11 @@ CBlockLocator CChain::GetLocator(const CBlockIndex *pindex) const {
         if (vHave.size() > 10)
             nStep *= 2;
     }
+
     return CBlockLocator(vHave);
 }
 
-CBlockIndex *CChain::FindFork(const CBlockLocator &locator) const {
-    // Find the first block the caller has in the main chain
-    for(const uint256& hash : locator.vHave) {
-        BlockMap::iterator mi = mapBlockIndex.find(hash);
-        if (mi != mapBlockIndex.end())
-        {
-            CBlockIndex* pindex = (*mi).second;
-            if (Contains(pindex))
-                return pindex;
-        }
-    }
-    return Genesis();
-}
-
-CBlockIndex *CChain::FindFork(CBlockIndex *pindex) const {
+const CBlockIndex *CChain::FindFork(const CBlockIndex *pindex) const {
     if (pindex == nullptr) {
         return nullptr;
     }
@@ -87,6 +61,13 @@ CBlockIndex *CChain::FindFork(CBlockIndex *pindex) const {
     while (pindex && !Contains(pindex))
         pindex = pindex->pprev;
     return pindex;
+}
+
+CBlockIndex* CChain::FindEarliestAtLeast(int64_t nTime) const
+{
+    std::vector<CBlockIndex*>::const_iterator lower = std::lower_bound(vChain.begin(), vChain.end(), nTime,
+        [](CBlockIndex* pBlock, const int64_t& time) -> bool { return pBlock->GetBlockTimeMax() < time; });
+    return (lower == vChain.end() ? nullptr : *lower);
 }
 
 // yacoin2015 GetBlockTrust upgrade
@@ -203,7 +184,7 @@ arith_uint256 GetBlockProof(const CBlockIndex& block)
     return (~bnTarget / (bnTarget + 1)) + 1;
 }
 
-int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip)
+int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params& params)
 {
     arith_uint256 r;
     int sign = 1;
@@ -215,7 +196,7 @@ int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& fr
         r = UintToArith256(result.getuint256());
         sign = -1;
     }
-    r = r * arith_uint256(nPoWTargetSpacing) / GetBlockProof(tip);
+    r = r * arith_uint256(params.nPowTargetSpacing) / GetBlockProof(tip);
     if (r.bits() > 63) {
         return sign * std::numeric_limits<int64_t>::max();
     }

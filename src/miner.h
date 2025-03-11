@@ -154,6 +154,7 @@ private:
 
     // Chain context for the block
     int nHeight;
+    int64_t nLockTimeCutoff;
 
 public:
     BlockAssembler();

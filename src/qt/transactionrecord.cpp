@@ -1,7 +1,12 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "transactionrecord.h"
 
 #include "wallet.h"
 #include "base58.h"
+#include "validation.h"
 
 /* Return positive answer if transaction should be shown in list.
  */
@@ -201,7 +206,7 @@ void TransactionRecord::updateStatus(const CWalletTx &wtx)
     status.depth = wtx.GetDepthInMainChain();
     status.cur_num_blocks = chainActive.Height();
 
-    if (!wtx.IsFinal())
+    if (!CheckFinalTx(wtx))
     {
         if (wtx.nLockTime < LOCKTIME_THRESHOLD)
         {

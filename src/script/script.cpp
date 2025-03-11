@@ -1382,7 +1382,7 @@ bool CheckLockTime(const CTransaction& txTo, unsigned int nIn, const CScriptNum&
     // prevent this condition. Alternatively we could test all
     // inputs, but testing just this input minimizes the data
     // required to prove correct CHECKLOCKTIMEVERIFY execution.
-    if (txTo.vin[nIn].IsFinal())
+    if (CTxIn::SEQUENCE_FINAL == txTo.vin[nIn].nSequence)
         return false;
 
     return true;

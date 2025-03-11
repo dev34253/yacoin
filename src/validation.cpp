@@ -79,11 +79,10 @@ bool fRequireStandard = true;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
 bool fBlockHashIndex = true;
-CCoinsViewDB *pcoinsdbview = nullptr;
-CCoinsViewCache *pcoinsTip = nullptr;
-CBlockTreeDB *pblocktree = nullptr;
 ::uint32_t nMinEase = bnProofOfWorkLimit.GetCompact();
 ::int64_t nBlockRewardPrev = 0;
+bool recalculateBlockReward = false;
+bool recalculateMinEase = false;
 
 //
 // GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
@@ -175,8 +174,27 @@ namespace {
     std::set<int> setDirtyFileInfo;
 }
 
-bool recalculateBlockReward = false;
-bool recalculateMinEase = false;
+CBlockIndex* FindForkInGlobalIndex(const CChain& chain, const CBlockLocator& locator)
+{
+    // Find the first block the caller has in the main chain
+    for (const uint256& hash : locator.vHave) {
+        BlockMap::iterator mi = mapBlockIndex.find(hash);
+        if (mi != mapBlockIndex.end())
+        {
+            CBlockIndex* pindex = (*mi).second;
+            if (chain.Contains(pindex))
+                return pindex;
+            if (pindex->GetAncestor(chain.Height()) == chain.Tip()) {
+                return chain.Tip();
+            }
+        }
+    }
+    return chain.Genesis();
+}
+
+CCoinsViewDB *pcoinsdbview = nullptr;
+CCoinsViewCache *pcoinsTip = nullptr;
+CBlockTreeDB *pblocktree = nullptr;
 
 enum FlushStateMode {
     FLUSH_STATE_NONE,

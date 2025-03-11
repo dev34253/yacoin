@@ -4,14 +4,15 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "blockencodings.h"
+#include "consensus/consensus.h"
 #include "consensus/validation.h"
+#include "chainparams.h"
 #include "hash.h"
 #include "random.h"
 #include "streams.h"
 #include "txmempool.h"
 #include "validation.h"
 #include "util.h"
-#include "consensus/consensus.h"
 #include "sync.h"
 
 #include <vector>
@@ -200,7 +201,7 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
         return READ_STATUS_INVALID;
 
     CValidationState state;
-    if (!block.CheckBlock(state)) {
+    if (!CheckBlock(block, state, Params().GetConsensus())) {
         // TODO: We really want to just check merkle tree manually here,
         // but that is expensive, and CheckBlock caches a block's
         // "checked-status" (in the CBlock?). CBlock should be able to

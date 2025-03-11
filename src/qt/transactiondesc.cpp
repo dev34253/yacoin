@@ -1,3 +1,7 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "transactiondesc.h"
 
 #include "guiutil.h"
@@ -6,6 +10,7 @@
 #include "main.h"
 #include "wallet.h"
 #include "txdb.h"
+#include "validation.h"
 #include "ui_interface.h"
 #include "base58.h"
 
@@ -14,7 +19,7 @@
 
 QString TransactionDesc::FormatTxStatus(const CWalletTx& wtx)
 {
-    if (!wtx.IsFinal())
+    if (!CheckFinalTx(wtx))
     {
         if (wtx.nLockTime < LOCKTIME_THRESHOLD)
             return tr("Open for %n block(s)", "", chainActive.Height() - wtx.nLockTime);
