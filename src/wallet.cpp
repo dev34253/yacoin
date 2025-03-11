@@ -28,6 +28,7 @@
 #include "net_processing.h"
 #include "consensus/validation.h"
 #include "policy/policy.h"
+#include "coins.h"
 
 #include <boost/algorithm/string/replace.hpp>
 #include <openssl/rand.h>
@@ -1108,7 +1109,7 @@ void CWalletTx::GetAccountAmounts(const string& strAccount, int64_t& nGenerated,
     return nCredit;
 }
 
-void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
+void CWalletTx::AddSupportingTransactions()
 {
     vtxPrev.clear();
 
@@ -1116,7 +1117,7 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
     if (SetMerkleBranch() < COPY_DEPTH)
     {
         vector<uint256> vWorkQueue;
-        BOOST_FOREACH(const CTxIn& txin, vin)
+        for(const CTxIn& txin : vin)
             vWorkQueue.push_back(txin.prevout.COutPointGetHash());
 
         // This critsect is OK because txdb is already open
@@ -1136,16 +1137,12 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
                 if (mi != pwallet->mapWallet.end())
                 {
                     tx = (*mi).second;
-                    BOOST_FOREACH(const CMerkleTx& txWalletPrev, (*mi).second.vtxPrev)
+                    for(const CMerkleTx& txWalletPrev : (*mi).second.vtxPrev)
                         mapWalletPrev[txWalletPrev.GetHash()] = &txWalletPrev;
                 }
                 else if (mapWalletPrev.count(hash))
                 {
                     tx = *mapWalletPrev[hash];
-                }
-                else if (pblocktree->ReadDiskTx(hash, tx))
-                {
-                    ;
                 }
                 else
                 {
@@ -1158,7 +1155,7 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
 
                 if (nDepth < COPY_DEPTH)
                 {
-                    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+                    for(const CTxIn& txin : tx.vin)
                         vWorkQueue.push_back(txin.prevout.COutPointGetHash());
                 }
             }
@@ -1420,32 +1417,30 @@ void CWallet::ReacceptWalletTransactions()
     {
         LOCK(cs_wallet);
         fRepeat = false;
-        vector<CDiskTxPos> vMissingTx;
+        bool fMissing = false;
+        CCoinsViewCache view(pcoinsTip);
         for(PAIRTYPE(const uint256, CWalletTx)& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
             if ((wtx.IsCoinBase() && wtx.IsSpent(0)) || (wtx.IsCoinStake() && wtx.IsSpent(1)))
                 continue;
 
-            CTxIndex txindex;
             bool fUpdated = false;
-            if (pblocktree->ReadTxIndex(wtx.GetHash(), txindex))
+            bool fFound = view.HaveInputs(wtx);
+            if (fFound || wtx.GetDepthInMainChain() > 0)
             {
+                const uint256& hashTx = wtx.GetHash();
                 // Update fSpent if a tx got spent somewhere else by a copy of wallet.dat
-                if (txindex.vSpent.size() != wtx.vout.size())
-                {
-                    LogPrintf("ERROR: ReacceptWalletTransactions() : txindex.vSpent.size() %" PRIszu " != wtx.vout.size() %" PRIszu "\n", txindex.vSpent.size(), wtx.vout.size());
-                    continue;
-                }
-                for (unsigned int i = 0; i < txindex.vSpent.size(); i++)
+                for (unsigned int i = 0; i < wtx.vout.size(); i++)
                 {
                     if (wtx.IsSpent(i))
                         continue;
-                    if (!txindex.vSpent[i].IsNull() && IsMine(wtx.vout[i]))
+                    const Coin& existingCoin = view.AccessCoin(COutPoint(hashTx, i));
+                    if (existingCoin.IsSpent() && IsMine(wtx.vout[i]))
                     {
                         wtx.MarkSpent(i);
                         fUpdated = true;
-                        vMissingTx.push_back(txindex.vSpent[i]);
+                        fMissing = true;
                     }
                 }
                 if (fUpdated)
@@ -1459,10 +1454,10 @@ void CWallet::ReacceptWalletTransactions()
             {
                 // Re-accept any txes of ours that aren't already in a block
                 if (!(wtx.IsCoinBase() || wtx.IsCoinStake()))
-                    wtx.AcceptWalletTransaction(txdb);
+                    wtx.AcceptWalletTransaction();
             }
         }
-        if (!vMissingTx.empty())
+        if (fMissing)
         {
             // TODO: optimize this to scan just part of the block chain?
             if (ScanForWalletTransactions(chainActive.Genesis()))
@@ -3729,15 +3724,17 @@ void CWallet::FixSpentCoins(int& nMismatchFound, int64_t& nBalanceInQuestion, bo
     for (map<uint256, CWalletTx>::iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         vCoins.push_back(&(*it).second);
 
+    CCoinsViewCache view(pcoinsTip);
     for(CWalletTx* pcoin : vCoins)
     {
-        // Find the corresponding transaction index
-        CTxIndex txindex;
-        if (!pblocktree->ReadTxIndex(pcoin->GetHash(), txindex))
+        // Check if coins available
+        if (view.HaveInputs(*pcoin))
             continue;
+        const uint256& hashTx = pcoin->GetHash();
         for (unsigned int n=0; n < pcoin->vout.size(); n++)
         {
-            if (IsMine(pcoin->vout[n]) && pcoin->IsSpent(n) && (txindex.vSpent.size() <= n || txindex.vSpent[n].IsNull()))
+            const Coin& existingCoin = pcoinsTip->AccessCoin(COutPoint(hashTx, n));
+            if (IsMine(pcoin->vout[n]) && pcoin->IsSpent(n) && !existingCoin.IsSpent())
             {
               LogPrintf("FixSpentCoins found lost coin %sppc %s[%d], %s\n",
                         FormatMoney(pcoin->vout[n].nValue),
@@ -3748,10 +3745,9 @@ void CWallet::FixSpentCoins(int& nMismatchFound, int64_t& nBalanceInQuestion, bo
               if (!fCheckOnly) {
                 pcoin->MarkUnspent(n);
                 pcoin->WriteToDisk();
-                }
+              }
             }
-            else if (IsMine(pcoin->vout[n]) && !pcoin->IsSpent(n) && (txindex.vSpent.size() > n && !txindex.vSpent[n].IsNull()))
-            {
+            else if (IsMine(pcoin->vout[n]) && !pcoin->IsSpent(n) && existingCoin.IsSpent()) {
               LogPrintf("FixSpentCoins found spent coin %sppc %s[%d], %s\n",
                         FormatMoney(pcoin->vout[n].nValue),
                         pcoin->GetHash().ToString(), n,
@@ -3761,7 +3757,7 @@ void CWallet::FixSpentCoins(int& nMismatchFound, int64_t& nBalanceInQuestion, bo
               if (!fCheckOnly) {
                 pcoin->MarkSpent(n);
                 pcoin->WriteToDisk();
-                }
+              }
             }
 
         }

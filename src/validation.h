@@ -392,16 +392,8 @@ bool LoadMempool();
 // FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
 //
 /** Flush all state, indexes and buffers to disk. */
-bool FlushTokenToDisk();
 bool AreTokensDeployed();
 CTokensCache* GetCurrentTokenCache();
-bool CheckTxTokens(
-    const CTransaction& tx, CValidationState& state, MapPrevTx inputs,
-    CTokensCache* tokenCache, bool fCheckMempool,
-    std::vector<std::pair<std::string, uint256> >& vPairReissueTokens);
-void UpdateTokenInfo(const CTransaction& tx, MapPrevTx& prevInputs, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
-void UpdateTokenInfoFromTxInputs(const COutPoint& out, const CTxOut& txOut, CTokensCache* tokensCache);
-void UpdateTokenInfoFromTxOutputs(const CTransaction& tx, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
 bool GetAddressIndex(uint160 addressHash, int type, std::string tokenName,
                      std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
                      int start = 0, int end = 0);

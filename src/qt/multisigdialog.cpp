@@ -424,23 +424,20 @@ void MultisigDialog::on_signTransactionButton_clicked()
 
     // Fetch previous transactions (inputs)
     std::map<COutPoint, CScript> mapPrevOut;
-    for(unsigned int i = 0; i < mergedTx.vin.size(); i++)
+    CCoinsView viewDummy;
+    CCoinsViewCache view(&viewDummy);
     {
-        CTransaction tempTx;
-        MapPrevTx mapPrevTx;
-        std::map<uint256, CTxIndex> unused;
-        bool fInvalid;
+        LOCK(mempool.cs);
+        CCoinsViewCache &viewChain = *pcoinsTip;
+        CCoinsViewMemPool viewMempool(&viewChain, mempool);
+        view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
 
-        tempTx.vin.push_back(mergedTx.vin[i]);
-        CValidationState state;
-        tempTx.FetchInputs(state, unused, false, false, mapPrevTx, fInvalid);
-
-        BOOST_FOREACH(const CTxIn& txin, tempTx.vin)
-        {
-            const uint256& prevHash = txin.prevout.COutPointGetHash();
-            if(mapPrevTx.count(prevHash) && mapPrevTx[prevHash].second.vout.size() > txin.prevout.COutPointGet_n())
-                mapPrevOut[txin.prevout] = mapPrevTx[prevHash].second.vout[txin.prevout.COutPointGet_n()].scriptPubKey;
+        for (const CTxIn& txin : mergedTx.vin) {
+            const Coin& existingCoin = view.AccessCoin(txin.prevout); // Load entries from viewChain into view; can fail.
+            mapPrevOut[txin.prevout] = existingCoin.out.scriptPubKey;
         }
+
+        view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
     }
 
     // Add the redeem scripts to the wallet keystore

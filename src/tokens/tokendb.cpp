@@ -172,7 +172,7 @@ bool CTokensDB::LoadTokens()
 
 bool CTokensDB::TokenDir(std::vector<CDatabasedTokenData>& tokens, const std::string filter, const size_t count, const long start)
 {
-    FlushTokenToDisk();
+    FlushStateToDisk();
 
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
     pcursor->Seek(std::make_pair(TOKEN_FLAG, std::string()));
@@ -243,7 +243,7 @@ bool CTokensDB::TokenDir(std::vector<CDatabasedTokenData>& tokens, const std::st
 
 bool CTokensDB::AddressDir(std::vector<std::pair<std::string, CAmount> >& vecTokenAmount, int& totalEntries, const bool& fGetTotal, const std::string& address, const size_t count, const long start)
 {
-    FlushTokenToDisk();
+    FlushStateToDisk();
 
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
     pcursor->Seek(std::make_pair(ADDRESS_TOKEN_QUANTITY_FLAG, std::make_pair(address, std::string())));
@@ -316,7 +316,7 @@ bool CTokensDB::AddressDir(std::vector<std::pair<std::string, CAmount> >& vecTok
 // Can get to total count of addresses that belong to a certain token_name, or get you the list of all address that belong to a certain token_name
 bool CTokensDB::TokenAddressDir(std::vector<std::pair<std::string, CAmount> >& vecAddressAmount, int& totalEntries, const bool& fGetTotal, const std::string& tokenName, const size_t count, const long start)
 {
-    FlushTokenToDisk();
+    FlushStateToDisk();
 
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
     pcursor->Seek(std::make_pair(TOKEN_ADDRESS_QUANTITY_FLAG, std::make_pair(tokenName, std::string())));

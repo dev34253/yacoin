@@ -38,21 +38,6 @@ class CCoinControl;
 // Set of selected transactions
 typedef std::set<std::pair<const CWalletTx*,unsigned int> > CoinsSet;
 
-// Preloaded coins metadata
-// (txid, vout.n) => ((txindex, (tx, vout.n)), (block, modifier))
-//typedef std::map< std::pair<uint256, unsigned int>, std::pair< std::pair< CTxIndex, std::pair<const CWalletTx*,unsigned int> >, std::pair<CBlock, ::uint64_t> > > MetaMap;
-typedef std::map<
-                  std::pair<uint256, unsigned int>,     // the unique key
-                  std::pair<
-                            std::pair<
-                                      CTxIndex, 
-                                      std::pair<const CWalletTx*,unsigned int> 
-                                     >, 
-                            std::pair<CBlock, ::uint64_t> 
-                           >                            // the value 
-                > MetaMap;
-
-
 /** (client) version numbers for particular wallet features */
 enum WalletFeature
 {
@@ -133,9 +118,6 @@ private:
 
     // the maximum wallet format version: memory-only variable that specifies to what version this wallet may be upgraded
     int nWalletMaxVersion;
-
-    // selected coins metadata
-    std::map<std::pair<uint256, unsigned int>, std::pair<std::pair<CTxIndex, std::pair<const CWalletTx*,unsigned int> >, std::pair<CBlock, uint64_t> > > mapMeta;
 
     // stake mining statistics
     ::uint64_t nKernelsTried;
@@ -1061,7 +1043,7 @@ public:
     ::int64_t GetTxTime() const;
     int GetRequestCount() const;
 
-    void AddSupportingTransactions(CTxDB& txdb);
+    void AddSupportingTransactions();
 
     bool AcceptWalletTransaction();
 

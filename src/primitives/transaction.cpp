@@ -35,21 +35,6 @@ void CTransaction::SetNull()
 	nLockTime = 0;
 }
 
-unsigned int
-CTransaction::GetLegacySigOpCount() const
-{
-    unsigned int nSigOps = 0;
-    for (const auto& txin : vin)
-    {
-        nSigOps += txin.scriptSig.GetSigOpCount(false);
-    }
-    for (const auto& txout : vout)
-    {
-        nSigOps += txout.scriptPubKey.GetSigOpCount(false);
-    }
-    return nSigOps;
-}
-
 unsigned int CTransaction::GetTotalSize() const
 {
     return ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION);
