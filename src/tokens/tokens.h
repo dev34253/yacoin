@@ -192,7 +192,7 @@ public :
     bool RemoveTransfer(const CTokenTransfer& transfer, const std::string& address, const COutPoint& out);
     bool RemoveOwnerToken(const std::string& tokensName, const std::string address);
     bool RemoveReissueToken(const CReissueToken& reissue, const std::string address, const COutPoint& out, const std::vector<std::pair<std::string, CBlockTokenUndo> >& vUndoIPFS);
-    bool UndoTokenCoin(const CTxOut& prevTxout, const COutPoint& out);
+    bool UndoTokenCoin(const Coin& coin, const COutPoint& out);
 
     //! Cache only add token functions
     bool AddNewToken(const CNewToken& token, const std::string address, const int& nHeight, const uint256& blockHash);

@@ -51,10 +51,10 @@ bool CTransaction::IsFinal(int nBlockHeight, ::int64_t nBlockTime) const
     return true;
 }
 
-bool CTransaction::ReadFromDisk(CTxDB& txdb, COutPoint prevout, CTxIndex& txindexRet)
+bool CTransaction::ReadFromDisk(COutPoint prevout, CTxIndex& txindexRet)
 {
     SetNull();
-    if (!txdb.ReadTxIndex(prevout.COutPointGetHash(), txindexRet))
+    if (!pblocktree->ReadTxIndex(prevout.COutPointGetHash(), txindexRet))
         return false;
     if (!ReadFromDisk(txindexRet.pos))
         return false;
@@ -66,17 +66,10 @@ bool CTransaction::ReadFromDisk(CTxDB& txdb, COutPoint prevout, CTxIndex& txinde
     return true;
 }
 
-bool CTransaction::ReadFromDisk(CTxDB& txdb, COutPoint prevout)
-{
-    CTxIndex txindex;
-    return ReadFromDisk(txdb, prevout, txindex);
-}
-
 bool CTransaction::ReadFromDisk(COutPoint prevout)
 {
-    CTxDB txdb("r");
     CTxIndex txindex;
-    return ReadFromDisk(txdb, prevout, txindex);
+    return ReadFromDisk(prevout, txindex);
 }
 
 bool CTransaction::ReadFromDisk(CDiskTxPos pos, FILE** pfileRet)
@@ -497,9 +490,9 @@ bool CTransaction::CheckTransaction(CValidationState &state) const
     return ::GetMinFee(nBytes);
 }
 
-bool CTransaction::AcceptToMemoryPool(CValidationState &state, CTxDB& txdb, bool* pfMissingInputs) const
+bool CTransaction::AcceptToMemoryPool(CValidationState &state, bool* pfMissingInputs) const
 {
-    return mempool.accept(state, txdb, *this, pfMissingInputs);
+    return mempool.accept(state, *this, pfMissingInputs);
 }
 
 bool CTransaction::DisconnectInputs(CValidationState &state, CTxDB& txdb)
@@ -507,13 +500,13 @@ bool CTransaction::DisconnectInputs(CValidationState &state, CTxDB& txdb)
     // Relinquish previous transactions' spent pointers
     if (!IsCoinBase())
     {
-        BOOST_FOREACH(const CTxIn& txin, vin)
+        for(const CTxIn& txin : vin)
         {
             COutPoint prevout = txin.prevout;
 
             // Get prev txindex from disk
             CTxIndex txindex;
-            if (!txdb.ReadTxIndex(prevout.COutPointGetHash(), txindex))
+            if (!pblocktree->ReadTxIndex(prevout.COutPointGetHash(), txindex))
                 return error("DisconnectInputs() : ReadTxIndex failed");
 
             if (prevout.COutPointGet_n() >= txindex.vSpent.size())
@@ -523,7 +516,7 @@ bool CTransaction::DisconnectInputs(CValidationState &state, CTxDB& txdb)
             txindex.vSpent[prevout.COutPointGet_n()].SetNull();
 
             // Write back
-            if (!txdb.UpdateTxIndex(prevout.COutPointGetHash(), txindex))
+            if (!pblocktree->UpdateTxIndex(prevout.COutPointGetHash(), txindex))
                 return error("DisconnectInputs() : UpdateTxIndex failed");
         }
     }
@@ -532,13 +525,13 @@ bool CTransaction::DisconnectInputs(CValidationState &state, CTxDB& txdb)
     // This can fail if a duplicate of this transaction was in a chain that got
     // reorganized away. This is only possible if this transaction was completely
     // spent, so erasing it would be a no-op anyway.
-    txdb.EraseTxIndex(*this);
+    pblocktree->EraseTxIndex(*this);
 
     return true;
 }
 
 
-bool CTransaction::FetchInputs(CValidationState &state, CTxDB& txdb, const map<uint256, CTxIndex>& mapTestPool,
+bool CTransaction::FetchInputs(CValidationState &state, const map<uint256, CTxIndex>& mapTestPool,
                                bool fBlock, bool fMiner, MapPrevTx& inputsRet, bool& fInvalid) const
 {
     // FetchInputs can return false either because we just haven't seen some inputs
@@ -567,7 +560,7 @@ bool CTransaction::FetchInputs(CValidationState &state, CTxDB& txdb, const map<u
         else
         {
             // Read txindex from txdb
-            fFound = txdb.ReadTxIndex(prevout.COutPointGetHash(), txindex);
+            fFound = pblocktree->ReadTxIndex(prevout.COutPointGetHash(), txindex);
         }
         if (!fFound && (fBlock || fMiner))
             return fMiner ? false : state.Invalid(error("FetchInputs() : %s prev tx %s index entry not found", GetHash().ToString().substr(0,10).c_str(),  prevout.COutPointGetHash().ToString().substr(0,10).c_str()));
@@ -656,7 +649,6 @@ unsigned int CTransaction::GetP2SHSigOpCount(const MapPrevTx& inputs) const
 }
 
 bool CTransaction::ConnectInputs(CValidationState &state,
-                                 CTxDB& txdb,
                                  MapPrevTx inputs,
                                  map<uint256, CTxIndex>& mapTestPool,
                                  const CDiskTxPos& posThisTx,
@@ -806,7 +798,7 @@ bool CTransaction::ConnectInputs(CValidationState &state,
             // ppcoin: coin stake tx earns reward instead of paying fee
             ::uint64_t
                 nCoinAge;
-            if (!GetCoinAge(txdb, nCoinAge))
+            if (!GetCoinAge(nCoinAge))
                 return state.DoS(100, error(
                             "ConnectInputs() : %s unable to get coin age for coinstake",
                             GetHash().ToString().substr(0,10).c_str()
@@ -903,7 +895,7 @@ bool CTransaction::ClientConnectInputs()
 // guaranteed to be in main chain by sync-checkpoint. This rule is
 // introduced to help nodes establish a consistent view of the coin
 // age (trust score) of competing branches.
-bool CTransaction::GetCoinAge(CTxDB& txdb, ::uint64_t& nCoinAge) const
+bool CTransaction::GetCoinAge(::uint64_t& nCoinAge) const
 {
     CBigNum bnCentSecond = 0;  // coin age in the unit of cent-seconds
     nCoinAge = 0;
@@ -911,12 +903,12 @@ bool CTransaction::GetCoinAge(CTxDB& txdb, ::uint64_t& nCoinAge) const
     if (IsCoinBase())
         return true;
 
-    BOOST_FOREACH(const CTxIn& txin, vin)
+    for(const CTxIn& txin : vin)
     {
         // First try finding the previous transaction in database
         CTransaction txPrev;
         CTxIndex txindex;
-        if (!txPrev.ReadFromDisk(txdb, txin.prevout, txindex))
+        if (!txPrev.ReadFromDisk(txin.prevout, txindex))
             continue;  // previous transaction not in main chain
         if (nTime < txPrev.nTime)
             return false;  // Transaction timestamp violation

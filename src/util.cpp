@@ -585,7 +585,6 @@ unsigned char MAXIMUM_YAC1DOT0_N_FACTOR;
 // Epoch interval is a difficulty period. Right now on testnet, it is 21,000 blocks
 ::uint32_t nEpochInterval = 21000;
 ::uint32_t nDifficultyInterval = nEpochInterval;
-bool fRequestShutdown = false;
 bool fShutdown = false;
 bool fDaemon = false;
 bool fServer = false;

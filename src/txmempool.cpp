@@ -672,7 +672,7 @@ void CTxMemPool::UpdateTransactionsFromBlock(const std::vector<uint256> &vHashes
     }
 }
 
-bool CTxMemPool::accept(CValidationState &state, CTxDB& txdb, const CTransaction &tx, bool* pfMissingInputs)
+bool CTxMemPool::accept(CValidationState &state, const CTransaction &tx, bool* pfMissingInputs)
 {
     if (pfMissingInputs)
         *pfMissingInputs = false;
@@ -716,7 +716,7 @@ bool CTxMemPool::accept(CValidationState &state, CTxDB& txdb, const CTransaction
         return error("CTxMemPool::accept() : txn-already-in-mempool");
     }
 
-    if (txdb.ContainsTx(hash))
+    if (pblocktree->ContainsTx(hash))
         return false;
 
     // Check for conflicts with in-memory transactions
@@ -775,7 +775,7 @@ bool CTxMemPool::accept(CValidationState &state, CTxDB& txdb, const CTransaction
     std::map<uint256, CTxIndex> mapUnused;
     bool fInvalid = false;
     // do all inputs exist?
-    if (!tx.FetchInputs(state, txdb, mapUnused, false, false, mapInputs, fInvalid))
+    if (!tx.FetchInputs(state, mapUnused, false, false, mapInputs, fInvalid))
     {
         if (fInvalid)
             return error("CTxMemPool::accept() : FetchInputs found invalid tx %s", hash.ToString().substr(0,10).c_str());
@@ -1008,7 +1008,6 @@ bool CTxMemPool::accept(CValidationState &state, CTxDB& txdb, const CTransaction
     // This is done last to help prevent CPU exhaustion denial-of-service attacks.
     if (
         !tx.ConnectInputs(state,
-                          txdb,
                           mapInputs,
                           mapUnused,
                           CDiskTxPos(1,1,1),
@@ -1240,8 +1239,7 @@ void CTxMemPool::removeForReorg(unsigned int nMemPoolHeight, int flags)
             std::map<uint256, CTxIndex> mapUnused;
             bool fInvalid = false;
             CValidationState stateDummy;
-            CTxDB txdb;
-            if (!tx.FetchInputs(stateDummy, txdb, mapUnused, false, false, mapInputs, fInvalid))
+            if (!tx.FetchInputs(stateDummy, mapUnused, false, false, mapInputs, fInvalid))
             {
                 LogPrintf("TxMemPool::removeForReorg : Can't FetchInputs for tx %s\n", tx.GetHash().ToString().substr(0,10));
                 continue;

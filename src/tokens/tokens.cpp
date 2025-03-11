@@ -1097,7 +1097,7 @@ bool CTokensCache::ContainsToken(const std::string& tokenName)
     return CheckIfTokenExists(tokenName);
 }
 
-bool CTokensCache::UndoTokenCoin(const CTxOut& prevTxout, const COutPoint& out)
+bool CTokensCache::UndoTokenCoin(const Coin& coin, const COutPoint& out)
 {
     std::string strAddress = "";
     std::string tokenName = "";
@@ -1106,11 +1106,11 @@ bool CTokensCache::UndoTokenCoin(const CTxOut& prevTxout, const COutPoint& out)
     // Get the token tx from the script
     int nType = -1;
     bool fIsOwner = false;
-    if(prevTxout.scriptPubKey.IsTokenScript(nType, fIsOwner)) {
+    if(coin.out.scriptPubKey.IsTokenScript(nType, fIsOwner)) {
 
         if (nType == TX_NEW_TOKEN && !fIsOwner) {
             CNewToken token;
-            if (!TokenFromScript(prevTxout.scriptPubKey, token, strAddress)) {
+            if (!TokenFromScript(coin.out.scriptPubKey, token, strAddress)) {
                 return error("%s : Failed to get token from script while trying to undo token spend. OutPoint : %s",
                              __func__,
                              out.ToString());
@@ -1120,7 +1120,7 @@ bool CTokensCache::UndoTokenCoin(const CTxOut& prevTxout, const COutPoint& out)
             nAmount = token.nAmount;
         } else if (nType == TX_TRANSFER_TOKEN) {
             CTokenTransfer transfer;
-            if (!TransferTokenFromScript(prevTxout.scriptPubKey, transfer, strAddress))
+            if (!TransferTokenFromScript(coin.out.scriptPubKey, transfer, strAddress))
                 return error(
                         "%s : Failed to get transfer token from script while trying to undo token spend. OutPoint : %s",
                         __func__,
@@ -1130,7 +1130,7 @@ bool CTokensCache::UndoTokenCoin(const CTxOut& prevTxout, const COutPoint& out)
             nAmount = transfer.nAmount;
         } else if (nType == TX_NEW_TOKEN && fIsOwner) {
             std::string ownerName;
-            if (!OwnerTokenFromScript(prevTxout.scriptPubKey, ownerName, strAddress))
+            if (!OwnerTokenFromScript(coin.out.scriptPubKey, ownerName, strAddress))
                 return error(
                         "%s : Failed to get owner token from script while trying to undo token spend. OutPoint : %s",
                         __func__, out.ToString());
@@ -1138,7 +1138,7 @@ bool CTokensCache::UndoTokenCoin(const CTxOut& prevTxout, const COutPoint& out)
             nAmount = OWNER_TOKEN_AMOUNT;
         } else if (nType == TX_REISSUE_TOKEN) {
             CReissueToken reissue;
-            if (!ReissueTokenFromScript(prevTxout.scriptPubKey, reissue, strAddress))
+            if (!ReissueTokenFromScript(coin.out.scriptPubKey, reissue, strAddress))
                 return error(
                         "%s : Failed to get reissue token from script while trying to undo token spend. OutPoint : %s",
                         __func__, out.ToString());

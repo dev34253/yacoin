@@ -362,11 +362,9 @@ Value getcurrentblockandtime(const Array& params, bool fHelp)
             "the time of the latest block.  And in local time if different than GMT/UTC."
                            );
 
-    CBlockIndex
-        * pbi = FindBlockByHeight(chainActive.Height());
+    CBlockIndex* pbi = chainActive.Tip();
 
-    CBlock 
-        block;
+    CBlock block;
 
     block.ReadFromDisk(pbi);
 

@@ -575,8 +575,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
     Array transactions;
     map<uint256, Value_type> setTxIndex;
     int i = 0;
-    CTxDB txdb("r");
-    BOOST_FOREACH (CTransaction& tx, pblock->vtx)
+    for(CTransaction& tx : pblock->vtx)
     {
         uint256 txHash = tx.GetHash();
         setTxIndex[txHash] = (Value_type)(i++);
@@ -596,7 +595,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         map<uint256, CTxIndex> mapUnused;
         bool fInvalid = false;
         CValidationState state;
-        if (tx.FetchInputs(state, txdb, mapUnused, false, false, mapInputs, fInvalid))
+        if (tx.FetchInputs(state, mapUnused, false, false, mapInputs, fInvalid))
         {
             entry.push_back(Pair("fee", (Value_type)(tx.GetValueIn(mapInputs) - tx.GetValueOut())));
 

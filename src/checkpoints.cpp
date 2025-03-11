@@ -200,15 +200,10 @@ namespace Checkpoints
 
     bool WriteSyncCheckpoint(const uint256& hashCheckpoint)
     {
-        CTxDB txdb;
-        txdb.TxnBegin();
-        if (!txdb.WriteSyncCheckpoint(hashCheckpoint))
+        if (!pblocktree->WriteSyncCheckpoint(hashCheckpoint))
         {
-            txdb.TxnAbort();
             return error("WriteSyncCheckpoint(): failed to write to db sync checkpoint %s", hashCheckpoint.ToString().c_str());
         }
-        if (!txdb.TxnCommit())
-            return error("WriteSyncCheckpoint(): failed to commit to db sync checkpoint %s", hashCheckpoint.ToString().c_str());
 
         Checkpoints::hashSyncCheckpoint = hashCheckpoint;
         return true;

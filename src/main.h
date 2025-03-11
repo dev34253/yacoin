@@ -19,14 +19,11 @@
 
 #include "primitives/transaction.h"
 #include "primitives/block.h"
-#include "addressindex.h"
-#include "tokens/tokentypes.h"
-#include "tokens/tokendb.h"
-#include "tokens/tokens.h"
 #include "amount.h"
 #include "policy/fees.h"
 
 #include "consensus/consensus.h"
+#include "chainparams.h"
 #include "txmempool.h"
 #include "validation.h"
 #include "arith_uint256.h"
@@ -44,47 +41,6 @@ class CRequestTracker;
 class CNode;
 class CBlockIndexWorkComparator;
 
-//
-// GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
-//
-/** Global variable that point to the active tokens database (protected by cs_main) */
-extern CTokensDB *ptokensdb;
-
-/** Global variable that point to the active tokens (protected by cs_main) */
-extern CTokensCache *ptokens;
-
-/** Global variable that point to the tokens metadata LRU Cache (protected by cs_main) */
-extern CLRUCache<std::string, CDatabasedTokenData> *ptokensCache;
-extern bool fTokenIndex;
-extern bool fAddressIndex;
-//
-// END OF GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
-//
-
-//
-// FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
-//
-/** Flush all state, indexes and buffers to disk. */
-bool FlushTokenToDisk();
-bool AreTokensDeployed();
-CTokensCache* GetCurrentTokenCache();
-bool CheckTxTokens(
-    const CTransaction& tx, CValidationState& state, MapPrevTx inputs,
-    CTokensCache* tokenCache, bool fCheckMempool,
-    std::vector<std::pair<std::string, uint256> >& vPairReissueTokens);
-void UpdateTokenInfo(const CTransaction& tx, MapPrevTx& prevInputs, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
-void UpdateTokenInfoFromTxInputs(const COutPoint& out, const CTxOut& txOut, CTokensCache* tokensCache);
-void UpdateTokenInfoFromTxOutputs(const CTransaction& tx, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
-bool GetAddressIndex(uint160 addressHash, int type, std::string tokenName,
-                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
-                     int start = 0, int end = 0);
-bool GetAddressIndex(uint160 addressHash, int type,
-                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
-                     int start = 0, int end = 0);
-bool GetAddressUnspent(uint160 addressHash, int type, std::string tokenName,
-                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
-bool GetAddressUnspent(uint160 addressHash, int type,
-                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
 /** Translation to a filesystem path */
 boost::filesystem::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
 //
@@ -101,20 +57,12 @@ extern int
     nStatisticsNumberOfBlocks100,
     nStatisticsNumberOfBlocks;
 
-const ::uint32_t
-    nAverageBlocksPerMinute = 1,
-    nNumberOfDaysPerYear = 365,
-    nNumberOfBlocksPerYear =
-        (nAverageBlocksPerMinute * nMinutesperHour * nHoursPerDay *
-         nNumberOfDaysPerYear) + // that 1/4 of a day for leap years
-        (nAverageBlocksPerMinute * nMinutesperHour * (nHoursPerDay / 4));
 extern ::int64_t nUpTimeStart;
 
 // PoS constants
 extern const unsigned int nStakeMaxAge, nOnedayOfAverageBlocks;
 extern const unsigned int nStakeMinAge, nStakeTargetSpacing, nModifierInterval;
 
-const double nInflation = 0.02; // 2%
 static const unsigned int MAX_ORPHAN_TRANSACTIONS = 10000;
 /** Maxiumum number of signature check operations in an IsStandard() P2SH script */
 static const unsigned int MAX_P2SH_SIGOPS = 21;
@@ -125,21 +73,10 @@ static const ::int64_t MIN_TXOUT_AMOUNT = CENT/100;
 
 // Maximum number of script-checking threads allowed
 static const int MAX_SCRIPTCHECK_THREADS = 16;
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    static const uint256 hashGenesisBlock("0x0000060fc90618113cde415ead019a1052a9abc43afcccff38608ff8751353e5");
-#else
-    static const uint256 hashGenesisBlock("0x1ddf335eb9c59727928cabf08c4eb1253348acde8f36c6c4b75d0b9686a28848");
-#endif
-
 extern const uint256 
-    nPoWeasiestTargetLimitTestNet,
-    hashGenesisBlockTestNet;
+    nPoWeasiestTargetLimitTestNet;
 extern int 
     nConsecutiveStakeSwitchHeight;  // see timesamps.h = 420000;
-// All pairs A->B, where A (or one if its ancestors) misses transactions, but B has transactions.
-extern std::multimap<CBlockIndex*, CBlockIndex*> mapBlocksUnlinked;
-// Best header we've seen so far (used for getheaders queries' starting points).
-extern CBlockIndex *pindexBestHeader;
 const ::int64_t 
     nMaxClockDrift = nTwoHoursInSeconds;
 
@@ -149,15 +86,9 @@ inline ::int64_t FutureDrift(::int64_t nTime)
     { return nTime + nMaxClockDrift; } // up to 2 hours from the future
 
 extern CScript COINBASE_FLAGS;
-extern CCriticalSection cs_main;
-extern BlockMap mapBlockIndex;
-extern std::set<CBlockIndex*, CBlockIndexWorkComparator> setBlockIndexCandidates;
 extern unsigned int nNodeLifespan;
 //extern unsigned int nStakeMinAge;
 extern int nCoinbaseMaturity;
-extern CBigNum bnBestChainTrust;
-extern CBlockIndex *pindexBestInvalid;
-extern uint256 hashBestChain;
 extern ::uint64_t nLastBlockTx;
 extern ::uint64_t nLastBlockSize;
 extern ::uint32_t nLastCoinStakeSearchInterval;
@@ -165,25 +96,16 @@ extern const std::string strMessageMagic;
 extern CCriticalSection cs_vpwalletRegistered;
 extern std::vector<CWallet*> vpwalletRegistered;
 extern unsigned char pchMessageStart[4];
-extern ::int64_t nBlockRewardPrev;
 extern const ::int64_t nSimulatedMOneySupplyAtFork;
-extern ::uint32_t nMinEase; // minimum ease corresponds to highest difficulty
 
 // Settings
 extern ::int64_t nTransactionFee;
 extern ::int64_t nMinimumInputValue;
-extern bool fReindexOnlyHeaderSync;
-extern bool fReindexBlockIndex;
-extern bool fReindexToken;
 extern int nScriptCheckThreads;
 extern const uint256 entropyStore[38];
-extern bool fStoreBlockHashToDb;
 
 // Minimum disk space required - used in CheckDiskSpace()
 static const ::uint64_t nMinDiskSpace = 52428800;
-
-// Mempool
-extern CTxMemPool mempool;
 
 class CReserveKey;
 class CTxDB;
@@ -199,13 +121,9 @@ int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& fr
 void Inventory(const uint256& hash);
 void RegisterWallet(CWallet* pwalletIn);
 void CloseWallets();
-bool ProcessBlock(CValidationState &state, CBlock* pblock, bool fForceProcessing, bool *fNewBlock, CDiskBlockPos *dbp = NULL);
-bool CheckDiskSpace(::uint64_t nAdditionalBytes=0);
 
-void UnloadBlockIndex();
 bool LoadBlockIndex(bool fAllowNew=true);
 void PrintBlockTree();
-CBlockIndex* FindBlockByHeight(int nHeight);
 bool ProcessMessages(CNode* pfrom);
 bool SendMessages(CNode* pto, bool fSendTrickle);
 /** Import blocks from an external file */
@@ -216,7 +134,7 @@ void ThreadScriptCheck(void* parg);
 // Stop the script checking threads
 void ThreadScriptCheckQuit();
 
-bool CheckProofOfWork(uint256 hash, unsigned int nBits);
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params);
 unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfStake);
 ::int64_t GetProofOfStakeReward(::int64_t nCoinAge, unsigned int nBits, ::int64_t nTime, bool bCoinYearOnly=false);
 ::int64_t GetProofOfStakeReward(::int64_t nCoinAge);
@@ -274,10 +192,6 @@ int GetCoinbaseMaturity();
 int GetCoinbaseMaturityOffset();
 
 //bool GetWalletFile(CWallet* pwallet, std::string &strWalletFileOut);
-
-bool SetBestChain(CValidationState &state, CTxDB& txdb, CBlockIndex* pindexNew);
-/** Find the best known block, and make it the tip of the block chain */
-bool ActivateBestChain(CValidationState &state, CTxDB& txdb);
 
 /** Position on disk for a particular transaction. */
 class CDiskTxPos
@@ -419,7 +333,6 @@ public:
     int GetDepthInMainChain() const { CBlockIndex *pindexRet; return GetDepthInMainChain(pindexRet); }
     bool IsInMainChain() const { return GetDepthInMainChain() > 0; }
     int GetBlocksToMaturity() const;
-    bool AcceptToMemoryPool(CTxDB& txdb);
     bool AcceptToMemoryPool();
 };
 

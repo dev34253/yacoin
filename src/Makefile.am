@@ -79,6 +79,7 @@ libyacoin_common_a_SOURCES= \
     key.cpp \
     db.cpp \
     fs.cpp \
+    validation.cpp \
     validationinterface.cpp \
     scheduler.cpp \
     torcontrol.cpp \

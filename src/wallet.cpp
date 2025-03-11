@@ -1140,7 +1140,7 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
                 {
                     tx = *mapWalletPrev[hash];
                 }
-                else if (txdb.ReadDiskTx(hash, tx))
+                else if (pblocktree->ReadDiskTx(hash, tx))
                 {
                     ;
                 }
@@ -1412,14 +1412,13 @@ int CWallet::ScanForWalletTransaction(const uint256& hashTx)
 ***********************************************************/
 void CWallet::ReacceptWalletTransactions()
 {
-    CTxDB txdb("r");
     bool fRepeat = true;
     while (fRepeat)
     {
         LOCK(cs_wallet);
         fRepeat = false;
         vector<CDiskTxPos> vMissingTx;
-        BOOST_FOREACH(PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
+        for(PAIRTYPE(const uint256, CWalletTx)& item : mapWallet)
         {
             CWalletTx& wtx = item.second;
             if ((wtx.IsCoinBase() && wtx.IsSpent(0)) || (wtx.IsCoinStake() && wtx.IsSpent(1)))
@@ -1427,7 +1426,7 @@ void CWallet::ReacceptWalletTransactions()
 
             CTxIndex txindex;
             bool fUpdated = false;
-            if (txdb.ReadTxIndex(wtx.GetHash(), txindex))
+            if (pblocktree->ReadTxIndex(wtx.GetHash(), txindex))
             {
                 // Update fSpent if a tx got spent somewhere else by a copy of wallet.dat
                 if (txindex.vSpent.size() != wtx.vout.size())
@@ -1476,7 +1475,7 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
         if (!(tx.IsCoinBase() || tx.IsCoinStake()))
         {
             uint256 hash = tx.GetHash();
-            if (!txdb.ContainsTx(hash))
+            if (!pblocktree->ContainsTx(hash))
                 RelayTransaction(tx, g_connman.get());
         }
     }
@@ -1484,7 +1483,7 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
     if (!(IsCoinBase() || IsCoinStake()))
     {
         uint256 hash = GetHash();
-        if (!txdb.ContainsTx(hash))
+        if (!pblocktree->ContainsTx(hash))
         {
             LogPrintf("Relaying wtx %s\n", hash.ToString().substr(0,10));
             RelayTransaction(*this, g_connman.get());
@@ -3727,12 +3726,11 @@ void CWallet::FixSpentCoins(int& nMismatchFound, int64_t& nBalanceInQuestion, bo
     for (map<uint256, CWalletTx>::iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         vCoins.push_back(&(*it).second);
 
-    CTxDB txdb("r");
-    BOOST_FOREACH(CWalletTx* pcoin, vCoins)
+    for(CWalletTx* pcoin : vCoins)
     {
         // Find the corresponding transaction index
         CTxIndex txindex;
-        if (!txdb.ReadTxIndex(pcoin->GetHash(), txindex))
+        if (!pblocktree->ReadTxIndex(pcoin->GetHash(), txindex))
             continue;
         for (unsigned int n=0; n < pcoin->vout.size(); n++)
         {
@@ -3887,9 +3885,7 @@ void CWallet::GetKeyBirthTimes(std::map<CKeyID, int64_t> &mapKeyBirth) const
     }
     // map in which we'll infer heights of other keys
     CBlockIndex                                 // if this is one day in btc? then what for yac??
-      //*pindexMax = FindBlockByHeight(std::max(0, chainActive.Height() - 144)); // the tip can be reorganised; use a 144-block safety margin
-        *pindexMax = FindBlockByHeight(std::max(0, chainActive.Height()
-         - (int)nOnedayOfAverageBlocks)); // the tip can be reorganised; use a 144-block safety margin
+        *pindexMax = chainActive[(std::max(0, chainActive.Height() - (int)nOnedayOfAverageBlocks))]; // the tip can be reorganised; use a 144-block safety margin
 
     std::map<CKeyID, CBlockIndex*> mapKeyFirstBlock;
     std::set<CKeyID> setKeys;

@@ -271,6 +271,7 @@ BITCOIN_QT_CPP = \
   key.cpp \
   db.cpp \
   fs.cpp \
+  validation.cpp \
   validationinterface.cpp \
   scheduler.cpp \
   torcontrol.cpp \

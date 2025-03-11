@@ -281,12 +281,12 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
 
             {
                 LOCK(wallet->cs_wallet);
-                BOOST_FOREACH(const CTxIn& txin, wtx.vin)
+                for(const CTxIn& txin : wtx.vin)
                 {
                     COutPoint prevout = txin.prevout;
 
                     CTransaction prev;
-                    if(txdb.ReadDiskTx(prevout.COutPointGetHash(), prev))
+                    if(pblocktree->ReadDiskTx(prevout.COutPointGetHash(), prev))
                     {
                         if (prevout.COutPointGet_n() < prev.vout.size())
                         {

@@ -168,19 +168,10 @@ CBlockIndex* CBlockHeader::AddToBlockIndex()
         pindexBestHeader = pindexNew;
 
     // Write to disk block index
-    CTxDB txdb;
-    if (!txdb.TxnBegin())
-    {
-        LogPrintf("AddToBlockIndex(): TxnBegin failed\n");
-    }
-    txdb.WriteBlockIndex(CDiskBlockIndex(pindexNew));
-    if (fStoreBlockHashToDb && !txdb.WriteBlockHash(CDiskBlockIndex(pindexNew)))
+    pblocktree->WriteBlockIndex(CDiskBlockIndex(pindexNew));
+    if (fStoreBlockHashToDb && !pblocktree->WriteBlockHash(CDiskBlockIndex(pindexNew)))
     {
         LogPrintf("AddToBlockIndex(): Can't WriteBlockHash\n");
-    }
-    if (!txdb.TxnCommit())
-    {
-        LogPrintf("AddToBlockIndex(): TxnCommit failed\n");
     }
 
     return pindexNew;
@@ -206,7 +197,8 @@ bool CBlockHeader::CheckBlockHeader(CValidationState& state, bool fCheckPOW) con
     else    // is PoW block
     {
         // Check proof of work matches claimed amount
-        if (fCheckPOW && !CheckProofOfWork(GetHash(), nBits))
+        const CChainParams& chainparams = Params();
+        if (fCheckPOW && !CheckProofOfWork(GetHash(), nBits, chainparams.GetConsensus()))
             return state.DoS(50, error("CheckBlockHeader () : proof of work failed"));
 
         // Check timestamp
@@ -492,7 +484,7 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions, boo
         *this = pindex->GetBlockHeader();
         return true;
     }
-    if (!ReadFromDisk(pindex->nFile, pindex->nBlockPos, fReadTransactions, fCheckHeader))
+    if (!ReadFromDisk(pindex->nFile, pindex->nDataPos, fReadTransactions, fCheckHeader))
         return false;
 
     if (
@@ -526,14 +518,14 @@ bool CBlock::ReadFromDisk(unsigned int nFile, unsigned int nBlockPos,
                 BOOST_CURRENT_FUNCTION);
     }
 
-    CTxDB txdb("r");
-    if (fStoreBlockHashToDb && !txdb.ReadBlockHash(nFile, nBlockPos, blockHash))
+    if (fStoreBlockHashToDb && !pblocktree->ReadBlockHash(nFile, nBlockPos, blockHash))
     {
         LogPrintf("CBlock::ReadFromDisk(): can't read block hash at file = %d, block pos = %d\n", nFile, nBlockPos);
     }
     // Check the header
+    const CChainParams& chainparams = Params();
     if (fReadTransactions && IsProofOfWork()
-            && (fCheckHeader && !CheckProofOfWork(GetHash(), nBits)))
+            && (fCheckHeader && !CheckProofOfWork(GetHash(), nBits, chainparams.GetConsensus())))
         return error("CBlock::ReadFromDisk() : errors in block header");
 
     return true;
@@ -738,7 +730,7 @@ bool CBlock::DisconnectBlock(CValidationState& state, CTxDB& txdb,
 
                 // Get prev txindex from disk
                 CTxIndex txindex;
-                if (!txdb.ReadTxIndex(prevout.COutPointGetHash(), txindex))
+                if (!pblocktree->ReadTxIndex(prevout.COutPointGetHash(), txindex))
                     return error("CBlock::DisconnectBlock() : ReadTxIndex failed");
 
                 if (prevout.COutPointGet_n() >= txindex.vSpent.size())
@@ -748,7 +740,7 @@ bool CBlock::DisconnectBlock(CValidationState& state, CTxDB& txdb,
                 txindex.vSpent[prevout.COutPointGet_n()].SetNull();
 
                 // Write back
-                if (!txdb.UpdateTxIndex(prevout.COutPointGetHash(), txindex))
+                if (!pblocktree->UpdateTxIndex(prevout.COutPointGetHash(), txindex))
                     return error("CBlock::DisconnectBlock() : UpdateTxIndex failed");
 
                 CTransaction txPrev;
@@ -835,14 +827,14 @@ bool CBlock::DisconnectBlock(CValidationState& state, CTxDB& txdb,
         // This can fail if a duplicate of this transaction was in a chain that got
         // reorganized away. This is only possible if this transaction was completely
         // spent, so erasing it would be a no-op anyway.
-        txdb.EraseTxIndex(tx);
+        pblocktree->EraseTxIndex(tx);
     }
 
     if (!ignoreAddressIndex && fAddressIndex) {
-        if (!txdb.EraseAddressIndex(addressIndex)) {
+        if (!pblocktree->EraseAddressIndex(addressIndex)) {
             return error("Failed to delete address index");
         }
-        if (!txdb.UpdateAddressUnspentIndex(addressUnspentIndex)) {
+        if (!pblocktree->UpdateAddressUnspentIndex(addressUnspentIndex)) {
             return error("Failed to write address unspent index");
         }
     }
@@ -853,9 +845,9 @@ bool CBlock::DisconnectBlock(CValidationState& state, CTxDB& txdb,
     {
         CDiskBlockIndex blockindexPrev(pindex->pprev);
         blockindexPrev.hashNext = 0;
-        if (!txdb.WriteBlockIndex(blockindexPrev))
+        if (!pblocktree->WriteBlockIndex(blockindexPrev))
             return error("DisconnectBlock() : WriteBlockIndex failed");
-        if (fStoreBlockHashToDb && !txdb.WriteBlockHash(blockindexPrev))
+        if (fStoreBlockHashToDb && !pblocktree->WriteBlockHash(blockindexPrev))
         {
             LogPrintf("CBlock::DisconnectBlock(): Can't WriteBlockHash\n");
             return error("DisconnectBlock() : WriteBlockHash failed");
@@ -921,7 +913,7 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
         const uint256 hashTx = tx.GetHash();
         if (fEnforceBIP30) {
             CTxIndex txindexOld;
-            if (txdb.ReadTxIndex(hashTx, txindexOld)) {
+            if (pblocktree->ReadTxIndex(hashTx, txindexOld)) {
                 for (const CDiskTxPos &pos : txindexOld.vSpent)
                 {
                     if (pos.IsNull())
@@ -946,7 +938,7 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
         else
         {
             bool fInvalid;
-            if (!tx.FetchInputs(state, txdb, mapQueuedChanges, true, false, mapInputs, fInvalid))
+            if (!tx.FetchInputs(state, mapQueuedChanges, true, false, mapInputs, fInvalid))
                 return false;
 
             /** YAC_TOKEN START */
@@ -1084,7 +1076,6 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
             std::vector<CScriptCheck> vChecks;
             if (
                 !tx.ConnectInputs(state,
-                                  txdb,
                                   mapInputs,
                                   mapQueuedChanges,
                                   posThisTx,
@@ -1212,9 +1203,9 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
     // track money supply and mint amount info
     pindex->nMint = nValueOut - nValueIn + nFees;
     pindex->nMoneySupply = (pindex->pprev? pindex->pprev->nMoneySupply : 0) + nValueOut - nValueIn;
-    if (!txdb.WriteBlockIndex(CDiskBlockIndex(pindex)))
+    if (!pblocktree->WriteBlockIndex(CDiskBlockIndex(pindex)))
         return error("Connect() : WriteBlockIndex for pindex failed");
-    if (fStoreBlockHashToDb && !txdb.WriteBlockHash(CDiskBlockIndex(pindex)))
+    if (fStoreBlockHashToDb && !pblocktree->WriteBlockHash(CDiskBlockIndex(pindex)))
     {
         LogPrintf("Connect(): Can't WriteBlockHash\n");
         return error("Connect() : WriteBlockHash failed");
@@ -1231,7 +1222,7 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
     // Write queued txindex changes
     for (map<uint256, CTxIndex>::iterator mi = mapQueuedChanges.begin(); mi != mapQueuedChanges.end(); ++mi)
     {
-        if (!txdb.UpdateTxIndex((*mi).first, (*mi).second))
+        if (!pblocktree->UpdateTxIndex((*mi).first, (*mi).second))
             return error("ConnectBlock() : UpdateTxIndex failed");
     }
 
@@ -1242,11 +1233,11 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
     }
 
     if (!ignoreAddressIndex && fAddressIndex) {
-        if (!txdb.WriteAddressIndex(addressIndex)) {
+        if (!pblocktree->WriteAddressIndex(addressIndex)) {
             return error("ConnectBlock(): Failed to write address index");
         }
 
-        if (!txdb.UpdateAddressUnspentIndex(addressUnspentIndex)) {
+        if (!pblocktree->UpdateAddressUnspentIndex(addressUnspentIndex)) {
             return error("ConnectBlock(): Failed to write address unspent index");
         }
     }
@@ -1259,9 +1250,9 @@ bool CBlock::ConnectBlock(CValidationState &state, CTxDB& txdb, CBlockIndex* pin
     {
         CDiskBlockIndex blockindexPrev(pindex->pprev);
         blockindexPrev.hashNext = pindex->GetBlockHash();
-        if (!txdb.WriteBlockIndex(blockindexPrev))
+        if (!pblocktree->WriteBlockIndex(blockindexPrev))
             return error("ConnectBlock() : WriteBlockIndex failed");
-        if (fStoreBlockHashToDb && !txdb.WriteBlockHash(blockindexPrev))
+        if (fStoreBlockHashToDb && !pblocktree->WriteBlockHash(blockindexPrev))
         {
             LogPrintf("ConnectBlock(): Can't WriteBlockHash\n");
             return error("ConnectBlock() : WriteBlockHash failed");
@@ -1325,13 +1316,6 @@ bool CBlock::ReceivedBlockTransactions(CValidationState &state, unsigned int nFi
          pindexNew->nSequenceId = nBlockSequenceId++;
     }
 
-    CTxDB txdb;
-    if (!txdb.TxnBegin())
-    {
-        LogPrintf("AddToBlockIndex(): TxnBegin failed\n");
-        return false;
-    }
-
     if (pindexNew->pprev == NULL || pindexNew->pprev->validTx) {
         // If pindexNew is the genesis block or all parents are BLOCK_VALID_TRANSACTIONS.
         deque<CBlockIndex*> queue;
@@ -1350,7 +1334,7 @@ bool CBlock::ReceivedBlockTransactions(CValidationState &state, unsigned int nFi
                 range.first++;
                 mapBlocksUnlinked.erase(it);
             }
-            txdb.WriteBlockIndex(CDiskBlockIndex(pindex));
+            pblocktree->WriteBlockIndex(CDiskBlockIndex(pindex));
 
             if (!chainActive.Tip() || (chainActive.Tip()->nHeight + 1) < nMainnetNewLogicBlockNumber)
             {
@@ -1366,7 +1350,7 @@ bool CBlock::ReceivedBlockTransactions(CValidationState &state, unsigned int nFi
                     LogPrintf("AcceptBlock() : Rejected by stake modifier checkpoint height=%d, modifier=0x%016\n" PRIx64, pindex->nHeight, nStakeModifier);
             }
 
-            if (fStoreBlockHashToDb && !txdb.WriteBlockHash(CDiskBlockIndex(pindex)))
+            if (fStoreBlockHashToDb && !pblocktree->WriteBlockHash(CDiskBlockIndex(pindex)))
             {
                 LogPrintf("AddToBlockIndex(): Can't WriteBlockHash\n");
             }
@@ -1375,18 +1359,11 @@ bool CBlock::ReceivedBlockTransactions(CValidationState &state, unsigned int nFi
         if (pindexNew->pprev && pindexNew->pprev->IsValid(BLOCK_VALID_TREE)) {
             mapBlocksUnlinked.insert(std::make_pair(pindexNew->pprev, pindexNew));
         }
-        txdb.WriteBlockIndex(CDiskBlockIndex(pindexNew));
-        if (fStoreBlockHashToDb && !txdb.WriteBlockHash(CDiskBlockIndex(pindexNew)))
+        pblocktree->WriteBlockIndex(CDiskBlockIndex(pindexNew));
+        if (fStoreBlockHashToDb && !pblocktree->WriteBlockHash(CDiskBlockIndex(pindexNew)))
         {
             LogPrintf("AddToBlockIndex(): Can't WriteBlockHash\n");
         }
-    }
-
-    // Write to disk block index
-    if (!txdb.TxnCommit())
-    {
-        LogPrintf("AddToBlockIndex(): TxnCommit failed\n");
-        return false;
     }
 
     return true;

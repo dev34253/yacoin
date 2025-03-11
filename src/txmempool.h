@@ -553,7 +553,7 @@ public:
     void ClearPrioritisation(const uint256 hash);
 
     // Old implementation
-    bool accept(CValidationState &state, CTxDB& txdb, const CTransaction &tx, bool* pfMissingInputs);
+    bool accept(CValidationState &state, const CTransaction &tx, bool* pfMissingInputs);
 
 public:
     /** Remove a set of transactions from the mempool.

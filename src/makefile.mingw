@@ -239,6 +239,7 @@ obj/crypter.o \
 obj/compressor.o \
 obj/db.o \
 obj/fs.o \
+obj/validation.o \
 obj/validationinterface.o \
 obj/scheduler.o \
 obj/torcontrol.o \

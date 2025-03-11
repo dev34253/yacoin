@@ -136,7 +136,7 @@ public:
                           int start = 0, int end = 0);
     bool WriteFlag(const std::string &name, bool fValue);
     bool ReadFlag(const std::string &name, bool &fValue);
-    bool LoadBlockIndexGuts(std::function<CBlockIndex*(const uint256&)> insertBlockIndex);
+    bool LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex);
 
     // OLD APIs
     bool ReadTxIndex(uint256 hash, CTxIndex& txindex);

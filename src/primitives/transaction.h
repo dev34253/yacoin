@@ -543,8 +543,7 @@ public:
     }
 
 
-    bool ReadFromDisk(CTxDB& txdb, COutPoint prevout, CTxIndex& txindexRet);
-    bool ReadFromDisk(CTxDB& txdb, COutPoint prevout);
+    bool ReadFromDisk(COutPoint prevout, CTxIndex& txindexRet);
     bool ReadFromDisk(COutPoint prevout);
     bool DisconnectInputs(CValidationState &state, CTxDB& txdb);
 
@@ -558,7 +557,7 @@ public:
      @param[out] fInvalid	returns true if transaction is invalid
      @return	Returns true if all inputs are in txdb or mapTestPool
      */
-    bool FetchInputs(CValidationState &state, CTxDB& txdb, const std::map<uint256, CTxIndex>& mapTestPool,
+    bool FetchInputs(CValidationState &state, const std::map<uint256, CTxIndex>& mapTestPool,
                      bool fBlock, bool fMiner, MapPrevTx& inputsRet, bool& fInvalid) const;
 
     /** Sanity check previous transactions, then, if all checks succeed,
@@ -575,13 +574,13 @@ public:
         @param[in] pvChecks	NULL If pvChecks is not NULL, script checks are pushed onto it instead of being performed inline.
         @return Returns true if all checks succeed
      */
-    bool ConnectInputs(CValidationState &state, CTxDB& txdb, MapPrevTx inputs, std::map<uint256, CTxIndex>& mapTestPool, const CDiskTxPos& posThisTx, const CBlockIndex* pindexBlock,
+    bool ConnectInputs(CValidationState &state, MapPrevTx inputs, std::map<uint256, CTxIndex>& mapTestPool, const CDiskTxPos& posThisTx, const CBlockIndex* pindexBlock,
                      bool fBlock, bool fMiner, bool fScriptChecks=true,
                      unsigned int flags=STRICT_FLAGS, std::vector<CScriptCheck> *pvChecks = NULL) const;
     bool ClientConnectInputs();
     bool CheckTransaction(CValidationState &state) const;
-    bool AcceptToMemoryPool(CValidationState &state, CTxDB& txdb, bool *pfMissingInputs=NULL) const;
-    bool GetCoinAge(CTxDB& txdb, ::uint64_t& nCoinAge) const;  // ppcoin: get transaction coin age
+    bool AcceptToMemoryPool(CValidationState &state, bool *pfMissingInputs=NULL) const;
+    bool GetCoinAge(::uint64_t& nCoinAge) const;  // ppcoin: get transaction coin age
 
     /** YAC_TOKEN START */
     bool IsNewToken() const;

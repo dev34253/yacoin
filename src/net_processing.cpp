@@ -1079,7 +1079,7 @@ bool static AlreadyHave(CTxDB& txdb, const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(c
             return recentRejects->contains(inv.hash) ||
                    mempool.exists(inv.hash) ||
                    mapOrphanTransactions.count(inv.hash) ||
-                   txdb.ContainsTx(inv.hash);
+                   pblocktree->ContainsTx(inv.hash);
         }
     case MSG_BLOCK:
         return mapBlockIndex.count(inv.hash);

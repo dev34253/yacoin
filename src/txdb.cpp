@@ -498,6 +498,9 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
 
     pcursor->Seek(std::make_pair(DB_BLOCK_INDEX, uint256()));
 
+    int newStoredBlock = 0;
+    int alreadyStoredBlock = 0;
+
     // Load mapBlockIndex
     while (pcursor->Valid()) {
         boost::this_thread::interruption_point();
@@ -506,7 +509,8 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
             CDiskBlockIndex diskindex;
             if (pcursor->GetValue(diskindex)) {
                 // Construct block index object
-                CBlockIndex* pindexNew = insertBlockIndex(diskindex.GetBlockHash());
+                uint256 blockHash = diskindex.GetBlockHash(); // the slow poke!
+                CBlockIndex* pindexNew = insertBlockIndex(blockHash);
                 pindexNew->pprev          = insertBlockIndex(diskindex.hashPrev);
                 pindexNew->nHeight        = diskindex.nHeight;
                 pindexNew->nFile          = diskindex.nFile;
@@ -520,8 +524,29 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
+                // Specific for YAC
+                pindexNew->nMint = diskindex.nMint;
+                pindexNew->nMoneySupply = diskindex.nMoneySupply;
+                pindexNew->nFlags = diskindex.nFlags;
+                pindexNew->nStakeModifier = diskindex.nStakeModifier;
+                pindexNew->prevoutStake = diskindex.prevoutStake;
+                pindexNew->nStakeTime = diskindex.nStakeTime;
+                pindexNew->hashProofOfStake = diskindex.hashProofOfStake;
+                pindexNew->blockHash = blockHash;
+
                 if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams))
                     return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
+
+                uint256 tmpBlockhash;
+                if (fStoreBlockHashToDb && !ReadBlockHash(diskindex.nFile, diskindex.nDataPos, tmpBlockhash))
+                {
+                    newStoredBlock++;
+                    WriteBlockHash(diskindex);
+                }
+                else
+                {
+                    alreadyStoredBlock++;
+                }
 
                 pcursor->Next();
             } else {
@@ -531,6 +556,13 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
             break;
         }
     }
+
+    LogPrintf("CBlockTreeDB::LoadBlockIndexGuts, fStoreBlockHashToDb = %d, "
+           "newStoredBlock = %d, "
+           "alreadyStoredBlock = %d\n",
+           fStoreBlockHashToDb,
+           newStoredBlock,
+           alreadyStoredBlock);
 
     return true;
 }
@@ -599,12 +631,12 @@ bool CBlockTreeDB::WriteBlockIndex(const CDiskBlockIndex &blockindex)
 
 bool CBlockTreeDB::WriteBlockHash(const CDiskBlockIndex &blockindex)
 {
-    return Write(make_pair(string("blockhash"), make_pair(blockindex.nFile, blockindex.nBlockPos)), blockindex.GetBlockHash());
+    return Write(make_pair(string("blockhash"), make_pair(blockindex.nFile, blockindex.nDataPos)), blockindex.GetBlockHash());
 }
 
-bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256 &blockhash)
+bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nDataPos, uint256 &blockhash)
 {
-    return Read(make_pair(string("blockhash"), make_pair(nFile, nBlockPos)), blockhash);
+    return Read(make_pair(string("blockhash"), make_pair(nFile, nDataPos)), blockhash);
 }
 
 bool CBlockTreeDB::ReadHashBestChain(uint256 &hashBestChain)
@@ -655,27 +687,6 @@ bool CBlockTreeDB::ReadModifierUpgradeTime(unsigned int &nUpgradeTime)
 bool CBlockTreeDB::WriteModifierUpgradeTime(const unsigned int &nUpgradeTime)
 {
     return Write(string("nUpgradeTime"), nUpgradeTime);
-}
-
-static CBlockIndex *InsertBlockIndex(uint256 hash)
-{ // this is the slow poke in start up load block index
-    if (hash == 0)
-        return NULL;
-
-    // Return existing, presume this is slow?
-    BlockMap::iterator mi = mapBlockIndex.find(hash);
-    if (mi != mapBlockIndex.end())
-        return (*mi).second;
-
-    // Create new
-    CBlockIndex *pindexNew = new CBlockIndex();
-    if (!pindexNew)
-        throw runtime_error("LoadBlockIndex() : new CBlockIndex failed");
-
-    mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
-    pindexNew->phashBlock = &((*mi).first);
-
-    return pindexNew;
 }
 
 bool CBlockTreeDB::BuildMapHash()

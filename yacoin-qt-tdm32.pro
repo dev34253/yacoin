@@ -297,6 +297,7 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/threadinterrupt.cpp \
     src/db.cpp \
     src/fs.cpp \
+    src/validation.cpp \
     src/validationinterface.cpp \
     src/scheduler.cpp \
     src/torcontrol.cpp \
