@@ -23,8 +23,6 @@ using std::deque;
 
 const ::int64_t
     nChainStartTime = 1367991200,           // unix time???? ~ Wed May 08 2013 05:33:20
-//    nChainStartTimeTestNet = 1464123328;    //Tue, 24 May 2016 20:55:28 GMT
-//                                            // 1464373956  Fri, 27 May 2016 18:32:36 GMT
     nChainStartTimeTestNet = 1546300800;    // 1546116950 ~12/29/2018
                                             // 1546300800 1/1/2019 00:00:00 GMT
 
@@ -1419,8 +1417,6 @@ bool CBlock::SignBlock(CWallet& wallet)
     // if we are doing 0.4.4 blocks, let's check using 0.4.4 code
     if(
        !IsProofOfStake()    // i.e PoW then immaterial what version!
-       ||
-       (VERSION_of_block_for_yac_05x_new == nVersion)
        ||
        (VERSION_of_block_for_yac_05x_new == nVersion)
        ||

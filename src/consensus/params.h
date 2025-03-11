@@ -49,6 +49,7 @@ struct Params {
     int BIP68Height;
 //    /** Block height at which BIP66 becomes active */
 //    int BIP66Height;
+    int HeliopolisHardforkHeight;
     /**
      * Minimum blocks including miner confirmation of the total of 2016 blocks in a retargeting period,
      * (nPowTargetTimespan / nPowTargetSpacing) which is also used for BIP9 deployments.

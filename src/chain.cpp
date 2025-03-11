@@ -98,11 +98,7 @@ CBigNum CBlockIndex::GetBlockTrust() const
         return CBigNum(0);
 
     // saironiq: new trust rules (since CONSECUTIVE_STAKE_SWITCH_TIME on mainnet and always on testnet)
-    if (
-        fTestNet
-        ||
-        (GetBlockTime() >= CONSECUTIVE_STAKE_SWITCH_TIME)
-       )
+    if (fTestNet || (GetBlockTime() >= CONSECUTIVE_STAKE_SWITCH_TIME))
     {
         // first block trust - for future compatibility (i.e., forks :P)
         if (pprev == NULL)
@@ -116,8 +112,8 @@ CBigNum CBlockIndex::GetBlockTrust() const
 
         // PoS after PoW? trust = prev_trust + 1!
         if (IsProofOfStake() && pprev->IsProofOfWork())
-            return pprev->GetBlockTrust() + 1;  //<<<<<<<<<<<<< does this mean this is recursive??????
-                                                // sure looks thatway!  Is this the intent?
+            return pprev->GetBlockTrust() + 1;
+
         // PoW trust calculation
         if (IsProofOfWork())
         {
@@ -131,7 +127,6 @@ CBigNum CBlockIndex::GetBlockTrust() const
 
             return bnTrust;
         }
-        // what the hell?!
         return CBigNum(0);
     }
     return (IsProofOfStake()? (CBigNum(1)<<256) / (bnTarget+1) : CBigNum(1));

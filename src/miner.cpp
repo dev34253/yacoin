@@ -31,9 +31,10 @@
 
 #include "policy/fees.h"
 #include "policy/policy.h"
+#include "pow.h"
 #include "net_processing.h"
-#include <openssl/sha.h>
 #include "consensus/validation.h"
+#include <openssl/sha.h>
 
 using std::auto_ptr;
 using std::list;

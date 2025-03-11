@@ -497,6 +497,9 @@ bool AppInitParameterInteraction()
     if (nMaxConnections < nUserMaxConnections)
         InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), nUserMaxConnections, nMaxConnections));
 
+    fCheckBlockIndex = gArgs.GetBoolArg("-checkblockindex", chainparams.DefaultConsistencyChecks());
+    fCheckpointsEnabled = gArgs.GetBoolArg("-checkpoints", DEFAULT_CHECKPOINTS_ENABLED);
+
     nNodeLifespan = (unsigned int)(gArgs.GetArg("-addrlifespan", 7));
     fStoreBlockHashToDb = gArgs.GetBoolArg("-storeblockhash", true);
     fUseMemoryLog = gArgs.GetBoolArg("-memorylog", true);
@@ -1194,7 +1197,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 if (fReset) {
                     pblocktree->WriteReindexing(true);
                     //If we're reindexing in prune mode, wipe away unusable block files and all undo data files
-                    // TODO: TACA Add later
+                    // TODO: Implement prune later
 //                    if (fPruneMode)
 //                        CleanupBlockRevFiles();
                 }
@@ -1230,7 +1233,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
                 // Check for changed -prune state.  What we are concerned about is a user who has pruned blocks
                 // in the past, but is now trying to run unpruned.
-                // TODO: TACA Add later
+                // TODO: Implement prune later
 //                if (fHavePruned && !fPruneMode) {
 //                    strLoadError = _("You need to rebuild the database using -reindex to go back to unpruned mode.  This will redownload the entire blockchain");
 //                    break;
@@ -1282,7 +1285,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
                 if (!is_coinsview_empty) {
                     uiInterface.InitMessage(_("Verifying blocks..."));
-                    // TODO: TACA Add later
+                    // TODO: Implement prune later
 //                    if (fHavePruned && gArgs.GetArg("-checkblocks", DEFAULT_CHECKBLOCKS) > MIN_BLOCKS_TO_KEEP) {
 //                        LogPrintf("Prune: pruned datadir may not have more than %d blocks; only checking available blocks",
 //                            MIN_BLOCKS_TO_KEEP);

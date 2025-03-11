@@ -10,6 +10,7 @@
 #include "amount.h"
 #include "coins.h"
 #include "consensus/params.h"
+#include "chain.h"
 #include "chainparams.h"
 #include "fs.h"
 #include "protocol.h" // For CMessageHeader::MessageStartChars
@@ -36,12 +37,18 @@
 
 #include <atomic>
 
-class CChainParams;
-class CBlockTreeDB;
-class CCoinsViewDB;
-class CChain;
 class CBlockIndex;
+class CBlockTreeDB;
+class CChainParams;
+class CCoinsViewDB;
+class CInv;
+class CConnman;
+class CScriptCheck;
+class CBlockPolicyEstimator;
+class CTxMemPool;
 class CValidationState;
+struct LockPoints;
+class CChain;
 
 /** Headers download timeout expressed in microseconds
  *  Timeout = base + per_header * (expected number of headers) */
@@ -68,14 +75,14 @@ extern unsigned int FETCH_BLOCK_DOWNLOAD; //4000
 extern unsigned int HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS; //default = 10000
 extern int64_t nMaxTipAge;
 
+/** Maximum depth of blocks we're willing to serve as compact blocks to peers
+ *  when requested. For older blocks, a regular BLOCK response will be sent. */
+static const int MAX_CMPCTBLOCK_DEPTH = 5;
+
 /** Time to wait (in seconds) between writing blocks/block index to disk. */
 static const unsigned int DATABASE_WRITE_INTERVAL = 60 * 60;
 /** Time to wait (in seconds) between flushing chainstate to disk. */
 static const unsigned int DATABASE_FLUSH_INTERVAL = 24 * 60 * 60;
-
-/** Maximum depth of blocks we're willing to serve as compact blocks to peers
- *  when requested. For older blocks, a regular BLOCK response will be sent. */
-static const int MAX_CMPCTBLOCK_DEPTH = 5;
 
 /** Maximum number of headers to announce when relaying blocks with headers message.*/
 static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
@@ -118,54 +125,25 @@ static const unsigned int INVENTORY_BROADCAST_MAX = 7 * INVENTORY_BROADCAST_INTE
 
 static const int64_t DEFAULT_MAX_TIP_AGE = 24 * 60 * 60;
 
-static const bool DEFAULT_TXINDEX = false;
+static const bool DEFAULT_CHECKPOINTS_ENABLED = true;
+static const bool DEFAULT_TXINDEX = true; // ppcoin: txindex is required for PoS calculations (might change in the future)
 static const bool DEFAULT_TOKENINDEX = false;
 static const bool DEFAULT_ADDRESSINDEX = false;
 
 /** Default for -stopatheight */
 static const int DEFAULT_STOPATHEIGHT = 0;
 
-const double nInflation = 0.02; // 2%
-const ::uint32_t
-    nAverageBlocksPerMinute = 1,
-    nNumberOfDaysPerYear = 365,
-    nNumberOfBlocksPerYear =
-        (nAverageBlocksPerMinute * nMinutesperHour * nHoursPerDay *
-         nNumberOfDaysPerYear) + // that 1/4 of a day for leap years
-        (nAverageBlocksPerMinute * nMinutesperHour * (nHoursPerDay / 4));
-
-/** Convert CValidationState to a human-readable message for logging */
-std::string FormatStateMessage(const CValidationState &state);
-bool AbortNode(const std::string &msg);
-
-/** Check whether enough disk space is available for an incoming block */
-bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
-/** Open a block file (blk?????.dat) */
-FILE* OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
-/** Translation to a filesystem path */
-fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
-/** Ensures we have a genesis block in the block tree, possibly writing one to disk. */
-bool LoadGenesisBlock(const CChainParams& chainparams);
-/** Load the block tree and coins database from disk,
- * initializing state if we're running with -reindex. */
-bool LoadBlockIndex(const CChainParams& chainparams);
-/** Update the chain tip based on database information. */
-bool LoadChainTip(const CChainParams& chainparams);
-/** Unload database information */
-void UnloadBlockIndex();
-
 struct BlockHasher
 {
     size_t operator()(const uint256& hash) const { return hash.GetCheapHash(); }
 };
-
-typedef std::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
 
 /**
  * Global state
  */
 extern size_t nCoinCacheUsage;
 extern CCriticalSection cs_main;
+typedef std::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
 extern BlockMap mapBlockIndex;
 extern std::set<CBlockIndex*, CBlockIndexWorkComparator> setBlockIndexCandidates;
 /** The currently-connected chain of blocks (protected by cs_main). */
@@ -176,6 +154,8 @@ extern CBlockIndex *pindexBestHeader;
 extern bool fReindex;
 extern bool fTxIndex;
 extern bool fRequireStandard;
+extern bool fCheckBlockIndex;
+extern bool fCheckpointsEnabled;
 extern bool fStoreBlockHashToDb;
 extern ::uint32_t nMinEase; // minimum ease corresponds to highest difficulty
 extern ::int64_t nBlockRewardPrev;
@@ -213,53 +193,49 @@ extern bool fAddressIndex;
 // END OF GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
 //
 
+const double nInflation = 0.02; // 2%
+const ::uint32_t
+    nAverageBlocksPerMinute = 1,
+    nNumberOfDaysPerYear = 365,
+    nNumberOfBlocksPerYear =
+        (nAverageBlocksPerMinute * nMinutesperHour * nHoursPerDay *
+         nNumberOfDaysPerYear) + // that 1/4 of a day for leap years
+        (nAverageBlocksPerMinute * nMinutesperHour * (nHoursPerDay / 4));
+
+bool ProcessBlock(CValidationState &state, CBlock* pblock, bool fForceProcessing, bool *fNewBlock, CDiskBlockPos *dbp = NULL);
+
 /**
- * Return the spend height, which is one more than the inputs.GetBestBlock().
- * While checking, GetBestBlock() refers to the parent block. (protected by cs_main)
- * This is also true for mempool checks.
+ * Process incoming block headers.
+ *
+ * Call without cs_main held.
+ *
+ * @param[in]  block The block headers themselves
+ * @param[out] state This may be set to an Error state if any error occurred processing them
+ * @param[in]  chainparams The params for the chain we want to connect to
+ * @param[out] ppindex If set, the pointer will be set to point to the last new block index object for the given headers
+ * @param[out] first_invalid First header that fails validation, if one exists
  */
-int GetSpendHeight(const CCoinsViewCache& inputs);
+bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& block, CValidationState& state, const CChainParams& chainparams, const CBlockIndex** ppindex=nullptr, CBlockHeader *first_invalid=nullptr);
 
-//
-// FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
-//
-/** Flush all state, indexes and buffers to disk. */
-bool FlushTokenToDisk();
-bool AreTokensDeployed();
-CTokensCache* GetCurrentTokenCache();
-bool CheckTxTokens(
-    const CTransaction& tx, CValidationState& state, MapPrevTx inputs,
-    CTokensCache* tokenCache, bool fCheckMempool,
-    std::vector<std::pair<std::string, uint256> >& vPairReissueTokens);
-void UpdateTokenInfo(const CTransaction& tx, MapPrevTx& prevInputs, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
-void UpdateTokenInfoFromTxInputs(const COutPoint& out, const CTxOut& txOut, CTokensCache* tokensCache);
-void UpdateTokenInfoFromTxOutputs(const CTransaction& tx, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
-bool GetAddressIndex(uint160 addressHash, int type, std::string tokenName,
-                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
-                     int start = 0, int end = 0);
-bool GetAddressIndex(uint160 addressHash, int type,
-                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
-                     int start = 0, int end = 0);
-bool GetAddressUnspent(uint160 addressHash, int type, std::string tokenName,
-                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
-bool GetAddressUnspent(uint160 addressHash, int type,
-                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
-//
-// END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
-//
-
-/** Functions for disk access for blocks */
-bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams);
-bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams);
-
-/** Functions for validating blocks and updating the block tree */
-
-/** Context-independent validity checks */
-bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW=true, bool fCheckMerkleRoot=true, bool fCheckSig=true);
-
+/** Check whether enough disk space is available for an incoming block */
+bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
+/** Open a block file (blk?????.dat) */
+FILE* OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
+/** Translation to a filesystem path */
+fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
+/** Ensures we have a genesis block in the block tree, possibly writing one to disk. */
+bool LoadGenesisBlock(const CChainParams& chainparams);
+/** Load the block tree and coins database from disk,
+ * initializing state if we're running with -reindex. */
+bool LoadBlockIndex(const CChainParams& chainparams);
+/** Update the chain tip based on database information. */
+bool LoadChainTip(const CChainParams& chainparams);
+/** Unload database information */
+void UnloadBlockIndex();
+/** Check whether we are doing an initial block download (synchronizing from disk or network) */
+bool IsInitialBlockDownload();
 /** Find the best known block, and make it the tip of the block chain */
 bool ActivateBestChain(CValidationState &state);
-bool ProcessBlock(CValidationState &state, CBlock* pblock, bool fForceProcessing, bool *fNewBlock, CDiskBlockPos *dbp = NULL);
 
 /** Guess verification progress (as a fraction between 0.0=genesis and 1.0=current tip). */
 double GuessVerificationProgress(const ChainTxData& data, CBlockIndex* pindex);
@@ -272,6 +248,9 @@ void FlushStateToDisk();
 /** (try to) add transaction to memory pool
  * plTxnReplaced will be appended to with all transactions replaced from mempool **/
 bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransactionRef &tx, bool* pfMissingInputs);
+
+/** Convert CValidationState to a human-readable message for logging */
+std::string FormatStateMessage(const CValidationState &state);
 
 /** Transaction validation functions */
 
@@ -329,6 +308,15 @@ public:
     }
 };
 
+/** Functions for disk access for blocks */
+bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus::Params& consensusParams);
+bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus::Params& consensusParams);
+
+/** Functions for validating blocks and updating the block tree */
+
+/** Context-independent validity checks */
+bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW=true, bool fCheckMerkleRoot=true, bool fCheckSig=true);
+
 /** RAII wrapper for VerifyDB: Verify consistency of the block and coin databases */
 class CVerifyDB {
 public:
@@ -339,6 +327,43 @@ public:
 
 /** Replay blocks that aren't fully applied to the database. */
 bool ReplayBlocks(const CChainParams& params, CCoinsView* view);
+
+/**
+ * Return the spend height, which is one more than the inputs.GetBestBlock().
+ * While checking, GetBestBlock() refers to the parent block. (protected by cs_main)
+ * This is also true for mempool checks.
+ */
+int GetSpendHeight(const CCoinsViewCache& inputs);
+
+bool AbortNode(const std::string &msg);
+
+//
+// FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
+//
+/** Flush all state, indexes and buffers to disk. */
+bool FlushTokenToDisk();
+bool AreTokensDeployed();
+CTokensCache* GetCurrentTokenCache();
+bool CheckTxTokens(
+    const CTransaction& tx, CValidationState& state, MapPrevTx inputs,
+    CTokensCache* tokenCache, bool fCheckMempool,
+    std::vector<std::pair<std::string, uint256> >& vPairReissueTokens);
+void UpdateTokenInfo(const CTransaction& tx, MapPrevTx& prevInputs, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
+void UpdateTokenInfoFromTxInputs(const COutPoint& out, const CTxOut& txOut, CTokensCache* tokensCache);
+void UpdateTokenInfoFromTxOutputs(const CTransaction& tx, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
+bool GetAddressIndex(uint160 addressHash, int type, std::string tokenName,
+                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
+                     int start = 0, int end = 0);
+bool GetAddressIndex(uint160 addressHash, int type,
+                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
+                     int start = 0, int end = 0);
+bool GetAddressUnspent(uint160 addressHash, int type, std::string tokenName,
+                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
+bool GetAddressUnspent(uint160 addressHash, int type,
+                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
+//
+// END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
+//
 
 // ppcoin:
 bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& nCoinAge); // ppcoin: get transaction coin age

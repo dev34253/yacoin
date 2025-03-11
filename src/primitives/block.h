@@ -67,7 +67,6 @@ extern bool fReindexOnlyHeaderSync;
 #endif
 
 FILE* AppendBlockFile(unsigned int& nFileRet);
-bool IsInitialBlockDownload();
 
 struct ConnectedBlockTokenData
 {
@@ -95,11 +94,9 @@ public:
     ::uint32_t nBits;
     ::uint32_t nNonce;
 
-    // Store following info to avoid calculating hash many times
+    // (memory-only) Store following info to avoid calculating hash many times
     mutable struct block_header previousBlockHeader;
     mutable uint256 blockHash;
-
-    // (memory-only) Store to avoid calculating hash many times at initial-block-sync
     mutable uint256 blockSHA256Hash;
 
     CBlockHeader()
@@ -145,8 +142,7 @@ public:
     // yacoin2015 update
     uint256 CalculateHash() const
     {
-        uint256
-            thash;
+        uint256 thash;
 
         if (nVersion >= VERSION_of_block_for_yac_05x_new) // 64-bit nTime
         {
@@ -157,14 +153,9 @@ public:
             block_data.timestamp = nTime;
             block_data.bits = nBits;
             block_data.nonce = nNonce;
-            if(
-               !scrypt_hash(
-                           CVOIDBEGIN(block_data),
-                           sizeof(struct block_header),
-                           UINTBEGIN(thash),
-                           MAXIMUM_YAC1DOT0_N_FACTOR
-                          )
-              )
+            if (!scrypt_hash(CVOIDBEGIN(block_data),
+                             sizeof(struct block_header), UINTBEGIN(thash),
+                             MAXIMUM_YAC1DOT0_N_FACTOR))
             {
                 thash = 0;  // perhaps? should error("lack of memory for scrypt hash?");
             }
@@ -188,21 +179,9 @@ public:
                 nSpanOf17 = 1468654496 - nChainStartTime,   // Sat, 16 Jul 2016 07:34:56 GMT (Nf) 18
                 nSpanOf18 = 1502208928 - nChainStartTime,   // Tue, 08 Aug 2017 16:15:28 GMT (Nf) 19
                 nSpanOf19 = 1602872224 - nChainStartTime,   // Fri, 16 Oct 2020 18:17:04 GMT
-                nSpanOf20 = 1636426656 - nChainStartTime,   // Tue, 09 Nov 2021 02:57:36 GMT
-                nSpanOf21 = 1904862112 - nChainStartTime,   // Mon, 13 May 2030 00:21:52 GMT
-                nSpanOf22 = 2173297568U - nChainStartTime,   // Sat, 13 Nov 2038 21:46:08 GMT
-                nSpanOf23 = 2441733024U - nChainStartTime,   // Fri, 17 May 2047 19:10:24 GMT
-                nSpanOf24 = 3247039392U - nChainStartTime,   // Tue, 22 Nov 2072 11:23:12 GMT
-                nSpanOf25 = 3515474848U - nChainStartTime;   // Mon, 26 May 2081 08:47:28 GMT
-                // uint_32 fails here                          Sun, 07 Feb 2106 06:28:15 GMT
-              //nSpanOf26 = 5662958496 - nChainStartTime,   // Sat, 14 Jun 2149 12:01:36 GMT
-              //nSpanOf27 = 6736700320 - nChainStartTime,   // Tue, 24 Jun 2183 01:38:40 GMT
-              //nSpanOf28 = 9957925792 - nChainStartTime,   // Tue, 21 Jul 2285 18:29:52 GMT
-              //nSpanOf29 = 14252893088 - nChainStartTime,  // Sat, 28 Aug 2421 00:58:08 GMT
-              //nSpanOf30 = 18547860384 - nChainStartTime;  // Tue, 04 Oct 2557 07:26:24 GMT
+                nSpanOf20 = 1636426656 - nChainStartTime;   // Tue, 09 Nov 2021 02:57:36 GMT
 
-            unsigned char
-                nfactor;
+            unsigned char nfactor;
             if( !fTestNet )
             {     // nChainStartTime = 1367991200 is start
     		    if      ( nTime < (nChainStartTime + nSpanOf4 ) ) nfactor = 4;
@@ -222,17 +201,6 @@ public:
                 else if ( nTime < (nChainStartTime + nSpanOf18) ) nfactor = 18;
                 else if ( nTime < (nChainStartTime + nSpanOf19) ) nfactor = 19;
                 else if ( nTime < (nChainStartTime + nSpanOf20) ) nfactor = 20;
-                else if ( nTime < (nChainStartTime + nSpanOf21) ) nfactor = 21;
-                else if ( nTime < (nChainStartTime + nSpanOf22) ) nfactor = 22;
-                else if ( nTime < (nChainStartTime + nSpanOf23) ) nfactor = 23;
-                else if ( nTime < (nChainStartTime + nSpanOf24) ) nfactor = 24;
-                else if ( nTime < (nChainStartTime + nSpanOf25) ) nfactor = 25;
-              //  else if ( nTime < (nChainStartTime + nSpanOf26) ) nfactor = 26;
-                // uint_32 fails here
-              //  else if ( nTime < (nChainStartTime + nSpanOf27) ) nfactor = 27;
-              //  else if ( nTime < (nChainStartTime + nSpanOf28) ) nfactor = 28;
-              //  else if ( nTime < (nChainStartTime + nSpanOf29) ) nfactor = 29;
-              //  else if ( nTime < (nChainStartTime + nSpanOf30) ) nfactor = 30;
                 else
                     nfactor = MAXIMUM_N_FACTOR;
             }
@@ -252,16 +220,10 @@ public:
             oldBlock.timestamp = nTime;
             oldBlock.bits = nBits;
             oldBlock.nonce = nNonce;
-            if(
-               !scrypt_hash(
-                           CVOIDBEGIN(oldBlock),
-                           sizeof(old_block_header),
-                           UINTBEGIN(thash),
-                           nfactor
-                          )
-              )
+            if (!scrypt_hash(CVOIDBEGIN(oldBlock), sizeof(old_block_header),
+                             UINTBEGIN(thash), nfactor))
             {
-                thash = 0;  // perhaps? should error("lack of memory for scrypt hash?");
+              thash = 0;  // perhaps? should error("lack of memory for scrypt hash?");
             }
         }
 		return thash;
@@ -269,18 +231,16 @@ public:
 
     bool IsHeaderDifferent() const
     {
-        if(
-           (nVersion == previousBlockHeader.version)
-           && (hashPrevBlock == previousBlockHeader.prev_block)
-           && (hashMerkleRoot == previousBlockHeader.merkle_root)
-           && (nTime == previousBlockHeader.timestamp)
-           && (nBits == previousBlockHeader.bits)
-           && (nNonce == previousBlockHeader.nonce)
-          )
-        {
-            return false;
-        }
-        return true;
+      if ((nVersion == previousBlockHeader.version) &&
+          (hashPrevBlock == previousBlockHeader.prev_block) &&
+          (hashMerkleRoot == previousBlockHeader.merkle_root) &&
+          (nTime == previousBlockHeader.timestamp) &&
+          (nBits == previousBlockHeader.bits) &&
+          (nNonce == previousBlockHeader.nonce))
+      {
+        return false;
+      }
+      return true;
     }
 
     uint256 GetHash(int blockHeight = 0) const
@@ -430,7 +390,7 @@ public:
     ::int64_t GetMaxTransactionTime() const
     {
         ::int64_t maxTransactionTime = 0;
-        BOOST_FOREACH(const CTransaction& tx, vtx)
+        for(const CTransaction& tx : vtx)
             maxTransactionTime = std::max(maxTransactionTime, (::int64_t)tx.nTime);
         return maxTransactionTime;
     }
@@ -438,7 +398,7 @@ public:
     uint256 BuildMerkleTree() const
     {
         vMerkleTree.clear();
-        BOOST_FOREACH(const CTransaction& tx, vtx)
+        for(const CTransaction& tx : vtx)
             vMerkleTree.push_back(tx.GetHash());
         int j = 0;
         for (int nSize = (int)vtx.size(); nSize > 1; nSize = (nSize + 1) / 2)
@@ -474,7 +434,7 @@ public:
     {
         if (nIndex == -1)
             return 0;
-        BOOST_FOREACH(const uint256& otherside, vMerkleBranch)
+        for(const uint256& otherside : vMerkleBranch)
         {
             if (nIndex & 1)
                 hash = Hash(BEGIN(otherside), END(otherside), BEGIN(hash), END(hash));

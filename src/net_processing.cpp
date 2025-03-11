@@ -1354,7 +1354,7 @@ inline void static SendBlockTransactions(const CBlock& block, const BlockTransac
     connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::BLOCKTXN, resp));
 }
 
-bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<CBlockHeader>& headers, bool punish_duplicate_invalid)
+bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<CBlockHeader>& headers, const CChainParams& chainparams, bool punish_duplicate_invalid)
 {
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     size_t nCount = headers.size();
@@ -1483,56 +1483,59 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<C
                 return error("non-continuous headers sequence");
             }
             hashLastBlock = header.GetHash();
+        }
 
-            // If we don't have the last header, then they'll have given us
-            // something new (if these headers are valid).
-            if (mapBlockIndex.find(hashLastBlock) == mapBlockIndex.end()) {
-                received_new_header = true;
-            }
+        // If we don't have the last header, then they'll have given us
+        // something new (if these headers are valid).
+        if (mapBlockIndex.find(hashLastBlock) == mapBlockIndex.end()) {
+            received_new_header = true;
+        }
+    }
 
-            CValidationState state;
-            if (!header.AcceptBlockHeader(state, &pindexLast)) {
-                int nDoS;
-                if (state.IsInvalid(nDoS)) {
-                    if (nDoS > 0)
-                        Misbehaving(pfrom->GetId(), nDoS);
-                    if (punish_duplicate_invalid && mapBlockIndex.find(header.GetHash()) != mapBlockIndex.end()) {
-                        // Goal: don't allow outbound peers to use up our outbound
-                        // connection slots if they are on incompatible chains.
-                        //
-                        // We ask the caller to set punish_invalid appropriately based
-                        // on the peer and the method of header delivery (compact
-                        // blocks are allowed to be invalid in some circumstances,
-                        // under BIP 152).
-                        // Here, we try to detect the narrow situation that we have a
-                        // valid block header (ie it was valid at the time the header
-                        // was received, and hence stored in mapBlockIndex) but know the
-                        // block is invalid, and that a peer has announced that same
-                        // block as being on its active chain.
-                        // Disconnect the peer in such a situation.
-                        //
-                        // Note: if the header that is invalid was not accepted to our
-                        // mapBlockIndex at all, that may also be grounds for
-                        // disconnecting the peer, as the chain they are on is likely
-                        // to be incompatible. However, there is a circumstance where
-                        // that does not hold: if the header's timestamp is more than
-                        // 2 hours ahead of our current time. In that case, the header
-                        // may become valid in the future, and we don't want to
-                        // disconnect a peer merely for serving us one too-far-ahead
-                        // block header, to prevent an attacker from splitting the
-                        // network by mining a block right at the 2 hour boundary.
-                        //
-                        // TODO: update the DoS logic (or, rather, rewrite the
-                        // DoS-interface between validation and net_processing) so that
-                        // the interface is cleaner, and so that we disconnect on all the
-                        // reasons that a peer's headers chain is incompatible
-                        // with ours (eg block->nVersion softforks, MTP violations,
-                        // etc), and not just the duplicate-invalid case.
-                        pfrom->fDisconnect = true;
-                    }
-                    return error("invalid header received");
-                }
+    CValidationState state;
+    CBlockHeader first_invalid_header;
+    if (!ProcessNewBlockHeaders(headers, state, chainparams, &pindexLast, &first_invalid_header)) {
+        int nDoS;
+        if (state.IsInvalid(nDoS)) {
+            LOCK(cs_main);
+            if (nDoS > 0) {
+                Misbehaving(pfrom->GetId(), nDoS);
             }
+            if (punish_duplicate_invalid && mapBlockIndex.find(first_invalid_header.GetHash()) != mapBlockIndex.end()) {
+                // Goal: don't allow outbound peers to use up our outbound
+                // connection slots if they are on incompatible chains.
+                //
+                // We ask the caller to set punish_invalid appropriately based
+                // on the peer and the method of header delivery (compact
+                // blocks are allowed to be invalid in some circumstances,
+                // under BIP 152).
+                // Here, we try to detect the narrow situation that we have a
+                // valid block header (ie it was valid at the time the header
+                // was received, and hence stored in mapBlockIndex) but know the
+                // block is invalid, and that a peer has announced that same
+                // block as being on its active chain.
+                // Disconnect the peer in such a situation.
+                //
+                // Note: if the header that is invalid was not accepted to our
+                // mapBlockIndex at all, that may also be grounds for
+                // disconnecting the peer, as the chain they are on is likely
+                // to be incompatible. However, there is a circumstance where
+                // that does not hold: if the header's timestamp is more than
+                // 2 hours ahead of our current time. In that case, the header
+                // may become valid in the future, and we don't want to
+                // disconnect a peer merely for serving us one too-far-ahead
+                // block header, to prevent an attacker from splitting the
+                // network by mining a block right at the 2 hour boundary.
+                //
+                // TODO: update the DoS logic (or, rather, rewrite the
+                // DoS-interface between validation and net_processing) so that
+                // the interface is cleaner, and so that we disconnect on all the
+                // reasons that a peer's headers chain is incompatible
+                // with ours (eg block->nVersion softforks, MTP violations,
+                // etc), and not just the duplicate-invalid case.
+                pfrom->fDisconnect = true;
+            }
+            return error("invalid header received");
         }
     }
 
@@ -1664,7 +1667,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<C
     return true;
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
 {
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
@@ -2756,7 +2759,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         // disconnect the peer if it is using one of our outbound connection
         // slots.
         bool should_punish = !pfrom->fInbound && !pfrom->m_manual_connection;
-        return ProcessHeadersMessage(pfrom, connman, headers, should_punish);
+        return ProcessHeadersMessage(pfrom, connman, headers, chainparams, should_punish);
     }
 
     else if (strCommand == NetMsgType::BLOCK)
@@ -3060,6 +3063,7 @@ static bool SendRejectsAndCheckIfBanned(CNode* pnode, CConnman* connman)
 
 bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc)
 {
+    const CChainParams& chainparams = Params();
     // Message format
     //  (4) message start
     //  (12) command
@@ -3131,7 +3135,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     bool fRet = false;
     try
     {
-        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, connman, interruptMsgProc);
+        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc);
         if (interruptMsgProc)
             return false;
         if (!pfrom->vRecvGetData.empty())

@@ -25,6 +25,7 @@
 #endif
 #include "streams.h"
 #include "consensus/validation.h"
+#include "pow.h"
 
 using namespace json_spirit;
 

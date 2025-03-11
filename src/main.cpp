@@ -78,7 +78,6 @@ boost::filesystem::path GetBlockPosFilename(const CDiskBlockPos &pos, const char
 const unsigned int nStakeMaxAge = 90 * nSecondsPerDay;  // 60 * 60 * 24 * 90; // 90 days as full weight
 const unsigned int nOnedayOfAverageBlocks = (nSecondsPerDay / nStakeTargetSpacing) / 10;  // the old 144
 const unsigned int nStakeMinAge = 30 * nSecondsPerDay; // 60 * 60 * 24 * 30, 30 days as zero time weight
-const unsigned int nStakeTargetSpacing = 1 * nSecondsperMinute; // 1 * 60; // 1-minute stake spacing
 const unsigned int nPoWTargetSpacing = nStakeTargetSpacing;
 const unsigned int nModifierInterval = 6 * nSecondsPerHour; // 6 * 60 * 60, time to elapse before new modifier is computed
 
@@ -121,37 +120,8 @@ int
 CCriticalSection cs_vpwalletRegistered;
 vector<CWallet*> vpwalletRegistered;
 
-// are all of these undocumented numbers a function of Nfactor?  Cpu power? Other???
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-CBigNum bnProofOfWorkLimit(~uint256(0) >> 20);
-#else
-CBigNum bnProofOfWorkLimit(~uint256(0) >> 3);
-#endif
-
 CBigNum bnProofOfStakeLegacyLimit(~uint256(0) >> 24); 
 CBigNum bnProofOfStakeLimit(~uint256(0) >> 27); 
-CBigNum bnProofOfStakeHardLimit(~uint256(0) >> 30); // fix minimal proof of stake difficulty at 0.25
-
-//  CBigNum bnProofOfWorkLimitTestNet(~uint256(0) >> 16);    
-//                           IS IT A MAX OR A MIN? 
-//                           IS IT AN EASE? 
-//                           IS IT A DIFFICULTY??????
-//                           can you say NFD
-
-                                            // this is the number used by TestNet 0.5.0.x
-const uint256 nPoWeasiestTargetLimitTestNet = ((~uint256( 0 )) >> 3 );
-CBigNum bnProofOfWorkLimitTestNet( nPoWeasiestTargetLimitTestNet );
-
-static CBigNum bnProofOfStakeTestnetLimit(~uint256(0) >> 20);
-
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-static CBigNum bnInitialHashTarget(~uint256(0) >> 20);
-#else
-static CBigNum bnInitialHashTarget(~uint256(0) >> 8);
-#endif
-
-static CBigNum bnInitialHashTargetTestNet(~uint256(0) >> 8);    // test
-//static CBigNum bnInitialHashTarget(~uint256(0) >> 16);
 
 int
     nCoinbaseMaturityInBlocks = 500;
@@ -769,21 +739,6 @@ CBigNum inline GetProofOfStakeLimit(int nHeight, unsigned int nTime)
     return nSubsidy;
 }
 
-static const ::int64_t nTargetTimespan = 7 * 24 * 60 * 60;  // one week
-static const ::int64_t nTargetSpacingWorkMax = 12 * nStakeTargetSpacing; // 2-hour BS, 12 minutes!
-
-// get proof of work blocks max spacing according to hard-coded conditions
-::int64_t inline GetTargetSpacingWorkMax(int nHeight, unsigned int nTime)
-{
-    if(nTime > TARGETS_SWITCH_TIME)
-        return 3 * nStakeTargetSpacing; // 30 minutes on mainNet since 20 Jul 2013 00:00:00
-
-    if(fTestNet)
-        return 3 * nStakeTargetSpacing; // 15 minutes on testNet
-
-    return 12 * nStakeTargetSpacing; // 2 hours otherwise
-}
-
 //
 // maximum nBits value could possible be required nTime after
 //
@@ -821,239 +776,6 @@ unsigned int ComputeMinStake(unsigned int nBase, ::int64_t nTime, unsigned int n
     return ComputeMaxBits(GetProofOfStakeLimit(0, nBlockTime), nBase, nTime);
 }
 
-// ppcoin: find last block index up to pindex
-// Wouldn't this be a more correct comment?
-// ppcoin: find last block index of type fProofOfStake up to and including pindex?
-const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfStake)
-{
-    while (
-           pindex &&                                    // there is a block
-           pindex->pprev &&                             // there is a previous block 
-           (pindex->IsProofOfStake() != fProofOfStake)  // the block is a !fProofOfStake
-          )
-        pindex = pindex->pprev;                         // go back
-    return pindex;
-}
-const CBlockIndex* GetLastPoSBlockIndex( const CBlockIndex* pindex )
-{
-    return GetLastBlockIndex( pindex, true);
-}
-const CBlockIndex* GetLastPoWBlockIndex( const CBlockIndex* pindex )
-{
-    return GetLastBlockIndex( pindex, false);
-}
-
-/*****************/
-static unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, ::int64_t nFirstBlockTime)
-{
-    //if (params.fPowNoRetargeting)   // disguised testnet, again
-    //    return pindexLast->nBits;
-
-    const ::int64_t 
-        nAverageBlockperiod = nStakeTargetSpacing;  // 1 minute in seconds
-
-    ::int64_t 
-        nActualTimespan = pindexLast->GetBlockTime() - nFirstBlockTime,
-        nNominalTimespan = nDifficultyInterval * nAverageBlockperiod;
-
-    if (nActualTimespan < nNominalTimespan / 4)
-        nActualTimespan = nNominalTimespan / 4;
-    if (nActualTimespan > nNominalTimespan * 4)
-        nActualTimespan = nNominalTimespan * 4;
-
-    // Calculate to target 1 minute/block for the previous 'epoch's 21,000 blocks
-    uint256 
-        bnPrev = CBigNum().SetCompact(pindexLast->nBits).getuint256();
-
-    CBigNum
-        bnPrevTarget;
-    bnPrevTarget.setuint256( bnPrev );
-
-    bnPrevTarget *= nActualTimespan;
-    bnPrevTarget /= nNominalTimespan;
-
-    // Calculate maximum target of all blocks, it corresponds to 1/3 highest difficulty (or 3 minimum ease)
-    uint256 bnMaximum = CBigNum().SetCompact(nMinEase).getuint256();
-    CBigNum bnMaximumTarget;
-    bnMaximumTarget.setuint256(bnMaximum);
-    bnMaximumTarget *= 3;
-
-    // Compare 1/3 highest difficulty with 0.4.9 min difficulty (genesis block difficulty), choose the higher
-    if (bnMaximumTarget > bnProofOfWorkLimit)
-    {
-        bnMaximumTarget = bnProofOfWorkLimit;
-    }
-
-    // Choose higher difficulty (higher difficulty have smaller target)
-    CBigNum bnNewTarget = min(bnPrevTarget, bnMaximumTarget);
-    LogPrintf(
-                 "PoW new constant target %s\n"
-                 ""
-                 , CBigNum( bnNewTarget ).getuint256().ToString().substr(0,16)
-                );
-
-    // Update minimum ease for next target calculation
-    ::uint32_t nNewEase = bnNewTarget.GetCompact();
-    if (nMinEase > nNewEase)
-    {
-        nMinEase = nNewEase;
-    }
-
-    return nNewEase;
-}
-/*****************/
-static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool fProofOfStake)
-{
-	// First three blocks will have following targets:
-	// genesis (zeroth) block: bnEasiestTargetLimit
-	// first block and second block: bnInitialHashTarget (~uint256(0) >> 8)
-    CBigNum 
-        bnEasiestTargetLimit = fProofOfStake? 
-                            (fTestNet? 
-                             bnProofOfStakeTestnetLimit: //bnProofOfStakeHardLimit: // <<<< test
-                             bnProofOfStakeHardLimit
-                            ): 
-                            (fTestNet?
-                             bnProofOfWorkLimitTestNet:
-                             bnProofOfWorkLimit
-                            );
-
-    if (pindexLast == NULL)
-    {
-        return bnEasiestTargetLimit.GetCompact(); // genesis (zeroth) block
-    }
-
-    const CBlockIndex
-        * pindexPrev = GetLastBlockIndex(pindexLast, fProofOfStake);
-
-    if (pindexPrev->pprev == NULL)
-    {
-        return bnInitialHashTarget.GetCompact(); // first block
-    }
-
-    const CBlockIndex
-        * pindexPrevPrev = GetLastBlockIndex(pindexPrev->pprev, fProofOfStake);
-
-    if (pindexPrevPrev->pprev == NULL)
-        return bnInitialHashTarget.GetCompact(); // second block
-
-    // so there are more than 3 blocks
-    ::int64_t
-        nActualSpacing = pindexPrev->GetBlockTime() - pindexPrevPrev->GetBlockTime();
-
-    CBigNum 
-        bnNewTarget;
-    ::uint32_t
-        nEase = pindexLast->nBits;
-    CBigNum
-        bnNew;
-    uint256
-        nTarget = CBigNum().SetCompact( nEase ).getuint256(),
-        nRelativeTargetDelta = (nTarget >> 3);  // i.e. 1/8 of the current target
-
-    // Yacoind version 1.0.0
-    if ((pindexLast->nHeight + 1) >= nMainnetNewLogicBlockNumber)
-    {
-        // Recalculate nMinEase if reorg through two or many epochs
-        if (recalculateMinEase)
-        {
-            recalculateMinEase = false;
-            ::int32_t currentEpochNumber = chainActive.Tip()->nHeight / nEpochInterval;
-            ::int32_t firstEpochNumberSinceHardfork = nMainnetNewLogicBlockNumber / nEpochInterval;
-            ::uint32_t tempMinEase = bnEasiestTargetLimit.GetCompact();
-            for (int i = firstEpochNumberSinceHardfork; i < currentEpochNumber; i++)
-            {
-                CBlockIndex* pbi = chainActive[i*nEpochInterval];
-                if (tempMinEase > pbi->nBits)
-                {
-                    tempMinEase = pbi->nBits;
-                }
-            }
-            nMinEase = tempMinEase;
-        }
-
-        // From block 3, the target is only recalculated every 21000 blocks
-        int nBlocksToGo = (pindexLast->nHeight + 1) % nDifficultyInterval;
-        // Only change once per difficulty adjustment interval, first at block 21000
-        if (0 != nBlocksToGo) // the btc-ltc 2016 blocks
-        {                     // don't change the target
-            bnNewTarget.setuint256(nTarget);
-
-            LogPrintf("PoW constant target %s"
-                         " (%d block"
-                         "%s to go)"
-                         "\n"
-                         "",
-                         nTarget.ToString().substr(0, 16), (nDifficultyInterval - nBlocksToGo),
-                         (1 != nBlocksToGo) ? "s" : "");
-            return bnNewTarget.GetCompact();
-        }
-        else // actually do a DAA
-        {
-            // Hardfork happens
-            if ((pindexLast->nHeight + 1) == nMainnetNewLogicBlockNumber)
-            {
-                return bnProofOfWorkLimit.GetCompact();
-            }
-            // Go back by what we want to be 14 days worth of blocks
-            const CBlockIndex* pindexFirst = pindexLast;
-
-            if (pindexLast->nHeight > nDifficultyInterval + 1)
-            {
-                for (int i = 0; pindexFirst && i < nDifficultyInterval; ++i)
-                    pindexFirst = pindexFirst->pprev;
-            }
-            else // get block #0
-            {
-                CBlockIndex* pbi = chainActive.Genesis();
-                CBlock block;
-
-                block.ReadFromDisk(pbi);
-                pindexFirst = pbi;
-            }
-            Yassert(pindexFirst);
-
-            return CalculateNextWorkRequired(pindexLast, pindexFirst->GetBlockTime());
-        }
-    }
-    else
-    {
-        // ppcoin: target change every block
-        // ppcoin: retarget with exponential moving toward target spacing
-        //
-        // I don't understand how this code is an exponential weighting?
-        //
-        bnNewTarget.SetCompact(pindexPrev->nBits);
-
-        ::int64_t
-            nTargetSpacing = fProofOfStake?
-                             nStakeTargetSpacing :
-                             min(                       // what is this PoW value?
-                                nTargetSpacingWorkMax,  //12 minutes
-                                (::int64_t) nStakeTargetSpacing *
-                                            (1 + pindexLast->nHeight - pindexPrev->nHeight)
-                                );
-
-        ::int64_t
-            nInterval = nTargetTimespan / nTargetSpacing;   // this is the one week / nTargetSpacing
-
-        bnNewTarget *= (((nInterval - 1) * nTargetSpacing) + nActualSpacing + nActualSpacing);
-        bnNewTarget /=  ((nInterval + 1) * nTargetSpacing);
-    }
-
-    if (bnNewTarget > bnEasiestTargetLimit)
-        bnNewTarget = bnEasiestTargetLimit;
-
-    return bnNewTarget.GetCompact();
-}
-//_____________________________________________________________________________
-// yacoin2015 upgrade: penalize ignoring ProofOfStake blocks with high difficulty.
-// requires adjusted PoW-PoS ratio (GetSpacingThreshold), PoW target moving average (nBitsMA)
-unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfStake)
-{
-    return GetNextTargetRequired044( pindexLast, fProofOfStake );
-}
-
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params)
 {
     CBigNum bnTarget;
@@ -1078,30 +800,6 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
 int GetNumBlocksOfPeers()
 {
     return std::max(cPeerBlockCounts.median(), Checkpoints::GetTotalBlocksEstimate());
-}
-
-bool IsInitialBlockDownload()
-{
-    // Once this function has returned false, it must remain false.
-    static std::atomic<bool> latchToFalse{false};
-    // Optimization: pre-test latch before taking the lock.
-    if (latchToFalse.load(std::memory_order_relaxed))
-        return false;
-
-    LOCK(cs_main);
-    if (latchToFalse.load(std::memory_order_relaxed))
-        return false;
-    if (chainActive.Tip() == nullptr)
-        return true;
-    if (chainActive.Height() < Checkpoints::GetTotalBlocksEstimate())
-        return true;
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    if (chainActive.Tip()->GetBlockTime() < (GetTime() - nMaxTipAge))
-        return true;
-#endif
-    LogPrintf("Leaving InitialBlockDownload (latching to false)\n");
-    latchToFalse.store(true, std::memory_order_relaxed);
-    return false;
 }
 
 bool VerifySignature(

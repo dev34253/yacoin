@@ -61,7 +61,7 @@ extern ::int64_t nUpTimeStart;
 
 // PoS constants
 extern const unsigned int nStakeMaxAge, nOnedayOfAverageBlocks;
-extern const unsigned int nStakeMinAge, nStakeTargetSpacing, nModifierInterval;
+extern const unsigned int nStakeMinAge, nModifierInterval;
 
 static const unsigned int MAX_ORPHAN_TRANSACTIONS = 10000;
 static const ::int64_t MAX_MINT_PROOF_OF_WORK = 100 * COIN;
@@ -132,7 +132,6 @@ void ThreadScriptCheck(void* parg);
 void ThreadScriptCheckQuit();
 
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params& params);
-unsigned int GetNextTargetRequired(const CBlockIndex* pindexLast, bool fProofOfStake);
 ::int64_t GetProofOfStakeReward(::int64_t nCoinAge, unsigned int nBits, ::int64_t nTime, bool bCoinYearOnly=false);
 ::int64_t GetProofOfStakeReward(::int64_t nCoinAge);
 
@@ -141,7 +140,6 @@ unsigned int ComputeMinStake(unsigned int nBase, ::int64_t nTime, unsigned int n
 int GetNumBlocksOfPeers();
 std::string GetWarnings(std::string strFor);
 bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock);
-const CBlockIndex* GetLastBlockIndex(const CBlockIndex* pindex, bool fProofOfStake);
 
 void StakeMinter(CWallet *pwallet);
 void ResendWalletTransactions();
