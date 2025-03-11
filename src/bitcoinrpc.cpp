@@ -1253,9 +1253,6 @@ static const CRPCCommand vRPCCommands[] =
     { "getwalletinfo",          &getwalletinfo,          true,   false },
     { "getrpcinfo",             &getrpcinfo,             true,   false },
     { "setmocktime",            &setmocktime,            true,   false },
-#ifdef WIN32
-    { "getblockcountt",         &getcurrentblockandtime, true,   false },
-#endif
     { "getyacprice",            &getYACprice,            true,   false },
     // network start
     { "getconnectioncount",     &getconnectioncount,     true,   false },

@@ -16,6 +16,7 @@
  #include "wallet.h"
 #endif
 #include "streams.h"
+#include "tx_verify.h"
 
 #include <iostream>
 #include <fstream>
@@ -251,7 +252,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             CWalletTx& wtx = pwallet->mapWallet[hash];
             ssValue >> wtx;
             CValidationState state;
-            if (wtx.CheckTransaction(state) && (wtx.GetHash() == hash))
+            if (CheckTransaction(wtx, state) && (wtx.GetHash() == hash))
                 wtx.BindWallet(pwallet);
             else
             {

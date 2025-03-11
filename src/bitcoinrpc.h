@@ -268,8 +268,7 @@ extern json_spirit::Value getbestblockhash(const json_spirit::Array& params, boo
 extern json_spirit::Value gettimechaininfo(const json_spirit::Array& params, bool fHelp); // in rpcblockchain.cpp
 extern json_spirit::Value getblockcount(const json_spirit::Array& params, bool fHelp); // in rpcblockchain.cpp
 extern json_spirit::Value getwalletinfo(const json_spirit::Array& params, bool fHelp); // in rpcblockchain.cpp
-extern bool isThisInGMT( time_t & tBlock, struct tm  &aTimeStruct );
-extern json_spirit::Value getcurrentblockandtime(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value getblockcount(const json_spirit::Array& params, bool fHelp); // in rpcblockchain.cpp
 extern json_spirit::Value getYACprice(const json_spirit::Array& params, bool fHelp);
 extern double doGetYACprice(void);
 extern json_spirit::Value getdifficulty(const json_spirit::Array& params, bool fHelp);

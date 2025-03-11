@@ -1413,7 +1413,7 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
         while (pindex)
         {
             CBlock block;
-            block.ReadFromDisk(pindex, true, false);
+            ReadBlockFromDisk(block, pindex, Params().GetConsensus());
             for(CTransaction& tx : block.vtx)
             {
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
@@ -1444,17 +1444,6 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
     return ret;
 }
 
-/**********************************************************
-// not used anywhere????????
-int CWallet::ScanForWalletTransaction(const uint256& hashTx)
-{
-    CTransaction tx;
-    tx.ReadFromDisk(COutPoint(hashTx, 0));
-    if (AddToWalletIfInvolvingMe(tx, NULL, true, true))
-        return 1;
-    return 0;
-}
-***********************************************************/
 void CWallet::ReacceptWalletTransactions()
 {
     bool fRepeat = true;
@@ -1579,7 +1568,7 @@ void CWallet::ResendWalletTransactions()
         {
             CWalletTx& wtx = *item.second;
             CValidationState state;
-            if (wtx.CheckTransaction(state))
+            if (CheckTransaction(wtx, state))
                 wtx.RelayWalletTransaction();
             else
                 LogPrintf("ResendWalletTransactions() : CheckTransaction failed for transaction %s\n", wtx.GetHash().ToString());

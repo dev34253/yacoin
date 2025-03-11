@@ -13,6 +13,7 @@
 #include "primitives/block.h"
 #include "timestamps.h"
 #include "uint256.h"
+#include "validation.h"
 
 #include <algorithm>
 
@@ -190,8 +191,8 @@ static unsigned int GetNextTargetRequired044(const CBlockIndex* pindexLast, bool
             {
                 CBlockIndex* pbi = chainActive.Genesis();
                 CBlock block;
-
-                block.ReadFromDisk(pbi);
+                const Consensus::Params& consensusParams = Params().GetConsensus();
+                ReadBlockFromDisk(block, pbi, consensusParams);
                 pindexFirst = pbi;
             }
             Yassert(pindexFirst);

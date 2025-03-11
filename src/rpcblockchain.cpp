@@ -321,178 +321,7 @@ Value getYACprice(const Array& params, bool fHelp)
     return sTemp;
 }
 
-#ifdef WIN32
-# ifdef _MSC_VER
-bool 
-    isThisInGMT( time_t & tBlock, struct tm  &aTimeStruct )
-{
-    bool
-        fIsGMT = true;  // the least of all evils
 
-    struct tm
-        gmTimeStruct;
-
-    if( !_localtime64_s( &aTimeStruct, &tBlock ) )   // OK
-    {   
-        // are we in GMT?      to          from
-        if( !_gmtime64_s( &gmTimeStruct, &tBlock ) )   // OK we can compare
-        {
-            if( 
-               // tBlock != _mkgmtime( &aTimeStruct ) 
-               ( (aTimeStruct).tm_hour != (gmTimeStruct).tm_hour ) ||  // .tm_hour && .tm_mday
-               ( (aTimeStruct).tm_mday != (gmTimeStruct).tm_mday )     // .tm_hour && .tm_mday
-              )
-                fIsGMT = false;
-          //else    // we are in GMT to begin with
-        }
-      //else    // _gmtime64_s() errored
-    }
-    //else //_localtime64_s() errored     
-    return fIsGMT;
-}
-# endif
-
-Value getcurrentblockandtime(const Array& params, bool fHelp)
-{
-    if (
-        fHelp || 
-        (0 != params.size())
-       )
-        throw runtime_error(
-            "getblockcountt "
-            "Returns the number of blocks in the longest block chain and "
-            "the time of the latest block.  And in local time if different than GMT/UTC."
-                           );
-
-    CBlockIndex* pbi = chainActive.Tip();
-
-    CBlock block;
-
-    block.ReadFromDisk(pbi);
-
-    struct tm
-        aTimeStruct;
-
-    time_t 
-        tBlock = block.GetBlockTime();
-
-# ifdef _MSC_VER
-    char 
-        buff[30];
-
-    bool
-        fIsGMT = true;  // the least of all evils
-    fIsGMT = isThisInGMT( tBlock, aTimeStruct );
-/**************    
-    struct tm
-        gmTimeStruct;
-    if( !_localtime64_s( &aTimeStruct, &tBlock ) )   // OK
-    {   
-        // are we in GMT?      to          from
-        if( !_gmtime64_s( &gmTimeStruct, &tBlock ) )   // OK we can compare
-        {
-            if( 
-               // tBlock != _mkgmtime( &aTimeStruct ) 
-               ( (aTimeStruct).tm_hour != (gmTimeStruct).tm_hour ) ||  // .tm_hour && .tm_mday
-               ( (aTimeStruct).tm_mday != (gmTimeStruct).tm_mday )     // .tm_hour && .tm_mday
-              )
-                fIsGMT = false;
-          //else    // we are in GMT to begin with
-        }
-      //else    // _gmtime64_s() errored
-    }
-    //else //_localtime64_s() errored     
-**********************/
-# else
-    struct tm
-        *paTimeStruct,
-        *pgmTimeStruct;
-    char 
-        *pbuff;
-    bool
-        fIsGMT = true;  // the least of all evils
-    std::string
-        strS;
-
-    if( NULL != ( paTimeStruct = localtime( &tBlock ) ) )   // OK
-    {
-        aTimeStruct = *paTimeStruct;
-        if( NULL != (pgmTimeStruct = gmtime( &tBlock ) ) )   // OK we can compare
-        {
-            if( 
-               ( (aTimeStruct).tm_hour != (*pgmTimeStruct).tm_hour ) ||  // .tm_hour && .tm_mday
-               ( (aTimeStruct).tm_mday != (*pgmTimeStruct).tm_mday )     // .tm_hour && .tm_mday
-              )
-                fIsGMT = false;
-            else    // we are in GMT to begin with
-                strS = "Appear to be in GMT!?";   // this is what hits
-        }
-        else    // _gmtime64_s() errored
-            strS = "gmtime() errored!?";
-    }
-    else //_localtime64_s() errored     
-        strS = "localtime() errored!?";
-    if( true == fIsGMT )
-    {
-        fIsGMT = false;
-        return strS;
-    }
-# endif
-    if( fIsGMT )// for GMT or having errored trying to convert from GMT
-    {
-        std::string
-            strS = strprintf(
-                             "%d %s"
-                             "\n"
-                             "",
-                             int(chainActive.Height()),
-                             DateTimeStrFormat(
-                                  " %Y-%m-%d %H:%M:%S",
-                                  block.GetBlockTime()
-                                              ).c_str()
-                            );
-        return strS;
-    }    
-    // let's cook up local time
-# ifdef _MSC_VER
-    asctime_s( buff, sizeof(buff), &aTimeStruct );
-    buff[ 24 ] = '\0';      // let's wipe out the \n
-    LogPrintf("%s\n", buff );
-
-    std::string
-        strS = strprintf(
-                         "%d %s (local %s)"
-                         "\n"
-                         "",
-                         int(chainActive.Height()),
-                         DateTimeStrFormat(
-                              " %Y-%m-%d %H:%M:%S",
-                              block.GetBlockTime()
-                                          ).c_str()
-                         , 
-                         buff
-                        );
-# else
-    pbuff = asctime( &aTimeStruct );
-    if( '\n' == pbuff[ 24 ] )
-        pbuff[ 24 ] = '\0';
-    LogPrintf("%s\n", pbuff);
-    strS = strprintf(
-                     "%d %s (local %s)"
-                     "\n"
-                     "",
-                     int(chainActive.Height()),
-                     DateTimeStrFormat(
-                          " %Y-%m-%d %H:%M:%S",
-                          block.GetBlockTime()
-                                      ).c_str()
-                     , 
-                     pbuff
-                    );
-# endif
-    return strS;
-}
-#endif
 
 Value getdifficulty(const Array& params, bool fHelp)
 {
@@ -581,7 +410,7 @@ Value getblock(const Array& params, bool fHelp)
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[hash];
-    block.ReadFromDisk(pblockindex, true);
+    ReadBlockFromDisk(block, pblockindex, Params().GetConsensus());
 
     return blockToJSON(block, pblockindex, params.size() > 1 ? params[1].get_bool() : false);
 }
@@ -601,8 +430,7 @@ Value getblocktimes(const Array& params, bool fHelp)
 
     CBlock block;
     CBlockIndex* pblockindex = mapBlockIndex[ chainActive.Tip()->blockHash ];
-
-    block.ReadFromDisk(pblockindex, true);
+    ReadBlockFromDisk(block, pblockindex, Params().GetConsensus());
 
     uint32_t
         nDelta,
@@ -613,7 +441,7 @@ Value getblocktimes(const Array& params, bool fHelp)
     for( int nCount = nNumber; nCount >= 1; --nCount )
     {
         pblockindex = pblockindex->pprev;
-        block.ReadFromDisk(pblockindex, true);
+        ReadBlockFromDisk(block, pblockindex, Params().GetConsensus());
         nDelta = nTimeOfBlock - block.GetBlockTime();
         ret.push_back( strprintf( "%d", nDelta) );
         nTotal += nDelta;
@@ -652,7 +480,7 @@ Value getblockbynumber(const Array& params, bool fHelp)
     uint256 hash = *pblockindex->phashBlock;
 
     pblockindex = mapBlockIndex[hash];
-    block.ReadFromDisk(pblockindex, true);
+    ReadBlockFromDisk(block, pblockindex, Params().GetConsensus());
 
     return blockToJSON(block, pblockindex, params.size() > 1 ? params[1].get_bool() : false);
 }
