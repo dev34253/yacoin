@@ -168,6 +168,17 @@ class CdoTempoaryMockTime {
 //_____________________________________________________________________________
 
 /* NEW IMPLEMENTATION START */
+int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
+{
+    int64_t nOldTime = pblock->nTime;
+    int64_t nNewTime = std::max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
+
+    if (nOldTime < nNewTime)
+        pblock->nTime = nNewTime;
+
+    return nNewTime - nOldTime;
+}
+
 BlockAssembler::BlockAssembler()
 {
     // Largest block you're willing to create
@@ -469,7 +480,14 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
     } else {
       pblock->nVersion = CURRENT_VERSION_of_block;
     }
+
     // here we can fiddle with time to try to make block generation easier
+    pblock->nTime = GetAdjustedTime();
+    const int64_t nMedianTimePast = pindexPrev->GetMedianTimePast();
+    // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
+    nLockTimeCutoff = (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST)
+                       ? nMedianTimePast
+                       : pblock->GetBlockTime();
 
     // Add transaction to block
     int nPackagesSelected = 0;
@@ -486,21 +504,11 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
         LogPrintf("CreateNewBlock (): total size %" PRI64u "\n", nBlockSize);
 
     // Fill in block header and subsidy for coinbase
-    pblock->nBits = GetNextTargetRequired(pindexPrev, false);
-
-    pblock->vtx[0].vout[0].nValue = GetProofOfWorkReward(pblock->nBits);
-
     pblock->hashPrevBlock = pindexPrev->GetBlockHash();
-    const int64_t nMedianTimePast = pindexPrev->GetMedianTimePast();
-    pblock->nTime = max(nMedianTimePast + 1, pblock->GetMaxTransactionTime());
-    pblock->nTime = max(pblock->GetBlockTime(), pindexPrev->GetBlockTime() - nMaxClockDrift);
-    pblock->UpdateTime(pindexPrev);
+    UpdateTime(pblock, Params().GetConsensus(), pindexPrev);
+    pblock->nBits = GetNextTargetRequired(pindexPrev, false);
     pblock->nNonce = 0;
-
-    // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
-    nLockTimeCutoff = (STANDARD_LOCKTIME_VERIFY_FLAGS & LOCKTIME_MEDIAN_TIME_PAST)
-                       ? nMedianTimePast
-                       : pblock->GetBlockTime();
+    pblock->vtx[0].vout[0].nValue = GetProofOfWorkReward(pblock->nBits);
 
     LogPrintf(
         "CreateNewBlock() packages: %.2fms (%d packages, %d updated "
