@@ -2038,7 +2038,6 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
  */
 bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &state, FlushStateMode mode, int nManualPruneHeight) {
 //    int64_t nMempoolUsage = mempool.DynamicMemoryUsage();
-    LogPrintf("TACA ===> FlushStateToDisk with mode = %d\n", mode);
     LOCK(cs_main);
     static int64_t nLastWrite = 0;
     static int64_t nLastFlush = 0;
@@ -2105,7 +2104,7 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
         bool fPeriodicFlush = mode == FLUSH_STATE_PERIODIC && nNow > nLastFlush + (int64_t)DATABASE_FLUSH_INTERVAL * 1000000;
         // Combine all conditions that result in a full cache flush.
         fDoFullFlush = (mode == FLUSH_STATE_ALWAYS) || fCacheLarge || fCacheCritical || fPeriodicFlush || fFlushForPrune;
-        LogPrintf("TACA ===> FlushStateToDisk fDoFullFlush = %d\n", fDoFullFlush);
+
         if (!fDoFullFlush && IsInitialBlockDownload() && nNow > nLastFlush + (int64_t) DATABASE_FLUSH_INTERVAL_INITIAL_SYNC * 1000000) {
             LogPrintf("Flushing to database sooner for inial block sync\n");
             fDoFullFlush = true;
@@ -2113,7 +2112,6 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
 
         // Write blocks and block index to disk.
         if (fDoFullFlush || fPeriodicWrite) {
-            LogPrintf("TACA ===> FlushStateToDisk Write blocks and block index to disk\n");
             // Depend on nMinDiskSpace to ensure we can write block index
             if (!CheckDiskSpace(0))
                 return state.Error("out of disk space");
@@ -2145,7 +2143,6 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
         }
         // Flush best chain related state. This can only be done if the blocks / block index write was also done.
         if (fDoFullFlush) {
-            LogPrintf("TACA ===> FlushStateToDisk Flush best chain related state\n");
             // Typical Coin structures on disk are around 48 bytes in size.
             // Pushing a new one to the database can cause it to be written
             // twice (once in the log, and once in the tables). This is already
@@ -2159,7 +2156,6 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
 
             /** YAC_TOKEN START */
             // Flush the tokenstate
-            LogPrintf("TACA ===> FlushStateToDisk Flush the tokenstate\n");
             if (AreTokensDeployed()) {
                 // Flush the tokenstate
                 auto currentActiveTokenCache = GetCurrentTokenCache();
@@ -2190,7 +2186,6 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
 }
 
 void FlushStateToDisk() {
-    LogPrintf("TACA ===> FlushStateToDisk\n");
     CValidationState state;
     const CChainParams& chainparams = Params();
     FlushStateToDisk(chainparams, state, FLUSH_STATE_ALWAYS);

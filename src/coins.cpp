@@ -104,7 +104,6 @@ void AddCoins(CCoinsViewCache& cache, const CTransaction &tx, int nHeight, uint2
     if (AreTokensDeployed()) {
         if (tokensCache) {
             if (tx.IsNewToken()) { // This works are all new root tokens, sub token, and restricted tokens
-                LogPrintf("TACA ===> AddCoins, Add new token to cache\n");
                 CNewToken token;
                 std::string strAddress;
                 TokenFromTransaction(tx, token, strAddress);

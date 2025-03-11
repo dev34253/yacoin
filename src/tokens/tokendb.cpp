@@ -29,7 +29,6 @@ CTokensDB::CTokensDB(size_t nCacheSize, bool fMemory, bool fWipe) : CDBWrapper(G
 
 bool CTokensDB::WriteTokenData(const CNewToken &token, const int nHeight, const uint256& blockHash)
 {
-    LogPrintf("TACA ===> CTokensDB::WriteTokenData(), add new token %s to token database\n", token.strName);
     CDatabasedTokenData data(token, nHeight, blockHash);
     return Write(std::make_pair(TOKEN_FLAG, token.strName), data);
 }
@@ -45,7 +44,7 @@ bool CTokensDB::WriteAddressTokenQuantity(const std::string &address, const std:
 
 bool CTokensDB::ReadTokenData(const std::string& strName, CNewToken& token, int& nHeight, uint256& blockHash)
 {
-    LogPrintf("TACA ===> CTokensDB::ReadTokenData(), Read token %s from token database\n", strName);
+
     CDatabasedTokenData data;
     bool ret =  Read(std::make_pair(TOKEN_FLAG, strName), data);
 
@@ -54,7 +53,7 @@ bool CTokensDB::ReadTokenData(const std::string& strName, CNewToken& token, int&
         nHeight = data.nHeight;
         blockHash = data.blockHash;
     }
-    LogPrintf("TACA ===> CTokensDB::ReadTokenData(), Read token %s from token database successfully\n", strName);
+
     return ret;
 }
 
@@ -69,7 +68,6 @@ bool CTokensDB::ReadAddressTokenQuantity(const std::string &address, const std::
 
 bool CTokensDB::EraseTokenData(const std::string& tokenName)
 {
-    LogPrintf("TACA ===> CTokensDB::ReadTokenData(), Erase token %s from token database\n", tokenName);
     return Erase(std::make_pair(TOKEN_FLAG, tokenName));
 }
 
@@ -173,7 +171,6 @@ bool CTokensDB::LoadTokens()
 
 bool CTokensDB::TokenDir(std::vector<CDatabasedTokenData>& tokens, const std::string filter, const size_t count, const long start)
 {
-    LogPrintf("TACA ===> CTokensDB::TokenDir Start\n");
     FlushStateToDisk();
 
     std::unique_ptr<CDBIterator> pcursor(NewIterator());
