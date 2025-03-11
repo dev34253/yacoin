@@ -81,7 +81,8 @@ namespace Checkpoints
         ( 1750000, std::make_pair(uint256("0xd1806e1fa74087ef43fe0a8b37e558c1f9b523529f17b8cb91ca619dd90e4eec"), 1502581866) )
         ( 1800000, std::make_pair(uint256("0x00000670c3f5b879d8b2b0c403c824af78cf95f536d2da66b198efcf9d9ff355"), 1538122573) )
         ( 1850000, std::make_pair(uint256("0x00000e1b13b2b08d36598664d508a38500c59fcff4cf3d3746de0738b6eef457"), 1581200065) )
-        ( 1890005, std::make_pair(uint256("0x00000dfd4e2286daee184a67b9266e40b8c1c5daf3a29a2321fd23e6c2da62e2"), 1619355152) )
+        ( 1890005, std::make_pair(uint256("0x00000dfd4e2286daee184a67b9266e40b8c1c5daf3a29a2321fd23e6c2da62e2"), 1619355152) ) // Heliopolis hardfork at block 1890000
+        ( 1911210, std::make_pair(uint256("000009e3b1cc249ba64c3749430b96cf0f3c25acbb2bd3cb0b69e3b28288607b"), 1682210698) ) // Support token at block 1911210
 #endif
         ;
 
