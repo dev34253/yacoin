@@ -267,6 +267,7 @@ BITCOIN_QT_CPP = \
   bloom.cpp \
   threadinterrupt.cpp \
   crypter.cpp \
+  compressor.cpp \
   key.cpp \
   db.cpp \
   fs.cpp \

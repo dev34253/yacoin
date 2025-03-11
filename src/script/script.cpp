@@ -352,7 +352,7 @@ bool EvalScript(
     valtype vchPushValue;
     vector<bool> vfExec;
     vector<valtype> altstack;
-    if (script.size() > 10000)
+    if (script.size() > MAX_SCRIPT_SIZE)
         return false;
     int nOpCount = 0;
 
@@ -369,7 +369,7 @@ bool EvalScript(
                 return false;
             if (vchPushValue.size() > MAX_SCRIPT_ELEMENT_SIZE)
                 return false;
-            if (opcode > OP_16 && ++nOpCount > 201)
+            if (opcode > OP_16 && ++nOpCount > MAX_OPS_PER_SCRIPT)
                 return false;
 
             if (opcode == OP_CAT ||
@@ -1068,10 +1068,10 @@ bool EvalScript(
                         return false;
 
                     int nKeysCount = CScriptNum(stacktop(-i)).getint();
-                    if (nKeysCount < 0 || nKeysCount > 20)
+                    if (nKeysCount < 0 || nKeysCount > MAX_PUBKEYS_PER_MULTISIG)
                         return false;
                     nOpCount += nKeysCount;
-                    if (nOpCount > 201)
+                    if (nOpCount > MAX_OPS_PER_SCRIPT)
                         return false;
                     int ikey = ++i;
                     i += nKeysCount;
@@ -1140,7 +1140,7 @@ bool EvalScript(
             }
 
             // Size limits
-            if (stack.size() + altstack.size() > 1000)
+            if (stack.size() + altstack.size() > MAX_STACK_SIZE)
                 return false;
         }
     }
@@ -2320,7 +2320,7 @@ unsigned int CScript::GetSigOpCount(bool fAccurate) const
             if (fAccurate && lastOpcode >= OP_1 && lastOpcode <= OP_16)
                 n += DecodeOP_N(lastOpcode);
             else
-                n += 20;
+                n += MAX_PUBKEYS_PER_MULTISIG;
         }
         lastOpcode = opcode;
     }

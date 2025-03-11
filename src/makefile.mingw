@@ -236,6 +236,7 @@ obj/merkleblock.o \
 obj/blockencodings.o \
 obj/checkpoints.o \
 obj/crypter.o \
+obj/compressor.o \
 obj/db.o \
 obj/fs.o \
 obj/validationinterface.o \

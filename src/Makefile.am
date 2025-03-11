@@ -75,6 +75,7 @@ libyacoin_common_a_SOURCES= \
     bloom.cpp \
     threadinterrupt.cpp \
     crypter.cpp \
+    compressor.cpp \
     key.cpp \
     db.cpp \
     fs.cpp \
