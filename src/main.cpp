@@ -17,7 +17,7 @@
 #endif
 
 #ifndef BITCOIN_TXDB_H
- #include "txdb-leveldb.h"
+ #include "txdb.h"
 #endif
 
 #ifndef BITCOIN_INIT_H

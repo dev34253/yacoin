@@ -30,7 +30,7 @@
 //#include "utilmoneystr.h"
 #include "utilstrencodings.h"
 #include "validationinterface.h"
-#include "txdb-leveldb.h"
+#include "txdb.h"
 #include "checkpoints.h"
 #include "miner.h"
 

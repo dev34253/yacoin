@@ -112,7 +112,7 @@ message(Building with LevelDB transaction index)
 DEFINES += USE_LEVELDB
 INCLUDEPATH += src/leveldb/include src/leveldb/helpers
 LIBS += $$PWD/src/leveldb/libleveldb.a $$PWD/src/leveldb/libmemenv.a
-SOURCES += src/txdb-leveldb.cpp
+SOURCES += src/txdb.cpp
 genleveldb.target = .genleveldb
 genleveldb.commands = touch .genleveldb; cd src/leveldb && { make clean; TARGET_OS=NATIVE_WINDOWS OPT=\"-msse2\" make libleveldb.a libmemenv.a; }
 PRE_TARGETDEPS += .genleveldb
@@ -192,7 +192,7 @@ HEADERS += \
     src/key.h \
     src/db.h \
     src/dbwrapper.h \
-    src/txdb-leveldb.h \
+    src/txdb.h \
     src/tinyformat.h \
     src/walletdb.h \
     src/script/script.h \
@@ -248,7 +248,7 @@ HEADERS += \
     src/qt/multisiginputentry.h \
     src/qt/multisigdialog.h
 
-#    src/txdb-leveldb.cpp \
+#    src/txdb.cpp \
 
 SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/qt/transactiontablemodel.cpp \

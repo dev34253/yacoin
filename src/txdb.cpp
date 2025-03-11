@@ -10,7 +10,7 @@
 
 #include "addressindex.h"
 #include "checkpoints.h"
-#include "txdb-leveldb.h"
+#include "txdb.h"
 #include "kernel.h"
 #include "streams.h"
 #include "net_processing.h"

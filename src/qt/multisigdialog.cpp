@@ -19,7 +19,7 @@
 #include "wallet.h"
 #include "walletmodel.h"
 #include "streams.h"
-#include "txdb-leveldb.h"
+#include "txdb.h"
 #include "net_processing.h"
 
 MultisigDialog::MultisigDialog(QWidget *parent) : QWidget(parent), ui(new Ui::MultisigDialog), model(0)

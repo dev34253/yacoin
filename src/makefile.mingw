@@ -283,7 +283,7 @@ obj/sync.o \
 obj/strnlen.o \
 obj/transaction.o \
 obj/dbwrapper.o \
-obj/txdb-leveldb.o \
+obj/txdb.o \
 obj/util.o \
 obj/utilstrencodings.o \
 obj/utiltime.o \
@@ -304,11 +304,11 @@ test check: test_yacoin.exe FORCE
 # None of this code below works! At all!!
 # I built leveldb libraries from the Qt build, which does work!
 
-#SOURCES += src/txdb-leveldb.cpp  
-#OBJS += obj/txdb-leveldb.o
+#SOURCES += src/txdb.cpp  
+#OBJS += obj/txdb.o
 leveldb/libleveldb.a:
 	cd leveldb; TARGET_OS=NATIVE_WINDOWS make libleveldb.a libmemenv.a; cd ..
-#obj/txdb-leveldb.o	: txdb-leveldb.cpp
+#obj/txdb.o	: txdb.cpp
 #	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 # @echo TEST LEVELDB $(DEFS)
 ######################

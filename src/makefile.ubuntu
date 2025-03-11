@@ -127,7 +127,7 @@ xLDFLAGS=$(LDHARDENING) $(LDFLAGS)
 
 OBJS= \
     obj/dbwrapper.o \
-    obj/txdb-leveldb.o \
+    obj/txdb.o \
     obj/alert.o \
     obj/version.o \
     obj/checkpoints.o \
