@@ -47,7 +47,6 @@
 #include "amount.h"
 #include "utilstrencodings.h"
 
-/* TACA: NEW CODE BEGIN */
 // Application startup time (used for uptime calculation)
 int64_t GetStartupTime();
 
@@ -337,7 +336,6 @@ template <typename Callable> void TraceThread(const char* name,  Callable func)
 }
 
 std::string CopyrightHolders(const std::string& strPrefix);
-/* TACA: NEW CODE END */
 
 //THEREFORE
 const int COINdecimalPower = 16;     // i.e. log10( COIN )

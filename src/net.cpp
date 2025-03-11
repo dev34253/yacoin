@@ -42,7 +42,6 @@
 #include <list>
 #include <vector>
 
-/* TACA: NEW CODE BEGIN */
 // Dump addresses to peers.dat and banlist.dat every 15 minutes (900s)
 #define DUMP_ADDRESSES_INTERVAL 900
 
@@ -2908,7 +2907,6 @@ uint64_t CConnman::CalculateKeyedNetGroup(const CAddress& ad) const
 
     return GetDeterministicRandomizer(RANDOMIZER_ID_NETGROUP).Write(vchNetGroup.data(), vchNetGroup.size()).Finalize();
 }
-/* TACA: NEW CODE END */
 
 #ifdef _MSC_VER
 #include "msvc_warnings.pop.h"

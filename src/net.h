@@ -40,7 +40,6 @@
 class CScheduler;
 class CNode;
 
-/* TACA: NEW CODE BEGIN */
 namespace boost {
     class thread_group;
 } // namespace boost

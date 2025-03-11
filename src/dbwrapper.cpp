@@ -93,7 +93,6 @@ static leveldb::Options GetOptions(size_t nCacheSize)
 
 CDBWrapper::CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory, bool fWipe, bool obfuscate)
 {
-    LogPrintf("TACA ===> CDBWrapper::CDBWrapper access LevelDB %s\n", path.string());
     penv = nullptr;
     readoptions.verify_checksums = true;
     iteroptions.verify_checksums = true;

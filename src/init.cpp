@@ -375,8 +375,10 @@ std::string HelpMessage()
     strUsage += HelpMessageOpt("-loadblock=<file>", _("Imports blocks from external blk000??.dat file on startup"));
     strUsage += HelpMessageOpt("-maxorphantx=<n>", strprintf(_("Keep at most <n> unconnectable transactions in memory (default: %u)"), DEFAULT_MAX_ORPHAN_TRANSACTIONS));
     strUsage += HelpMessageOpt("-par=<n>", _("Set the number of script verification threads (1-16, 0=auto, default: 0)"));
-    strUsage += HelpMessageOpt("-reindex-chainstate", _("Rebuild chain state from the currently indexed blocks"));
+    strUsage += HelpMessageOpt("-reindex-fast", _("Rebuild chain state and block index from the blk*.dat files on disk without recalculating block hash"));
     strUsage += HelpMessageOpt("-reindex", _("Rebuild chain state and block index from the blk*.dat files on disk"));
+    strUsage += HelpMessageOpt("-txindex", strprintf(_("Maintain a full transaction index, used by the getrawtransaction rpc call (default: %u)"), DEFAULT_TXINDEX));
+    strUsage += HelpMessageOpt("-blockhashindex", strprintf(_("Maintain a block hash index, used to avoid recalculating block hash when reading block data from disk (default: %u)"), DEFAULT_BLOCKHASHINDEX));
 
     strUsage += HelpMessageGroup(_("Connection options:"));
     strUsage += HelpMessageOpt("-addnode=<ip>", _("Add a node to connect to and attempt to keep the connection open"));
@@ -1065,9 +1067,9 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // ********************************************************* Step 7: load block chain
 
-    fReindex = gArgs.GetBoolArg("-reindex", false);
-    bool fReindexChainState = gArgs.GetBoolArg("-reindex-chainstate", false);
-    LogPrintf("Param fReindex = %d, fReindexChainState = %d\n", fReindex, fReindexChainState);
+    bool fReindexFast = gArgs.GetBoolArg("-reindex-fast", false);
+    fReindex = fReindexFast ? fReindexFast : gArgs.GetBoolArg("-reindex", false);
+    LogPrintf("Param fReindex = %d, fReindexFast = %d\n", fReindex, fReindexFast);
 
     nMainnetNewLogicBlockNumber = gArgs.GetArg("-testnetNewLogicBlockNumber", mainnetNewLogicBlockNumber);
     nTokenSupportBlockNumber = gArgs.GetArg("-tokenSupportBlockNumber", tokenSupportBlockNumber);
@@ -1117,11 +1119,12 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
             CBlockTreeDB *pTempBlockTree = new CBlockTreeDB(nBlockTreeDBCache, false, false, false);
             pTempBlockTree->BuildMapHashFromOldDB();
             delete pTempBlockTree;
+            fReindexFast = true;
             fReindex = true;
         }
     }
 
-    std::string additionalInfo = fReindex ? "(reindex block index and chainstate)" : fReindexChainState ? "(reindex chainstate)" : "";
+    std::string additionalInfo = fReindexFast ? "(reindex block index and chainstate in fast mode)" : fReindex ? "(reindex block index and chainstate in slow mode)" : "";
     LogPrintf("Loading block index %s ...\n", additionalInfo);
     bool fLoaded = false;
     while (!fLoaded && !fRequestShutdown)
@@ -1140,7 +1143,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
                 UnloadBlockIndex();
 
                 // Build map hash to avoid hash calculation and speed up the process
-                if (fReindex) {
+                if (fReindexFast) {
                     pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, false);
                     pblocktree->BuildMapHash();
                 }
@@ -1152,7 +1155,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
                 pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReset);
 
                 // Build block hash index to avoid hash calculation and speed up the process
-                if (fReindex) {
+                if (fReindexFast) {
                     pblocktree->BuildBlockHashIndex();
                 }
 
@@ -1212,13 +1215,13 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 
                 // Check for changed -txindex state
                 if (fTxIndex != gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX)) {
-                    strLoadError = _("You need to rebuild the database using -reindex to change -txindex");
+                    strLoadError = _("You need to rebuild the database using -reindex-fast or -reindex to change -txindex");
                     break;
                 }
 
                 // Check for changed -addressindex state
                 if (fAddressIndex != gArgs.GetBoolArg("-addressindex", DEFAULT_ADDRESSINDEX)) {
-                    strLoadError = _("You need to rebuild the database using -reindex-chainstate to change -addressindex");
+                    strLoadError = _("You need to rebuild the database using -reindex-fast or -reindex to change -addressindex");
                     break;
                 }
 
@@ -1241,19 +1244,19 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 
                 // At this point we're either in reindex or we've loaded a useful
                 // block tree into mapBlockIndex!
-                pcoinsdbview = new CCoinsViewDB(nCoinDBCache, false, fReset || fReindexChainState);
+                pcoinsdbview = new CCoinsViewDB(nCoinDBCache, false, fReset);
                 pcoinscatcher = new CCoinsViewErrorCatcher(pcoinsdbview);
 
-                // ReplayBlocks is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
+                // ReplayBlocks is a no-op if we cleared the coinsviewdb with -reindex-fast or -reindex
                 if (!ReplayBlocks(chainparams, pcoinsdbview)) {
-                    strLoadError = _("Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate.");
+                    strLoadError = _("Unable to replay blocks. You will need to rebuild the database using -reindex-fast or -reindex.");
                     break;
                 }
 
                 // The on-disk coinsdb is now in a good state, create the cache
                 pcoinsTip = new CCoinsViewCache(pcoinscatcher);
 
-                bool is_coinsview_empty = fReset || fReindexChainState || pcoinsTip->GetBestBlock().IsNull();
+                bool is_coinsview_empty = fReset || pcoinsTip->GetBestBlock().IsNull();
                 if (!is_coinsview_empty) {
                     // LoadChainTip sets chainActive based on pcoinsTip's best block
                     if (!LoadChainTip(chainparams)) {
@@ -1320,7 +1323,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 //            if (!fReset) {
 //                bool fRet = uiInterface.ThreadSafeQuestion(
 //                    strLoadError + ".\n\n" + _("Do you want to rebuild the block database now?"),
-//                    strLoadError + ".\nPlease restart with -reindex or -reindex-chainstate to recover.",
+//                    strLoadError + ".\nPlease restart with -reindex-fast or -reindex to recover.",
 //                    "", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
 //                if (fRet) {
 //                    fReindex = true;

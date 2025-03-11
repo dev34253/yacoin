@@ -758,7 +758,6 @@ static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMes
 
     // Store blockhash to avoid recalculating block hash (very slow !!!) when reading block data from disk
     uint256 hash = block.GetHash();
-    LogPrintf("TACA ===> WriteBlockToDisk(): write block hash %s to block hash index\n", hash.ToString());
     if (fBlockHashIndex && !pblocktree->WriteBlockHash(pos, hash))
     {
         LogPrintf("WriteBlockToDisk(): Can't WriteBlockHash for block %s\n", hash.ToString());
@@ -4101,7 +4100,7 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                     continue;
             } catch (const std::exception&e) {
                 // no valid block header found; don't complain
-                LogPrintf("TACA ===> LoadExternalBlockFile, exception %s\n", e.what());
+                LogPrintf("LoadExternalBlockFile, exception %s\n", e.what());
                 break;
             }
             try {
@@ -4131,7 +4130,6 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                     mapHash.insert(std::make_pair(sha256HashBlock, hash));
                 }
 
-                LogPrintf("TACA ===> LoadExternalBlockFile, processing block %s\n", hash.ToString());
                 // detect out of order blocks, and store them for later
                 if (hash != chainparams.GetConsensus().hashGenesisBlock && mapBlockIndex.find(block.hashPrevBlock) == mapBlockIndex.end()) {
                     LogPrint(BCLog::REINDEX, "%s: Out of order block %s, parent %s not known\n", __func__, hash.ToString(),
@@ -4191,10 +4189,6 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
             } catch (const std::exception& e) {
                 LogPrintf("%s: Deserialize or I/O error - %s\n", __func__, e.what());
             }
-        }
-
-        if (!blkdat.eof()) {
-            LogPrintf("TACA ===> LoadExternalBlockFile, ERROR: blkdat has not ended yet !!!\n");
         }
     } catch (const std::runtime_error& e) {
         AbortNode(std::string("System error: ") + e.what());

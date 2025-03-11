@@ -241,11 +241,6 @@ public:
     ::int64_t nMoneySupply;
     ::uint32_t nFlags;  // ppcoin: block index flags
 
-    // TACA: OLD CODE BEGIN
-//    CBlockIndex* pnext;
-//    ::uint32_t nBlockPos;
-//    bool validTx;
-    // TACA: OLD CODE END
     enum
     {
         BLOCK_PROOF_OF_STAKE = (1 << 0), // is proof-of-stake block
@@ -427,7 +422,7 @@ public:
     CBlockIndex* GetAncestor(int height);
     const CBlockIndex* GetAncestor(int height) const;
 
-    // TACA: Specific for YAC BEGIN
+    // yac: Specific for YAC BEGIN
     uint256 GetSHA256Hash() const
     {
         CBlockHeader blockHeader = GetBlockHeader();
@@ -475,16 +470,14 @@ public:
         if (fGeneratedStakeModifier)
             nFlags |= BLOCK_STAKE_MODIFIER;
     }
-    // TACA: Specific for YAC END
+    // yac: Specific for YAC END
 
-    // TACA: OLD CODE BEGIN
     bool IsInMainChain() const;
 
     void print() const
     {
         LogPrintf("%s\n", ToString());
     }
-    // TACA: OLD CODE END
 };
 
 arith_uint256 GetBlockProof(const CBlockIndex& block);

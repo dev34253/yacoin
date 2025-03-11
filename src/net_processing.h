@@ -3,7 +3,6 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-/* TACA: NEW CODE START */
 #ifndef BITCOIN_NET_PROCESSING_H
 #define BITCOIN_NET_PROCESSING_H
 
@@ -114,7 +113,6 @@ void ThreadHashCalculationQuit();
 
 /* Wallet functions */
 void RelayTransaction(const CTransaction& tx, CConnman* connman);
-/* TACA: NEW CODE END */
 
 /** Thread types */
 enum threadId

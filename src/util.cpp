@@ -97,7 +97,6 @@
 #include <execinfo.h>
 #endif
 
-/* TACA: NEW CODE BEGIN */
 // Application startup time (used for uptime calculation)
 const int64_t nStartupTime = GetTime();
 
@@ -563,11 +562,6 @@ fs::path GetDefaultDataDir()
 static fs::path pathCached;
 static fs::path pathCachedNetSpecific;
 static CCriticalSection csPathCached;
-/* TACA: NEW CODE END */
-
-
-
-
 
 using std::map;
 using std::string;

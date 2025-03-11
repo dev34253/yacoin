@@ -577,7 +577,6 @@ public:
 
 }
 
-// TACA: OLD CODE START
 bool CBlockTreeDB::WriteBlockHash(const CDiskBlockIndex &blockindex)
 {
     return Write(make_pair(string("blockhash"), make_pair(blockindex.nFile, blockindex.nDataPos)), blockindex.GetBlockHash());
@@ -629,7 +628,6 @@ bool CBlockTreeDB::BuildMapHash()
 
 bool CBlockTreeDB::BuildMapHashFromOldDB()
 {
-    LogPrintf("TACA ===> CBlockTreeDB::BuildMapHashFromOldDB() Start\n");
     // The block index is an in-memory structure that maps hashes to on-disk
     // locations where the contents of the block can be found. Here, we scan it
     // out of the DB and into mapBlockIndex.
@@ -679,14 +677,12 @@ bool CBlockTreeDB::BuildMapHashFromOldDB()
 
         iterator->Next();
     }
-    LogPrintf("TACA ===> CBlockTreeDB::BuildMapHashFromOldDB() Completed, blockHashPos has length = %d.\n", blockHashPos.size());
     delete iterator;
     return true;
 }
 
 bool CBlockTreeDB::BuildBlockHashIndex()
 {
-    LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex() Start\n");
     int newStoredBlock = 0;
     int failedStoredBlock = 0;
     if (fBlockHashIndex)
@@ -695,21 +691,17 @@ bool CBlockTreeDB::BuildBlockHashIndex()
             if (!pblocktree->WriteBlockHash(blockPos, blockPos.hash))
             {
                 failedStoredBlock++;
-                LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex(): Can't WriteBlockHash for block %s\n",  blockPos.hash.ToString());
             }
             else
             {
-                LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex(): Stored block %s at pos (nFile = %d, nPos = %d)\n",  blockPos.hash.ToString(), blockPos.nFile, blockPos.nPos);
                 newStoredBlock++;
             }
         }
         blockHashPos.clear();
         blockHashPos.shrink_to_fit();  // Reduces the capacity
     }
-    LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex() Completed, newStoredBlock = %d, failedStoredBlock = %d\n", newStoredBlock, failedStoredBlock);
 }
 
-// TACA: OLD CODE END
 #ifdef _MSC_VER
 #include "msvc_warnings.pop.h"
 #endif

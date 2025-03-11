@@ -410,8 +410,7 @@ void UpdatePreferredDownload(CNode* node, CNodeState* state)
     nPreferredDownload -= state->fPreferredDownload;
 
     // Whether this node should be marked as a preferred download node.
-    // TODO: TACA Need to check if we need !node->fInbound here
-    // Solution: Allow to fetch from outbound connection as well if nPreferredDownload <= 8
+    // Allow to fetch from outbound connection as well if nPreferredDownload <= 8
     state->fPreferredDownload = (!node->fInbound || node->fWhitelisted || nPreferredDownload <= 8) && !node->fOneShot && !node->fClient;
 
     nPreferredDownload += state->fPreferredDownload;
@@ -428,9 +427,6 @@ void PushNodeVersion(CNode *pnode, CConnman* connman, int64_t nTime)
     CAddress addrYou = (addr.IsRoutable() && !IsProxy(addr) ? addr : CAddress(CService(), addr.nServices));
     CAddress addrMe = CAddress(CService(), nLocalNodeServices);
 
-    // TODO: TACA Need to check if fRelayTxes works with older client
-//    connman->PushMessage(pnode, CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERSION, PROTOCOL_VERSION, (uint64_t)nLocalNodeServices, nTime, addrYou, addrMe,
-//            nonce, strSubVersion, nNodeStartingHeight));
     connman->PushMessage(pnode, CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERSION, PROTOCOL_VERSION, (uint64_t)nLocalNodeServices, nTime, addrYou, addrMe,
             nonce, strSubVersion, nNodeStartingHeight, ::fRelayTxes));
 
@@ -1387,7 +1383,6 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<C
         // - Once a headers message is received that is valid and does connect,
         //   nUnconnectingHeaders gets reset back to 0.
         if (mapBlockIndex.find(headers[0].hashPrevBlock) == mapBlockIndex.end() && nCount < MAX_BLOCKS_TO_ANNOUNCE) {
-            // TODO: TACA Need to check this, only do this logic if the node isn't in IBD because in IBD, we only sync headers from only one peer
             if (!IsInitialBlockDownload()) {
                 nodestate->nUnconnectingHeaders++;
                 connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), uint256()));
@@ -2749,7 +2744,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         headers.resize(nCount);
         for (unsigned int n = 0; n < nCount; n++) {
             vRecv >> headers[n];
-            // TODO: TACA Need to check this
             ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
             ReadCompactSize(vRecv); // needed for vchBlockSig.
         }
@@ -3712,7 +3706,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             QueuedBlock &queuedBlock = state.vBlocksInFlight.front();
             int nOtherPeersWithValidatedDownloads = nPeersWithValidatedDownloads - (state.nBlocksInFlightValidHeaders > 0);
             // For YACoin, the header hash calculation might take much time when syncing header, it will block the process downloading block, so need to check pto->vProcessMsg.empty() here
-            // TODO: TACA Need to check if we need pto->vProcessMsg.empty() or pto->vRecvMsg.empty() here
             if (pto->vProcessMsg.empty() && nNow > state.nDownloadingSince + nPoWTargetSpacing * (BLOCK_DOWNLOAD_TIMEOUT_BASE + BLOCK_DOWNLOAD_TIMEOUT_PER_PEER * nOtherPeersWithValidatedDownloads)) {
                 LogPrintf("Timeout downloading block %s from peer=%d, disconnecting\n", queuedBlock.hash.ToString(), pto->GetId());
                 pto->fDisconnect = true;

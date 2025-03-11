@@ -67,7 +67,7 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, std::vect
         int nCoinHeight = (*prevHeights)[txinIndex];
 
         if (txin.nSequence & CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG) {
-            // TODO: TACA Enforce timelock according to median time
+            // TODO: Enforce timelock according to median time
             // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
 //            int64_t nCoinTime = block.GetAncestor(std::max(nCoinHeight-1, 0))->GetMedianTimePast();
             int64_t nCoinTime = block.GetAncestor(std::max(nCoinHeight-1, 0))->GetBlockTime();
@@ -96,7 +96,7 @@ std::pair<int, int64_t> CalculateSequenceLocks(const CTransaction &tx, std::vect
 bool EvaluateSequenceLocks(const CBlockIndex& block, std::pair<int, int64_t> lockPair)
 {
     assert(block.pprev);
-    // TODO: TACA Enforce timelock according to median time
+    // TODO: Enforce timelock according to median time
     // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
 //    int64_t nBlockTime = block.pprev->GetMedianTimePast();
     int64_t nBlockTime = block.pprev->GetBlockTime();
