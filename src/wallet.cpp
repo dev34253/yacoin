@@ -1134,7 +1134,6 @@ void CWalletTx::AddSupportingTransactions()
             for (unsigned int i = 0; i < vWorkQueue.size(); i++)
             {
                 uint256 hash = vWorkQueue[i];
-                LogPrintf("TACA ===> CWalletTx::AddSupportingTransactions Find previous tx %s\n", hash.ToString());
                 if (setAlreadyDone.count(hash))
                     continue;
                 setAlreadyDone.insert(hash);
@@ -1154,7 +1153,6 @@ void CWalletTx::AddSupportingTransactions()
                 }
                 else if (GetTransaction(hash, tx, blockHash, true))
                 {
-                    LogPrintf("TACA ===> CWalletTx::AddSupportingTransactions Found transaction %s\n", hash.ToString());
                     ;
                 }
                 else

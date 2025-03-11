@@ -157,7 +157,6 @@ int GetCoinbaseMaturityOffset()
 int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
 {
     CBlock blockTmp;
-    uint256 txHash = GetHash();
     if (pblock == NULL)
     {
         // Transaction index is required to get to block
@@ -167,11 +166,10 @@ int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
 
         // Read transaction position
         CDiskTxPos postx;
-        if (!pblocktree->ReadTxIndex(txHash, postx)) {
+        if (!pblocktree->ReadTxIndex(GetHash(), postx)) {
             return 0;
         }
 
-        LogPrintf("TACA ===> CMerkleTx::SetMerkleBranch : postx for tx %s is nFile %d, nPos %d, nTxOffset %d\n", txHash.ToString(), postx.nFile, postx.nPos, postx.nTxOffset);
         // Read block
         const Consensus::Params& consensusParams = Params().GetConsensus();
         if (!ReadBlockFromDisk(blockTmp, postx, consensusParams)) {
@@ -182,7 +180,6 @@ int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
 
     // Update the tx's hashBlock
     hashBlock = pblock->GetHash();
-    LogPrintf("TACA ===> CMerkleTx::SetMerkleBranch : Find tx %s on block %s\n", txHash.ToString(), hashBlock.ToString());
 
     // Locate the transaction
     for (nIndex = 0; nIndex < (int)pblock->vtx.size(); nIndex++)
