@@ -172,7 +172,6 @@ extern ::uint32_t nMinEase; // minimum ease corresponds to highest difficulty
 // Settings
 extern ::int64_t nTransactionFee;
 extern ::int64_t nMinimumInputValue;
-extern bool fUseFastIndex;
 extern bool fReindexOnlyHeaderSync;
 extern bool fReindexBlockIndex;
 extern bool fReindexToken;

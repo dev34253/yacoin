@@ -1,19 +1,18 @@
-// Copyright (c) 2009-2012 The Bitcoin Developers.
-// Copyright (c) 2023 The Yacoin Developers.
-// Authored by Google, Inc.
-// Distributed under the MIT/X11 software license, see the accompanying
+// Copyright (c) 2012-2016 The Bitcoin Core developers
+// Copyright (c) 2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-//#ifndef BITCOIN_MAIN_H
-// #include "main.h"
-//#endif
+
 #ifndef YACOIN_DBWRAPPER_H
 #define YACOIN_DBWRAPPER_H
 
+#include "clientversion.h"
+#include "fs.h"
+#include "serialize.h"
 #include "streams.h"
-
-#include <map>
-#include <string>
-#include <vector>
+#include "util.h"
+#include "utilstrencodings.h"
+#include "version.h"
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
@@ -21,222 +20,99 @@
 static const size_t DBWRAPPER_PREALLOC_KEY_SIZE = 64;
 static const size_t DBWRAPPER_PREALLOC_VALUE_SIZE = 1024;
 
-class CDBIterator;
-
-enum DatabaseType
-{
-    BLOCK_INDEX,   // Contains all information about CBlockIndex, CTxIndex, BlockHash, HashBestChain,
-    TOKEN_DATA,     // Contains token-related data
-	DB_TYPE_MAX
-};
-// Class that provides access to a LevelDB. Note that this class is frequently
-// instantiated on the stack and then destroyed again, so instantiation has to
-// be very cheap. Unfortunately that means, a CTxDB instance is actually just a
-// wrapper around some global state.
-//
-// A LevelDB is a key/value store that is optimized for fast usage on hard
-// disks. It prefers long read/writes to seeks and is based on a series of
-// sorted key/value mapping files that are stacked on top of each other, with
-// newer files overriding older files. A background thread compacts them
-// together when too many files stack up.
-//
-// Learn more: http://code.google.com/p/leveldb/
-class CDBWrapper
+class dbwrapper_error : public std::runtime_error
 {
 public:
+    dbwrapper_error(const std::string& msg) : std::runtime_error(msg) {}
+};
+
+class CDBWrapper;
+
+/** These should be considered an implementation detail of the specific database.
+ */
+namespace dbwrapper_private {
+
+/** Handle database error by throwing dbwrapper_error exception.
+ */
+void HandleError(const leveldb::Status& status);
+
+/** Work around circular dependency, as well as for testing in dbwrapper_tests.
+ * Database obfuscation should be considered an implementation detail of the
+ * specific database.
+ */
+const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapper &w);
+
+};
+
+/** Batch of changes queued to be written to a CDBWrapper */
+class CDBBatch
+{
+    friend class CDBWrapper;
+
+private:
+    const CDBWrapper &parent;
+    leveldb::WriteBatch batch;
+
+    CDataStream ssKey;
+    CDataStream ssValue;
+
+    size_t size_estimate;
+
+public:
     /**
-     * @param[in] dbType      Database type, it is used to decide location in the filesystem where leveldb data will be stored.
-     * @param[in] pszMode  	  Read/write mode
+     * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-	CDBWrapper(DatabaseType dbType, const char* pszMode="r+", bool fWipe=false);
-    ~CDBWrapper() {
-        // Note that this is not the same as Close() because it deletes only
-        // data scoped to this TxDB object.
-        delete activeBatch;
+    CDBBatch(const CDBWrapper &_parent) : parent(_parent), ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION), size_estimate(0) { };
+
+    void Clear()
+    {
+        batch.Clear();
+        size_estimate = 0;
     }
 
-    // Destroys the underlying shared global state accessed by this TxDB.
-    void Close();
-
-    bool TxnBegin();
-    bool TxnCommit();
-    bool TxnAbort()
+    template <typename K, typename V>
+    void Write(const K& key, const V& value)
     {
-        delete activeBatch;
-        activeBatch = NULL;
-        return true;
-    }
-
-protected:
-    leveldb::DB *pdb;  // Points to the global instance.
-    DatabaseType mDbType;
-
-    // A batch stores up writes and deletes for atomic application. When this
-    // field is non-NULL, writes/deletes go there instead of directly to disk.
-    leveldb::WriteBatch *activeBatch;
-    leveldb::Options options;
-    bool fReadOnly;
-    int nVersion;
-
-    // Returns true and sets (value,false) if activeBatch contains the given key
-    // or leaves value alone and sets deleted = true if activeBatch contains a
-    // delete for it.
-    bool ScanBatch(const CDataStream &key, std::string *value, bool *deleted) const;
-
-    CDBIterator *NewIterator();
-
-    template<typename K, typename T>
-    bool Read(const K& key, T& value)
-    {
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-        ssKey.reserve(1000);
+        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
-        std::string strValue;
+        leveldb::Slice slKey(ssKey.data(), ssKey.size());
 
-        bool readFromDb = true;
-        if (activeBatch)
-        {
-            // First we must search for it in the currently pending set of
-            // changes to the db. If not found in the batch, go on to read disk.
-            bool deleted = false;
-            readFromDb = ScanBatch(ssKey, &strValue, &deleted) == false;
-            if (deleted)
-            {
-                return false;
-            }
-        }
-        if (readFromDb)
-        {
-            leveldb::Status status = pdb->Get(
-                                              leveldb::ReadOptions(),
-                                              ssKey.str(),
-                                              &strValue
-                                             );
-            if (!status.ok())
-            {
-                if (status.IsNotFound())
-                    return false;
-                // Some unexpected error.
-#ifdef _MSC_VER
-                LogPrintf(
-                    "\n"
-                    "LevelDB (part1) read failure, status: "
-                    "%s"
-                    "\n"
-                    "",
-                    status.ToString());
-#else
-                LogPrintf("LevelDB read failure: %s\n", status.ToString());
-#endif
-                return false;
-            }
-        }
-        // Unserialize value
-        try
-        {
-            CDataStream ssValue(
-                                strValue.data(),
-                                strValue.data() + strValue.size(),
-                                SER_DISK,
-                                CLIENT_VERSION
-                               );
-            ssValue >> value;
-        }
-        catch (std::exception &e)
-        {
-#ifdef _MSC_VER
-            LogPrintf(
-                    "\n"
-                    "LevelDB (part2) read failure(?): "
-                    "%s"
-                    "\n"
-                    "",
-                    e.what()
-                  );
-#else
-            (void)e;
-#endif
-            return false;
-        }
-        return true;
-    }
-
-    template<typename K, typename T>
-    bool Write(const K& key, const T& value)
-    {
-        if (fReadOnly)
-        {
-            Yassert(!"Write called on database in read-only mode");
-        }
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-        ssKey.reserve(1000);
-        ssKey << key;
-        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
-        ssValue.reserve(10000);
+        ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssValue << value;
+        ssValue.Xor(dbwrapper_private::GetObfuscateKey(parent));
+        leveldb::Slice slValue(ssValue.data(), ssValue.size());
 
-        if (activeBatch) {
-            activeBatch->Put(ssKey.str(), ssValue.str());
-            return true;
-        }
-        leveldb::Status status = pdb->Put(leveldb::WriteOptions(), ssKey.str(), ssValue.str());
-        if (!status.ok()) {
-            LogPrintf("LevelDB write failure: %s\n", status.ToString());
-            return false;
-        }
-        return true;
+        batch.Put(slKey, slValue);
+        // LevelDB serializes writes as:
+        // - byte: header
+        // - varint: key length (1 byte up to 127B, 2 bytes up to 16383B, ...)
+        // - byte[]: key
+        // - varint: value length
+        // - byte[]: value
+        // The formula below assumes the key and value are both less than 16k.
+        size_estimate += 3 + (slKey.size() > 127) + slKey.size() + (slValue.size() > 127) + slValue.size();
+        ssKey.clear();
+        ssValue.clear();
     }
 
-    template<typename K>
-    bool Erase(const K& key)
+    template <typename K>
+    void Erase(const K& key)
     {
-        if (!pdb)
-            return false;
-        if (fReadOnly)
-        {
-            Yassert(!"Erase called on database in read-only mode");
-        }
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-        ssKey.reserve(1000);
+        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
-        if (activeBatch) {
-            activeBatch->Delete(ssKey.str());
-            return true;
-        }
-        leveldb::Status status = pdb->Delete(leveldb::WriteOptions(), ssKey.str());
-        return (status.ok() || status.IsNotFound());
+        leveldb::Slice slKey(ssKey.data(), ssKey.size());
+
+        batch.Delete(slKey);
+        // LevelDB serializes erases as:
+        // - byte: header
+        // - varint: key length
+        // - byte[]: key
+        // The formula below assumes the key is less than 16kB.
+        size_estimate += 2 + (slKey.size() > 127) + slKey.size();
+        ssKey.clear();
     }
 
-    template<typename K>
-    bool Exists(const K& key)
-    {
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-        ssKey.reserve(1000);
-        ssKey << key;
-        std::string unused;
-
-        if (activeBatch) {
-            bool deleted;
-            if (ScanBatch(ssKey, &unused, &deleted) && !deleted) {
-                return true;
-            }
-        }
-
-
-        leveldb::Status status = pdb->Get(leveldb::ReadOptions(), ssKey.str(), &unused);
-        return status.IsNotFound() == false;
-    }
-
-    bool ReadVersion(int& nVersion)
-    {
-        nVersion = 0;
-        return Read(std::string("version"), nVersion);
-    }
-
-    bool WriteVersion(int nVersion)
-    {
-        return Write(std::string("version"), nVersion);
-    }
+    size_t SizeEstimate() const { return size_estimate; }
 };
 
 class CDBIterator
@@ -255,7 +131,7 @@ public:
         parent(_parent), piter(_piter) { };
     ~CDBIterator();
 
-    bool Valid() const;
+    bool Valid();
 
     void SeekToFirst();
 
@@ -284,6 +160,7 @@ public:
         leveldb::Slice slValue = piter->value();
         try {
             CDataStream ssValue(slValue.data(), slValue.data() + slValue.size(), SER_DISK, CLIENT_VERSION);
+            ssValue.Xor(dbwrapper_private::GetObfuscateKey(parent));
             ssValue >> value;
         } catch (const std::exception&) {
             return false;
@@ -293,6 +170,173 @@ public:
 
     unsigned int GetValueSize() {
         return piter->value().size();
+    }
+
+};
+
+class CDBWrapper
+{
+    friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapper &w);
+private:
+    //! custom environment this database is using (may be nullptr in case of default environment)
+    leveldb::Env* penv;
+
+    //! database options used
+    leveldb::Options options;
+
+    //! options used when reading from the database
+    leveldb::ReadOptions readoptions;
+
+    //! options used when iterating over values of the database
+    leveldb::ReadOptions iteroptions;
+
+    //! options used when writing to the database
+    leveldb::WriteOptions writeoptions;
+
+    //! options used when sync writing to the database
+    leveldb::WriteOptions syncoptions;
+
+    //! the database itself
+    leveldb::DB* pdb;
+
+    //! a key used for optional XOR-obfuscation of the database
+    std::vector<unsigned char> obfuscate_key;
+
+    //! the key under which the obfuscation key is stored
+    static const std::string OBFUSCATE_KEY_KEY;
+
+    //! the length of the obfuscate key in number of bytes
+    static const unsigned int OBFUSCATE_KEY_NUM_BYTES;
+
+    std::vector<unsigned char> CreateObfuscateKey() const;
+
+public:
+    /**
+     * @param[in] path        Location in the filesystem where leveldb data will be stored.
+     * @param[in] nCacheSize  Configures various leveldb cache settings.
+     * @param[in] fMemory     If true, use leveldb's memory environment.
+     * @param[in] fWipe       If true, remove all existing data.
+     * @param[in] obfuscate   If true, store data obfuscated via simple XOR. If false, XOR
+     *                        with a zero'd byte array.
+     */
+    CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory = false, bool fWipe = false, bool obfuscate = false);
+    ~CDBWrapper();
+
+    template <typename K, typename V>
+    bool Read(const K& key, V& value) const
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey << key;
+        leveldb::Slice slKey(ssKey.data(), ssKey.size());
+
+        std::string strValue;
+        leveldb::Status status = pdb->Get(readoptions, slKey, &strValue);
+        if (!status.ok()) {
+            if (status.IsNotFound())
+                return false;
+            LogPrintf("LevelDB read failure: %s\n", status.ToString());
+            dbwrapper_private::HandleError(status);
+        }
+        try {
+            CDataStream ssValue(strValue.data(), strValue.data() + strValue.size(), SER_DISK, CLIENT_VERSION);
+            ssValue.Xor(obfuscate_key);
+            ssValue >> value;
+        } catch (const std::exception&) {
+            return false;
+        }
+        return true;
+    }
+
+    template <typename K, typename V>
+    bool Write(const K& key, const V& value, bool fSync = false)
+    {
+        CDBBatch batch(*this);
+        batch.Write(key, value);
+        return WriteBatch(batch, fSync);
+    }
+
+    template <typename K>
+    bool Exists(const K& key) const
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey << key;
+        leveldb::Slice slKey(ssKey.data(), ssKey.size());
+
+        std::string strValue;
+        leveldb::Status status = pdb->Get(readoptions, slKey, &strValue);
+        if (!status.ok()) {
+            if (status.IsNotFound())
+                return false;
+            LogPrintf("LevelDB read failure: %s\n", status.ToString());
+            dbwrapper_private::HandleError(status);
+        }
+        return true;
+    }
+
+    template <typename K>
+    bool Erase(const K& key, bool fSync = false)
+    {
+        CDBBatch batch(*this);
+        batch.Erase(key);
+        return WriteBatch(batch, fSync);
+    }
+
+    bool WriteBatch(CDBBatch& batch, bool fSync = false);
+
+    // not available for LevelDB; provide for compatibility with BDB
+    bool Flush()
+    {
+        return true;
+    }
+
+    bool Sync()
+    {
+        CDBBatch batch(*this);
+        return WriteBatch(batch, true);
+    }
+
+    CDBIterator *NewIterator()
+    {
+        return new CDBIterator(*this, pdb->NewIterator(iteroptions));
+    }
+
+    /**
+     * Return true if the database managed by this class contains no entries.
+     */
+    bool IsEmpty();
+
+    template<typename K>
+    size_t EstimateSize(const K& key_begin, const K& key_end) const
+    {
+        CDataStream ssKey1(SER_DISK, CLIENT_VERSION), ssKey2(SER_DISK, CLIENT_VERSION);
+        ssKey1.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey2.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey1 << key_begin;
+        ssKey2 << key_end;
+        leveldb::Slice slKey1(ssKey1.data(), ssKey1.size());
+        leveldb::Slice slKey2(ssKey2.data(), ssKey2.size());
+        uint64_t size = 0;
+        leveldb::Range range(slKey1, slKey2);
+        pdb->GetApproximateSizes(&range, 1, &size);
+        return size;
+    }
+
+    /**
+     * Compact a certain range of keys in the database.
+     */
+    template<typename K>
+    void CompactRange(const K& key_begin, const K& key_end) const
+    {
+        CDataStream ssKey1(SER_DISK, CLIENT_VERSION), ssKey2(SER_DISK, CLIENT_VERSION);
+        ssKey1.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey2.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey1 << key_begin;
+        ssKey2 << key_end;
+        leveldb::Slice slKey1(ssKey1.data(), ssKey1.size());
+        leveldb::Slice slKey2(ssKey2.data(), ssKey2.size());
+        pdb->CompactRange(&slKey1, &slKey2);
     }
 
 };

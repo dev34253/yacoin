@@ -15,6 +15,7 @@
 #include <boost/thread.hpp>
 #include <memory>
 
+// Keys of token database
 static const char TOKEN_FLAG = 'A';
 static const char TOKEN_ADDRESS_QUANTITY_FLAG = 'B';
 static const char ADDRESS_TOKEN_QUANTITY_FLAG = 'C';
@@ -24,8 +25,7 @@ static const char MEMPOOL_REISSUED_TX = 'Z';
 
 static size_t MAX_DATABASE_RESULTS = 50000;
 
-CTokensDB::CTokensDB(const char *pszMode, bool fWipe) :
-        CDBWrapper(TOKEN_DATA, pszMode, fWipe) {
+CTokensDB::CTokensDB(size_t nCacheSize, bool fMemory, bool fWipe) : CDBWrapper(GetDataDir() / "tokens", nCacheSize, fMemory, fWipe) {
 }
 
 bool CTokensDB::WriteTokenData(const CNewToken &token, const int nHeight, const uint256& blockHash)

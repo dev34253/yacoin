@@ -8,9 +8,16 @@
 #include "msvc_warnings.push.h"
 #endif
 
+#include "txdb.h"
+#include "hash.h"
+#include "random.h"
+#include "uint256.h"
+#include "util.h"
+#include "ui_interface.h"
+#include "init.h"
+
 #include "addressindex.h"
 #include "checkpoints.h"
-#include "txdb.h"
 #include "kernel.h"
 #include "streams.h"
 #include "net_processing.h"
@@ -18,6 +25,8 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <stdint.h>
+#include <boost/thread.hpp>
 
 #include <boost/version.hpp>
 #include <boost/filesystem.hpp>
@@ -35,42 +44,297 @@ using std::runtime_error;
 using std::string;
 using std::vector;
 
+// Keys of Block index database (blocks/index/*)
+static const char DB_BLOCK_FILES = 'f'; // File information record. Keeps track of the files storing the raw block data (blk????.dat), their sizes, and other related metadata
+static const char DB_BLOCK_INDEX = 'b'; // Block index record. Stores metadata about blocks, such as block headers, height, and status
+static const char DB_TXINDEX = 't';     // Transaction index record. Stores transaction information to enable fast lookups of transactions by their IDs
+static const char DB_FLAG = 'F';        // Currently defined flags include: 'txindex': Whether the transaction index is enabled.
+static const char DB_REINDEX_FLAG = 'R';    // whether we're in the process of reindexing.
+static const char DB_LAST_BLOCK = 'l';      // The last block file number used
 static const char DB_ADDRESSINDEX = 'a';
 static const char DB_ADDRESSUNSPENTINDEX = 'u';
 
-// CDB subclasses are created and destroyed VERY OFTEN. That's why
-// we shouldn't treat this as a free operations.
-CTxDB::CTxDB(const char *pszMode, bool fWipe) :
-		CDBWrapper(BLOCK_INDEX, pszMode, fWipe) {
+// Keys of UTXO set database (chainstate/*)
+static const char DB_COIN = 'C';        // UTXO record
+static const char DB_BEST_BLOCK = 'B';  // Primarily used to ensures the UTXO set is consistently persisted with the blockchain state
+                                        // Tracks the latest block to which the UTXO set is flushed
+                                        // Ensures the UTXO set's state corresponds to a specific block in the chain.
+                                        // During shutdown or periodic flushing, DB_BEST_BLOCK ensures that the UTXO set on disk corresponds to a consistent state of the blockchain
+static const char DB_HEAD_BLOCKS = 'H'; // Primarily used for chain synchronization
+                                        // Tracks the latest block of the best chain for chain synchronization
+                                        // Helps the node resume syncing from the most recent block
+                                        // When a node starts up, it checks DB_HEAD_BLOCKS to know where to resume block synchronization.
+
+namespace {
+
+struct CoinEntry {
+    COutPoint* outpoint;
+    char key;
+    CoinEntry(const COutPoint* ptr) : outpoint(const_cast<COutPoint*>(ptr)), key(DB_COIN)  {}
+
+    template<typename Stream>
+    void Serialize(Stream &s) const {
+        s << key;
+        s << outpoint->hash;
+        s << VARINT(outpoint->n);
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        s >> key;
+        s >> outpoint->hash;
+        s >> VARINT(outpoint->n);
+    }
+};
+
 }
 
-bool CTxDB::ReadTxIndex(uint256 hash, CTxIndex &txindex)
+CCoinsViewDB::CCoinsViewDB(size_t nCacheSize, bool fMemory, bool fWipe) : db(GetDataDir() / "chainstate", nCacheSize, fMemory, fWipe, true)
 {
-    txindex.SetNull();
-    return Read(make_pair(string("tx"), hash), txindex);
 }
 
-bool CTxDB::UpdateTxIndex(uint256 hash, const CTxIndex &txindex)
+bool CCoinsViewDB::GetCoin(const COutPoint &outpoint, Coin &coin) const {
+    return db.Read(CoinEntry(&outpoint), coin);
+}
+
+bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
+    return db.Exists(CoinEntry(&outpoint));
+}
+
+uint256 CCoinsViewDB::GetBestBlock() const {
+    uint256 hashBestChain;
+    if (!db.Read(DB_BEST_BLOCK, hashBestChain))
+        return uint256();
+    return hashBestChain;
+}
+
+std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
+    std::vector<uint256> vhashHeadBlocks;
+    if (!db.Read(DB_HEAD_BLOCKS, vhashHeadBlocks)) {
+        return std::vector<uint256>();
+    }
+    return vhashHeadBlocks;
+}
+
+bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock) {
+    CDBBatch batch(db);
+    size_t count = 0;
+    size_t changed = 0;
+    size_t batch_size = (size_t)gArgs.GetArg("-dbbatchsize", nDefaultDbBatchSize);
+    int crash_simulate = gArgs.GetArg("-dbcrashratio", 0);
+    assert(!hashBlock.IsNull());
+
+    uint256 old_tip = GetBestBlock();
+    if (old_tip.IsNull()) {
+        // We may be in the middle of replaying.
+        std::vector<uint256> old_heads = GetHeadBlocks();
+        if (old_heads.size() == 2) {
+            assert(old_heads[0] == hashBlock);
+            old_tip = old_heads[1];
+        }
+    }
+
+    // In the first batch, mark the database as being in the middle of a
+    // transition from old_tip to hashBlock.
+    // A vector is used for future extensibility, as we may want to support
+    // interrupting after partial writes from multiple independent reorgs.
+    batch.Erase(DB_BEST_BLOCK);
+    batch.Write(DB_HEAD_BLOCKS, std::vector<uint256>{hashBlock, old_tip});
+
+    for (CCoinsMap::iterator it = mapCoins.begin(); it != mapCoins.end();) {
+        if (it->second.flags & CCoinsCacheEntry::DIRTY) {
+            CoinEntry entry(&it->first);
+            if (it->second.coin.IsSpent())
+                batch.Erase(entry);
+            else
+                batch.Write(entry, it->second.coin);
+            changed++;
+        }
+        count++;
+        CCoinsMap::iterator itOld = it++;
+        mapCoins.erase(itOld);
+        if (batch.SizeEstimate() > batch_size) {
+            LogPrint(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
+            db.WriteBatch(batch);
+            batch.Clear();
+            if (crash_simulate) {
+                static FastRandomContext rng;
+                if (rng.randrange(crash_simulate) == 0) {
+                    LogPrintf("Simulating a crash. Goodbye.\n");
+                    _Exit(0);
+                }
+            }
+        }
+    }
+
+    // In the last batch, mark the database as consistent with hashBlock again.
+    batch.Erase(DB_HEAD_BLOCKS);
+    batch.Write(DB_BEST_BLOCK, hashBlock);
+
+    LogPrint(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
+    bool ret = db.WriteBatch(batch);
+    LogPrint(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...\n", (unsigned int)changed, (unsigned int)count);
+    return ret;
+}
+
+size_t CCoinsViewDB::EstimateSize() const
 {
-    return Write(make_pair(string("tx"), hash), txindex);
+    return db.EstimateSize(DB_COIN, (char)(DB_COIN+1));
 }
 
-bool CTxDB::AddTxIndex(const CTransaction &tx, const CDiskTxPos &pos, int nHeight)
+
+CCoinsViewCursor *CCoinsViewDB::Cursor() const
 {
-    // Add to tx index
-    uint256 hash = tx.GetHash();
-    CTxIndex txindex(pos, tx.vout.size());
-    return Write(make_pair(string("tx"), hash), txindex);
+    CCoinsViewDBCursor *i = new CCoinsViewDBCursor(const_cast<CDBWrapper&>(db).NewIterator(), GetBestBlock());
+    /* It seems that there are no "const iterators" for LevelDB.  Since we
+       only need read operations on it, use a const-cast to get around
+       that restriction.  */
+    i->pcursor->Seek(DB_COIN);
+    // Cache key of first record
+    if (i->pcursor->Valid()) {
+        CoinEntry entry(&i->keyTmp.second);
+        i->pcursor->GetKey(entry);
+        i->keyTmp.first = entry.key;
+    } else {
+        i->keyTmp.first = 0; // Make sure Valid() and GetKey() return false
+    }
+    return i;
 }
 
-bool CTxDB::EraseTxIndex(const CTransaction &tx)
+bool CCoinsViewDBCursor::GetKey(COutPoint &key) const
 {
-    uint256 hash = tx.GetHash();
-
-    return Erase(make_pair(string("tx"), hash));
+    // Return cached key
+    if (keyTmp.first == DB_COIN) {
+        key = keyTmp.second;
+        return true;
+    }
+    return false;
 }
 
-bool CTxDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue > >&vect) {
+bool CCoinsViewDBCursor::GetValue(Coin &coin) const
+{
+    return pcursor->GetValue(coin);
+}
+
+unsigned int CCoinsViewDBCursor::GetValueSize() const
+{
+    return pcursor->GetValueSize();
+}
+
+bool CCoinsViewDBCursor::Valid() const
+{
+    return keyTmp.first == DB_COIN;
+}
+
+void CCoinsViewDBCursor::Next()
+{
+    pcursor->Next();
+    CoinEntry entry(&keyTmp.second);
+    if (!pcursor->Valid() || !pcursor->GetKey(entry)) {
+        keyTmp.first = 0; // Invalidate cached key after last record so that Valid() and GetKey() return false
+    } else {
+        keyTmp.first = entry.key;
+    }
+}
+
+//! Legacy class to deserialize pre-pertxout database entries without reindex.
+class CCoins
+{
+public:
+    //! whether transaction is a coinbase
+    bool fCoinBase;
+
+    //! unspent transaction outputs; spent outputs are .IsNull(); spent outputs at the end of the array are dropped
+    std::vector<CTxOut> vout;
+
+    //! at which height this transaction was included in the active block chain
+    int nHeight;
+
+    //! empty constructor
+    CCoins() : fCoinBase(false), vout(0), nHeight(0) { }
+
+    template<typename Stream>
+    void Unserialize(Stream &s) {
+        unsigned int nCode = 0;
+        // version
+        int nVersionDummy;
+        ::Unserialize(s, VARINT(nVersionDummy));
+        // header code
+        ::Unserialize(s, VARINT(nCode));
+        fCoinBase = nCode & 1;
+        std::vector<bool> vAvail(2, false);
+        vAvail[0] = (nCode & 2) != 0;
+        vAvail[1] = (nCode & 4) != 0;
+        unsigned int nMaskCode = (nCode / 8) + ((nCode & 6) != 0 ? 0 : 1);
+        // spentness bitmask
+        while (nMaskCode > 0) {
+            unsigned char chAvail = 0;
+            ::Unserialize(s, chAvail);
+            for (unsigned int p = 0; p < 8; p++) {
+                bool f = (chAvail & (1 << p)) != 0;
+                vAvail.push_back(f);
+            }
+            if (chAvail != 0)
+                nMaskCode--;
+        }
+        // txouts themself
+        vout.assign(vAvail.size(), CTxOut());
+        for (unsigned int i = 0; i < vAvail.size(); i++) {
+            if (vAvail[i])
+                ::Unserialize(s, REF(CTxOutCompressor(vout[i])));
+        }
+        // coinbase height
+        ::Unserialize(s, VARINT(nHeight));
+    }
+};
+
+CBlockTreeDB::CBlockTreeDB(size_t nCacheSize, bool fMemory, bool fWipe) : CDBWrapper(GetDataDir() / "blocks" / "index", nCacheSize, fMemory, fWipe) {
+}
+
+bool CBlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*> >& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<int, const CBlockFileInfo*> >::const_iterator it=fileInfo.begin(); it != fileInfo.end(); it++) {
+        batch.Write(std::make_pair(DB_BLOCK_FILES, it->first), *it->second);
+    }
+    batch.Write(DB_LAST_BLOCK, nLastFile);
+    for (std::vector<const CBlockIndex*>::const_iterator it=blockinfo.begin(); it != blockinfo.end(); it++) {
+        batch.Write(std::make_pair(DB_BLOCK_INDEX, (*it)->GetBlockHash()), CDiskBlockIndex(*it));
+    }
+    return WriteBatch(batch, true);
+}
+
+bool CBlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo &info) {
+    return Read(std::make_pair(DB_BLOCK_FILES, nFile), info);
+}
+
+bool CBlockTreeDB::WriteReindexing(bool fReindexing) {
+    if (fReindexing)
+        return Write(DB_REINDEX_FLAG, '1');
+    else
+        return Erase(DB_REINDEX_FLAG);
+}
+
+bool CBlockTreeDB::ReadReindexing(bool &fReindexing) {
+    fReindexing = Exists(DB_REINDEX_FLAG);
+    return true;
+}
+
+bool CBlockTreeDB::ReadLastBlockFile(int &nFile) {
+    return Read(DB_LAST_BLOCK, nFile);
+}
+
+bool CBlockTreeDB::ReadTxIndex(const uint256 &txid, CDiskTxPos &pos) {
+    return Read(std::make_pair(DB_TXINDEX, txid), pos);
+}
+
+bool CBlockTreeDB::WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos> >&vect) {
+    CDBBatch batch(*this);
+    for (std::vector<std::pair<uint256,CDiskTxPos> >::const_iterator it=vect.begin(); it!=vect.end(); it++)
+        batch.Write(std::make_pair(DB_TXINDEX, it->first), it->second);
+    return WriteBatch(batch);
+}
+
+bool CBlockTreeDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue > >&vect) {
     bool result = true;
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
         if (it->second.IsNull()) {
@@ -87,7 +351,7 @@ bool CTxDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspen
     return result;
 }
 
-bool CTxDB::ReadAddressUnspentIndex(uint160 addressHash, int type, std::string tokenName,
+bool CBlockTreeDB::ReadAddressUnspentIndex(uint160 addressHash, int type, std::string tokenName,
                                            std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs) {
 
     boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
@@ -114,7 +378,7 @@ bool CTxDB::ReadAddressUnspentIndex(uint160 addressHash, int type, std::string t
     return true;
 }
 
-bool CTxDB::ReadAddressUnspentIndex(uint160 addressHash, int type,
+bool CBlockTreeDB::ReadAddressUnspentIndex(uint160 addressHash, int type,
                                            std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs) {
 
     boost::scoped_ptr<CDBIterator> pcursor(NewIterator());
@@ -142,7 +406,8 @@ bool CTxDB::ReadAddressUnspentIndex(uint160 addressHash, int type,
     return true;
 }
 
-bool CTxDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount > >&vect) {
+
+bool CBlockTreeDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount > >&vect) {
     bool result = true;
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=vect.begin(); it!=vect.end(); it++)
     {
@@ -155,7 +420,7 @@ bool CTxDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmo
     return result;
 }
 
-bool CTxDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount > >&vect) {
+bool CBlockTreeDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount > >&vect) {
     bool result = true;
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=vect.begin(); it!=vect.end(); it++)
     {
@@ -169,7 +434,7 @@ bool CTxDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmo
     return result;
 }
 
-bool CTxDB::ReadAddressIndex(uint160 addressHash, int type, std::string tokenName,
+bool CBlockTreeDB::ReadAddressIndex(uint160 addressHash, int type, std::string tokenName,
                                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
                                     int start, int end) {
 
@@ -207,19 +472,102 @@ bool CTxDB::ReadAddressIndex(uint160 addressHash, int type, std::string tokenNam
     return true;
 }
 
-bool CTxDB::ReadAddressIndex(uint160 addressHash, int type,
+bool CBlockTreeDB::ReadAddressIndex(uint160 addressHash, int type,
                                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
                                     int start, int end) {
 
-    return CTxDB::ReadAddressIndex(addressHash, type, "", addressIndex, start, end);
+    return CBlockTreeDB::ReadAddressIndex(addressHash, type, "", addressIndex, start, end);
 }
 
-bool CTxDB::ContainsTx(uint256 hash)
+
+bool CBlockTreeDB::WriteFlag(const std::string &name, bool fValue) {
+    return Write(std::make_pair(DB_FLAG, name), fValue ? '1' : '0');
+}
+
+bool CBlockTreeDB::ReadFlag(const std::string &name, bool &fValue) {
+    char ch;
+    if (!Read(std::make_pair(DB_FLAG, name), ch))
+        return false;
+    fValue = ch == '1';
+    return true;
+}
+
+bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex)
+{
+    std::unique_ptr<CDBIterator> pcursor(NewIterator());
+
+    pcursor->Seek(std::make_pair(DB_BLOCK_INDEX, uint256()));
+
+    // Load mapBlockIndex
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+        std::pair<char, uint256> key;
+        if (pcursor->GetKey(key) && key.first == DB_BLOCK_INDEX) {
+            CDiskBlockIndex diskindex;
+            if (pcursor->GetValue(diskindex)) {
+                // Construct block index object
+                CBlockIndex* pindexNew = insertBlockIndex(diskindex.GetBlockHash());
+                pindexNew->pprev          = insertBlockIndex(diskindex.hashPrev);
+                pindexNew->nHeight        = diskindex.nHeight;
+                pindexNew->nFile          = diskindex.nFile;
+                pindexNew->nDataPos       = diskindex.nDataPos;
+                pindexNew->nUndoPos       = diskindex.nUndoPos;
+                pindexNew->nVersion       = diskindex.nVersion;
+                pindexNew->hashMerkleRoot = diskindex.hashMerkleRoot;
+                pindexNew->nTime          = diskindex.nTime;
+                pindexNew->nBits          = diskindex.nBits;
+                pindexNew->nNonce         = diskindex.nNonce;
+                pindexNew->nStatus        = diskindex.nStatus;
+                pindexNew->nTx            = diskindex.nTx;
+
+                if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams))
+                    return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
+
+                pcursor->Next();
+            } else {
+                return error("%s: failed to read value", __func__);
+            }
+        } else {
+            break;
+        }
+    }
+
+    return true;
+}
+
+// TACA: OLD CODE BEGIN
+bool CBlockTreeDB::ReadTxIndex(uint256 hash, CTxIndex &txindex)
+{
+    txindex.SetNull();
+    return Read(make_pair(string("tx"), hash), txindex);
+}
+
+bool CBlockTreeDB::UpdateTxIndex(uint256 hash, const CTxIndex &txindex)
+{
+    return Write(make_pair(string("tx"), hash), txindex);
+}
+
+bool CBlockTreeDB::AddTxIndex(const CTransaction &tx, const CDiskTxPos &pos, int nHeight)
+{
+    // Add to tx index
+    uint256 hash = tx.GetHash();
+    CTxIndex txindex(pos, tx.vout.size());
+    return Write(make_pair(string("tx"), hash), txindex);
+}
+
+bool CBlockTreeDB::EraseTxIndex(const CTransaction &tx)
+{
+    uint256 hash = tx.GetHash();
+
+    return Erase(make_pair(string("tx"), hash));
+}
+
+bool CBlockTreeDB::ContainsTx(uint256 hash)
 {
     return Exists(make_pair(string("tx"), hash));
 }
 
-bool CTxDB::ReadDiskTx(uint256 hash, CTransaction &tx, CTxIndex &txindex)
+bool CBlockTreeDB::ReadDiskTx(uint256 hash, CTransaction &tx, CTxIndex &txindex)
 {
     tx.SetNull();
     if (!ReadTxIndex(hash, txindex))
@@ -227,84 +575,84 @@ bool CTxDB::ReadDiskTx(uint256 hash, CTransaction &tx, CTxIndex &txindex)
     return (tx.ReadFromDisk(txindex.pos));
 }
 
-bool CTxDB::ReadDiskTx(uint256 hash, CTransaction &tx)
+bool CBlockTreeDB::ReadDiskTx(uint256 hash, CTransaction &tx)
 {
     CTxIndex txindex;
     return ReadDiskTx(hash, tx, txindex);
 }
 
-bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction &tx, CTxIndex &txindex)
+bool CBlockTreeDB::ReadDiskTx(COutPoint outpoint, CTransaction &tx, CTxIndex &txindex)
 {
     return ReadDiskTx(outpoint.COutPointGetHash(), tx, txindex);
 }
 
-bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction &tx)
+bool CBlockTreeDB::ReadDiskTx(COutPoint outpoint, CTransaction &tx)
 {
     CTxIndex txindex;
     return ReadDiskTx(outpoint.COutPointGetHash(), tx, txindex);
 }
 
-bool CTxDB::WriteBlockIndex(const CDiskBlockIndex &blockindex)
+bool CBlockTreeDB::WriteBlockIndex(const CDiskBlockIndex &blockindex)
 {
     return Write(make_pair(string("blockindex"), blockindex.GetBlockHash()), blockindex);
 }
 
-bool CTxDB::WriteBlockHash(const CDiskBlockIndex &blockindex)
+bool CBlockTreeDB::WriteBlockHash(const CDiskBlockIndex &blockindex)
 {
     return Write(make_pair(string("blockhash"), make_pair(blockindex.nFile, blockindex.nBlockPos)), blockindex.GetBlockHash());
 }
 
-bool CTxDB::ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256 &blockhash)
+bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256 &blockhash)
 {
     return Read(make_pair(string("blockhash"), make_pair(nFile, nBlockPos)), blockhash);
 }
 
-bool CTxDB::ReadHashBestChain(uint256 &hashBestChain)
+bool CBlockTreeDB::ReadHashBestChain(uint256 &hashBestChain)
 {
     return Read(string("hashBestChain"), hashBestChain);
 }
 
-bool CTxDB::WriteHashBestChain(uint256 hashBestChain)
+bool CBlockTreeDB::WriteHashBestChain(uint256 hashBestChain)
 {
     return Write(string("hashBestChain"), hashBestChain);
 }
 
-bool CTxDB::ReadBestInvalidTrust(CBigNum &bnBestInvalidTrust)
+bool CBlockTreeDB::ReadBestInvalidTrust(CBigNum &bnBestInvalidTrust)
 {
     return Read(string("bnBestInvalidTrust"), bnBestInvalidTrust);
 }
 
-bool CTxDB::WriteBestInvalidTrust(CBigNum bnBestInvalidTrust)
+bool CBlockTreeDB::WriteBestInvalidTrust(CBigNum bnBestInvalidTrust)
 {
     return Write(string("bnBestInvalidTrust"), bnBestInvalidTrust);
 }
 
-bool CTxDB::ReadSyncCheckpoint(uint256 &hashCheckpoint)
+bool CBlockTreeDB::ReadSyncCheckpoint(uint256 &hashCheckpoint)
 {
     return Read(string("hashSyncCheckpoint"), hashCheckpoint);
 }
 
-bool CTxDB::WriteSyncCheckpoint(uint256 hashCheckpoint)
+bool CBlockTreeDB::WriteSyncCheckpoint(uint256 hashCheckpoint)
 {
     return Write(string("hashSyncCheckpoint"), hashCheckpoint);
 }
 
-bool CTxDB::ReadCheckpointPubKey(string &strPubKey)
+bool CBlockTreeDB::ReadCheckpointPubKey(string &strPubKey)
 {
     return Read(string("strCheckpointPubKey"), strPubKey);
 }
 
-bool CTxDB::WriteCheckpointPubKey(const string &strPubKey)
+bool CBlockTreeDB::WriteCheckpointPubKey(const string &strPubKey)
 {
     return Write(string("strCheckpointPubKey"), strPubKey);
 }
 
-bool CTxDB::ReadModifierUpgradeTime(unsigned int &nUpgradeTime)
+bool CBlockTreeDB::ReadModifierUpgradeTime(unsigned int &nUpgradeTime)
 {
     return Read(string("nUpgradeTime"), nUpgradeTime);
 }
 
-bool CTxDB::WriteModifierUpgradeTime(const unsigned int &nUpgradeTime)
+bool CBlockTreeDB::WriteModifierUpgradeTime(const unsigned int &nUpgradeTime)
 {
     return Write(string("nUpgradeTime"), nUpgradeTime);
 }
@@ -330,7 +678,7 @@ static CBlockIndex *InsertBlockIndex(uint256 hash)
     return pindexNew;
 }
 
-bool CTxDB::BuildMapHash()
+bool CBlockTreeDB::BuildMapHash()
 {
     // The block index is an in-memory structure that maps hashes to on-disk
     // locations where the contents of the block can be found. Here, we scan it
@@ -379,7 +727,7 @@ bool CTxDB::BuildMapHash()
     delete iterator;
 }
 
-bool CTxDB::LoadBlockIndex()
+bool CBlockTreeDB::LoadBlockIndex()
 {
     // Already loaded. But, it can happen during migration from BDB
     if (!mapBlockIndex.empty())
@@ -544,7 +892,7 @@ bool CTxDB::LoadBlockIndex()
     }
     delete iterator;
 
-    LogPrintf("CTxDB::LoadBlockIndex(), fStoreBlockHashToDb = %d, "
+    LogPrintf("CBlockTreeDB::LoadBlockIndex(), fStoreBlockHashToDb = %d, "
            "newStoredBlock = %d, "
            "alreadyStoredBlock = %d\n",
            fStoreBlockHashToDb,
@@ -556,10 +904,10 @@ bool CTxDB::LoadBlockIndex()
     {
         if (chainActive.Genesis() == NULL)
             return true;
-        return error("CTxDB::LoadBlockIndex() : hashBestChain not loaded");
+        return error("CBlockTreeDB::LoadBlockIndex() : hashBestChain not loaded");
     }
     if (!mapBlockIndex.count(hashBestChain))
-        return error("CTxDB::LoadBlockIndex() : hashBestChain not found in the block index");
+        return error("CBlockTreeDB::LoadBlockIndex() : hashBestChain not found in the block index");
     chainActive.SetTip(mapBlockIndex[hashBestChain]);
 
     // Recalculate block reward and minimum ease (highest difficulty) when starting node
@@ -608,7 +956,7 @@ bool CTxDB::LoadBlockIndex()
             mapHash.insert(make_pair(pindexCurrent->GetSHA256Hash(), (*it).first));
             numberOfReindexOnlyHeaderSyncBlock++;
         }
-        LogPrintf("CTxDB::LoadBlockIndex(), fReindexOnlyHeaderSync = 1, "
+        LogPrintf("CBlockTreeDB::LoadBlockIndex(), fReindexOnlyHeaderSync = 1, "
                "numberOfReindexOnlyHeaderSyncBlock = %d\n",
                fReindexOnlyHeaderSync,
                numberOfReindexOnlyHeaderSyncBlock);
@@ -625,7 +973,7 @@ bool CTxDB::LoadBlockIndex()
 
     // Calculate current block reward
     if (chainActive.Height() >= nMainnetNewLogicBlockNumber) {
-        LogPrintf("CTxDB::LoadBlockIndex(), bestEpochIntervalHash = %s\n", bestEpochIntervalHash.GetHex());
+        LogPrintf("CBlockTreeDB::LoadBlockIndex(), bestEpochIntervalHash = %s\n", bestEpochIntervalHash.GetHex());
         BlockMap::iterator mi = mapBlockIndex.find(bestEpochIntervalHash);
         if (mi != mapBlockIndex.end())
         {
@@ -673,7 +1021,7 @@ bool CTxDB::LoadBlockIndex()
             // NovaCoin: calculate stake modifier checksum
             pindex->nStakeModifierChecksum = GetStakeModifierChecksum(pindex);
             if (!CheckStakeModifierCheckpoints(pindex->nHeight, pindex->nStakeModifierChecksum))
-                LogPrintf("CTxDB::LoadBlockIndex() : Failed stake modifier checkpoint height=%d, modifier=0x%016\n" PRIx64, pindex->nHeight, pindex->nStakeModifier);
+                LogPrintf("CBlockTreeDB::LoadBlockIndex() : Failed stake modifier checkpoint height=%d, modifier=0x%016\n" PRIx64, pindex->nHeight, pindex->nStakeModifier);
             if (pindex->nStatus & BLOCK_HAVE_DATA) {
                 if (pindex->pprev) {
                     if (pindex->pprev->validTx) {
@@ -708,7 +1056,7 @@ bool CTxDB::LoadBlockIndex()
     if (!fTestNet)
     {
         if (!ReadSyncCheckpoint(Checkpoints::hashSyncCheckpoint))
-            return error("CTxDB::LoadBlockIndex() : hashSyncCheckpoint not loaded");
+            return error("CBlockTreeDB::LoadBlockIndex() : hashSyncCheckpoint not loaded");
         LogPrintf("LoadBlockIndex(): synchronized checkpoint %s\n",
                Checkpoints::hashSyncCheckpoint.ToString());
     }
@@ -864,13 +1212,14 @@ bool CTxDB::LoadBlockIndex()
         if (!block.ReadFromDisk(pindexFork))
             return error("LoadBlockIndex() : block.ReadFromDisk failed");
         setBlockIndexCandidates.insert(pindexFork);
-        CTxDB txdb;
+        CBlockTreeDB txdb;
         CValidationState state;
         ActivateBestChain(state, txdb);
     }
 
     return true;
 }
+// TACA: OLD CODE END
 #ifdef _MSC_VER
 #include "msvc_warnings.pop.h"
 #endif

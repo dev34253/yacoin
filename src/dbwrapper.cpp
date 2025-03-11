@@ -1,234 +1,219 @@
-// Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file license.txt or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-#include <stdint.h>
+// Copyright (c) 2012-2016 The Bitcoin Core developers
+// Copyright (c) 2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "msvc_warnings.push.h"
-#endif
+#include "dbwrapper.h"
 
-#ifndef BITCOIN_TXDB_H
-#include "txdb.h"
-#endif
+#include "fs.h"
+#include "util.h"
+#include "random.h"
 
-#include <map>
-#include <boost/version.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
-#include <leveldb/env.h>
 #include <leveldb/cache.h>
+#include <leveldb/env.h>
 #include <leveldb/filter_policy.h>
 #include <memenv.h>
+#include <stdint.h>
+#include <algorithm>
 
-using std::make_pair;
-using std::map;
-using std::pair;
-using std::runtime_error;
-using std::string;
-using std::vector;
-
-using namespace boost;
-
-leveldb::DB *txdb[DB_TYPE_MAX]; // global pointer for LevelDB object instance
-
-static leveldb::Options GetOptions()
-{
-    leveldb::Options options;
-    int nCacheSizeMB = gArgs.GetArg("-dbcache", 25);
-    options.block_cache = leveldb::NewLRUCache(nCacheSizeMB * 1048576);
-    options.filter_policy = leveldb::NewBloomFilterPolicy(10);
-    return options;
-}
-
-void init_blockindex(DatabaseType dbType, leveldb::Options &options, bool fRemoveOld = false)
-{
-    // First time init.
-	filesystem::path directory;
-	switch (dbType) {
-	case BLOCK_INDEX:
-	    directory = GetDataDir() / "txleveldb";
-	    break;
-	case TOKEN_DATA:
-	    directory = GetDataDir() / "tokens";
-	    break;
-	default:
-	    LogPrintf("Unknown database type = %d\n", dbType);
-		break;
-	}
-
-    if (fRemoveOld)
-    {
-        LogPrintf("REMOVE LevelDB in %s\n", directory.string());
-        system::error_code ec;
-        filesystem::remove_all(directory, ec); // remove directory
-        if (ec) {
-            LogPrintf("FAILED to remove LevelDB in %s (%s)\n", directory.string(), ec.message());
-        }
-    }
-
-    filesystem::create_directory(directory);
-    LogPrintf("OPENING LevelDB in %s\n", directory.string());
-    leveldb::Status status = leveldb::DB::Open(options, directory.string(), &txdb[dbType]);
-    if (!status.ok())
-    {
-        throw runtime_error(strprintf("init_blockindex(): error opening database environment %s", status.ToString().c_str()));
-    }
-}
-
-// CDB subclasses are created and destroyed VERY OFTEN. That's why
-// we shouldn't treat this as a free operations.
-CDBWrapper::CDBWrapper(DatabaseType dbType, const char *pszMode, bool fWipe)
-{
-    Yassert(pszMode);
-    activeBatch = NULL;
-    fReadOnly = (!strchr(pszMode, '+') && !strchr(pszMode, 'w'));
-    mDbType = dbType;
-
-    if (txdb[mDbType])
-    {
-        pdb = txdb[mDbType];
-        return;
-    }
-
-    bool fCreate = strchr(pszMode, 'c');
-
-    options = GetOptions();
-    options.create_if_missing = fCreate;
-    options.filter_policy = leveldb::NewBloomFilterPolicy(10);
-
-    init_blockindex(dbType, options, fWipe); // Init directory
-    pdb = txdb[mDbType];
-
-    if (Exists(string("version")))
-    {
-        ReadVersion(nVersion);
-        LogPrintf("Transaction index version is %d\n", nVersion);
-
-        if (nVersion < DATABASE_VERSION)
-        {
-            LogPrintf("Required index version is %d, removing old database\n", DATABASE_VERSION);
-
-            // Leveldb instance destruction
-            delete txdb[mDbType];
-            txdb[mDbType] = pdb = NULL;
-            delete activeBatch;
-            activeBatch = NULL;
-
-            init_blockindex(dbType, options, true); // Remove directory and create new database
-            pdb = txdb[mDbType];
-
-            bool fTmp = fReadOnly;
-            fReadOnly = false;
-            WriteVersion(DATABASE_VERSION); // Save transaction index version
-            fReadOnly = fTmp;
-        }
-    }
-    else if (fCreate)
-    {
-        bool fTmp = fReadOnly;
-        fReadOnly = false;
-        WriteVersion(DATABASE_VERSION);
-        fReadOnly = fTmp;
-    }
-
-    LogPrintf("Opened LevelDB successfully\n");
-}
-
-CDBIterator* CDBWrapper::NewIterator()
-{
-    return new CDBIterator(*this, pdb->NewIterator(leveldb::ReadOptions()));
-}
-
-void CDBWrapper::Close()
-{
-    delete txdb[mDbType];
-    txdb[mDbType] = pdb = NULL;
-    delete options.filter_policy;
-    options.filter_policy = NULL;
-    delete options.block_cache;
-    options.block_cache = NULL;
-    delete activeBatch;
-    activeBatch = NULL;
-}
-
-bool CDBWrapper::TxnBegin()
-{
-    Yassert(!activeBatch);
-    activeBatch = new leveldb::WriteBatch();
-    return true;
-}
-
-bool CDBWrapper::TxnCommit()
-{
-    Yassert(activeBatch);
-    leveldb::Status status = pdb->Write(leveldb::WriteOptions(), activeBatch);
-    delete activeBatch;
-    activeBatch = NULL;
-    if (!status.ok())
-    {
-        LogPrintf("LevelDB batch commit failure: %s\n", status.ToString());
-        return false;
-    }
-    return true;
-}
-
-class CBatchScanner : public leveldb::WriteBatch::Handler
-{
+class CBitcoinLevelDBLogger : public leveldb::Logger {
 public:
-    std::string needle;
-    bool *deleted;
-    std::string *foundValue;
-    bool foundEntry;
+    // This code is adapted from posix_logger.h, which is why it is using vsprintf.
+    // Please do not do this in normal code
+    virtual void Logv(const char * format, va_list ap) override {
+            if (!LogAcceptCategory(BCLog::LEVELDB)) {
+                return;
+            }
+            char buffer[500];
+            for (int iter = 0; iter < 2; iter++) {
+                char* base;
+                int bufsize;
+                if (iter == 0) {
+                    bufsize = sizeof(buffer);
+                    base = buffer;
+                }
+                else {
+                    bufsize = 30000;
+                    base = new char[bufsize];
+                }
+                char* p = base;
+                char* limit = base + bufsize;
 
-    CBatchScanner() : foundEntry(false) {}
+                // Print the message
+                if (p < limit) {
+                    va_list backup_ap;
+                    va_copy(backup_ap, ap);
+                    // Do not use vsnprintf elsewhere in bitcoin source code, see above.
+                    p += vsnprintf(p, limit - p, format, backup_ap);
+                    va_end(backup_ap);
+                }
 
-    virtual void Put(const leveldb::Slice &key, const leveldb::Slice &value)
-    {
-        if (key.ToString() == needle)
-        {
-            foundEntry = true;
-            *deleted = false;
-            *foundValue = value.ToString();
-        }
-    }
+                // Truncate to available space if necessary
+                if (p >= limit) {
+                    if (iter == 0) {
+                        continue;       // Try again with larger buffer
+                    }
+                    else {
+                        p = limit - 1;
+                    }
+                }
 
-    virtual void Delete(const leveldb::Slice &key)
-    {
-        if (key.ToString() == needle)
-        {
-            foundEntry = true;
-            *deleted = true;
-        }
+                // Add newline if necessary
+                if (p == base || p[-1] != '\n') {
+                    *p++ = '\n';
+                }
+
+                assert(p <= limit);
+                base[std::min(bufsize - 1, (int)(p - base))] = '\0';
+                LogPrintStr(base);
+                if (base != buffer) {
+                    delete[] base;
+                }
+                break;
+            }
     }
 };
 
-// When performing a read, if we have an active batch we need to check it first
-// before reading from the database, as the rest of the code assumes that once
-// a database transaction begins reads are consistent with it. It would be good
-// to change that assumption in future and avoid the performance hit, though in
-// practice it does not appear to be large.
-bool CDBWrapper::ScanBatch(const CDataStream &key, string *value, bool *deleted) const
+static leveldb::Options GetOptions(size_t nCacheSize)
 {
-    Yassert(activeBatch);
-    *deleted = false;
-    CBatchScanner scanner;
-    scanner.needle = key.str();
-    scanner.deleted = deleted;
-    scanner.foundValue = value;
-    leveldb::Status status = activeBatch->Iterate(&scanner);
-    if (!status.ok())
-    {
-        throw runtime_error(status.ToString());
+    leveldb::Options options;
+    options.block_cache = leveldb::NewLRUCache(nCacheSize / 2);
+    options.write_buffer_size = nCacheSize / 4; // up to two write buffers may be held in memory simultaneously
+    options.filter_policy = leveldb::NewBloomFilterPolicy(10);
+    options.compression = leveldb::kNoCompression;
+    options.max_open_files = 64;
+    options.info_log = new CBitcoinLevelDBLogger();
+    if (leveldb::kMajorVersion > 1 || (leveldb::kMajorVersion == 1 && leveldb::kMinorVersion >= 16)) {
+        // LevelDB versions before 1.16 consider short writes to be corruption. Only trigger error
+        // on corruption in later versions.
+        options.paranoid_checks = true;
     }
-    return scanner.foundEntry;
+    return options;
+}
+
+CDBWrapper::CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory, bool fWipe, bool obfuscate)
+{
+    penv = nullptr;
+    readoptions.verify_checksums = true;
+    iteroptions.verify_checksums = true;
+    iteroptions.fill_cache = false;
+    syncoptions.sync = true;
+    options = GetOptions(nCacheSize);
+    options.create_if_missing = true;
+    if (fMemory) {
+        penv = leveldb::NewMemEnv(leveldb::Env::Default());
+        options.env = penv;
+    } else {
+        if (fWipe) {
+            LogPrintf("Wiping LevelDB in %s\n", path.string());
+            leveldb::Status result = leveldb::DestroyDB(path.string(), options);
+            dbwrapper_private::HandleError(result);
+        }
+        TryCreateDirectories(path);
+        LogPrintf("Opening LevelDB in %s\n", path.string());
+    }
+    leveldb::Status status = leveldb::DB::Open(options, path.string(), &pdb);
+    dbwrapper_private::HandleError(status);
+    LogPrintf("Opened LevelDB successfully\n");
+
+    if (gArgs.GetBoolArg("-forcecompactdb", false)) {
+        LogPrintf("Starting database compaction of %s\n", path.string());
+        pdb->CompactRange(nullptr, nullptr);
+        LogPrintf("Finished database compaction of %s\n", path.string());
+    }
+
+    // The base-case obfuscation key, which is a noop.
+    obfuscate_key = std::vector<unsigned char>(OBFUSCATE_KEY_NUM_BYTES, '\000');
+
+    bool key_exists = Read(OBFUSCATE_KEY_KEY, obfuscate_key);
+
+    if (!key_exists && obfuscate && IsEmpty()) {
+        // Initialize non-degenerate obfuscation if it won't upset
+        // existing, non-obfuscated data.
+        std::vector<unsigned char> new_key = CreateObfuscateKey();
+
+        // Write `new_key` so we don't obfuscate the key with itself
+        Write(OBFUSCATE_KEY_KEY, new_key);
+        obfuscate_key = new_key;
+
+        LogPrintf("Wrote new obfuscate key for %s: %s\n", path.string(), HexStr(obfuscate_key));
+    }
+
+    LogPrintf("Using obfuscation key for %s: %s\n", path.string(), HexStr(obfuscate_key));
+}
+
+CDBWrapper::~CDBWrapper()
+{
+    delete pdb;
+    pdb = nullptr;
+    delete options.filter_policy;
+    options.filter_policy = nullptr;
+    delete options.info_log;
+    options.info_log = nullptr;
+    delete options.block_cache;
+    options.block_cache = nullptr;
+    delete penv;
+    options.env = nullptr;
+}
+
+bool CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
+{
+    leveldb::Status status = pdb->Write(fSync ? syncoptions : writeoptions, &batch.batch);
+    dbwrapper_private::HandleError(status);
+    return true;
+}
+
+// Prefixed with null character to avoid collisions with other keys
+//
+// We must use a string constructor which specifies length so that we copy
+// past the null-terminator.
+const std::string CDBWrapper::OBFUSCATE_KEY_KEY("\000obfuscate_key", 14);
+
+const unsigned int CDBWrapper::OBFUSCATE_KEY_NUM_BYTES = 8;
+
+/**
+ * Returns a string (consisting of 8 random bytes) suitable for use as an
+ * obfuscating XOR key.
+ */
+std::vector<unsigned char> CDBWrapper::CreateObfuscateKey() const
+{
+    unsigned char buff[OBFUSCATE_KEY_NUM_BYTES];
+    GetRandBytes(buff, OBFUSCATE_KEY_NUM_BYTES);
+    return std::vector<unsigned char>(&buff[0], &buff[OBFUSCATE_KEY_NUM_BYTES]);
+
+}
+
+bool CDBWrapper::IsEmpty()
+{
+    std::unique_ptr<CDBIterator> it(NewIterator());
+    it->SeekToFirst();
+    return !(it->Valid());
 }
 
 CDBIterator::~CDBIterator() { delete piter; }
-bool CDBIterator::Valid() const { return piter->Valid(); }
+bool CDBIterator::Valid() { return piter->Valid(); }
 void CDBIterator::SeekToFirst() { piter->SeekToFirst(); }
 void CDBIterator::Next() { piter->Next(); }
 
-#ifdef _MSC_VER
-#include "msvc_warnings.pop.h"
-#endif
+namespace dbwrapper_private {
+
+void HandleError(const leveldb::Status& status)
+{
+    if (status.ok())
+        return;
+    LogPrintf("%s\n", status.ToString());
+    if (status.IsCorruption())
+        throw dbwrapper_error("Database corrupted");
+    if (status.IsIOError())
+        throw dbwrapper_error("Database I/O error");
+    if (status.IsNotFound())
+        throw dbwrapper_error("Database entry missing");
+    throw dbwrapper_error("Unknown database error");
+}
+
+const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapper &w)
+{
+    return w.obfuscate_key;
+}
+
+} // namespace dbwrapper_private

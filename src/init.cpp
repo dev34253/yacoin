@@ -63,7 +63,6 @@ std::string strWalletFileName;
 bool fConfChange;
 unsigned int nNodeLifespan;
 unsigned int nMinerSleep;
-bool fUseFastIndex;
 bool fStoreBlockHashToDb;
 bool fReindexOnlyHeaderSync;
 bool fReindexBlockIndex;
@@ -449,7 +448,6 @@ bool AppInitParameterInteraction()
         InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), nUserMaxConnections, nMaxConnections));
 
     nNodeLifespan = (unsigned int)(gArgs.GetArg("-addrlifespan", 7));
-    fUseFastIndex = gArgs.GetBoolArg("-fastindex", true);
     fStoreBlockHashToDb = gArgs.GetBoolArg("-storeblockhash", true);
     fUseMemoryLog = gArgs.GetBoolArg("-memorylog", true);
     // YAC_TOKEN START
