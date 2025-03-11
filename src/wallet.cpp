@@ -1578,7 +1578,7 @@ void CWallet::ResendWalletTransactions()
         {
             CWalletTx& wtx = *item.second;
             CValidationState state;
-            if (CheckTransaction(wtx, state))
+            if (CheckTransaction(wtx, state) && CheckTransactionSize(wtx, state))
                 wtx.RelayWalletTransaction();
             else
                 LogPrintf("ResendWalletTransactions() : CheckTransaction failed for transaction %s\n", wtx.GetHash().ToString());
@@ -2991,7 +2991,7 @@ bool CWallet::CreateTransactionAll(
 
                 // Limit size
                 unsigned int nBytes = ::GetSerializeSize(*(CTransaction*)&wtxNew, SER_NETWORK, PROTOCOL_VERSION);
-                if (nBytes >= (2*GetMaxSize(MAX_BLOCK_SIZE_GEN)/3) )    // was MAX_BLOCK_SIZE_GEN/5 why????????????
+                if (nBytes >= (2*GetMaxSize(MAX_BLOCK_SIZE_GEN)/3) )
                     return false;
 
                 // Check that enough fee is included
@@ -3112,7 +3112,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
     wtxNew.vout.push_back(CTxOut(0, scriptOutput));
 
     double dWeight = 0;
-    BOOST_FOREACH(PAIRTYPE(const CWalletTx*, unsigned int) pcoin, setCoins)
+    for(PAIRTYPE(const CWalletTx*, unsigned int) pcoin : setCoins)
     {
         int64_t nCredit = pcoin.first->vout[pcoin.second].nValue;
 

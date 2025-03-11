@@ -44,6 +44,9 @@ bool CheckTxTokens(
 
 /** Auxiliary functions for transaction validation (ideally should not be exposed) */
 
+// Check if transaction size satisfy the block size limit
+bool CheckTransactionSize(const CTransaction& tx, CValidationState &state, ::int32_t blockHeight=0);
+
 /**
  * Count ECDSA signature operations the old-fashioned (pre-0.6) way
  * @return number of sigops this transaction's outputs will produce when spent

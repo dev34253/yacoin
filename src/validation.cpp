@@ -430,6 +430,9 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
     if (!CheckTransaction(tx, state))
         return false; // state filled in by CheckTransaction
 
+    if (!CheckTransactionSize(tx, state))
+        return false; // state filled in by CheckTransactionSize
+
     // Coinbase is only valid in a block, not as a loose transaction
     if (tx.IsCoinBase())
         return state.DoS(100, error("AcceptToMemoryPoolWorker() : coinbase as individual tx"), REJECT_INVALID, "coinbase");
@@ -1795,8 +1798,7 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
         // * p2sh (when P2SH enabled in flags and excludes coinbase)
         // * witness (when witness enabled in flags and excludes coinbase)
         nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-        // TODO: Review GetMaxSize
-        if (nSigOpsCost > GetMaxSize(MAX_BLOCK_SIGOPS))
+        if (nSigOpsCost > GetMaxSize(MAX_BLOCK_SIGOPS, pindex->nHeight))
             return state.DoS(100, error("ConnectBlock(): too many sigops"), REJECT_INVALID, "bad-blk-sigops");
 
         if (!tx.IsCoinBase())
@@ -2986,10 +2988,9 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
     // transaction validation, as otherwise we may mark the header as invalid
     // because we receive the wrong transactions for it.
 
-    // Size limits
-    // TODO: Review GetMaxSize
-    if (block.vtx.empty() || block.vtx.size() > GetMaxSize(MAX_BLOCK_SIZE) || ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE))
-        return state.DoS(100, error("CheckBlock () : size limits failed"), REJECT_INVALID, "bad-blk-length", false, "size limits failed");
+    // Empty block
+    if (block.vtx.empty())
+        return state.DoS(100, error("CheckBlock () : empty block"), REJECT_INVALID, "bad-blk-length", false, "empty block failed");
 
     // First transaction must be coinbase, the rest must not be
     if (!block.vtx[0].IsCoinBase())
@@ -3037,7 +3038,6 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
     }
 
     std::set<uint256> uniqueTx; // tx hashes
-    unsigned int nSigOps = 0; // total sigops
     // Check transactions
     for (const auto& tx : block.vtx)
     {
@@ -3053,20 +3053,12 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
 
         // Add transaction hash into list of unique transaction IDs
         uniqueTx.insert(tx.GetHash());
-
-        // Calculate sigops count
-        nSigOps += GetLegacySigOpCount(tx);
     }
 
     // Check for duplicate txids. This is caught by ConnectInputs(),
     // but catching it earlier avoids a potential DoS attack:
     if (uniqueTx.size() != block.vtx.size())
         return state.DoS(100, error("CheckBlock () : duplicate transaction"), REJECT_INVALID, "bad-txns-duplicate", true, "duplicate transaction");
-
-    // Reject block if validation would consume too much resources.
-    // TODO: Review GetMaxSize
-    if (nSigOps > GetMaxSize(MAX_BLOCK_SIGOPS))
-        return state.DoS(100, error("CheckBlock () : out-of-bounds SigOpCount"), REJECT_INVALID, "bad-blk-sigops", false, "out-of-bounds SigOpCount");
 
     if (fCheckPOW && fCheckMerkleRoot)
         block.fChecked = true;
@@ -3159,6 +3151,25 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
         }
     }
 
+    // Size limits
+    if (block.vtx.size() > GetMaxSize(MAX_BLOCK_SIZE, nHeight) || ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE, nHeight))
+        return state.DoS(100, error("ContextualCheckBlock () : size limits failed"), REJECT_INVALID, "bad-blk-length", false, "size limits failed");
+
+    // Reject block if validation would consume too much resources.
+    unsigned int nSigOps = 0; // total sigops
+    for (const auto& tx : block.vtx)
+    {
+        // Check transaction size
+        if (!CheckTransactionSize(tx, state, nHeight))
+            return state.Invalid(error("ContextualCheckBlock () : CheckTransactionSize failed"), state.GetRejectCode(), state.GetRejectReason(),
+                                 strprintf("Transaction size check failed (tx hash %s) %s", tx.GetHash().ToString(), state.GetDebugMessage()));
+
+        // Calculate sigops count
+        nSigOps += GetLegacySigOpCount(tx);
+    }
+    if (nSigOps > GetMaxSize(MAX_BLOCK_SIGOPS, nHeight))
+        return state.DoS(100, error("ContextualCheckBlock () : out-of-bounds SigOpCount"), REJECT_INVALID, "bad-blk-sigops", false, "out-of-bounds SigOpCount");
+
     // Start enforcing BIP113 (Median Time Past) using versionbits logic.
     // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
     int nLockTimeFlags = 0;
@@ -3184,11 +3195,6 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
             !std::equal(expect.begin(), expect.end(), block.vtx[0].vin[0].scriptSig.begin())) {
             return state.DoS(100, error("ContextualCheckBlock () : block height mismatch in coinbase"), REJECT_INVALID, "bad-cb-height", false, "block height mismatch in coinbase");
         }
-    }
-
-    // TODO: Review GetMaxSize
-    if (::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION) > GetMaxSize(MAX_BLOCK_SIZE)) {
-        return state.DoS(100, error("ContextualCheckBlock () : size limits failed"), REJECT_INVALID, "bad-blk-length", false, "size limits failed");
     }
 
     return true;
@@ -4093,8 +4099,8 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
     int nLoaded = 0;
     try {
         // This takes over fileIn and calls fclose() on it in the CBufferedFile destructor
-        // TODO: Review GetMaxSize
-        CBufferedFile blkdat(fileIn, 2*GetMaxSize(MAX_BLOCK_SIZE), GetMaxSize(MAX_BLOCK_SIZE)+8, SER_DISK, CLIENT_VERSION);
+        // Currently, buffer size = 1MB is enough. Modify this when the max block size is bigger than 1MB in the future
+        CBufferedFile blkdat(fileIn, 2 * MAX_BLOCK_SERIALIZED_SIZE, MAX_BLOCK_SERIALIZED_SIZE+8, SER_DISK, CLIENT_VERSION);
         uint64_t nRewind = blkdat.GetPos();
         while (!blkdat.eof()) {
             boost::this_thread::interruption_point();
@@ -4113,7 +4119,7 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                     continue;
                 // read size
                 blkdat >> nSize;
-                if (nSize < 80 || nSize > GetMaxSize(MAX_BLOCK_SIZE))
+                if (nSize < 80 || nSize > MAX_BLOCK_SERIALIZED_SIZE)
                     continue;
             } catch (const std::exception&e) {
                 // no valid block header found; don't complain

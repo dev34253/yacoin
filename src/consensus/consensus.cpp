@@ -18,14 +18,13 @@
 ::uint64_t GetMaxSize(enum GetMaxSize_mode mode, unsigned int nHeight)
 {
     ::uint64_t nMaxSize = 0;
-    if (chainActive.Genesis() == NULL || (chainActive.Tip()->nHeight + 1) < nMainnetNewLogicBlockNumber)
-    {
-        nMaxSize = MAX_GENESIS_BLOCK_SIZE;
-    }
-    else
-    {
-        unsigned int blockHeight = nHeight ? nHeight : chainActive.Tip()->nHeight + 1;
+    unsigned int blockHeight = nHeight ? nHeight : chainActive.Genesis() ? chainActive.Tip()->nHeight + 1 : 0;
+
+    // New logic since hardfork
+    if (blockHeight >= nMainnetNewLogicBlockNumber) {
         nMaxSize = (GetProofOfWorkReward(0, 0, blockHeight) * 1000 / MIN_TX_FEE);
+    } else {
+        nMaxSize = MAX_GENESIS_BLOCK_SIZE;
     }
 
     switch (mode)

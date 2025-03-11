@@ -26,6 +26,8 @@ enum {
     LOCKTIME_MEDIAN_TIME_PAST = (1 << 1),
 };
 
+/** The maximum allowed size for a serialized block, in bytes (only for buffer size limits) */
+static const unsigned int MAX_BLOCK_SERIALIZED_SIZE = 1000000;
 static const unsigned int MAX_GENESIS_BLOCK_SIZE = 1000000;
 static const size_t MIN_TRANSACTION_WEIGHT = 68; // 60 is the lower bound for the size of a valid serialized CTransaction
 static const size_t MIN_SERIALIZABLE_TRANSACTION_WEIGHT = 18; // 10 is the lower bound for the size of a serialized CTransaction

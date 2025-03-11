@@ -372,8 +372,9 @@ static const size_t MIN_TRANSACTION_OUTPUT_WEIGHT = ::GetSerializeSize(CTxOut(),
 const Coin& AccessByTxid(const CCoinsViewCache& view, const uint256& txid)
 {
     COutPoint iter(txid, 0);
-    // TODO: Review GetMaxSize
-    while (iter.n < GetMaxSize(MAX_BLOCK_SIZE) / MIN_TRANSACTION_OUTPUT_WEIGHT) {
+    // Get the max block size before and after hardfork, choose the bigger
+    ::uint64_t maxBlockSize = std::max(GetMaxSize(MAX_BLOCK_SIZE, nMainnetNewLogicBlockNumber-1), GetMaxSize(MAX_BLOCK_SIZE));
+    while (iter.n < maxBlockSize / MIN_TRANSACTION_OUTPUT_WEIGHT) {
         const Coin& alternate = view.AccessCoin(iter);
         if (!alternate.IsSpent()) return alternate;
         ++iter.n;
