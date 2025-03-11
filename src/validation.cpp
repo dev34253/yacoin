@@ -83,8 +83,6 @@ bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
 bool fBlockHashIndex = true;
 ::uint32_t nMinEase = bnProofOfWorkLimit.GetCompact();
-::int64_t nBlockRewardPrev = 0;
-bool recalculateBlockReward = false;
 bool recalculateMinEase = false;
 
 //
@@ -839,102 +837,66 @@ bool IsInitialBlockDownload()
 // TODO: Refactor GetProofOfWorkReward
 ::int64_t GetProofOfWorkReward(unsigned int nBits, ::int64_t nFees, unsigned int nHeight)
 {
-    // NEW LOGIC SINCE V1.0.0
+    ::int64_t blockReward;
+    // NEW LOGIC SINCE HARDFORK
     // Get reward of a specific block height
     if (nHeight != 0 && nHeight >= nMainnetNewLogicBlockNumber)
     {
+        // Default: nEpochInterval = 21000 blocks, recalculated with each epoch
+        // PoW reward is 2%
         ::int32_t startEpochBlockHeight = (nHeight / nEpochInterval) * nEpochInterval;
+        if (startEpochBlockHeight == 0) { // means nHeight < nEpochInterval
+            startEpochBlockHeight = nMainnetNewLogicBlockNumber;
+        }
         const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
-        return (pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-    }
+        blockReward = (pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
+    } else {
+        // OLD LOGIC BEFORE HARDFORK
+        CBigNum bnSubsidyLimit = MAX_MINT_PROOF_OF_WORK;
 
-    if (chainActive.Tip() && (chainActive.Tip()->nHeight + 1) >= nMainnetNewLogicBlockNumber)
-    {
-        // Get reward of current mining block
-        ::int64_t nBlockRewardExcludeFees;
-        if (recalculateBlockReward) // Reorg through two or many epochs
+        CBigNum bnTarget;
+        bnTarget.SetCompact(nBits);
+        CBigNum bnTargetLimit = bnProofOfWorkLimit;
+        bnTargetLimit.SetCompact(bnTargetLimit.GetCompact());
+
+        // NovaCoin: subsidy is cut in half every 64x multiply of PoW difficulty
+        // A reasonably continuous curve is used to avoid shock to market
+        // (nSubsidyLimit / nSubsidy) ** 6 == bnProofOfWorkLimit / bnTarget
+        //
+        // Human readable form:
+        //
+        // nSubsidy = 100 / (diff ^ 1/6)
+        CBigNum bnLowerBound = CENT;
+        CBigNum bnUpperBound = bnSubsidyLimit;
+        while (bnLowerBound + CENT <= bnUpperBound)
         {
-            recalculateBlockReward = false;
-            bool reorgToHardforkBlock = false;
-            if (chainActive.Tip()->nHeight / nEpochInterval == nMainnetNewLogicBlockNumber / nEpochInterval)
-            {
-                reorgToHardforkBlock = true;
-            }
-            ::int32_t startEpochBlockHeight = (chainActive.Tip()->nHeight / nEpochInterval) * nEpochInterval;
-            ::int32_t moneySupplyBlockHeight =
-                reorgToHardforkBlock ? nMainnetNewLogicBlockNumber - 1 : startEpochBlockHeight - 1;
-            const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(moneySupplyBlockHeight);
-            nBlockRewardExcludeFees = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-            nBlockRewardPrev = nBlockRewardExcludeFees;
-        }
-        else // normal case
-        {
-            // Default: nEpochInterval = 21000 blocks, recalculated with each epoch
-            if ((chainActive.Tip()->nHeight + 1) % nEpochInterval == 0 || (chainActive.Tip()->nHeight + 1) == nMainnetNewLogicBlockNumber)
-            {
-                // recalculated
-                // PoW reward is 2%
-                nBlockRewardExcludeFees = (::int64_t)(chainActive.Tip()->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-                nBlockRewardPrev = nBlockRewardExcludeFees;
-            }
+            CBigNum bnMidValue = (bnLowerBound + bnUpperBound) / 2;
+            if (fDebug && gArgs.GetBoolArg("-printcreation"))
+              LogPrintf("GetProofOfWorkReward() : lower=%" PRId64 " upper=%" PRId64
+                        " mid=%" PRId64 "\n",
+                        bnLowerBound.getuint64(), bnUpperBound.getuint64(),
+                        bnMidValue.getuint64());
+            if (bnMidValue * bnMidValue * bnMidValue * bnMidValue * bnMidValue *
+                    bnMidValue * bnTargetLimit >
+                bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit *
+                    bnSubsidyLimit * bnSubsidyLimit * bnTarget)
+              bnUpperBound = bnMidValue;
             else
-            {
-                nBlockRewardExcludeFees = (::int64_t)nBlockRewardPrev;
-                if (!nBlockRewardPrev)
-                {
-                    const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(nMainnetNewLogicBlockNumber ? nMainnetNewLogicBlockNumber - 1 : 0);
-                    nBlockRewardExcludeFees =
-                        (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
-                }
-            }
+                bnLowerBound = bnMidValue;
         }
-        return nBlockRewardExcludeFees;
-    }
 
-    // OLD LOGIC BEFORE V1.0.0
-    CBigNum bnSubsidyLimit = MAX_MINT_PROOF_OF_WORK;
+        ::int64_t nSubsidy = bnUpperBound.getuint64();
 
-    CBigNum bnTarget;
-    bnTarget.SetCompact(nBits);
-    CBigNum bnTargetLimit = bnProofOfWorkLimit;
-    bnTargetLimit.SetCompact(bnTargetLimit.GetCompact());
-
-    // NovaCoin: subsidy is cut in half every 64x multiply of PoW difficulty
-    // A reasonably continuous curve is used to avoid shock to market
-    // (nSubsidyLimit / nSubsidy) ** 6 == bnProofOfWorkLimit / bnTarget
-    //
-    // Human readable form:
-    //
-    // nSubsidy = 100 / (diff ^ 1/6)
-    CBigNum bnLowerBound = CENT;
-    CBigNum bnUpperBound = bnSubsidyLimit;
-    while (bnLowerBound + CENT <= bnUpperBound)
-    {
-        CBigNum bnMidValue = (bnLowerBound + bnUpperBound) / 2;
+        nSubsidy = (nSubsidy / CENT) * CENT;
         if (fDebug && gArgs.GetBoolArg("-printcreation"))
-          LogPrintf("GetProofOfWorkReward() : lower=%" PRId64 " upper=%" PRId64
-                    " mid=%" PRId64 "\n",
-                    bnLowerBound.getuint64(), bnUpperBound.getuint64(),
-                    bnMidValue.getuint64());
-        if (bnMidValue * bnMidValue * bnMidValue * bnMidValue * bnMidValue *
-                bnMidValue * bnTargetLimit >
-            bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit *
-                bnSubsidyLimit * bnSubsidyLimit * bnTarget)
-          bnUpperBound = bnMidValue;
-        else
-            bnLowerBound = bnMidValue;
+          LogPrintf(
+              "GetProofOfWorkReward() : create=%s nBits=0x%08x nSubsidy=%" PRId64
+              "\n",
+              FormatMoney(nSubsidy), nBits, nSubsidy);
+
+        blockReward = std::min(nSubsidy, MAX_MINT_PROOF_OF_WORK) + nFees;
     }
-
-    ::int64_t nSubsidy = bnUpperBound.getuint64();
-
-    nSubsidy = (nSubsidy / CENT) * CENT;
-    if (fDebug && gArgs.GetBoolArg("-printcreation"))
-      LogPrintf(
-          "GetProofOfWorkReward() : create=%s nBits=0x%08x nSubsidy=%" PRId64
-          "\n",
-          FormatMoney(nSubsidy), nBits, nSubsidy);
-
-    return std::min(nSubsidy, MAX_MINT_PROOF_OF_WORK) + nFees;
+    return blockReward;
 }
 
 void static InvalidChainFound(CBlockIndex* pindexNew)
@@ -1943,7 +1905,7 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs]\n", (unsigned)block.vtx.size(), 0.001 * (nTime3 - nTime2), 0.001 * (nTime3 - nTime2) / block.vtx.size(), nInputs <= 1 ? 0 : 0.001 * (nTime3 - nTime2) / (nInputs-1), nTimeConnect * 0.000001);
 
     if (block.IsProofOfWork()) {
-        ::int64_t blockReward = GetProofOfWorkReward(block.nBits, nFees);
+        ::int64_t blockReward = GetProofOfWorkReward(block.nBits, nFees, chainActive.Height() + 1);
 
         // Check coinbase reward
         if (block.vtx[0].GetValueOut() > blockReward) {
@@ -2252,7 +2214,6 @@ void static UpdateTip(CBlockIndex *pindexNew) {
     if ((abs(oldHeight - newHeight) >= 2) &&
         (abs((::int32_t)(oldHeight / nEpochInterval) - (::int32_t)(newHeight / nEpochInterval)) >= 1))
     {
-        recalculateBlockReward = true;
         recalculateMinEase = true;
     }
 
@@ -3551,25 +3512,26 @@ void LoadBlockRewardAndHighestDiff()
     bnMaximumTarget *= 3;
 
     // Calculate current block reward
+    ::int64_t nBlockReward = 0;
     if (chainActive.Height() >= nMainnetNewLogicBlockNumber) {
         BlockMap::iterator mi = mapBlockIndex.find(lastEpochChangeHash);
         if (mi != mapBlockIndex.end())
         {
             CBlockIndex *pBestEpochIntervalIndex = (*mi).second;
-            nBlockRewardPrev =
+            nBlockReward =
                 (::int64_t)((pBestEpochIntervalIndex->pprev ? pBestEpochIntervalIndex->pprev->nMoneySupply : pBestEpochIntervalIndex->nMoneySupply) /
                             nNumberOfBlocksPerYear) * nInflation;
         }
         else
         {
-            nBlockRewardPrev = 0;
+            nBlockReward = 0;
             LogPrintf("There is something wrong, can't find last epoch change block\n");
         }
     }
 
     LogPrintf("LoadBlockRewardAndHighestDiff(), last epoch change at block %d (%s)\n", lastEpochChangeHeight, lastEpochChangeHash.GetHex());
     LogPrintf("Minimum difficulty target = %s\n", CBigNum(bnMaximumTarget).getuint256().ToString().substr(0, 16));
-    LogPrintf("Current block reward = %d\n", nBlockRewardPrev);
+    LogPrintf("Current block reward = %d\n", nBlockReward);
 }
 
 bool static LoadBlockIndexDB(const CChainParams& chainparams)

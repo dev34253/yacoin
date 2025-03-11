@@ -92,7 +92,7 @@ Value getsubsidy(const Array& params, bool fHelp)
         nBits = GetNextTargetRequired(chainActive.Tip(), false);
     }
 
-    return (Value_type)GetProofOfWorkReward(nBits);
+    return (Value_type)GetProofOfWorkReward(nBits, 0, chainActive.Height() + 1);
 }
 
 Value generatetoaddress(const Array& params, bool fHelp){

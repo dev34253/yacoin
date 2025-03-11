@@ -164,7 +164,6 @@ extern bool fCheckBlockIndex;
 extern bool fCheckpointsEnabled;
 extern bool fBlockHashIndex;
 extern ::uint32_t nMinEase; // minimum ease corresponds to highest difficulty
-extern ::int64_t nBlockRewardPrev;
 
 // Mempool
 extern CTxMemPool mempool;

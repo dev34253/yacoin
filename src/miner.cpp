@@ -508,7 +508,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
     UpdateTime(pblock, Params().GetConsensus(), pindexPrev);
     pblock->nBits = GetNextTargetRequired(pindexPrev, false);
     pblock->nNonce = 0;
-    pblock->vtx[0].vout[0].nValue = GetProofOfWorkReward(pblock->nBits);
+    pblock->vtx[0].vout[0].nValue = GetProofOfWorkReward(pblock->nBits, 0, chainActive.Height() + 1);
 
     LogPrintf(
         "CreateNewBlock() packages: %.2fms (%d packages, %d updated "

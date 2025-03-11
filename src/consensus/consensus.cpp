@@ -24,7 +24,8 @@
     }
     else
     {
-        nMaxSize = (GetProofOfWorkReward(0, 0, nHeight) * 1000 / MIN_TX_FEE);
+        unsigned int blockHeight = nHeight ? nHeight : chainActive.Tip()->nHeight + 1;
+        nMaxSize = (GetProofOfWorkReward(0, 0, blockHeight) * 1000 / MIN_TX_FEE);
     }
 
     switch (mode)
