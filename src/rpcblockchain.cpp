@@ -16,6 +16,7 @@
 #include "streams.h"
 #include "price.h"
 #include "consensus/validation.h"
+#include "policy/policy.h"
 
 using namespace json_spirit;
 

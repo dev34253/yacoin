@@ -8,6 +8,7 @@
 #include "optionsmodel.h"
 #include "coincontrol.h"
 #include "dialogwindowflags.h"
+#include "policy/policy.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -495,7 +496,7 @@ void CoinControlDialog::updateLabels(WalletModel *model, QWidget* dialog)
         // Fee
         int64_t nFee = nTransactionFee * (1 + (int64_t)nBytes / 1000);
         // Min Fee
-        int64_t nMinFee = txDummy.GetMinFee(nBytes);
+        int64_t nMinFee = GetMinFee(nBytes);
 
         nPayFee = max(nFee, nMinFee);
 

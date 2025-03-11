@@ -64,9 +64,6 @@ extern const unsigned int nStakeMaxAge, nOnedayOfAverageBlocks;
 extern const unsigned int nStakeMinAge, nStakeTargetSpacing, nModifierInterval;
 
 static const unsigned int MAX_ORPHAN_TRANSACTIONS = 10000;
-/** Maxiumum number of signature check operations in an IsStandard() P2SH script */
-static const unsigned int MAX_P2SH_SIGOPS = 21;
-
 static const ::int64_t MAX_MINT_PROOF_OF_WORK = 100 * COIN;
 static const ::int64_t MAX_MINT_PROOF_OF_STAKE = 1 * COIN;
 static const ::int64_t MIN_TXOUT_AMOUNT = CENT/100;
@@ -163,19 +160,6 @@ extern unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx = 
 bool TestLockPointValidity(const LockPoints* lp);
 
 /**
- * Check if transaction will be BIP 68 final in the next block to be created.
- *
- * Simulates calling SequenceLocks() with data from the tip of the current active chain.
- * Optionally stores in LockPoints the resulting height and time calculated and the hash
- * of the block needed for calculation or skips the calculation and uses the LockPoints
- * passed in for evaluation.
- * The LockPoints should not be considered valid if CheckSequenceLocks returns false.
- *
- * See consensus/consensus.h for flag definitions.
- */
-bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp = nullptr, bool useExistingLockPoints = false);
-
-/**
  * Get minimum confirmations to use coinbase
  */
 int GetCoinbaseMaturity();
@@ -251,34 +235,6 @@ public:
     void print() const
     {
         LogPrintf("%s\n", ToString());
-    }
-};
-
-/** Closure representing one script verification
- *  Note that this stores references to the spending transaction */
-class CScriptCheck
-{
-private:
-    CScript scriptPubKey;
-    const CTransaction *ptxTo;
-    unsigned int nIn;
-    unsigned int nFlags;
-    int nHashType;
-
-public:
-    CScriptCheck() {}
-    CScriptCheck(const CTransaction& txFromIn, const CTransaction& txToIn, unsigned int nInIn, unsigned int nFlagsIn, int nHashTypeIn) :
-        scriptPubKey(txFromIn.vout[txToIn.vin[nInIn].prevout.COutPointGet_n()].scriptPubKey),
-        ptxTo(&txToIn), nIn(nInIn), nFlags(nFlagsIn), nHashType(nHashTypeIn) { }
-
-    bool operator()() const;
-
-    void swap(CScriptCheck &check) {
-        scriptPubKey.swap(check.scriptPubKey);
-        std::swap(ptxTo, check.ptxTo);
-        std::swap(nIn, check.nIn);
-        std::swap(nFlags, check.nFlags);
-        std::swap(nHashType, check.nHashType);
     }
 };
 

@@ -26,9 +26,11 @@
 
 #include "random.h"
 #include "net_processing.h"
+#include "consensus/validation.h"
+#include "policy/policy.h"
+
 #include <boost/algorithm/string/replace.hpp>
 #include <openssl/rand.h>
-#include "consensus/validation.h"
 
 using std::list;
 using std::pair;
@@ -2967,7 +2969,7 @@ bool CWallet::CreateTransactionAll(
                 // 1) Set with option "paytxfee" in yacoin.conf
                 // 2) Set with rpc command "settxfee"
                 int64_t nPayFee = (nBytes * nTransactionFee) / 1000;
-                int64_t nMinFee = wtxNew.GetMinFee(nBytes);
+                int64_t nMinFee = GetMinFee(nBytes);
 
                 LogPrintf("CWallet::CreateTransaction, nBytes = %d, "
                        "nPayFee = %ld, "
@@ -3105,7 +3107,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
         int64_t nBytes = ::GetSerializeSize(*(CTransaction*)&wtxNew, SER_NETWORK, PROTOCOL_VERSION) + wtxNew.vin.size() * 110;
 
         // Get actual transaction fee according to its estimated size
-        int64_t nMinFee = wtxNew.GetMinFee(nBytes);
+        int64_t nMinFee = GetMinFee(nBytes);
 
         // Prepare transaction for commit if sum is enough ot its size is too big
         if (nBytes >= GetMaxSize(MAX_BLOCK_SIZE_GEN)/6 || wtxNew.vout[0].nValue >= nOutputValue)
@@ -3138,7 +3140,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
         int64_t nBytes = ::GetSerializeSize(*(CTransaction*)&wtxNew, SER_NETWORK, PROTOCOL_VERSION) + wtxNew.vin.size() * 110;
 
         // Get actual transaction fee according to its size and priority
-        int64_t nMinFee = wtxNew.GetMinFee(nBytes);
+        int64_t nMinFee = GetMinFee(nBytes);
 
         wtxNew.vout[0].nValue -= nMinFee; // Set actual fee
 

@@ -682,6 +682,27 @@ private:
 };
 
 /**
+ * CCoinsView that brings transactions from a memorypool into view.
+ * It does not check for spendings by memory pool transactions.
+ * Instead, it provides access to all Coins which are either unspent in the
+ * base CCoinsView, or are outputs from any mempool transaction!
+ * This allows transaction replacement to work as expected, as you want to
+ * have all inputs "available" to check signatures, and any cycles in the
+ * dependency graph are checked directly in AcceptToMemoryPool.
+ * It also allows you to sign a double-spend directly in signrawtransaction,
+ * as long as the conflicting transaction is not yet confirmed.
+ */
+class CCoinsViewMemPool : public CCoinsViewBacked
+{
+protected:
+    const CTxMemPool& mempool;
+
+public:
+    CCoinsViewMemPool(CCoinsView* baseIn, const CTxMemPool& mempoolIn);
+    bool GetCoin(const COutPoint &outpoint, Coin &coin) const override;
+};
+
+/**
  * DisconnectedBlockTransactions
 
  * During the reorg, it's desirable to re-add previously confirmed transactions

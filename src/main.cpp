@@ -314,105 +314,6 @@ bool TestLockPointValidity(const LockPoints* lp)
     return true;
 }
 
-bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp, bool useExistingLockPoints)
-{
-    LOCK2(cs_main, mempool.cs);
-
-    CBlockIndex* tip = chainActive.Tip();
-    CBlockIndex index;
-    index.pprev = tip;
-    // CheckSequenceLocks() uses chainActive.Tip()->nHeight+1 to evaluate
-    // height based locks because when SequenceLocks() is called within
-    // ConnectBlock(), the height of the block *being*
-    // evaluated is what is used.
-    // Thus if we want to know if a transaction can be part of the
-    // *next* block, we need to use one more than chainActive.Tip()->nHeight
-    index.nHeight = chainActive.Tip()->nHeight + 1;
-
-    std::pair<int, int64_t> lockPair;
-    if (useExistingLockPoints) {
-        assert(lp);
-        lockPair.first = lp->height;
-        lockPair.second = lp->time;
-    }
-    else {
-        std::vector<int> prevheights;
-        prevheights.resize(tx.vin.size());
-        for (size_t txinIndex = 0; txinIndex < tx.vin.size(); txinIndex++) {
-            COutPoint prevout = tx.vin[txinIndex].prevout;
-
-            // Check from both mempool and db
-            if (mempool.exists(prevout.COutPointGetHash()))
-            {
-                // Assume all mempool transaction confirm in the next block
-                prevheights[txinIndex] = chainActive.Tip()->nHeight + 1;
-            }
-            else // Check from txdb
-            {
-                CTransaction txPrev;
-                CTxIndex txindex;
-                CTxDB txdb("r");
-                if (!txPrev.ReadFromDisk(txdb, prevout, txindex))
-                {
-                    // Can't find transaction index
-                    return error("CheckSequenceLocks : ReadFromDisk tx %s failed", prevout.COutPointGetHash().ToString().substr(0,10).c_str());
-                }
-
-                uint256 hashBlock = 0;
-                CBlock block;
-                if (!block.ReadFromDisk(txindex.pos.Get_CDiskTxPos_nFile(), txindex.pos.Get_CDiskTxPos_nBlockPos(), false))
-                {
-                    return error("CheckSequenceLocks : ReadFromDisk block containing tx %s failed", prevout.COutPointGetHash().ToString().substr(0,10).c_str());
-                }
-                else
-                {
-                    hashBlock = block.GetHash();
-                }
-
-                BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
-                if (mi != mapBlockIndex.end() && (*mi).second)
-                {
-                    CBlockIndex* pindex = (*mi).second;
-                    prevheights[txinIndex] = pindex->nHeight;
-                }
-                else
-                {
-                    return error("CheckSequenceLocks : mapBlockIndex doesn't contains block %s", hashBlock.ToString().substr(0,10).c_str());
-                }
-            }
-        }
-
-        lockPair = CalculateSequenceLocks(tx, flags, &prevheights, index);
-        if (lp) {
-            lp->height = lockPair.first;
-            lp->time = lockPair.second;
-            // Also store the hash of the block with the highest height of
-            // all the blocks which have sequence locked prevouts.
-            // This hash needs to still be on the chain
-            // for these LockPoint calculations to be valid
-            // Note: It is impossible to correctly calculate a maxInputBlock
-            // if any of the sequence locked inputs depend on unconfirmed txs,
-            // except in the special case where the relative lock time/height
-            // is 0, which is equivalent to no sequence lock. Since we assume
-            // input height of tip+1 for mempool txs and test the resulting
-            // lockPair from CalculateSequenceLocks against tip+1.  We know
-            // EvaluateSequenceLocks will fail if there was a non-zero sequence
-            // lock on a mempool input, so we can use the return value of
-            // CheckSequenceLocks to indicate the LockPoints validity
-            int maxInputHeight = 0;
-            for (int height : prevheights) {
-                // Can ignore mempool inputs since we'll fail if they had non-zero locks
-                if (height != tip->nHeight+1) {
-                    maxInputHeight = std::max(maxInputHeight, height);
-                }
-            }
-            lp->maxInputBlock = tip->GetAncestor(maxInputHeight);
-        }
-    }
-
-    return EvaluateSequenceLocks(index, lockPair);
-}
-
 int GetCoinbaseMaturity()
 {
     if (chainActive.Height() != -1 && chainActive.Genesis() && chainActive.Height() >= nMainnetNewLogicBlockNumber)
@@ -1201,17 +1102,6 @@ bool IsInitialBlockDownload()
     LogPrintf("Leaving InitialBlockDownload (latching to false)\n");
     latchToFalse.store(true, std::memory_order_relaxed);
     return false;
-}
-
-bool CScriptCheck::operator()() const 
-{
-    const CScript 
-        &scriptSig = ptxTo->vin[nIn].scriptSig;
-    if (!VerifyScript(scriptSig, scriptPubKey, *ptxTo, nIn, nFlags, nHashType))
-        return error("CScriptCheck() : %s VerifySignature failed", 
-                     ptxTo->GetHash().ToString().substr(0,10).c_str()
-                    );
-    return true;
 }
 
 bool VerifySignature(

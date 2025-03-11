@@ -41,7 +41,7 @@ Verify(const CScript& scriptSig, const CScript& scriptPubKey, bool fStrict)
     txTo.vout[0].nValue = 1;
 
     unsigned int flags = SCRIPT_VERIFY_NONE;
-    if(fStrict) flags = STRICT_FLAGS;
+    if(fStrict) flags = STANDARD_SCRIPT_VERIFY_FLAGS;
     return VerifyScript(scriptSig, scriptPubKey, txTo, 0, flags, 0);
 }
 

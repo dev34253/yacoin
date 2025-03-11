@@ -16,6 +16,7 @@
 #endif
 #include "streams.h"
 #include "net_processing.h"
+#include "policy/policy.h"
 
 using namespace json_spirit;
 

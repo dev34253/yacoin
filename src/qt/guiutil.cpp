@@ -4,6 +4,7 @@
 #include "bitcoinunits.h"
 #include "util.h"
 #include "init.h"
+#include "policy/policy.h"
 
 #include <QString>
 #include <QDateTime>

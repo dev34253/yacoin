@@ -74,6 +74,7 @@ CBigNum bnBestChainTrust(0);
 uint256 hashBestChain = 0;
 bool fReindex = false;
 bool fTxIndex = false;
+bool fRequireStandard = true;
 bool fStoreBlockHashToDb = true;
 CCoinsViewDB *pcoinsdbview = nullptr;
 CCoinsViewCache *pcoinsTip = nullptr;
@@ -159,9 +160,126 @@ enum FlushStateMode {
 
 // See definition for documentation
 static bool FlushStateToDisk(const CChainParams& chainParams, CValidationState &state, FlushStateMode mode, int nManualPruneHeight=0);
-bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, const CBlockIndex* pindexBlock, bool fScriptChecks, unsigned int flags, std::vector<CScriptCheck> *pvChecks = nullptr);
+bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, std::vector<CScriptCheck> *pvChecks = nullptr);
 static FILE* OpenUndoFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 
+
+static bool isHardforkHappened()
+{
+    if (chainActive.Height() != -1 && chainActive.Genesis() && chainActive.Height() >= nMainnetNewLogicBlockNumber)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+bool CheckFinalTx(const CTransaction &tx, int flags)
+{
+    AssertLockHeld(cs_main);
+
+    // By convention a negative value for flags indicates that the
+    // current network-enforced consensus rules should be used. In
+    // a future soft-fork scenario that would mean checking which
+    // rules would be enforced for the next block and setting the
+    // appropriate flags. At the present time no soft-forks are
+    // scheduled, so no flags are set.
+    flags = std::max(flags, 0);
+
+    // CheckFinalTx() uses chainActive.Height()+1 to evaluate
+    // nLockTime because when IsFinalTx() is called within
+    // CBlock::AcceptBlock(), the height of the block *being*
+    // evaluated is what is used. Thus if we want to know if a
+    // transaction can be part of the *next* block, we need to call
+    // IsFinalTx() with one more than chainActive.Height().
+    const int nBlockHeight = chainActive.Height() + 1;
+
+    // BIP113 will require that time-locked transactions have nLockTime set to
+    // less than the median time of the previous block they're contained in.
+    // When the next block is created its previous block will be the current
+    // chain tip, so we use that to calculate the median time passed to
+    // IsFinalTx() if LOCKTIME_MEDIAN_TIME_PAST is set.
+    const int64_t nBlockTime = (flags & LOCKTIME_MEDIAN_TIME_PAST)
+                             ? chainActive.Tip()->GetMedianTimePast()
+                             : GetAdjustedTime();
+
+    return IsFinalTx(tx, nBlockHeight, nBlockTime);
+}
+
+bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp, bool useExistingLockPoints)
+{
+    AssertLockHeld(cs_main);
+    AssertLockHeld(mempool.cs);
+
+    CBlockIndex* tip = chainActive.Tip();
+    CBlockIndex index;
+    index.pprev = tip;
+    // CheckSequenceLocks() uses chainActive.Height()+1 to evaluate
+    // height based locks because when SequenceLocks() is called within
+    // ConnectBlock(), the height of the block *being*
+    // evaluated is what is used.
+    // Thus if we want to know if a transaction can be part of the
+    // *next* block, we need to use one more than chainActive.Height()
+    index.nHeight = tip->nHeight + 1;
+
+    std::pair<int, int64_t> lockPair;
+    if (useExistingLockPoints) {
+        assert(lp);
+        lockPair.first = lp->height;
+        lockPair.second = lp->time;
+    }
+    else {
+        // pcoinsTip contains the UTXO set for chainActive.Tip()
+        CCoinsViewMemPool viewMemPool(pcoinsTip, mempool);
+        std::vector<int> prevheights;
+        prevheights.resize(tx.vin.size());
+        for (size_t txinIndex = 0; txinIndex < tx.vin.size(); txinIndex++) {
+            const CTxIn& txin = tx.vin[txinIndex];
+            Coin coin;
+            if (!viewMemPool.GetCoin(txin.prevout, coin)) {
+                return error("%s: Missing input", __func__);
+            }
+            if (coin.nHeight == MEMPOOL_HEIGHT) {
+                // Assume all mempool transaction confirm in the next block
+                prevheights[txinIndex] = tip->nHeight + 1;
+            } else {
+                prevheights[txinIndex] = coin.nHeight;
+            }
+        }
+        lockPair = CalculateSequenceLocks(tx, flags, &prevheights, index);
+        if (lp) {
+            lp->height = lockPair.first;
+            lp->time = lockPair.second;
+            // Also store the hash of the block with the highest height of
+            // all the blocks which have sequence locked prevouts.
+            // This hash needs to still be on the chain
+            // for these LockPoint calculations to be valid
+            // Note: It is impossible to correctly calculate a maxInputBlock
+            // if any of the sequence locked inputs depend on unconfirmed txs,
+            // except in the special case where the relative lock time/height
+            // is 0, which is equivalent to no sequence lock. Since we assume
+            // input height of tip+1 for mempool txs and test the resulting
+            // lockPair from CalculateSequenceLocks against tip+1.  We know
+            // EvaluateSequenceLocks will fail if there was a non-zero sequence
+            // lock on a mempool input, so we can use the return value of
+            // CheckSequenceLocks to indicate the LockPoints validity
+            int maxInputHeight = 0;
+            for (int height : prevheights) {
+                // Can ignore mempool inputs since we'll fail if they had non-zero locks
+                if (height != tip->nHeight+1) {
+                    maxInputHeight = std::max(maxInputHeight, height);
+                }
+            }
+            lp->maxInputBlock = tip->GetAncestor(maxInputHeight);
+        }
+    }
+    return EvaluateSequenceLocks(index, lockPair);
+}
+
+// Returns the script flags which should be checked for a given block
+static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& chainparams);
 
 /* Make mempool consistent after a reorg, by re-adding or recursively erasing
  * disconnected block transactions from the mempool, and also removing any
@@ -208,6 +326,260 @@ static void UpdateMempoolForReorg(DisconnectedBlockTransactions &disconnectpool,
     mempool.UpdateTransactionsFromBlock(vHashUpdate);
     // We also need to remove any now-immature transactions
     mempool.removeForReorg(chainActive.Tip()->nHeight + 1, STANDARD_LOCKTIME_VERIFY_FLAGS);
+}
+
+static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool& pool, CValidationState& state, const CTransactionRef& ptx,
+                              bool* pfMissingInputs, int64_t nAcceptTime, std::vector<COutPoint>& coins_to_uncache)
+{
+    const CTransaction& tx = *ptx;
+    const uint256 hash = tx.GetHash();
+    AssertLockHeld(cs_main);
+    if (pfMissingInputs)
+        *pfMissingInputs = false;
+
+    /** YAC_TOKEN START */
+    std::vector<std::pair<std::string, uint256>> vReissueTokens;
+    /** YAC_TOKEN END */
+
+    if (tx.nVersion == CTransaction::CURRENT_VERSION_of_Tx_for_yac_old && isHardforkHappened())
+        return error("AcceptToMemoryPoolWorker() : Not accept transaction with old version");
+
+    if (!CheckTransaction(tx, state))
+        return false; // state filled in by CheckTransaction
+
+    // Coinbase is only valid in a block, not as a loose transaction
+    if (tx.IsCoinBase())
+        return state.DoS(100, error("AcceptToMemoryPoolWorker() : coinbase as individual tx"), REJECT_INVALID, "coinbase");
+
+    // ppcoin: coinstake is also only valid in a block, not as a loose transaction
+    if (tx.IsCoinStake())
+        return state.DoS(100, error("AcceptToMemoryPoolWorker() : coinstake as individual tx"), REJECT_INVALID, "coinstake");
+
+    // Rather not work on nonstandard transactions (unless -testnet/-regtest)
+    std::string reason;
+    if (fRequireStandard && !IsStandardTx(tx, reason))
+        return state.DoS(0, error("AcceptToMemoryPoolWorker() : non-standard transaction (%s)", reason), REJECT_NONSTANDARD, reason);
+
+    // Only accept nLockTime-using transactions that can be mined in the next
+    // block; we don't want our mempool filled up with transactions that can't
+    // be mined yet.
+    if (!CheckFinalTx(tx, STANDARD_LOCKTIME_VERIFY_FLAGS))
+        return state.DoS(0, error("AcceptToMemoryPoolWorker() : non-final transaction"), REJECT_NONSTANDARD, "non-final");
+
+    // is it already in the memory pool?
+    if (pool.exists(hash)) {
+        return state.Invalid(false, REJECT_DUPLICATE, "txn-already-in-mempool");
+    }
+
+    // Check for conflicts with in-memory transactions
+    for (const CTxIn &txin : tx.vin)
+    {
+        auto itConflicting = pool.mapNextTx.find(txin.prevout);
+        if (itConflicting != pool.mapNextTx.end())
+        {
+            // Disable replacement feature for now
+            return state.Invalid(false, REJECT_DUPLICATE, "txn-mempool-conflict");
+        }
+    }
+
+    {
+        CCoinsView dummy;
+        CCoinsViewCache view(&dummy);
+
+        CAmount nValueIn = 0;
+        LockPoints lp;
+        {
+            LOCK(pool.cs);
+            CCoinsViewMemPool viewMemPool(pcoinsTip, pool);
+            view.SetBackend(viewMemPool);
+
+            // do all inputs exist?
+            for (const CTxIn txin : tx.vin) {
+                if (!pcoinsTip->HaveCoinInCache(txin.prevout)) {
+                    coins_to_uncache.push_back(txin.prevout);
+                }
+                if (!view.HaveCoin(txin.prevout)) {
+                    // Are inputs missing because we already have the tx?
+                    for (size_t out = 0; out < tx.vout.size(); out++) {
+                        // Optimistically just do efficient check of cache for outputs
+                        if (pcoinsTip->HaveCoinInCache(COutPoint(hash, out))) {
+                            return state.Invalid(false, REJECT_DUPLICATE, "txn-already-known");
+                        }
+                    }
+                    // Otherwise assume this might be an orphan tx for which we just haven't seen parents yet
+                    if (pfMissingInputs) {
+                        *pfMissingInputs = true;
+                    }
+                    return false; // fMissingInputs and !state.IsInvalid() is used to detect this condition, don't set state.Invalid()
+                }
+            }
+
+            // Bring the best block into scope
+            view.GetBestBlock();
+
+            nValueIn = view.GetValueIn(tx);
+
+            // we have all inputs cached now, so switch back to dummy, so we don't need to keep lock on mempool
+            view.SetBackend(dummy);
+
+            // Only accept BIP68 sequence locked transactions that can be mined in the next
+            // block; we don't want our mempool filled up with transactions that can't
+            // be mined yet.
+            // Must keep pool.cs for this unless we change CheckSequenceLocks to take a
+            // CoinsViewCache instead of create its own
+            if (!CheckSequenceLocks(tx, STANDARD_LOCKTIME_VERIFY_FLAGS, &lp))
+                return state.DoS(0, error("AcceptToMemoryPoolWorker() : non-BIP68-final transaction"), REJECT_NONSTANDARD, "non-BIP68-final");
+        } // end LOCK(pool.cs)
+
+        // Check transaction inputs (start)
+        if (!Consensus::CheckTxInputs(tx, state, view, GetSpendHeight(view), chainActive.Tip())) {
+            return error("%s: Consensus::CheckTxInputs: %s, %s", __func__, tx.GetHash().ToString(), FormatStateMessage(state));
+        }
+
+        /** YAC_TOKEN START */
+        if (!AreTokensDeployed()) {
+            for (auto out : tx.vout) {
+                if (out.scriptPubKey.IsTokenScript())
+                    LogPrintf("WARNING: bad-txns-contained-token-when-not-active\n");
+            }
+        }
+
+        if (AreTokensDeployed()) {
+            if (!Consensus::CheckTxTokens(tx, state, view, GetCurrentTokenCache(), true, vReissueTokens))
+                return error("%s: CheckTxTokens: %s, %s", __func__, tx.GetHash().ToString().c_str(),
+                             FormatStateMessage(state).c_str());
+        }
+        /** YAC_TOKEN END */
+        // Check transaction inputs (end)
+
+        // Check for non-standard pay-to-script-hash in inputs
+        if (fRequireStandard && !AreInputsStandard(tx, view))
+            return state.Invalid(error("AcceptToMemoryPoolWorker() : nonstandard transaction input"), REJECT_NONSTANDARD, "bad-txns-nonstandard-inputs");
+
+        int64_t nSigOpsCost = GetTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS);
+
+        // No transactions are allowed below min fee
+        CAmount nValueOut = tx.GetValueOut();
+        CAmount nFees = nValueIn-nValueOut;
+        unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+        ::int64_t txMinFee = GetMinFee(nSize);
+        if (nFees < txMinFee)
+            return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "mempool min fee not met",
+                            false, strprintf("AcceptToMemoryPoolWorker() : not enough fees %s, %lld < %lld", hash.ToString().c_str(), nFees, txMinFee));
+
+        // nModifiedFees includes any fee deltas from PrioritiseTransaction
+        CAmount nModifiedFees = nFees;
+        pool.ApplyDelta(hash, nModifiedFees);
+
+        // Keep track of transactions that spend a coinbase, which we re-scan
+        // during reorgs to ensure COINBASE_MATURITY is still met.
+        bool fSpendsCoinbase = false;
+        for (const CTxIn &txin : tx.vin) {
+            const Coin &coin = view.AccessCoin(txin.prevout);
+            if (coin.IsCoinBase() || coin.IsCoinStake()) {
+                fSpendsCoinbase = true;
+                break;
+            }
+        }
+
+        CTxMemPoolEntry entry(ptx, nFees, nAcceptTime, chainActive.Height(),
+                              fSpendsCoinbase, nSigOpsCost, lp);
+        // Check that the transaction doesn't have an excessive number of
+        // sigops, making it impossible to mine. Since the coinbase transaction
+        // itself can contain sigops MAX_STANDARD_TX_SIGOPS is less than
+        // MAX_BLOCK_SIGOPS; we still consider this an invalid rather than
+        // merely non-standard transaction.
+        if (nSigOpsCost > GetMaxSize(MAX_BLOCK_SIGOPS)/5) // corresponding to MAX_STANDARD_TX_SIGOPS_COST in bitcoin
+            return state.DoS(0, false, REJECT_NONSTANDARD, "bad-txns-too-many-sigops", false,
+                strprintf("%d", nSigOpsCost));
+
+        // Calculate in-mempool ancestors, up to a limit.
+        CTxMemPool::setEntries setAncestors;
+        size_t nLimitAncestors = DEFAULT_ANCESTOR_LIMIT;
+        size_t nLimitAncestorSize = DEFAULT_ANCESTOR_SIZE_LIMIT * 1000;
+        size_t nLimitDescendants = DEFAULT_DESCENDANT_LIMIT;
+        size_t nLimitDescendantSize = DEFAULT_DESCENDANT_SIZE_LIMIT * 1000;
+        std::string errString;
+        if (!pool.CalculateMemPoolAncestors(entry, setAncestors, nLimitAncestors, nLimitAncestorSize, nLimitDescendants, nLimitDescendantSize, errString)) {
+            return state.DoS(0, false, REJECT_NONSTANDARD, "too-long-mempool-chain", false, errString);
+        }
+
+        unsigned int scriptVerifyFlags = SIG_SWITCH_TIME < tx.nTime ? STANDARD_SCRIPT_VERIFY_FLAGS : SOFT_FLAGS;
+        if (!chainparams.RequireStandard()) {
+            scriptVerifyFlags = gArgs.GetArg("-promiscuousmempoolflags", scriptVerifyFlags);
+        }
+
+        // Check against previous transactions
+        // This is done last to help prevent CPU exhaustion denial-of-service attacks.
+        if (!CheckInputs(tx, state, view, true, scriptVerifyFlags)) {
+            // yac: we don't support SCRIPT_VERIFY_CLEANSTACK, SCRIPT_VERIFY_WITNESS but bitcoin does
+            return false; // state filled in by CheckInputs
+        }
+
+        // TODO: Add the logic to check again against the current block tip's script verification flags to cache our script execution flags
+
+        // Store transaction in memory
+        pool.addUnchecked(hash, entry, setAncestors);
+
+        // TODO: Add memory address index
+//        if (fAddressIndex) {
+//            pool.addAddressIndex(entry, view);
+//        }
+
+        /** YAC_TOKEN START */
+        if (AreTokensDeployed()) {
+            for (auto out : vReissueTokens) {
+                mapReissuedTokens.insert(out);
+                mapReissuedTx.insert(std::make_pair(out.second, out.first));
+            }
+            for (auto out : tx.vout) {
+                if (out.scriptPubKey.IsTokenScript()) {
+                    CTokenOutputEntry data;
+                    if (!GetTokenData(out.scriptPubKey, data))
+                        continue;
+                    if (data.type == TX_NEW_TOKEN && !IsTokenNameAnOwner(data.tokenName)) {
+                        pool.mapTokenToHash[data.tokenName] = hash;
+                        pool.mapHashToToken[hash] = data.tokenName;
+                    }
+                }
+            }
+        }
+        /** YAC_TOKEN END */
+    }
+
+    LogPrintf("AcceptToMemoryPoolWorker() : accepted %s (poolsz %zu)\n", hash.ToString().substr(0,10), pool.mapTx.size());
+    GetMainSignals().TransactionAddedToMempool(ptx);
+
+#ifdef QT_GUI
+    {
+        LOCK(cs);
+
+    lastTxHash.storeLasthash( hash );
+    //uiInterface.NotifyBlocksChanged();
+    }
+#endif
+}
+
+/** (try to) add transaction to memory pool with a specified acceptance time **/
+static bool AcceptToMemoryPoolWithTime(const CChainParams& chainparams, CTxMemPool& pool, CValidationState &state, const CTransactionRef &tx,
+                        bool* pfMissingInputs, int64_t nAcceptTime)
+{
+    std::vector<COutPoint> coins_to_uncache;
+    bool res = AcceptToMemoryPoolWorker(chainparams, pool, state, tx, pfMissingInputs, nAcceptTime, coins_to_uncache);
+    if (!res) {
+        for (const COutPoint& hashTx : coins_to_uncache)
+            pcoinsTip->Uncache(hashTx);
+    }
+    // After we've (potentially) uncached entries, ensure our coins cache is still within its size limits
+    CValidationState stateDummy;
+    FlushStateToDisk(chainparams, stateDummy, FLUSH_STATE_PERIODIC);
+    return res;
+}
+
+bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransactionRef &tx, bool* pfMissingInputs)
+{
+    const CChainParams& chainparams = Params();
+    return AcceptToMemoryPoolWithTime(chainparams, pool, state, tx, pfMissingInputs, GetTime());
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -423,6 +795,17 @@ void static InvalidBlockFound(const CValidationState &state, CTxDB& txdb, CBlock
     }
 }
 
+bool CScriptCheck::operator()() const
+{
+    const CScript
+        &scriptSig = ptxTo->vin[nIn].scriptSig;
+    if (!VerifyScript(scriptSig, scriptPubKey, *ptxTo, nIn, nFlags, nHashType))
+        return error("CScriptCheck() : %s VerifySignature failed",
+                     ptxTo->GetHash().ToString().substr(0,10).c_str()
+                    );
+    return true;
+}
+
 int GetSpendHeight(const CCoinsViewCache& inputs)
 {
     LOCK(cs_main);
@@ -438,18 +821,15 @@ int GetSpendHeight(const CCoinsViewCache& inputs)
  * script checks which are not necessary (eg due to script execution cache hits) are, obviously,
  * not pushed onto pvChecks/run.
  *
- * Setting cacheSigStore/cacheFullScriptStore to false will remove elements from the corresponding cache
- * which are matched. This is useful for checking blocks where we will likely never need the cache
- * entry again.
- *
  * Non-static (and re-declared) in src/test/txvalidationcache_tests.cpp
  */
-bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, const CBlockIndex* pindexBlock, bool fScriptChecks, unsigned int flags, std::vector<CScriptCheck> *pvChecks)
+bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, std::vector<CScriptCheck> *pvChecks)
 {
     if (!tx.IsCoinBase())
     {
-        if (!Consensus::CheckTxInputs(tx, state, inputs, GetSpendHeight(inputs), pindexBlock))
-            return false;
+        // Already checked by the caller function
+//        if (!Consensus::CheckTxInputs(tx, state, inputs, GetSpendHeight(inputs), pindexBlock))
+//            return false;
 
         if (pvChecks)
             pvChecks->reserve(tx.vin.size());
@@ -464,28 +844,13 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
         // Of course, if an assumed valid block is invalid due to false scriptSigs
         // this optimization would allow an invalid chain to be accepted.
         if (fScriptChecks) {
-            // First check if script executions have been cached with the same
-            // flags. Note that this assumes that the inputs provided are
-            // correct (ie that the transaction hash which is in tx's prevouts
-            // properly commits to the scriptPubKey in the inputs view of that
-            // transaction).
-            uint256 hashCacheEntry;
-            // We only use the first 19 bytes of nonce to avoid a second SHA
-            // round - giving us 19 + 32 + 4 = 55 bytes (+ 8 + 1 = 64)
-            static_assert(55 - sizeof(flags) - 32 >= 128/8, "Want at least 128 bits of nonce for script execution cache");
-            CSHA256().Write(scriptExecutionCacheNonce.begin(), 55 - sizeof(flags) - 32).Write(tx.GetWitnessHash().begin(), 32).Write((unsigned char*)&flags, sizeof(flags)).Finalize(hashCacheEntry.begin());
-            AssertLockHeld(cs_main); //TODO: Remove this requirement by making CuckooCache not require external locks
-            if (scriptExecutionCache.contains(hashCacheEntry, !cacheFullScriptStore)) {
-                return true;
-            }
-
             for (unsigned int i = 0; i < tx.vin.size(); i++) {
                 const COutPoint &prevout = tx.vin[i].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);
                 assert(!coin.IsSpent());
 
                 // We very carefully only pass in things to CScriptCheck which
-                // are clearly committed to by tx' witness hash. This provides
+                // are clearly committed to by tx's hash. This provides
                 // a sanity check that our caching is not introducing consensus
                 // failures through additional data in, eg, the coins being
                 // spent being checked as a part of CScriptCheck.
@@ -493,38 +858,21 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
                 const CAmount amount = coin.out.nValue;
 
                 // Verify signature
-                CScriptCheck check(scriptPubKey, amount, tx, i, flags, cacheSigStore, &txdata);
+                CScriptCheck check(scriptPubKey, tx, i, flags, 0);
                 if (pvChecks) {
                     pvChecks->push_back(CScriptCheck());
                     check.swap(pvChecks->back());
                 } else if (!check()) {
-                    if (flags & STANDARD_NOT_MANDATORY_VERIFY_FLAGS) {
-                        // Check whether the failure was caused by a
-                        // non-mandatory script verification check, such as
-                        // non-standard DER encodings or non-null dummy
-                        // arguments; if so, don't trigger DoS protection to
-                        // avoid splitting the network between upgraded and
-                        // non-upgraded nodes.
-                        CScriptCheck check2(scriptPubKey, amount, tx, i,
-                                flags & ~STANDARD_NOT_MANDATORY_VERIFY_FLAGS, cacheSigStore, &txdata);
+                    // TODO: Fix this logic, must replace STANDARD_SCRIPT_VERIFY_FLAGS with STANDARD_NOT_MANDATORY_VERIFY_FLAGS
+                    if (flags & STANDARD_SCRIPT_VERIFY_FLAGS)
+                    {
+                        // Don't trigger DoS code in case of STANDARD_SCRIPT_VERIFY_FLAGS caused failure.
+                        CScriptCheck check2(scriptPubKey, tx, i, flags & ~STANDARD_SCRIPT_VERIFY_FLAGS, 0);
                         if (check2())
-                            return state.Invalid(false, REJECT_NONSTANDARD, strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
+                            return state.Invalid(error("CheckInputs() : %s strict VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()), REJECT_NONSTANDARD);
                     }
-                    // Failures of other flags indicate a transaction that is
-                    // invalid in new blocks, e.g. an invalid P2SH. We DoS ban
-                    // such nodes as they are not following the protocol. That
-                    // said during an upgrade careful thought should be taken
-                    // as to the correct behavior - we may want to continue
-                    // peering with non-upgraded nodes even after soft-fork
-                    // super-majority signaling has occurred.
-                    return state.DoS(100,false, REJECT_INVALID, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
+                    return state.DoS(100,error("CheckInputs() : %s VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()), REJECT_INVALID);
                 }
-            }
-
-            if (cacheFullScriptStore && !pvChecks) {
-                // We executed all of the provided scripts, and were told to
-                // cache the result. Do so now.
-                scriptExecutionCache.insert(hashCacheEntry);
             }
         }
     }
@@ -1012,6 +1360,34 @@ void static FlushBlockFile(bool fFinalize = false)
         FileCommit(fileOld);
         fclose(fileOld);
     }
+}
+
+static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& consensusparams) {
+    AssertLockHeld(cs_main);
+
+    // BIP16 didn't become active until Apr 1 2012
+    int64_t nBIP16SwitchTime = 1333238400;
+    bool fStrictPayToScriptHash = (pindex->GetBlockTime() >= nBIP16SwitchTime);
+
+    unsigned int flags = fStrictPayToScriptHash ? SCRIPT_VERIFY_P2SH : SCRIPT_VERIFY_NONE;
+
+    // TODO: Support this script verification flag
+    // Start enforcing the DERSIG (BIP66) rule
+//    if (pindex->nHeight >= consensusparams.BIP66Height) {
+//        flags |= SCRIPT_VERIFY_DERSIG;
+//    }
+
+    // Start enforcing CHECKLOCKTIMEVERIFY (BIP65) rule
+    if (pindex->nHeight >= consensusparams.BIP65Height) {
+        flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
+    }
+
+    // Start enforcing BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic.
+    if (pindex->nHeight >= consensusparams.BIP68Height) {
+        flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
+    }
+
+    return flags;
 }
 
 static int64_t nTimeCheck = 0;

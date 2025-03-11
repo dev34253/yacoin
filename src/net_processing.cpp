@@ -17,7 +17,7 @@
 #include "netmessagemaker.h"
 #include "netbase.h"
 #include "policy/fees.h"
-//#include "policy/policy.h"
+#include "policy/policy.h"
 #include "primitives/block.h"
 #include "primitives/transaction.h"
 #include "random.h"
@@ -27,7 +27,7 @@
 #include "txmempool.h"
 #include "ui_interface.h"
 #include "util.h"
-//#include "utilmoneystr.h"
+#include "utilmoneystr.h"
 #include "utilstrencodings.h"
 #include "validationinterface.h"
 #include "txdb.h"
@@ -786,7 +786,7 @@ bool AddOrphanTx(const CTransactionRef& tx, NodeId peer) EXCLUSIVE_LOCKS_REQUIRE
     // have been mined or received.
     // 100 orphans, each of which is at most 99,999 bytes big is
     // at most 10 megabytes of orphans and somewhat more byprev index (in the worst case):
-    size_t nSize = ::GetSerializeSize(*tx, SER_NETWORK, CTransaction::CURRENT_VERSION_of_Tx);
+    size_t nSize = ::GetSerializeSize(*tx, SER_NETWORK, CTransaction::CURRENT_VERSION);
     if (nSize >= MAX_STANDARD_TX_SIZE)
     {
         LogPrint(BCLog::MEMPOOL, "ignoring large orphan tx (size: %u, hash: %s)\n", nSize, hash.ToString());
@@ -1059,7 +1059,7 @@ void PeerLogicValidation::BlockChecked(const CBlock& block, const CValidationSta
 //
 
 
-bool static AlreadyHave(CTxDB& txdb, const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+bool static AlreadyHave(const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     switch (inv.type)
     {
@@ -2031,8 +2031,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             if (interruptMsgProc)
                 return true;
 
-            CTxDB txdb("r");
-            bool fAlreadyHave = AlreadyHave(txdb, inv);
+            bool fAlreadyHave = AlreadyHave(inv);
             LogPrint(BCLog::NET, "got inv: %s  %s peer=%d\n", inv.ToString(), fAlreadyHave ? "have" : "new", pfrom->GetId());
 
             if (inv.type == MSG_TX) {
@@ -2273,6 +2272,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
         LOCK(cs_main);
 
+        bool fMissingInputs = false;
         CValidationState state;
 
         pfrom->setAskFor.erase(inv.hash);
@@ -2280,10 +2280,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
         std::list<CTransactionRef> lRemovedTxn;
 
-        CTxDB txdb("r");
-        bool
-            fMissingInputs = false;
-        if (!AlreadyHave(txdb, inv) && tx.AcceptToMemoryPool(state, txdb, &fMissingInputs)) {
+//        CTxDB txdb("r");
+//        if (!AlreadyHave(txdb, inv) && tx.AcceptToMemoryPool(state, txdb, &fMissingInputs)) {
+        if (!AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, ptx, &fMissingInputs))
+        {
             SyncWithWallets(tx, NULL, true);
             RelayTransaction(tx, connman);
             for (unsigned int i = 0; i < tx.vout.size(); i++) {
@@ -2312,16 +2312,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     const CTransaction& orphanTx = *porphanTx;
                     const uint256& orphanHash = orphanTx.GetHash();
                     NodeId fromPeer = (*mi)->second.fromPeer;
+                    bool fMissingInputs2 = false;
                     // Use a dummy CValidationState so someone can't setup nodes to counter-DoS based on orphan
                     // resolution (that is, feeding people an invalid transaction based on LegitTxX in order to get
                     // anyone relaying LegitTxX banned)
                     CValidationState stateDummy;
-                    bool
-                        fMissingInputs2 = false;
 
                     if (setMisbehaving.count(fromPeer))
                         continue;
-                    if (orphanTx.AcceptToMemoryPool(stateDummy, txdb, &fMissingInputs2)) {
+                    if (AcceptToMemoryPool(mempool, stateDummy, porphanTx, &fMissingInputs2)) {
+//                    if (orphanTx.AcceptToMemoryPool(stateDummy, txdb, &fMissingInputs2)) {
                         LogPrint(BCLog::MEMPOOL, "   accepted orphan tx %s\n", orphanHash.ToString());
                         SyncWithWallets(orphanTx, NULL, true);
                         RelayTransaction(orphanTx, connman);
@@ -2369,7 +2369,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 for (const CTxIn& txin : tx.vin) {
                     CInv _inv(MSG_TX | nFetchFlags, txin.prevout.hash);
                     pfrom->AddInventoryKnown(_inv);
-                    if (!AlreadyHave(txdb, _inv)) pfrom->AskFor(_inv);
+                    if (!AlreadyHave(_inv)) pfrom->AskFor(_inv);
                 }
                 AddOrphanTx(ptx, pfrom->GetId());
 
@@ -3803,8 +3803,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
         while (!pto->mapAskFor.empty() && (*pto->mapAskFor.begin()).first <= nNow)
         {
             const CInv& inv = (*pto->mapAskFor.begin()).second;
-            CTxDB txdb("r");
-            if (!AlreadyHave(txdb, inv))
+            if (!AlreadyHave(inv))
             {
                 LogPrint(BCLog::NET, "Requesting %s peer=%d\n", inv.ToString(), pto->GetId());
                 vGetData.push_back(inv);

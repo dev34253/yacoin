@@ -17,6 +17,7 @@
  #include "txdb.h"
 #endif
 #include "streams.h"
+#include "policy/policy.h"
 
 using std::min;
 using std::vector;

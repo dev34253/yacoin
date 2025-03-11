@@ -13,6 +13,7 @@
 #include "script/script.h"
 #include "serialize.h"
 #include "uint256.h"
+#include "policy/policy.h"
 
 class CTxDB;
 class CTxIndex;
@@ -292,9 +293,14 @@ public:
         CURRENT_VERSION_of_Tx_for_yac_old = 1,      // this should be different for Yac1.0
         CURRENT_VERSION_of_Tx_for_yac_new = 2;
 
-    static const int
-      //CURRENT_VERSION_of_Tx = CURRENT_VERSION_of_Tx_for_yac_old;
-        CURRENT_VERSION_of_Tx = CURRENT_VERSION_of_Tx_for_yac_old;
+    // Default transaction version.
+    static const int CURRENT_VERSION = 2;
+
+    // Changing the default transaction version requires a two step process: first
+    // adapting relay policy by bumping MAX_STANDARD_VERSION, and then later date
+    // bumping the default CURRENT_VERSION at which point both CURRENT_VERSION and
+    // MAX_STANDARD_VERSION will be equal.
+    static const int32_t MAX_STANDARD_VERSION=2;
 
     int nVersion;
     mutable ::int64_t nTime;
@@ -486,8 +492,6 @@ public:
         return dPriority > COIN * 144 / 250;
     }
 
-    ::int64_t GetMinFee(unsigned int nBytes = 0) const;
-
     bool ReadFromDisk(CDiskTxPos pos, FILE** pfileRet=NULL);
 
     friend bool operator==(const CTransaction& a, const CTransaction& b)
@@ -570,13 +574,13 @@ public:
         @param[in] fBlock	true if called from ConnectBlock
         @param[in] fMiner	true if called from CreateNewBlock
         @param[in] fScriptChecks	enable scripts validation?
-        @param[in] flags	STRICT_FLAGS script validation flags
+        @param[in] flags	STANDARD_SCRIPT_VERIFY_FLAGS script validation flags
         @param[in] pvChecks	NULL If pvChecks is not NULL, script checks are pushed onto it instead of being performed inline.
         @return Returns true if all checks succeed
      */
     bool ConnectInputs(CValidationState &state, MapPrevTx inputs, std::map<uint256, CTxIndex>& mapTestPool, const CDiskTxPos& posThisTx, const CBlockIndex* pindexBlock,
                      bool fBlock, bool fMiner, bool fScriptChecks=true,
-                     unsigned int flags=STRICT_FLAGS, std::vector<CScriptCheck> *pvChecks = NULL) const;
+                     unsigned int flags=STANDARD_SCRIPT_VERIFY_FLAGS, std::vector<CScriptCheck> *pvChecks = NULL) const;
     bool ClientConnectInputs();
     bool CheckTransaction(CValidationState &state) const;
     bool AcceptToMemoryPool(CValidationState &state, bool *pfMissingInputs=NULL) const;

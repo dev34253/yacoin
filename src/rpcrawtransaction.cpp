@@ -24,6 +24,7 @@
 #include "streams.h"
 #include "net_processing.h"
 #include "consensus/validation.h"
+#include "policy/policy.h"
 
 using namespace boost;
 using namespace boost::assign;
@@ -548,7 +549,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
         {
             txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, txv.vin[i].scriptSig);
         }
-        if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, STRICT_FLAGS, 0))
+        if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, STANDARD_SCRIPT_VERIFY_FLAGS, 0))
             fComplete = false;
     }
 

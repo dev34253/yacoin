@@ -9,6 +9,7 @@
 #include "txdb.h"
 #include "wallet.h"
 #include "policy/fees.h"
+#include "policy/policy.h"
 #include "consensus/consensus.h"
 
 #include <map>
@@ -22,11 +23,11 @@ void CTransaction::SetNull()
 	// TODO: Need update for mainet
 	if (chainActive.Height() != -1 && chainActive.Genesis() && (chainActive.Height() + 1) >= nMainnetNewLogicBlockNumber)
 	{
-		nVersion = CTransaction::CURRENT_VERSION_of_Tx_for_yac_new;
+		nVersion = CTransaction::CURRENT_VERSION;
 	}
 	else
 	{
-		nVersion = CTransaction::CURRENT_VERSION_of_Tx;
+		nVersion = CTransaction::CURRENT_VERSION_of_Tx_for_yac_old;
 	}
 	nTime = GetAdjustedTime();
 	vin.clear();
@@ -45,7 +46,7 @@ bool CTransaction::IsFinal(int nBlockHeight, ::int64_t nBlockTime) const
         nBlockTime = GetAdjustedTime();
     if ((::int64_t)nLockTime < ((::int64_t)nLockTime < LOCKTIME_THRESHOLD ? (::int64_t)nBlockHeight : nBlockTime))
         return true;
-    BOOST_FOREACH(const CTxIn& txin, vin)
+    for(const CTxIn& txin : vin)
         if (!txin.IsFinal())
             return false;
     return true;
@@ -112,14 +113,12 @@ bool CTransaction::IsStandard(std::string& strReason) const
     // 1) At the time installing yacoind 1.0.0
     // 2) At the time happening hardfork
     // Need update this line at next yacoin version
-    if (nVersion > CTransaction::CURRENT_VERSION_of_Tx_for_yac_new)
+    if (nVersion > CTransaction::MAX_STANDARD_VERSION)
     {
         strReason = "version";
         return false;
     }
 
-    unsigned int nDataOut = 0;
-    txnouttype whichType;
     for (const CTxIn& txin : vin)
     {
         // Biggest 'standard' txin is a 15-of-15 P2SH multisig with compressed
@@ -139,12 +138,10 @@ bool CTransaction::IsStandard(std::string& strReason) const
             strReason = "scriptsig-not-pushonly";
             return false;
         }
-//        if (!txin.scriptSig.HasCanonicalPushes()) {
-//            strReason = "txin-scriptsig-not-canonicalpushes";
-//            return false;
-//        }
     }
 
+    unsigned int nDataOut = 0;
+    txnouttype whichType;
     for (const CTxOut& txout : vout) {
         if (!::IsStandard(txout.scriptPubKey, whichType)) {
             strReason = "scriptpubkey";
@@ -157,11 +154,6 @@ bool CTransaction::IsStandard(std::string& strReason) const
             strReason = "txout-value=0";
             return false;
         }
-//        else if (!txout.scriptPubKey.HasCanonicalPushes())
-//        {
-//            strReason = "txout-scriptsig-not-canonicalpushes";
-//            return false;
-//        }
     }
 
     // only one OP_RETURN txout is permitted
@@ -485,11 +477,6 @@ bool CTransaction::CheckTransaction(CValidationState &state) const
     return true;
 }
 
-::int64_t CTransaction::GetMinFee(unsigned int nBytes) const
-{
-    return ::GetMinFee(nBytes);
-}
-
 bool CTransaction::AcceptToMemoryPool(CValidationState &state, bool* pfMissingInputs) const
 {
     return mempool.accept(state, *this, pfMissingInputs);
@@ -772,10 +759,10 @@ bool CTransaction::ConnectInputs(CValidationState &state,
                 }
                 else if (!check())
                 {
-                    if (flags & STRICT_FLAGS)
+                    if (flags & STANDARD_SCRIPT_VERIFY_FLAGS)
                     {
-                        // Don't trigger DoS code in case of STRICT_FLAGS caused failure.
-                        CScriptCheck check(txPrev, *this, i, flags & ~STRICT_FLAGS, 0);
+                        // Don't trigger DoS code in case of STANDARD_SCRIPT_VERIFY_FLAGS caused failure.
+                        CScriptCheck check(txPrev, *this, i, flags & ~STANDARD_SCRIPT_VERIFY_FLAGS, 0);
                         if (check())
                             return state.Invalid(error("ConnectInputs() : %s strict VerifySignature failed", GetHash().ToString().substr(0,10).c_str()));
                     }
@@ -811,13 +798,7 @@ bool CTransaction::ConnectInputs(CValidationState &state,
             ::int64_t
                 nReward = GetValueOut() - nValueIn;
             ::int64_t
-                nCalculatedReward = GetProofOfStakeReward(
-                                                            nCoinAge,
-                                                            pindexBlock->nBits,
-                                                            nTime
-                                                         ) -
-                                    GetMinFee(nTxSize) +
-                                    CENT;
+                nCalculatedReward = GetProofOfStakeReward(nCoinAge, pindexBlock->nBits, nTime) - GetMinFee(nTxSize) + CENT;
 
             if (nReward > nCalculatedReward)
                 return state.DoS(100, error("ConnectInputs() : coinstake pays too much(actual=%" PRId64 " vs calculated=%" PRId64 ")", nReward, nCalculatedReward));

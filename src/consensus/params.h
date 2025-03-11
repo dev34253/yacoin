@@ -43,8 +43,10 @@ struct Params {
 //    /** Block height and hash at which BIP34 becomes active */
 //    int BIP34Height;
 //    uint256 BIP34Hash;
-//    /** Block height at which BIP65 becomes active */
-//    int BIP65Height;
+    /** Block height at which BIP65 becomes active (Start enforcing CHECKLOCKTIMEVERIFY) */
+    int BIP65Height;
+    /** Block height at which BIP68 becomes active (Start enforcing BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic) */
+    int BIP68Height;
 //    /** Block height at which BIP66 becomes active */
 //    int BIP66Height;
     /**

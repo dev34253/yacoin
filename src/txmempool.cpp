@@ -8,21 +8,10 @@
 #endif
 #include "reverse_iterator.h"
 #include "txmempool.h"
+#include "policy/policy.h"
 
 extern std::vector<CWallet*> vpwalletRegistered;
 extern CChain chainActive;
-
-bool isHardforkHappened()
-{
-    if (chainActive.Height() != -1 && chainActive.Genesis() && chainActive.Height() >= nMainnetNewLogicBlockNumber)
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-}
 
 // erases transaction with the given hash from all wallets
 void static EraseFromWallets(uint256 hash)
@@ -805,7 +794,7 @@ bool CTxMemPool::accept(CValidationState &state, const CTransaction &tx, bool* p
     unsigned int nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
 
     // Don't accept it if it can't get into a block
-    ::int64_t txMinFee = tx.GetMinFee(nSize);
+    ::int64_t txMinFee = GetMinFee(nSize);
     if (nFees < txMinFee)
         return error("CTxMemPool::accept() : not enough fees %s, %" PRId64 " < %" PRId64,
                      hash.ToString().c_str(),
@@ -1016,7 +1005,7 @@ bool CTxMemPool::accept(CValidationState &state, const CTransaction &tx, bool* p
                           false,
                           false,
                           true,
-                          SIG_SWITCH_TIME < tx.nTime ? STRICT_FLAGS : SOFT_FLAGS
+                          SIG_SWITCH_TIME < tx.nTime ? STANDARD_SCRIPT_VERIFY_FLAGS : SOFT_FLAGS
                          )
        )
     {
@@ -1437,4 +1426,22 @@ bool CTxMemPool::TransactionWithinChainLimit(const uint256& txid, size_t chainLi
     auto it = mapTx.find(txid);
     return it == mapTx.end() || (it->GetCountWithAncestors() < chainLimit &&
        it->GetCountWithDescendants() < chainLimit);
+}
+
+CCoinsViewMemPool::CCoinsViewMemPool(CCoinsView* baseIn, const CTxMemPool& mempoolIn) : CCoinsViewBacked(baseIn), mempool(mempoolIn) { }
+
+bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
+    // If an entry in the mempool exists, always return that one, as it's guaranteed to never
+    // conflict with the underlying cache, and it cannot have pruned entries (as it contains full)
+    // transactions. First checking the underlying cache risks returning a pruned entry instead.
+    CTransaction ptx = mempool.get(outpoint.hash);
+    if (ptx) {
+        if (outpoint.n < ptx.vout.size()) {
+            coin = Coin(ptx.vout[outpoint.n], MEMPOOL_HEIGHT, false, ptx.IsCoinStake(), ptx.nTime);
+            return true;
+        } else {
+            return false;
+        }
+    }
+    return base->GetCoin(outpoint, coin);
 }

@@ -247,30 +247,6 @@ enum
     SCRIPT_VERIFY_CHECKSEQUENCEVERIFY = (1U << 10),
 };
 
-// Strict verification:
-//
-// * force DER encoding;
-// * force low S;
-// * ensure that CHECKMULTISIG dummy argument is null.
-static const unsigned int STRICT_FORMAT_FLAGS = SCRIPT_VERIFY_STRICTENC | SCRIPT_VERIFY_LOW_S | SCRIPT_VERIFY_NULLDUMMY;
-
-// Mandatory script verification flags that all new blocks must comply with for
-// them to be valid. (but old blocks may not comply with) Currently just P2SH,
-// but in the future other flags may be added, such as a soft-fork to enforce
-// strict DER encoding.
-//
-// Failing one of these tests may trigger a DoS ban - see ConnectInputs() for
-// details.
-static const unsigned int MANDATORY_SCRIPT_VERIFY_FLAGS = SCRIPT_VERIFY_P2SH;
-
-// Standard script verification flags that standard transactions will comply
-// with. However scripts violating these flags may still be present in valid
-// blocks and we must accept those blocks.
-static const unsigned int STRICT_FLAGS = MANDATORY_SCRIPT_VERIFY_FLAGS | STRICT_FORMAT_FLAGS | SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
-
-// Soft verifications, no extended signature format checkings
-static const unsigned int SOFT_FLAGS = STRICT_FLAGS & ~STRICT_FORMAT_FLAGS;
-
 const char* GetTxnOutputType(txnouttype t);
 
 /** Script opcodes */
@@ -838,7 +814,6 @@ bool IsCanonicalSignature(const std::vector<unsigned char> &vchSig, unsigned int
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, unsigned int flags, int nHashType);
 bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet);
 int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions);
-bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType);
 isminetype IsMine(const CKeyStore& keystore, const CScript& scriptPubKey);
 isminetype IsMine(const CKeyStore& keystore, const CTxDestination& dest);
 bool IsSpendableTimelockUTXO(const CKeyStore &keystore, const CScript& scriptPubKey, txnouttype& retType, uint32_t& retLockDur);

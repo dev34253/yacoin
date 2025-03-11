@@ -34,6 +34,7 @@
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
 #include "random.h"
+#include "policy/policy.h"
 
 #ifndef WIN32
 #include <signal.h>
@@ -473,6 +474,8 @@ ServiceFlags nLocalServices = NODE_NETWORK;
 
 bool AppInitParameterInteraction()
 {
+    const CChainParams& chainparams = Params();
+
     // -bind and -whitebind can't be set when not listening
     size_t nUserBind = gArgs.GetArgs("-bind").size() + gArgs.GetArgs("-whitebind").size();
     if (nUserBind != 0 && !gArgs.GetBoolArg("-listen", DEFAULT_LISTEN)) {
@@ -548,6 +551,10 @@ bool AppInitParameterInteraction()
         nScriptCheckThreads = MAX_SCRIPTCHECK_THREADS;
 
     fDebug = gArgs.GetBoolArg("-debug");
+
+    fRequireStandard = !gArgs.GetBoolArg("-acceptnonstdtxn", !chainparams.RequireStandard());
+    if (chainparams.RequireStandard() && !fRequireStandard)
+        return InitError(strprintf("acceptnonstdtxn is not currently supported for %s chain", chainparams.NetworkIDString()));
 
     // -debug implies fDebug*
     if (fDebug)
