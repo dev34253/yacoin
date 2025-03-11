@@ -139,8 +139,6 @@ int nScriptCheckThreads = 0;
 
 CMedianFilter<int> cPeerBlockCounts(5, 0); // Amount of blocks that other nodes claim to have
 
-map<uint256, uint256> mapProofOfStake;
-
 CCheckQueue<CScriptCheck> scriptcheckqueue(128);
 
 // Constant stuff for coinbase transactions we create:

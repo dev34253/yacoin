@@ -2513,10 +2513,6 @@ static CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
     // ppcoin: compute chain trust score
     pindexNew->bnChainTrust = (pindexNew->pprev ? pindexNew->pprev->bnChainTrust : 0)  + pindexNew->GetBlockTrust();
 
-    // ppcoin: compute stake entropy bit for stake modifier
-    if (!pindexNew->SetStakeEntropyBit(block.GetStakeEntropyBit(pindexNew->nHeight)))
-        error("AddToBlockIndex() : SetStakeEntropyBit() failed");
-
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == nullptr || pindexBestHeader->bnChainTrust < pindexNew->bnChainTrust)
         pindexBestHeader = pindexNew;
@@ -2529,15 +2525,6 @@ static CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
 /** Mark a block as having its data received and checked (up to BLOCK_VALID_TRANSACTIONS). */
 static bool ReceivedBlockTransactions(const CBlock &block, CValidationState& state, CBlockIndex *pindexNew, const CDiskBlockPos& pos, const Consensus::Params& consensusParams)
 {
-    // ppcoin: record proof-of-stake hash value
-    uint256 hash = block.GetHash();
-    if (pindexNew->IsProofOfStake())
-    {
-        if (!mapProofOfStake.count(hash))
-            return error("ReceivedBlockTransactions() : hashProofOfStake not found in map");
-        pindexNew->hashProofOfStake = mapProofOfStake[hash];
-    }
-
     pindexNew->nTx = block.vtx.size();
     pindexNew->nChainTx = 0;
     pindexNew->nFile = pos.nFile;
@@ -2817,6 +2804,43 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
     return true;
 }
 
+static bool PoSContextualBlockChecks(const CBlock& block, CValidationState& state, CBlockIndex* pindex)
+{
+    // PoS related checks
+    // ppcoin: verify hash target and signature of coinstake tx
+    uint256 hash = block.GetHash();
+    if (block.IsProofOfStake())
+    {
+        uint256 hashProofOfStake = uint256();
+        uint256 targetProofOfStake = uint256();
+        if (!CheckProofOfStake(state, block.vtx[1], block.nBits, hashProofOfStake, targetProofOfStake))
+        {
+          LogPrintf("WARNING: PoSContextualBlockChecks (): check proof-of-stake failed for block %s (%s)\n", hash.ToString(), DateTimeStrFormat(" %Y-%m-%d %H:%M:%S", block.nTime));
+          return false;  // do not error here as we expect this during initial block download
+        }
+        // ppcoin: record proof-of-stake hash value
+        pindex->hashProofOfStake = hashProofOfStake;
+    }
+
+    // ppcoin: compute stake entropy bit for stake modifier
+    if (!pindex->SetStakeEntropyBit(block.GetStakeEntropyBit(pindex->nHeight)))
+        return error("PoSContextualBlockChecks() : SetStakeEntropyBit() failed");
+
+    // ppcoin: compute stake modifier
+    ::uint64_t nStakeModifier = 0;
+    bool fGeneratedStakeModifier = false;
+    if (!ComputeNextStakeModifier(pindex, nStakeModifier, fGeneratedStakeModifier))
+        return error("PoSContextualBlockChecks() : ComputeNextStakeModifier() failed");
+    pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
+
+    pindex->nStakeModifierChecksum = GetStakeModifierChecksum(pindex);
+    if (!CheckStakeModifierCheckpoints(pindex->nHeight, pindex->nStakeModifierChecksum))
+        return error("PoSContextualBlockChecks() : Rejected by stake modifier checkpoint height=%d, modifier=0x%016\n" PRIx64, pindex->nHeight, nStakeModifier);
+    setDirtyBlockIndex.insert(pindex);  // queue a write to disk
+
+    return true;
+}
+
 static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
     const int nHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
@@ -2864,20 +2888,6 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
         return state.DoS(100, error("ContextualCheckBlock () : size limits failed"), REJECT_INVALID, "bad-blk-length", false, "size limits failed");
     }
 
-    // PoS related checks
-    // ppcoin: verify hash target and signature of coinstake tx
-    uint256 hash = block.GetHash();
-    if (block.IsProofOfStake())
-    {
-        uint256 hashProofOfStake = 0, targetProofOfStake = 0;
-        if (!CheckProofOfStake(state, block.vtx[1], block.nBits, hashProofOfStake, targetProofOfStake))
-        {
-          LogPrintf("WARNING: ProcessBlock (): check proof-of-stake failed for block %s (%s)\n", hash.ToString(), DateTimeStrFormat(" %Y-%m-%d %H:%M:%S", block.nTime));
-          return false;  // do not error here as we expect this during initial block download
-        }
-        if (!mapProofOfStake.count(hash)) // add to mapProofOfStake
-            mapProofOfStake.insert(std::make_pair(hash, hashProofOfStake));
-    }
     return true;
 }
 
@@ -3012,6 +3022,15 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
 
     if (!CheckBlock(block, state, chainparams.GetConsensus()) ||
         !ContextualCheckBlock(block, state, chainparams.GetConsensus(), pindex->pprev)) {
+        if (state.IsInvalid() && !state.CorruptionPossible()) {
+            pindex->nStatus |= BLOCK_FAILED_VALID;
+            setDirtyBlockIndex.insert(pindex);
+        }
+        return error("%s: %s", __func__, FormatStateMessage(state));
+    }
+
+    // ppcoin: check PoS (not do this since Heliopolis hardfork)
+    if ((pindex->nHeight < nMainnetNewLogicBlockNumber) && !PoSContextualBlockChecks(block, state, pindex)) {
         if (state.IsInvalid() && !state.CorruptionPossible()) {
             pindex->nStatus |= BLOCK_FAILED_VALID;
             setDirtyBlockIndex.insert(pindex);

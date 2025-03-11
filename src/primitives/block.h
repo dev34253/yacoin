@@ -57,7 +57,6 @@ extern CCheckQueue<CScriptCheck> scriptcheckqueue;
 extern const ::int64_t
     nChainStartTime,
     nChainStartTimeTestNet;
-extern std::map<uint256, uint256> mapProofOfStake;
 extern CBigNum bnProofOfWorkLimit;
 extern const int64_t INITIAL_MONEY_SUPPLY;
 extern bool fReindexOnlyHeaderSync;
