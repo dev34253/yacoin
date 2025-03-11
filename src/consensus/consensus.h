@@ -91,7 +91,7 @@ public:
 extern CChain chainActive;
 extern BlockMap mapBlockIndex;
 
-extern ::uint64_t GetMaxSize(enum GetMaxSize_mode mode);
+extern ::uint64_t GetMaxSize(enum GetMaxSize_mode mode, unsigned int nHeight = 0);
 extern ::int64_t GetProofOfWorkReward(unsigned int nBits=0, ::int64_t nFees=0, unsigned int nHeight=0);
 
 #endif // BITCOIN_CONSENSUS_CONSENSUS_H

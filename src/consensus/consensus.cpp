@@ -88,7 +88,7 @@ CBlockIndex *CChain::FindFork(CBlockIndex *pindex) const {
     return pindex;
 }
 
-::uint64_t GetMaxSize(enum GetMaxSize_mode mode)
+::uint64_t GetMaxSize(enum GetMaxSize_mode mode, unsigned int nHeight)
 {
     ::uint64_t nMaxSize = 0;
     if (chainActive.Genesis() == NULL || (chainActive.Tip()->nHeight + 1) < nMainnetNewLogicBlockNumber)
@@ -97,7 +97,7 @@ CBlockIndex *CChain::FindFork(CBlockIndex *pindex) const {
     }
     else
     {
-        nMaxSize = (GetProofOfWorkReward() * 1000 / MIN_TX_FEE);
+        nMaxSize = (GetProofOfWorkReward(0, 0, nHeight) * 1000 / MIN_TX_FEE);
     }
 
     switch (mode)
