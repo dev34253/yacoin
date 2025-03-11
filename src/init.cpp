@@ -1102,20 +1102,20 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
             filesystem::path dest = blocksDir / strprintf("blk%05u.dat", i-1);
             try {
                 filesystem::create_hard_link(source, dest);
-                printf("Hardlinked %s -> %s\n", source.string().c_str(), dest.string().c_str());
+                LogPrintf("Hardlinked %s -> %s\n", source.string(), dest.string());
                 linked = true;
             } catch (filesystem::filesystem_error & e) {
                 // Note: hardlink creation failing is not a disaster, it just means
                 // blocks will get re-downloaded from peers.
-                printf("Error hardlinking blk%04u.dat : %s\n", i, e.what());
+                LogPrintf("Error hardlinking blk%04u.dat : %s\n", i, e.what());
                 break;
             }
         }
         if (linked)
         {
             // Store map hash when upgrading to v1.5.0 to speedup the process
-            CBlockTreeDB *pTempBlockTree = new CBlockTreeDB(nBlockTreeDBCache, false, false);
-            pTempBlockTree->BuildMapHash();
+            CBlockTreeDB *pTempBlockTree = new CBlockTreeDB(nBlockTreeDBCache, false, false, false);
+            pTempBlockTree->BuildMapHashFromOldDB();
             delete pTempBlockTree;
             fReindex = true;
         }
@@ -1138,11 +1138,23 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
             try
             {
                 UnloadBlockIndex();
+
+                // Build map hash to avoid hash calculation and speed up the process
+                if (fReindex) {
+                    pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, false);
+                    pblocktree->BuildMapHash();
+                }
+
                 delete pcoinsTip;
                 delete pcoinsdbview;
                 delete pcoinscatcher;
                 delete pblocktree;
                 pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReset);
+
+                // Build block hash index to avoid hash calculation and speed up the process
+                if (fReindex) {
+                    pblocktree->BuildBlockHashIndex();
+                }
 
                 /** YAC_TOKEN START */
                 {

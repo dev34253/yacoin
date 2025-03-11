@@ -131,6 +131,15 @@ struct CDiskBlockPos
 
 };
 
+struct CBlockHashPos: CDiskBlockPos{
+    uint256 hash;
+    CBlockHashPos(int nFileIn, unsigned int nPosIn, uint256 hashIn) {
+        nFile = nFileIn;
+        nPos = nPosIn;
+        hash = hashIn;
+    }
+};
+
 enum BlockStatus: uint32_t {
     //! Unused.
     BLOCK_VALID_UNKNOWN      =    0,
@@ -626,8 +635,7 @@ public:
 
         READWRITE(hashNext);
         READWRITE(nFile);
-        unsigned int _nBlockPos = 0;
-        READWRITE(_nBlockPos);
+        READWRITE(nDataPos);
         READWRITE(nHeight);
         READWRITE(nMint);
         READWRITE(nMoneySupply);

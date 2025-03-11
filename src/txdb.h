@@ -20,6 +20,7 @@
 class CBlockIndex;
 class CCoinsViewDBCursor;
 class uint256;
+extern std::vector<CBlockHashPos> blockHashPos; // map of (SHA256-hash, chacha-hash)
 
 //! No need to periodic flush if at least this much space still available.
 static constexpr int MAX_BLOCK_COINSDB_USAGE = 10;
@@ -110,7 +111,7 @@ private:
 class CBlockTreeDB : public CDBWrapper
 {
 public:
-    CBlockTreeDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
+    CBlockTreeDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false, bool newDB = true);
 private:
     CBlockTreeDB(const CBlockTreeDB&);
     void operator=(const CBlockTreeDB&);
@@ -144,7 +145,9 @@ public:
     bool WriteBlockHash(const CDiskBlockIndex& blockindex);
     bool WriteBlockHash(const CDiskBlockPos &blockPos, uint256 hash);
     bool ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256& blockhash);
+    bool BuildMapHashFromOldDB();
     bool BuildMapHash();
+    bool BuildBlockHashIndex();
 };
 
 #endif // BITCOIN_DB_H

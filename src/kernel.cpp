@@ -605,6 +605,11 @@ bool CheckProofOfStake(CValidationState &state, CBlockIndex* pindexPrev, const C
             return error("%s() : txid mismatch in CheckProofOfStake()", __PRETTY_FUNCTION__);
     }
 
+    // Retrieve blockhash to avoid recalculating block hash (very slow !!!)
+    if (fBlockHashIndex && !pblocktree->ReadBlockHash(postx.nFile, postx.nPos, header.blockHash)) {
+        LogPrintf("CheckProofOfStake(): can't read block hash at file = %d, block pos = %d\n", postx.nFile, postx.nPos);
+    }
+
     // Verify signature
     if (!VerifySignature(txPrev, tx, 0, MANDATORY_SCRIPT_VERIFY_FLAGS, 0))
         return state.DoS(100, error("CheckProofOfStake() : VerifySignature failed on coinstake %s", tx.GetHash().ToString().c_str()));

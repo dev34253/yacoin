@@ -695,7 +695,17 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, b
             } catch (const std::exception& e) {
                 return error("%s: Deserialize or I/O error - %s", __func__, e.what());
             }
-            hashBlock = header.GetHash();
+
+            // Retrieve blockhash to avoid recalculating block hash (very slow !!!)
+            if (fBlockHashIndex) {
+                if (!pblocktree->ReadBlockHash(postx.nFile, postx.nPos, hashBlock)) {
+                    hashBlock = header.GetHash();
+                    LogPrintf("GetTransaction: can't read block hash %s at file = %d, block pos = %d\n", hashBlock.ToString(), postx.nFile, postx.nPos);
+                }
+            } else {
+                hashBlock = header.GetHash();
+            }
+
             if (tx.GetHash() != hash)
                 return error("%s: txid mismatch", __func__);
             return true;
@@ -749,6 +759,7 @@ static bool WriteBlockToDisk(const CBlock& block, CDiskBlockPos& pos, const CMes
 
     // Store blockhash to avoid recalculating block hash (very slow !!!) when reading block data from disk
     uint256 hash = block.GetHash();
+    LogPrintf("TACA ===> WriteBlockToDisk(): write block hash %s to block hash index\n", hash.ToString());
     if (fBlockHashIndex && !pblocktree->WriteBlockHash(pos, hash))
     {
         LogPrintf("WriteBlockToDisk(): Can't WriteBlockHash for block %s\n", hash.ToString());
@@ -777,7 +788,8 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus:
     // Retrieve blockhash to avoid recalculating block hash (very slow !!!)
     if (fBlockHashIndex && !pblocktree->ReadBlockHash(pos.nFile, pos.nPos, block.blockHash))
     {
-        LogPrintf("ReadBlockFromDisk: can't read block hash at file = %d, block pos = %d\n", pos.nFile, pos.nPos);
+        uint256 hash = block.GetHash();
+        LogPrintf("ReadBlockFromDisk: can't read block hash %s at file = %d, block pos = %d\n", hash.ToString(), pos.nFile, pos.nPos);
     }
 
     // Check the header
@@ -2255,7 +2267,7 @@ void static UpdateTip(CBlockIndex *pindexNew) {
         nMinEase = pindexNew->nBits;
     }
 
-    LogPrintf("UpdateTip: new best=%s height=%d trust=%s\n, date=%s\n",
+    LogPrintf("UpdateTip: new best=%s height=%d trust=%s, date=%s\n",
                 hash.ToString().substr(0,20),
                 chainActive.Height(),
                 pindexNew->bnChainTrust.ToString(),
@@ -3210,10 +3222,12 @@ static bool ContextualCheckBlock(const CBlock& block, CValidationState& state, c
     }
 
     // Enforce rule that the coinbase starts with serialized block height
-    CScript expect = CScript() << nHeight;
-    if (block.vtx[0].vin[0].scriptSig.size() < expect.size() ||
-        !std::equal(expect.begin(), expect.end(), block.vtx[0].vin[0].scriptSig.begin())) {
-        return state.DoS(100, error("ContextualCheckBlock () : block height mismatch in coinbase"), REJECT_INVALID, "bad-cb-height", false, "block height mismatch in coinbase");
+    if (block.GetHash() != consensusParams.hashGenesisBlock) {
+        CScript expect = CScript() << nHeight;
+        if (block.vtx[0].vin[0].scriptSig.size() < expect.size() ||
+            !std::equal(expect.begin(), expect.end(), block.vtx[0].vin[0].scriptSig.begin())) {
+            return state.DoS(100, error("ContextualCheckBlock () : block height mismatch in coinbase"), REJECT_INVALID, "bad-cb-height", false, "block height mismatch in coinbase");
+        }
     }
 
     // TODO: Review GetMaxSize
@@ -3398,9 +3412,10 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
          */
         if (!FindBlockPos(state, blockPos, nBlockSize+8, nHeight, block.GetBlockTime(), dbp != nullptr))
             return error("AcceptBlock(): FindBlockPos failed");
-        if (dbp == nullptr)
+        if (dbp == nullptr) {
             if (!WriteBlockToDisk(block, blockPos, chainparams.MessageStart()))
                 AbortNode(state, "Failed to write block");
+        }
         if (!ReceivedBlockTransactions(block, state, pindex, blockPos, chainparams.GetConsensus()))
             return error("AcceptBlock(): ReceivedBlockTransactions failed");
     } catch (const std::runtime_error& e) {
@@ -3414,7 +3429,7 @@ static bool AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidation
     return true;
 }
 
-bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<const CBlock> pblock, bool fForceProcessing, bool *fNewBlock)
+bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<const CBlock> pblock, bool fForceProcessing, bool *fNewBlock, CDiskBlockPos *dbp)
 {
     {
         CBlockIndex *pindex = nullptr;
@@ -3428,7 +3443,7 @@ bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<cons
 
         if (ret) {
             // Store to disk
-            ret = AcceptBlock(pblock, state, chainparams, &pindex, fForceProcessing, nullptr, fNewBlock);
+            ret = AcceptBlock(pblock, state, chainparams, &pindex, fForceProcessing, dbp, fNewBlock);
         }
         CheckBlockIndex(chainparams.GetConsensus());
         if (!ret) {
@@ -4146,8 +4161,9 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                 blkdat >> nSize;
                 if (nSize < 80 || nSize > GetMaxSize(MAX_BLOCK_SIZE))
                     continue;
-            } catch (const std::exception&) {
+            } catch (const std::exception&e) {
                 // no valid block header found; don't complain
+                LogPrintf("TACA ===> LoadExternalBlockFile, exception %s\n", e.what());
                 break;
             }
             try {
@@ -4177,6 +4193,7 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                     mapHash.insert(std::make_pair(sha256HashBlock, hash));
                 }
 
+                LogPrintf("TACA ===> LoadExternalBlockFile, processing block %s\n", hash.ToString());
                 // detect out of order blocks, and store them for later
                 if (hash != chainparams.GetConsensus().hashGenesisBlock && mapBlockIndex.find(block.hashPrevBlock) == mapBlockIndex.end()) {
                     LogPrint(BCLog::REINDEX, "%s: Out of order block %s, parent %s not known\n", __func__, hash.ToString(),
@@ -4190,10 +4207,8 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                 if (mapBlockIndex.count(hash) == 0 || (mapBlockIndex[hash]->nStatus & BLOCK_HAVE_DATA) == 0) {
                     LOCK(cs_main);
                     CValidationState state;
-                    if (AcceptBlock(pblock, state, chainparams, nullptr, true, dbp, nullptr, true))
+                    if (ProcessNewBlock(chainparams, pblock, true, nullptr, dbp))
                         nLoaded++;
-                    if (state.IsError())
-                        break;
                 } else if (hash != chainparams.GetConsensus().hashGenesisBlock && mapBlockIndex[hash]->nHeight % 1000 == 0) {
                     LogPrint(BCLog::REINDEX, "Block Import: already had block %s at height %d\n", hash.ToString(), mapBlockIndex[hash]->nHeight);
                 }
@@ -4224,7 +4239,7 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
                                     head.ToString());
                             LOCK(cs_main);
                             CValidationState dummy;
-                            if (AcceptBlock(pblockrecursive, dummy, chainparams, nullptr, true, &it->second, nullptr, true))
+                            if (ProcessNewBlock(chainparams, pblockrecursive, true, nullptr, &it->second))
                             {
                                 nLoaded++;
                                 queue.push_back(pblockrecursive->GetHash());
@@ -4238,6 +4253,10 @@ bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskB
             } catch (const std::exception& e) {
                 LogPrintf("%s: Deserialize or I/O error - %s\n", __func__, e.what());
             }
+        }
+
+        if (!blkdat.eof()) {
+            LogPrintf("TACA ===> LoadExternalBlockFile, ERROR: blkdat has not ended yet !!!\n");
         }
     } catch (const std::runtime_error& e) {
         AbortNode(std::string("System error: ") + e.what());

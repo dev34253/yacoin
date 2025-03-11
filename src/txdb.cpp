@@ -64,6 +64,7 @@ static const char DB_HEAD_BLOCKS = 'H'; // Primarily used for chain synchronizat
                                         // Tracks the latest block of the best chain for chain synchronization
                                         // Helps the node resume syncing from the most recent block
                                         // When a node starts up, it checks DB_HEAD_BLOCKS to know where to resume block synchronization.
+std::vector<CBlockHashPos> blockHashPos;
 
 namespace {
 
@@ -237,7 +238,7 @@ void CCoinsViewDBCursor::Next()
     }
 }
 
-CBlockTreeDB::CBlockTreeDB(size_t nCacheSize, bool fMemory, bool fWipe) : CDBWrapper(GetDataDir() / "blocks" / "index", nCacheSize, fMemory, fWipe) {
+CBlockTreeDB::CBlockTreeDB(size_t nCacheSize, bool fMemory, bool fWipe, bool newDB) : CDBWrapper(newDB ? GetDataDir() / "blocks" / "index": GetDataDir() / "txleveldb", nCacheSize, fMemory, fWipe) {
 }
 
 bool CBlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*> >& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo) {
@@ -492,7 +493,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
                     return error("%s: CheckProofOfWork failed: %s", __func__, pindexNew->ToString());
 
                 uint256 tmpBlockhash;
-                if (fBlockHashIndex && !ReadBlockHash(diskindex.nFile, diskindex.nDataPos, tmpBlockhash))
+                if (fBlockHashIndex && (diskindex.nStatus & BLOCK_HAVE_DATA) && !ReadBlockHash(diskindex.nFile, diskindex.nDataPos, tmpBlockhash))
                 {
                     newStoredBlock++;
                     WriteBlockHash(diskindex);
@@ -594,6 +595,41 @@ bool CBlockTreeDB::ReadBlockHash(const unsigned int nFile, const unsigned int nD
 
 bool CBlockTreeDB::BuildMapHash()
 {
+    std::unique_ptr<CDBIterator> pcursor(NewIterator());
+
+    pcursor->Seek(std::make_pair(DB_BLOCK_INDEX, uint256()));
+
+    // Load mapBlockIndex
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+        std::pair<char, uint256> key;
+        if (pcursor->GetKey(key) && key.first == DB_BLOCK_INDEX) {
+            CDiskBlockIndex diskindex;
+            if (pcursor->GetValue(diskindex)) {
+                // Construct block index object
+                uint256 blockHash = diskindex.GetBlockHash(); // the slow poke!
+                mapHash.insert(make_pair( diskindex.GetSHA256Hash(), blockHash));
+
+                if (diskindex.nStatus & BLOCK_HAVE_DATA) {
+                    CBlockHashPos hashPos(diskindex.nFile, diskindex.nDataPos, blockHash);
+                    blockHashPos.push_back(hashPos);
+                }
+
+                pcursor->Next();
+            } else {
+                return error("%s: failed to read value", __func__);
+            }
+        } else {
+            break;
+        }
+    }
+
+    return true;
+}
+
+bool CBlockTreeDB::BuildMapHashFromOldDB()
+{
+    LogPrintf("TACA ===> CBlockTreeDB::BuildMapHashFromOldDB() Start\n");
     // The block index is an in-memory structure that maps hashes to on-disk
     // locations where the contents of the block can be found. Here, we scan it
     // out of the DB and into mapBlockIndex.
@@ -636,10 +672,43 @@ bool CBlockTreeDB::BuildMapHash()
             continue; //?
         }
         mapHash.insert(make_pair( diskindex.GetSHA256Hash(), blockHash));
+
+        // diskindex.nFile-1 because new block data start from file 0
+        CBlockHashPos hashPos(diskindex.nFile-1, diskindex.nDataPos, blockHash);
+        blockHashPos.push_back(hashPos);
+
         iterator->Next();
     }
+    LogPrintf("TACA ===> CBlockTreeDB::BuildMapHashFromOldDB() Completed, blockHashPos has length = %d.\n", blockHashPos.size());
     delete iterator;
+    return true;
 }
+
+bool CBlockTreeDB::BuildBlockHashIndex()
+{
+    LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex() Start\n");
+    int newStoredBlock = 0;
+    int failedStoredBlock = 0;
+    if (fBlockHashIndex)
+    {
+        for (const auto& blockPos : blockHashPos) {
+            if (!pblocktree->WriteBlockHash(blockPos, blockPos.hash))
+            {
+                failedStoredBlock++;
+                LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex(): Can't WriteBlockHash for block %s\n",  blockPos.hash.ToString());
+            }
+            else
+            {
+                LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex(): Stored block %s at pos (nFile = %d, nPos = %d)\n",  blockPos.hash.ToString(), blockPos.nFile, blockPos.nPos);
+                newStoredBlock++;
+            }
+        }
+        blockHashPos.clear();
+        blockHashPos.shrink_to_fit();  // Reduces the capacity
+    }
+    LogPrintf("TACA ===> CBlockTreeDB::BuildBlockHashIndex() Completed, newStoredBlock = %d, failedStoredBlock = %d\n", newStoredBlock, failedStoredBlock);
+}
+
 // TACA: OLD CODE END
 #ifdef _MSC_VER
 #include "msvc_warnings.pop.h"
