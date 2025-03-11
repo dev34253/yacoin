@@ -283,8 +283,10 @@ const unsigned char maxNfactorYc1dot0 = 21;
 
 unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx)
 {
-    // Always return nFactor = 21
-    return nFactorAtHardfork;
+    if (fYac1dot0BlockOrTx)
+    {
+        return nFactorAtHardfork;
+    }
 
     int nBitCount = 0;
 

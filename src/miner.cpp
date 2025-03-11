@@ -492,10 +492,8 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
 
     pblock->hashPrevBlock = pindexPrev->GetBlockHash();
     const int64_t nMedianTimePast = pindexPrev->GetMedianTimePast();
-    pblock->nTime = max(nMedianTimePast, pblock->GetMaxTransactionTime());
-    pblock->nTime = max(pblock->GetBlockTime(),  // lo & behold this is nTime!?
-                        pindexPrev->GetBlockTime() - nMaxClockDrift);
-
+    pblock->nTime = max(nMedianTimePast + 1, pblock->GetMaxTransactionTime());
+    pblock->nTime = max(pblock->GetBlockTime(), pindexPrev->GetBlockTime() - nMaxClockDrift);
     pblock->UpdateTime(pindexPrev);
     pblock->nNonce = 0;
 
@@ -710,11 +708,7 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
   unsigned int nExtraNonce = 0;
 
   while (fGenerateBitcoins && nBlocksToGenerate != 0) {
-    while (IsInitialBlockDownload() ||
-           (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 && !fTestNet  // TestNet can mine stand alone!
-            // could be that if there is more than one stand alone mining
-            // forks on the blockchain can't be resolved?
-            )) {
+    while (IsInitialBlockDownload() || (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 && !fTestNet)) {
       Sleep(nMillisecondsPerSecond);
       if (fShutdown || !fGenerateBitcoins)  // someone shut off the miner
         break;
@@ -736,11 +730,9 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
 
     // Create new block
     std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler().CreateNewBlock(pwallet));
-    if (!pblocktemplate.get())
-        return;
-    CBlock *pblock = &pblocktemplate->block;
-    if (!pblock)
-        return;
+    if (!pblocktemplate.get()) return;
+    CBlock* pblock = &pblocktemplate->block;
+    if (!pblock) return;
 
     IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
@@ -770,7 +762,6 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
 
     ::int64_t& nBlockTime = *(::int64_t*)(pdata + 64 + 4);
     unsigned int& nBlockNonce = *(unsigned int*)(pdata + 64 + 16);
-
     Big.randomize_the_nonce(nBlockNonce);  // lazy initialization performed here
 
     //
@@ -778,41 +769,28 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
     //
     ::int64_t nStart = GetTime();
 
-    uint256 hashTarget =
-        (CBigNum().SetCompact(pblock->nBits)).getuint256();  // PoW hashTarget
-
-    LogPrintf("Hash target %s""\n", hashTarget.GetHex().substr(0, 16));
+    uint256 hashTarget = (CBigNum().SetCompact(pblock->nBits)).getuint256();  // PoW hashTarget
+    LogPrintf("Hash target %s\n", hashTarget.GetHex().substr(0, 16));
 
     uint256 result;
     unsigned int nHashesDone = 0;
 
-#ifndef _MSC_VER
     LogPrintf("Starting mining loop\n");
-#endif
     while (fGenerateBitcoins && nBlocksToGenerate != 0) {
       unsigned int nNonceFound;
 
-      nNonceFound =
-          scanhash_scrypt((char*)&pblock->nVersion,
-                          // max_nonce,
-                          nHashesDone, UBEGIN(result),
-                          GetNfactor(pblock->nTime, fYac1dot0BlockOrTx),
-                          pindexPrev, &hashTarget);
+      nNonceFound = scanhash_scrypt((char*)&pblock->nVersion,
+                                    nHashesDone,
+                                    UBEGIN(result),
+                                    GetNfactor(pblock->nTime, fYac1dot0BlockOrTx),
+                                    pindexPrev, &hashTarget);
       // Check if something found
       pblock->nNonce = nNonceFound;
-#ifdef Yac1dot0
-      LogPrintf(
-          "hash count %d"
-          "\n",
-          nHashesDone);
-#endif
+      LogPrintf("nNonceFound = %d\n", nNonceFound);
+      LogPrintf("hash count %d\n", nHashesDone);
       if (result <= hashTarget) {  // Found a solution
-#ifdef _MSC_VER
-#ifdef _DEBUG
         LogPrintf("target: %s\n", hashTarget.ToString());
         LogPrintf("result: %s\n", result.ToString());
-#endif
-#endif
         Yassert(result == pblock->GetHash());
         if (!pblock->SignBlock(*pwalletMain))  // wallet is locked
         {
@@ -823,7 +801,7 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
 
         SetThreadPriority(THREAD_PRIORITY_NORMAL);
         if (CheckWork(pblock, *pwalletMain, reservekey)) {
-            LogPrintf(
+          LogPrintf(
               "\nCPUMiner : proof-of-work block found \n"
               "%s"
               "\n\n\a"
@@ -846,8 +824,7 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
 
       ::int64_t nNow = GetTimeMillis();
 
-      if ((nNow - nHPSTimerStart) >
-          (40 * nMillisecondsPerSecond))  // no comment needed!
+      if ((nNow - nHPSTimerStart) > (40 * nMillisecondsPerSecond))
       {
         static CCriticalSection mining_stats;
         {
@@ -872,21 +849,21 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
                   (nStatisticsNumberOfBlocks200 > 0) &&
                   (nStatisticsNumberOfBlocks100 > 0)) {
                 LogPrintf("long average block period %" PRId64
-                       " sec (divisor %d)\n"
-                       "long average block period %" PRId64
-                       " sec (divisor %d)\n"
-                       "long average block period %" PRId64
-                       " sec (divisor %d)\n"
-                       "long average block period %" PRId64
-                       " sec (divisor %d)\n"
-                       "long average block period %" PRId64
-                       " sec (divisor %d)\n"
-                       "",
-                       nLongAverageBP, nStatisticsNumberOfBlocks,
-                       nLongAverageBP2000, nStatisticsNumberOfBlocks2000,
-                       nLongAverageBP1000, nStatisticsNumberOfBlocks1000,
-                       nLongAverageBP200, nStatisticsNumberOfBlocks200,
-                       nLongAverageBP100, nStatisticsNumberOfBlocks100);
+                          " sec (divisor %d)\n"
+                          "long average block period %" PRId64
+                          " sec (divisor %d)\n"
+                          "long average block period %" PRId64
+                          " sec (divisor %d)\n"
+                          "long average block period %" PRId64
+                          " sec (divisor %d)\n"
+                          "long average block period %" PRId64
+                          " sec (divisor %d)\n"
+                          "",
+                          nLongAverageBP, nStatisticsNumberOfBlocks,
+                          nLongAverageBP2000, nStatisticsNumberOfBlocks2000,
+                          nLongAverageBP1000, nStatisticsNumberOfBlocks1000,
+                          nLongAverageBP200, nStatisticsNumberOfBlocks200,
+                          nLongAverageBP100, nStatisticsNumberOfBlocks100);
               }
               LogPrintf("\n");
               nHPSTimerStart = GetTimeMillis();
@@ -898,7 +875,9 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
         }
       }
       // Check for stop or if block needs to be rebuilt
-      if (check_for_stop_mining(pindexPrev) || (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 && !fTestNet))
+      if (check_for_stop_mining(pindexPrev) ||
+          (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 &&
+           !fTestNet))
         break;
       if (fLimitProcessors &&
           (vnThreadsRunning[THREAD_MINER] > nLimitProcessors)) {
@@ -913,13 +892,8 @@ static void YacoinMiner(CWallet* pwallet)  // here fProofOfStake is always false
       pblock->UpdateTime(pindexPrev);
       nBlockTime = ByteReverse(pblock->nTime);
 
-      if (pblock->GetBlockTime() >=
-          ((::int64_t)pblock->vtx[0].nTime + nMaxClockDrift)) {
-#ifdef _MSC_VER
-        //    #ifdef _DEBUG
+      if (pblock->GetBlockTime() >= ((::int64_t)pblock->vtx[0].nTime + nMaxClockDrift)) {
         LogPrintf("block drift too far behind, restarting miner.\n");
-//    #endif
-#endif
         break;  // need to update coinbase timestamp
       }
     }

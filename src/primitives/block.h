@@ -163,8 +163,13 @@ public:
                 nSpanOf16 = 1435100064 - nChainStartTime,   // Tue, 23 Jun 2015 22:54:24 GMT (Nf) 17
                 nSpanOf17 = 1468654496 - nChainStartTime,   // Sat, 16 Jul 2016 07:34:56 GMT (Nf) 18
                 nSpanOf18 = 1502208928 - nChainStartTime,   // Tue, 08 Aug 2017 16:15:28 GMT (Nf) 19
-                nSpanOf19 = 1602872224 - nChainStartTime,   // Fri, 16 Oct 2020 18:17:04 GMT
-                nSpanOf20 = 1636426656 - nChainStartTime;   // Tue, 09 Nov 2021 02:57:36 GMT
+                nSpanOf19 = 1602872224 - nChainStartTime,   // Fri, 16 Oct 2020 18:17:04 GMT (Nf) 20
+                nSpanOf20 = 1636426656 - nChainStartTime,   // Tue, 09 Nov 2021 02:57:36 GMT (Nf) 21
+                nSpanOf21 = 1904862112 - nChainStartTime,   // Mon, 13 May 2030 00:21:52 GMT (Nf) 22
+                nSpanOf22 = 2173297568U - nChainStartTime,   // Sat, 13 Nov 2038 21:46:08 GMT (Nf) 23
+                nSpanOf23 = 2441733024U - nChainStartTime,   // Fri, 17 May 2047 19:10:24 GMT (Nf) 24
+                nSpanOf24 = 3247039392U - nChainStartTime,   // Tue, 22 Nov 2072 11:23:12 GMT (Nf) 25
+                nSpanOf25 = 3515474848U - nChainStartTime;   // Mon, 26 May 2081 08:47:28 GMT (Nf) 26
 
             unsigned char nfactor;
             if( !fTestNet )
@@ -186,6 +191,11 @@ public:
                 else if ( nTime < (nChainStartTime + nSpanOf18) ) nfactor = 18;
                 else if ( nTime < (nChainStartTime + nSpanOf19) ) nfactor = 19;
                 else if ( nTime < (nChainStartTime + nSpanOf20) ) nfactor = 20;
+                else if ( nTime < (nChainStartTime + nSpanOf21) ) nfactor = 21;
+                else if ( nTime < (nChainStartTime + nSpanOf22) ) nfactor = 22;
+                else if ( nTime < (nChainStartTime + nSpanOf23) ) nfactor = 23;
+                else if ( nTime < (nChainStartTime + nSpanOf24) ) nfactor = 24;
+                else if ( nTime < (nChainStartTime + nSpanOf25) ) nfactor = 25;
                 else
                     nfactor = MAXIMUM_N_FACTOR;
             }

@@ -185,7 +185,6 @@ void scrypt_buffer_free(void *scratchpad)
 //_____________________________________________________________________________
 unsigned int scanhash_scrypt(
                             char *pdata,
-                            //::uint32_t max_nonce, 
                             ::uint32_t &hash_count,
                             void *result, 
                             unsigned char Nfactor
