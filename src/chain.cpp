@@ -7,6 +7,7 @@
 #include "chain.h"
 #include "timestamps.h"
 #include "consensus/consensus.h"
+#include "validation.h"
 
 //////////////////////////////////////////////////////////////////////////////
 //

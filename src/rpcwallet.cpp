@@ -8,20 +8,13 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_WALLET_H
- #include "wallet.h"
-#endif
-
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
-
-#ifndef BITCOIN_INIT_H
- #include "init.h"
-#endif
-
+#include "wallet.h"
+#include "bitcoinrpc.h"
+#include "init.h"
+#include "validation.h"
 #include "coincontrol.h"
 #include "streams.h"
+
 #include <sstream>
 
 using namespace json_spirit;

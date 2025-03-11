@@ -8,51 +8,32 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_CHECKPOINT_H
- #include "checkpoints.h"
-#endif
+#include "main.h"
 
-#ifndef BITCOIN_DB_H
- #include "db.h"
-#endif
-
-#ifndef BITCOIN_TXDB_H
- #include "txdb.h"
-#endif
-
-#ifndef BITCOIN_INIT_H
- #include "init.h"
-#endif
-
-#ifndef CHECKQUEUE_H
- #include "checkqueue.h"
-#endif
-
-#ifndef PPCOIN_KERNEL_H
- #include "kernel.h"
-#endif
-
+#include "checkpoints.h"
+#include "consensus/validation.h"
+#include "db.h"
+#include "txdb.h"
+#include "init.h"
+#include "checkqueue.h"
+#include "kernel.h"
 #ifdef QT_GUI
  #include "explorer.h"
 #endif
-
-#include <memory>
+#include "pow.h"
+#include "reverse_iterator.h"
+#include "random.h"
+#include "streams.h"
+#include "validation.h"
+#include "validationinterface.h"
+#include "net_processing.h"
 
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/math/special_functions/round.hpp>
 
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
-
-#include "pow.h"
-#include "reverse_iterator.h"
-#include "random.h"
-#include "streams.h"
-#include "validationinterface.h"
-#include "net_processing.h"
+#include <memory>
 
 using namespace boost;
 
@@ -77,18 +58,9 @@ using std::deque;
 const unsigned int nStakeMaxAge = 90 * nSecondsPerDay;  // 60 * 60 * 24 * 90; // 90 days as full weight
 const unsigned int nOnedayOfAverageBlocks = (nSecondsPerDay / nStakeTargetSpacing) / 10;  // the old 144
 const unsigned int nStakeMinAge = 30 * nSecondsPerDay; // 60 * 60 * 24 * 30, 30 days as zero time weight
-const unsigned int nPoWTargetSpacing = nStakeTargetSpacing;
 const unsigned int nModifierInterval = 6 * nSecondsPerHour; // 6 * 60 * 60, time to elapse before new modifier is computed
 
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
-
-const ::int64_t 
-    nSimulatedMOneySupplyAtFork = 124460820773591;  //124,460,820.773591 YAC
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    const int64_t INITIAL_MONEY_SUPPLY = 0;
-#else
-    const int64_t INITIAL_MONEY_SUPPLY = 1E14;
-#endif
 
 const ::uint32_t 
     nTestNetGenesisNonce = 0x1F656; // = 128,598 decimal
@@ -116,9 +88,6 @@ int
     nStatisticsNumberOfBlocks,  // = nBigLinearTrailingAverageLength,    
     nConsecutiveStakeSwitchHeight = 420000;  // see timesamps.h
 
-CCriticalSection cs_vpwalletRegistered;
-vector<CWallet*> vpwalletRegistered;
-
 CBigNum bnProofOfStakeLegacyLimit(~uint256(0) >> 24); 
 CBigNum bnProofOfStakeLimit(~uint256(0) >> 27); 
 
@@ -137,8 +106,6 @@ int nSyncStarted = 0;
 int nScriptCheckThreads = 0;
 
 CMedianFilter<int> cPeerBlockCounts(5, 0); // Amount of blocks that other nodes claim to have
-
-CCheckQueue<CScriptCheck> scriptcheckqueue(128);
 
 // Constant stuff for coinbase transactions we create:
 CScript COINBASE_FLAGS;
@@ -162,66 +129,6 @@ struct QueuedBlock {
     CBlockIndex *pindex; // Optional.
     int64_t nTime;  // Time of "getdata" request in microseconds.
 };
-
-//////////////////////////////////////////////////////////////////////////////
-//
-// dispatching functions
-//
-
-// These functions dispatch to one or all registered wallets
-
-void RegisterWallet(CWallet* pwalletIn)
-{
-    {
-        LOCK(cs_vpwalletRegistered);
-        vpwalletRegistered.push_back(pwalletIn);
-    }
-}
-
-void CloseWallets()
-{
-    {
-        LOCK(cs_vpwalletRegistered);
-        for(CWallet* pwallet : vpwalletRegistered)
-            delete pwallet;
-        vpwalletRegistered.clear();
-    }
-}
-
-// make sure all wallets know about the given transaction, in the given block
-void SyncWithWallets(const CTransaction& tx, const CBlock* pblock, bool fUpdate, bool fConnect)
-{
-    if (!fConnect)
-    {
-        // ppcoin: wallets need to refund inputs when disconnecting coinstake
-        if (tx.IsCoinStake())
-        {
-            for(CWallet* pwallet : vpwalletRegistered)
-                if (pwallet->IsFromMe(tx))
-                    pwallet->DisableTransaction(tx);
-        }
-        return;
-    }
-
-    for(CWallet* pwallet : vpwalletRegistered)
-        pwallet->AddToWalletIfInvolvingMe(tx, pblock, fUpdate);
-    // Preloaded coins cache invalidation
-    fCoinsDataActual = false;
-}
-
-// notify wallets about an incoming inventory (for request counts)
-void Inventory(const uint256& hash)
-{
-    for(CWallet* pwallet : vpwalletRegistered)
-        pwallet->Inventory(hash);
-}
-
-// ask wallets to resend their transactions
-void ResendWalletTransactions()
-{
-    for(CWallet* pwallet : vpwalletRegistered)
-        pwallet->ResendWalletTransactions();
-}
 
 int GetCoinbaseMaturity()
 {
@@ -342,7 +249,7 @@ int CMerkleTx::GetBlocksToMaturity() const
 bool CMerkleTx::AcceptToMemoryPool()
 {
     CValidationState state;
-    CTransactionRef ptx = std::make_shared<CTransaction>(this);
+    CTransactionRef ptx = std::make_shared<CTransaction>(*this);
     return ::AcceptToMemoryPool(mempool, state, ptx, nullptr);
 }
 
@@ -417,20 +324,6 @@ int GetNumBlocksOfPeers()
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, unsigned int flags, int nHashType)
 {
     return CScriptCheck(txFrom, txTo, nIn, flags, nHashType)();
-}
-
-void ThreadScriptCheck(void*) 
-{
-    ++vnThreadsRunning[THREAD_SCRIPTCHECK];
-    RenameThread("yacoin-scriptch");
-    scriptcheckqueue.Thread();
-    LogPrintf("ThreadScriptCheck shutdown\n");
-    --vnThreadsRunning[THREAD_SCRIPTCHECK];
-}
-
-void ThreadScriptCheckQuit() 
-{
-    scriptcheckqueue.Quit();
 }
 
 string GetWarnings(string strFor)

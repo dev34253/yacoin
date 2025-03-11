@@ -8,13 +8,9 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_DB_H
- #include "db.h"
-#endif
-
-#ifndef BITCOIN_UI_INTERFACE_H
- #include "ui_interface.h"
-#endif
+#include "db.h"
+#include "ui_interface.h"
+#include "validation.h"
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>

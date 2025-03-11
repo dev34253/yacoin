@@ -13,29 +13,39 @@
 #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_TXDB_H
-#include "txdb.h"
-#endif
+#include <openssl/sha.h>
+#include <algorithm>
+#include <queue>
+#include <utility>
 
-#ifndef PPCOIN_KERNEL_H
-#include "kernel.h"
-#endif
-
-#ifndef BITCOIN_INIT_H
-#include "init.h"
-#endif
-
-#ifndef YACOIN_RANDOM_NONCE_H
-#include "random_nonce.h"
-#endif
-
+#include "amount.h"
+#include "chain.h"
+#include "chainparams.h"
+#include "coins.h"
+#include "consensus/consensus.h"
+#include "consensus/tx_verify.h"
+//#include "consensus/merkle.h"
+#include "consensus/validation.h"
+#include "hash.h"
+#include "validation.h"
+#include "net_processing.h"
 #include "policy/fees.h"
+#include "policy/feerate.h"
 #include "policy/policy.h"
 #include "pow.h"
-#include "net_processing.h"
-#include "consensus/validation.h"
-#include "consensus/tx_verify.h"
-#include <openssl/sha.h>
+#include "primitives/transaction.h"
+//#include "script/standard.h"
+#include "script/script.h"
+#include "timedata.h"
+#include "txmempool.h"
+#include "util.h"
+#include "utilmoneystr.h"
+#include "validationinterface.h"
+
+#include "txdb.h"
+#include "kernel.h"
+#include "init.h"
+#include "random_nonce.h"
 
 using std::auto_ptr;
 using std::list;
@@ -644,8 +654,9 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey) {
 
   // Process this block the same as if we had received it from another node
   MeasureTime processBlock;
-  CValidationState state;
-  if (!ProcessBlock(state, pblock, true, nullptr)) {
+  const std::shared_ptr<const CBlock> blockptr = std::make_shared<CBlock>(*pblock);
+  bool fAccepted = ProcessNewBlock(Params(), blockptr, true, nullptr);
+  if (!fAccepted) {
     processBlock.mEnd.stamp();
     LogPrintf("CheckWork(), total time for ProcessBlock = %lu us\n",
            processBlock.getExecutionTime());

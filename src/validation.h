@@ -8,9 +8,9 @@
 #define YACOIN_VALIDATION_H
 
 #include "amount.h"
+#include "chain.h"
 #include "coins.h"
 #include "consensus/params.h"
-#include "chain.h"
 #include "chainparams.h"
 #include "fs.h"
 #include "protocol.h" // For CMessageHeader::MessageStartChars
@@ -49,7 +49,7 @@ class CBlockPolicyEstimator;
 class CTxMemPool;
 class CValidationState;
 struct LockPoints;
-class CChain;
+struct CDiskBlockPos;
 
 /** Headers download timeout expressed in microseconds
  *  Timeout = base + per_header * (expected number of headers) */
@@ -266,6 +266,11 @@ bool LoadChainTip(const CChainParams& chainparams);
 void LoadBlockRewardAndHighestDiff();
 /** Unload database information */
 void UnloadBlockIndex();
+/** Run an instance of the script checking thread */
+//void ThreadScriptCheck();
+void ThreadScriptCheck(void* parg);
+// Stop the script checking threads
+void ThreadScriptCheckQuit();
 /** Check whether we are doing an initial block download (synchronizing from disk or network) */
 bool IsInitialBlockDownload();
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
@@ -413,5 +418,13 @@ bool GetAddressUnspent(uint160 addressHash, int type,
 
 // ppcoin:
 bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& nCoinAge); // ppcoin: get transaction coin age
-extern void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = NULL, bool fUpdate = false, bool fConnect = true);
+bool CheckBlockSignature(const CBlock& block);
+
+/* Wallet functions */
+void RegisterWallet(CWallet* pwalletIn);
+void CloseWallets();
+void Inventory(const uint256& hash);
+void ResendWalletTransactions();
+void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = NULL, bool fUpdate = false, bool fConnect = true);
+
 #endif // YACOIN_VALIDATION_H

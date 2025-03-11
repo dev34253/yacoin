@@ -13,6 +13,7 @@
 #include "tokens/tokens.h"
 #include "streams.h"
 #include "policy/policy.h"
+#include "validation.h"
 
 #include <boost/foreach.hpp>
 #include <boost/tuple/tuple.hpp>

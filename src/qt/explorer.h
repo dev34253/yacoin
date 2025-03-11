@@ -46,7 +46,7 @@ class CLastTxHash
 {
 public:
     CLastTxHash();
-    void storeLasthash( uint256 &hash );
+    void storeLasthash(const uint256 &hash);
     uint256 retrieveLastHash( void );
 private:
     uint256 lastHash;

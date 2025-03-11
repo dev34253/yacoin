@@ -77,7 +77,7 @@ double GetPoWMHashPS()
             pindexPrevWork = pindex;
         }
 
-        pindex = pindex->pnext;
+        pindex = chainActive.Next(pindex);
     }
 
     return GetDifficulty() * 4294.967296 / nTargetSpacingWork;

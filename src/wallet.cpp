@@ -28,9 +28,10 @@
 #include "net_processing.h"
 #include "coins.h"
 #include "consensus/validation.h"
+#include "consensus/tx_verify.h"
 #include "policy/policy.h"
 #include "validation.h"
-#include "tx_verify.h"
+#include "utilmoneystr.h"
 
 #include <boost/algorithm/string/replace.hpp>
 #include <openssl/rand.h>
@@ -77,6 +78,10 @@ bool compareUTXO(COutput u1, COutput u2)
     return (u1.nDepth > u2.nDepth);
 }
 
+std::string COutput::ToString() const
+{
+    return strprintf("COutput(%s, %d, %d, %d) [%s]", tx->GetHash().ToString(), i, fSpendable, nDepth, FormatMoney(tx->vout[i].nValue).c_str());
+}
 
 CPubKey CWallet::GenerateNewKey()
 {

@@ -91,9 +91,9 @@ public:
         strNetworkID = "main";
         // are all of these undocumented numbers a function of Nfactor?  Cpu power? Other???
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-        consensus.powLimit = (~uint256(0) >> 20);
+        consensus.powLimit = CBigNum(~uint256(0) >> 20);
 #else
-        consensus.powLimit = (~uint256(0) >> 3);
+        consensus.powLimit = CBigNum(~uint256(0) >> 3);
 #endif
         consensus.BIP65Height = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.BIP68Height = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
@@ -205,6 +205,7 @@ public:
                 { 1800000, uint256("0x00000670c3f5b879d8b2b0c403c824af78cf95f536d2da66b198efcf9d9ff355") },
                 { 1850000, uint256("0x00000e1b13b2b08d36598664d508a38500c59fcff4cf3d3746de0738b6eef457") },
                 { 1890005, uint256("0x00000dfd4e2286daee184a67b9266e40b8c1c5daf3a29a2321fd23e6c2da62e2") },
+                { 1911210, uint256("000009e3b1cc249ba64c3749430b96cf0f3c25acbb2bd3cb0b69e3b28288607b") },
             }
         };
 

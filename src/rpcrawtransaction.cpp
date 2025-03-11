@@ -25,6 +25,7 @@
 #include "net_processing.h"
 #include "consensus/validation.h"
 #include "policy/policy.h"
+#include "validation.h"
 
 using namespace boost;
 using namespace boost::assign;
@@ -569,7 +570,7 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     // parse hex string from parameter
     vector<unsigned char> txData(ParseHex(params[0].get_str()));
     CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
-    CTransaction tx;
+    CTransactionRef tx;
 
     // deserialize binary data stream
     try {
@@ -578,7 +579,7 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     catch (std::exception &e) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX decode failed");
     }
-    uint256 hashTx = tx.GetHash();
+    uint256 hashTx = tx->GetHash();
 
     // See if the transaction is already in a block
     // or in the memory pool:
@@ -594,13 +595,14 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     else
     {
         // push to local node
+        bool fMissingInputs = false;
         CValidationState state;
-        if (!tx.AcceptToMemoryPool(state))
+        if (!AcceptToMemoryPool(mempool, state, tx, &fMissingInputs))
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX rejected");
 
-        SyncWithWallets(tx, NULL, true);
+        SyncWithWallets(*tx, NULL, true);
     }
-    RelayTransaction(tx, g_connman.get());
+    RelayTransaction(*tx, g_connman.get());
 
     return hashTx.GetHex();
 }

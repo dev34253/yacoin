@@ -15,9 +15,6 @@
 #include <memory>
 #include <vector>
 
-extern const uint256 hashGenesisBlock, hashGenesisBlockTestNet,
-    hashGenesisMerkleRootTestNet, hashGenesisMerkleRootMainNet;
-
 struct CDNSSeedData {
     std::string host;
     bool supportsServiceBitsFiltering;

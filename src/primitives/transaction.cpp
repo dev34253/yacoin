@@ -4,13 +4,18 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "tokens/tokens.h"
 #include "primitives/transaction.h"
-#include "txdb.h"
-#include "wallet.h"
+
+#include "chain.h"
+#include "consensus/consensus.h"
 #include "policy/fees.h"
 #include "policy/policy.h"
-#include "consensus/consensus.h"
+#include "tokens/tokens.h"
+#include "txdb.h"
+#include "utilmoneystr.h"
+#include "validation.h"
+#include "wallet.h"
+
 
 #include <map>
 
@@ -39,3 +44,12 @@ unsigned int CTransaction::GetTotalSize() const
 {
     return ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION);
 }
+
+std::string CTxOut::ToString() const
+{
+    if (IsEmpty()) return "CTxOut(empty)";
+    if (scriptPubKey.size() < 6)
+        return "CTxOut(error)";
+    return strprintf("CTxOut(nValue=%s, scriptPubKey=%s)", FormatMoney(nValue).c_str(), scriptPubKey.ToString().c_str());
+}
+

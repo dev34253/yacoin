@@ -3,12 +3,14 @@
 #include <string>
 #include <vector>
 
-#include "base58.h"
 #include "multisiginputentry.h"
 #include "ui_multisiginputentry.h"
+
+#include "base58.h"
 #include "main.h"
 #include "script/script.h"
 #include "util.h"
+#include "validation.h"
 #include "wallet.h"
 #include "walletmodel.h"
 

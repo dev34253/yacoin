@@ -13,9 +13,16 @@
 #include "tinyformat.h"
 #include "uint256.h"
 
+#include "utilmoneystr.h"
+
 #include <vector>
 
-extern const unsigned int nPoWTargetSpacing;
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    const int64_t INITIAL_MONEY_SUPPLY = 0;
+#else
+    const int64_t INITIAL_MONEY_SUPPLY = 1E14;
+#endif
+
 /**
  * Maximum amount of time that a block timestamp is allowed to exceed the
  * current network-adjusted time before the block will be accepted.
@@ -218,7 +225,7 @@ public:
     int32_t nSequenceId;
 
     //! (memory only) Maximum nTime in the chain up to and including this block.
-    unsigned int nTimeMax;
+    ::int64_t nTimeMax;
 
     //! (memory only)
     ::int64_t nMint;
@@ -284,7 +291,7 @@ public:
         SetNull();
     }
 
-    CBlockIndex(CBlockHeader &blockHeader) {
+    CBlockIndex(const CBlockHeader &blockHeader) {
         SetNull();
 
         if (blockHeader.IsProofOfStake())
@@ -657,10 +664,7 @@ public:
         READWRITE(nBits);
         READWRITE(nNonce);
         READWRITE(blockHash);
-        if (!fReindexOnlyHeaderSync)
-        {
-            READWRITE(nStatus);
-        }
+        READWRITE(nStatus);
     }
 
     uint256 GetBlockHash() const

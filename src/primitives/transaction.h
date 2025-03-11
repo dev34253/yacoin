@@ -12,9 +12,7 @@
 #include "amount.h"
 #include "script/script.h"
 #include "serialize.h"
-#include "policy/policy.h"
 #include "uint256.h"
-#include "utilmoneystr.h"
 
 class CValidationState;
 class CDiskTxPos;
@@ -251,18 +249,7 @@ public:
         return !(a == b);
     }
 
-    std::string ToStringShort() const
-    {
-        return strprintf(" out %s %s", FormatMoney(nValue).c_str(), scriptPubKey.ToString(true).c_str());
-    }
-
-    std::string ToString() const
-    {
-        if (IsEmpty()) return "CTxOut(empty)";
-        if (scriptPubKey.size() < 6)
-            return "CTxOut(error)";
-        return strprintf("CTxOut(nValue=%s, scriptPubKey=%s)", FormatMoney(nValue).c_str(), scriptPubKey.ToString().c_str());
-    }
+    std::string ToString() const;
 
     void print() const
     {

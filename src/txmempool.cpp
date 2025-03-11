@@ -1,24 +1,29 @@
-#include "wallet.h"
-#include "validation.h"
-#include "consensus/validation.h"
-#include "txdb.h"
-#include "tokens/tokens.h"
-#ifdef QT_GUI
- #include "explorer.h"
-#endif
-#include "reverse_iterator.h"
+// Copyright (c) 2009-2010 Satoshi Nakamoto
+// Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2024-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include "txmempool.h"
+
+#include "wallet.h"
+#include "consensus/consensus.h"
+#include "consensus/tx_verify.h"
+#include "consensus/validation.h"
+#include "validation.h"
 #include "policy/policy.h"
+#include "policy/fees.h"
+#include "reverse_iterator.h"
+#include "streams.h"
+#include "timedata.h"
+#include "util.h"
+#include "utilmoneystr.h"
+#include "utiltime.h"
 
-extern std::vector<CWallet*> vpwalletRegistered;
-extern CChain chainActive;
-
-// erases transaction with the given hash from all wallets
-void static EraseFromWallets(uint256 hash)
-{
-    BOOST_FOREACH(CWallet* pwallet, vpwalletRegistered)
-        pwallet->EraseFromWallet(hash);
-}
+//#include "txdb.h"
+//#include "tokens/tokens.h"
+//#ifdef QT_GUI
+// #include "explorer.h"
+//#endif
 
 CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef& _tx, const CAmount& _nFee,
                                  int64_t _nTime, unsigned int _entryHeight,
@@ -1000,8 +1005,9 @@ bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     // If an entry in the mempool exists, always return that one, as it's guaranteed to never
     // conflict with the underlying cache, and it cannot have pruned entries (as it contains full)
     // transactions. First checking the underlying cache risks returning a pruned entry instead.
-    CTransaction ptx = mempool.get(outpoint.hash);
-    if (ptx) {
+    if (mempool.exists(outpoint.hash))
+    {
+        CTransaction ptx = mempool.get(outpoint.hash);
         if (outpoint.n < ptx.vout.size()) {
             coin = Coin(ptx.vout[outpoint.n], MEMPOOL_HEIGHT, false, ptx.IsCoinStake(), ptx.nTime);
             return true;

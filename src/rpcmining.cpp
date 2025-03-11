@@ -7,24 +7,15 @@
 
     #include "msvc_warnings.push.h"
 #endif
+#include "bitcoinrpc.h"
 
-#ifndef BITCOIN_TXDB_H
- #include "txdb.h"
-#endif
-
-#ifndef BITCOIN_INIT_H
- #include "init.h"
-#endif
-
-#ifndef NOVACOIN_MINER_H
- #include "miner.h"
-#endif
-
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
-#include "streams.h"
+#include "chainparams.h"
 #include "consensus/validation.h"
+#include "init.h"
+#include "miner.h"
+#include "txdb.h"
+#include "streams.h"
+
 #include "pow.h"
 
 using namespace json_spirit;
@@ -637,7 +628,8 @@ Value submitblock(const Array& params, bool fHelp)
 
     vector<unsigned char> blockData(ParseHex(params[0].get_str()));
     CDataStream ssBlock(blockData, SER_NETWORK, PROTOCOL_VERSION);
-    CBlock block;
+    std::shared_ptr<CBlock> blockptr = std::make_shared<CBlock>();
+    CBlock& block = *blockptr;
     try {
         ssBlock >> block;
     }
@@ -653,8 +645,7 @@ Value submitblock(const Array& params, bool fHelp)
     if (!block.SignBlock(*pwalletMain))
         throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
 
-    CValidationState state;
-    bool fAccepted = ProcessBlock(state, &block, true, nullptr);
+    bool fAccepted = ProcessNewBlock(Params(), blockptr, true, nullptr);
     if (!fAccepted)
         return "rejected";
 

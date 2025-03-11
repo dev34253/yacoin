@@ -21,6 +21,8 @@
 #include "streams.h"
 #include "txdb.h"
 #include "net_processing.h"
+#include "validation.h"
+#include "consensus/validation.h"
 
 MultisigDialog::MultisigDialog(QWidget *parent) : QWidget(parent), ui(new Ui::MultisigDialog), model(0)
 {
@@ -527,7 +529,7 @@ void MultisigDialog::on_sendTransactionButton_clicked()
     // Decode the raw transaction
     std::vector<unsigned char> txData(ParseHex(ui->signedTransaction->text().toStdString()));
     CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
-    CTransaction tx;
+    CTransactionRef tx;
     try
     {
         ssData >> tx;
@@ -537,7 +539,7 @@ void MultisigDialog::on_sendTransactionButton_clicked()
         (void)e;
         return;
     }
-    uint256 txHash = tx.GetHash();
+    uint256 txHash = tx->GetHash();
 
     // Check if the transaction is already in the blockchain
     CTransaction existingTx;
@@ -549,12 +551,13 @@ void MultisigDialog::on_sendTransactionButton_clicked()
     }
 
     // Send the transaction to the local node
+    bool fMissingInputs = false;
 	CValidationState state;
-    if(!tx.AcceptToMemoryPool(state))
-    return;
-    SyncWithWallets(tx, NULL, true);
+    if (!AcceptToMemoryPool(mempool, state, tx, &fMissingInputs))
+        return;
+    SyncWithWallets(*tx, NULL, true);
     //(CInv(MSG_TX, txHash), tx);
-    RelayTransaction(tx, g_connman.get());
+    RelayTransaction(*tx, g_connman.get());
 }
 
 MultisigInputEntry * MultisigDialog::addInput()

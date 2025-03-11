@@ -3,52 +3,43 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <regex>
-#include <script/script.h>
-#include <version.h>
-
-//#include <streams.h>
-#include <serialize.h>
-
-#include <primitives/transaction.h>
-#include <iostream>
-
-//#include <script/standard.h>
-#include <script/script.h>
-
+#include "regex"
+#include "script/script.h"
+#include "version.h"
+#include "streams.h"
+#include "serialize.h"
+#include "primitives/transaction.h"
+//#include "script/standard.h"
 #include "util.h"
 #include "base58.h"
-
-//#include <chainparams.h>
-//#include <validation.h>
-//#include <txmempool.h>
-//#include <tinyformat.h>
-//#include <consensus/validation.h>
+#include "chainparams.h"
+#include "validation.h"
+#include "txmempool.h"
+#include "tinyformat.h"
+#include "consensus/validation.h"
 #include "main.h"
 #include "memusage.h"
 
-//#include <wallet/wallet.h>
+//#include "wallet/wallet.h"
 //#include "wallet/coincontrol.h"
 //#include "wallet/wallet.h"
-#include <wallet.h>
+#include "wallet.h"
+//#include "rpc/protocol.h"
+#include "bitcoinrpc.h"
 
+#include <iostream>
 #include <boost/algorithm/string.hpp>
 #include <boost/variant.hpp>
 
-//#include <rpc/protocol.h>
-#include <bitcoinrpc.h>
-
-#include <net.h>
+#include "net.h"
 #include "tokens.h"
 #include "tokendb.h"
 #include "tokentypes.h"
-#include "coins.h"
 #include "coincontrol.h"
 #include "protocol.h"
-//#include "utilmoneystr.h" -> replaced with util.h
-//#include "coins.h" -> not have coinsview
+#include "utilmoneystr.h"
+#include "coins.h"
 #include "LibBoolEE.h"
-#include "streams.h"
 
 #define SIX_MONTHS 15780000 // Six months worth of seconds
 

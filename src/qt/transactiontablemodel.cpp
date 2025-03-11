@@ -1,4 +1,10 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "transactiontablemodel.h"
+
 #include "guiutil.h"
 #include "transactionrecord.h"
 #include "guiconstants.h"
@@ -10,6 +16,7 @@
 
 #include "wallet.h"
 #include "ui_interface.h"
+#include "validation.h"
 
 #include <QLocale>
 #include <QList>

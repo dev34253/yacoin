@@ -5,6 +5,7 @@
 #include "kernelrecord.h"
 #include "guiconstants.h"
 #include "transactiondesc.h"
+#include "validation.h"
 #include "walletmodel.h"
 #include "optionsmodel.h"
 #include "addresstablemodel.h"

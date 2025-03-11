@@ -1,8 +1,17 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "clientmodel.h"
+
+#include "addresstablemodel.h"
+#include "chain.h"
 #include "guiconstants.h"
 #include "optionsmodel.h"
-#include "addresstablemodel.h"
+#include "pow.h"
 #include "transactiontablemodel.h"
+#include "validation.h"
 
 #include "main.h"
 #include "ui_interface.h"

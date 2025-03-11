@@ -2893,7 +2893,7 @@ CLastTxHash::CLastTxHash( )
 //_____________________________________________________________________________
 //
 //_____________________________________________________________________________
-void CLastTxHash::storeLasthash( uint256 &hash )
+void CLastTxHash::storeLasthash(const uint256 &hash)
 {
     lastHash = hash;
     if( 0 == --explorer_counter )

@@ -25,7 +25,6 @@
 #include "consensus/consensus.h"
 #include "chainparams.h"
 #include "txmempool.h"
-#include "validation.h"
 #include "arith_uint256.h"
 
 class CWallet;
@@ -83,7 +82,6 @@ extern ::uint64_t nLastBlockSize;
 extern ::uint32_t nLastCoinStakeSearchInterval;
 extern const std::string strMessageMagic;
 extern unsigned char pchMessageStart[4];
-extern const ::int64_t nSimulatedMOneySupplyAtFork;
 
 // Settings
 extern ::int64_t nTransactionFee;
@@ -98,20 +96,8 @@ class CScriptCheck;
 class CBlockLocator;
 class CValidationState;
 
-/* Wallet functions */
-void Inventory(const uint256& hash);
-void RegisterWallet(CWallet* pwalletIn);
-void CloseWallets();
-
-// Run an instance of the script checking thread
-void ThreadScriptCheck(void* parg);
-// Stop the script checking threads
-void ThreadScriptCheckQuit();
-
 int GetNumBlocksOfPeers();
 std::string GetWarnings(std::string strFor);
-
-void ResendWalletTransactions();
 
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, unsigned int flags, int nHashType);
 

@@ -7,18 +7,17 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#include <boost/assign/list_of.hpp>
+#include "kernel.h"
 
-#ifndef PPCOIN_KERNEL_H
- #include "kernel.h"
-#endif
-
-#ifndef BITCOIN_TXDB_H
- #include "txdb.h"
-#endif
+#include "chainparams.h"
+#include "validation.h"
+#include "txdb.h"
+#include "consensus/validation.h"
 #include "pow.h"
 #include "streams.h"
 #include "policy/policy.h"
+
+#include <boost/assign/list_of.hpp>
 
 using std::min;
 using std::vector;
@@ -643,7 +642,7 @@ uint32_t GetStakeModifierChecksum(const CBlockIndex* pindex)
     }
     if( 0 == pindex->nHeight )
     {
-        Yassert( pindex->GetBlockHash() == (!fTestNet ? hashGenesisBlock : hashGenesisBlockTestNet) );
+        Yassert( pindex->GetBlockHash() == Params().GetConsensus().hashGenesisBlock);
     }
     // Hash previous checksum with flags, hashProofOfStake and nStakeModifier
     CDataStream ss(SER_GETHASH, 0);

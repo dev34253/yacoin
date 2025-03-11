@@ -1,28 +1,31 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
+// Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
+#include "init.h"
 
-    #include <stdio.h>
-    #include "msvc_warnings.push.h"
-#else
-    #ifndef BITCOIN_UTIL_H
-        #include "util.h"
-    #endif
-#endif
+#include "chain.h"
+#include "chainparams.h"
+#include "consensus/validation.h"
+#include "fs.h"
+#include "validation.h"
+#include "net_processing.h"
+#include "policy/policy.h"
+#include "scheduler.h"
+#include "txdb.h"
+#include "torcontrol.h"
+#include "util.h"
+#include "validationinterface.h"
 
-#ifndef BITCOIN_TXDB_H
- #include "txdb.h"
-#endif
+#include "bitcoinrpc.h"
+#include "random.h"
 
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
-
-#ifndef BITCOIN_INIT_H
- #include "init.h"
+#include <stdint.h>
+#include <stdio.h>
+#include <memory>
+#ifndef WIN32
+#include <signal.h>
 #endif
 
 #include <boost/format.hpp>
@@ -33,21 +36,6 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
-#include "random.h"
-#include "policy/policy.h"
-
-#ifndef WIN32
-#include <signal.h>
-#endif
-#include "chainparams.h"
-#include "fs.h"
-#include "scheduler.h"
-#include "validation.h"
-#include "validationinterface.h"
-#include "policy/policy.h"
-#include "torcontrol.h"
-#include "net_processing.h"
-#include "consensus/validation.h"
 
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 ::int64_t nUpTimeStart = 0;
@@ -1314,25 +1302,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
             fLoaded = true;
         }
         while(false);
-
-        if (!fLoaded && !fRequestShutdown) {
-            // first suggest a reindex
-            if (!fReset) {
-                bool fRet = uiInterface.ThreadSafeQuestion(
-                    strLoadError + ".\n\n" + _("Do you want to rebuild the block database now?"),
-                    strLoadError + ".\nPlease restart with -reindex or -reindex-chainstate to recover.",
-                    "", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
-                if (fRet) {
-                    fReindex = true;
-                    fRequestShutdown = false;
-                } else {
-                    LogPrintf("Aborted block database rebuild. Exiting.\n");
-                    return false;
-                }
-            } else {
-                return InitError(strLoadError);
-            }
-        }
 
         if (!fLoaded && !fRequestShutdown) {
             // first suggest a reindex

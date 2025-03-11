@@ -1,11 +1,12 @@
 // Copyright (c) 2024 The Yacoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#include <algorithm>
 
 #include "consensus/consensus.h"
 #include "policy/fees.h"
-
-#include <algorithm>
+#include "../validation.h"
+#include "chain.h"
 
 /* yac: The maximum block size increases based on the block reward, which is
  * influenced by the money supply. After each epoch interval, both the block

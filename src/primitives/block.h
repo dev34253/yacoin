@@ -7,12 +7,12 @@
 #ifndef YACOIN_PRIMITIVES_BLOCK_H
 #define YACOIN_PRIMITIVES_BLOCK_H
 
-#include "tokens/tokens.h"
+#include "primitives/transaction.h"
 #include "serialize.h"
 #include "uint256.h"
 #include "scrypt.h"
-#include "checkqueue.h"
-#include "chain.h"
+//#include "tokens/tokens.h"
+//#include "checkqueue.h"
 
 class CWallet;
 class CTransaction;
@@ -52,19 +52,11 @@ static const int
 static const unsigned char MAXIMUM_N_FACTOR = 25;  //30; since uint32_t fails on 07 Feb 2106 06:28:15 GMT
                                                    //    when stored as an uint32_t in a block
                                                    //    so there is no point going past Nf = 25
-extern CCheckQueue<CScriptCheck> scriptcheckqueue;
 
 extern const ::int64_t
     nChainStartTime,
     nChainStartTimeTestNet;
 extern CBigNum bnProofOfWorkLimit;
-extern const int64_t INITIAL_MONEY_SUPPLY;
-extern bool fReindexOnlyHeaderSync;
-
-struct ConnectedBlockTokenData
-{
-    std::set<CTokenCacheNewToken> newTokensToAdd;
-};
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
  * and scan through nonce values to make the block's hash satisfy proof-of-work
@@ -474,7 +466,6 @@ public:
 
     bool SignBlock044(const CKeyStore& keystore);
     bool SignBlock(CWallet& keystore);
-    bool CheckBlockSignature() const;
 };
 
 /** Describes a place in the block chain to another node such that if the

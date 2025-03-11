@@ -38,21 +38,11 @@ extern "C" {
 #include "scrypt-jane/scrypt-jane.h"
 }
 
-#ifndef SCRYPT_H
- #include "scrypt.h"
-#endif
-
-#ifndef PBKDF2_H
- #include "pbkdf2.h"
-#endif
-
-#ifndef YACOIN_RANDOM_NONCE_H
- #include "random_nonce.h"
-#endif
-
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
+#include "scrypt.h"
+#include "pbkdf2.h"
+#include "random_nonce.h"
+#include "validation.h"
+#include "main.h"
 #include "primitives/block.h"
 
 #define SCRYPT_BUFFER_SIZE (131072 + 63)

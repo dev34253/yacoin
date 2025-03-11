@@ -8,6 +8,8 @@
 #include "addrman.h"
 #include "arith_uint256.h"
 #include "blockencodings.h"
+#include "chainparams.h"
+#include "checkqueue.h"
 #include "consensus/validation.h"
 #include "hash.h"
 #include "init.h"
@@ -59,6 +61,7 @@ boost::mutex mapHashmutex;
 std::map<uint256, uint256> mapHash;
 int nHashCalcThreads = 0;
 boost::array<int, THREAD_MAX> vnThreadsRunning;
+const unsigned int nPoWTargetSpacing = nStakeTargetSpacing;
 
 void ThreadHashCalculation(void*)
 {
@@ -1364,7 +1367,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<C
     }
 
     bool received_new_header = false;
-    CBlockIndex *pindexLast = nullptr;
+    const CBlockIndex *pindexLast = nullptr;
     bool needReactivateTimeout = false;
     {
         LOCK(cs_main);
@@ -2321,7 +2324,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     if (setMisbehaving.count(fromPeer))
                         continue;
                     if (AcceptToMemoryPool(mempool, stateDummy, porphanTx, &fMissingInputs2)) {
-//                    if (orphanTx.AcceptToMemoryPool(stateDummy, txdb, &fMissingInputs2)) {
                         LogPrint(BCLog::MEMPOOL, "   accepted orphan tx %s\n", orphanHash.ToString());
                         SyncWithWallets(orphanTx, NULL, true);
                         RelayTransaction(orphanTx, connman);

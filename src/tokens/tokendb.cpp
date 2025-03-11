@@ -3,14 +3,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <util.h>
-//#include <consensus/params.h>
+#include "util.h"
+#include "consensus/params.h"
 //#include <script/ismine.h>
-//#include <tinyformat.h>
+#include "tinyformat.h"
 #include "tokendb.h"
 #include "tokens.h"
-#include "main.h"
-//#include "validation.h"
+#include "validation.h"
 
 #include <boost/thread.hpp>
 #include <memory>

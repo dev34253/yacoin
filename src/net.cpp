@@ -10,6 +10,7 @@
 #include "net.h"
 
 #include "addrman.h"
+#include "chainparams.h"
 #include "clientversion.h"
 #include "crypto/common.h"
 #include "crypto/sha256.h"

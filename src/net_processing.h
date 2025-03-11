@@ -35,7 +35,6 @@ static constexpr int64_t EXTRA_PEER_CHECK_INTERVAL = 45;
 /** Minimum time an outbound-peer-eviction candidate must be connected for, in order to evict, in seconds */
 static constexpr int64_t MINIMUM_CONNECT_TIME = 30;
 
-extern const unsigned int nPoWTargetSpacing;
 extern CCriticalSection cs_main;
 extern boost::mutex mapHashmutex;
 extern std::map<uint256, uint256> mapHash; // map of (SHA256-hash, chacha-hash)
@@ -114,7 +113,6 @@ void ThreadHashCalculation(void* parg);
 void ThreadHashCalculationQuit();
 
 /* Wallet functions */
-extern void Inventory(const uint256& hash);
 void RelayTransaction(const CTransaction& tx, CConnman* connman);
 /* TACA: NEW CODE END */
 
@@ -144,6 +142,4 @@ void StopNode();
 extern boost::array<int, THREAD_MAX> vnThreadsRunning;
 
 class CTransaction;
-extern void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = NULL, bool fUpdate = false, bool fConnect = true);
-
 #endif // BITCOIN_NET_PROCESSING_H

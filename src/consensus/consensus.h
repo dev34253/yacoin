@@ -9,8 +9,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <map>
-#include "primitives/block.h"
-#include "validation.h"
 
 enum GetMaxSize_mode
 {
@@ -31,10 +29,6 @@ enum {
 static const unsigned int MAX_GENESIS_BLOCK_SIZE = 1000000;
 static const size_t MIN_TRANSACTION_WEIGHT = 68; // 60 is the lower bound for the size of a valid serialized CTransaction
 static const size_t MIN_SERIALIZABLE_TRANSACTION_WEIGHT = 18; // 10 is the lower bound for the size of a serialized CTransaction
-
-/** The currently-connected chain of blocks. */
-extern CChain chainActive;
-extern BlockMap mapBlockIndex;
 
 extern ::uint64_t GetMaxSize(enum GetMaxSize_mode mode, unsigned int nHeight = 0);
 extern ::int64_t GetProofOfWorkReward(unsigned int nBits=0, ::int64_t nFees=0, unsigned int nHeight=0);

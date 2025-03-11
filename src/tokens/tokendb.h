@@ -7,6 +7,7 @@
 #define YACOIN_TOKENDB_H
 
 #include "amount.h"
+#include "fs.h"
 #include "serialize.h"
 #include "dbwrapper.h"
 

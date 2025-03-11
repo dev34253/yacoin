@@ -31,8 +31,8 @@ namespace Checkpoints
     //
     static MapCheckpoints mapCheckpoints =
         boost::assign::map_list_of
-        ( 0, std::make_pair(hashGenesisBlock, 1367991220) )
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+        ( 0, std::make_pair(uint256("0x0000060fc90618113cde415ead019a1052a9abc43afcccff38608ff8751353e5"), 1367991220) )
         ( 15000, std::make_pair(uint256("0x00000082cab82d04354692fac3b83d19cbe3c3ab4b73610d0e73397545eb012e"), 1368024582) )
         ( 30000, std::make_pair(uint256("0x0000000af2f6e71951d6e8befbd43a3dac36681b5095cb822b5c9c8de626e371"), 1368071548) )
         ( 45000, std::make_pair(uint256("0x00000000591110a1411cf37739cde0c558c0c070aa38686d89b2e70fe39b654f"), 1368188743) )
@@ -83,22 +83,17 @@ namespace Checkpoints
         ( 1850000, std::make_pair(uint256("0x00000e1b13b2b08d36598664d508a38500c59fcff4cf3d3746de0738b6eef457"), 1581200065) )
         ( 1890005, std::make_pair(uint256("0x00000dfd4e2286daee184a67b9266e40b8c1c5daf3a29a2321fd23e6c2da62e2"), 1619355152) ) // Heliopolis hardfork at block 1890000
         ( 1911210, std::make_pair(uint256("000009e3b1cc249ba64c3749430b96cf0f3c25acbb2bd3cb0b69e3b28288607b"), 1682210698) ) // Support token at block 1911210
+#else
+        ( 0, std::make_pair(uint256("0x1ddf335eb9c59727928cabf08c4eb1253348acde8f36c6c4b75d0b9686a28848"), 1367991220) )
 #endif
         ;
 
     // TestNet has no checkpoints
 
 // YACOIN TODO CHANGE
-    static MapCheckpoints mapCheckpointsTestnet =
-        boost::assign::map_list_of
-        ( 0, std::make_pair(hashGenesisBlockTestNet, nChainStartTimeTestNet + 20) )
-        ;
-
     bool CheckHardened(int nHeight, const uint256& hash)
     {
-        MapCheckpoints
-            & checkpoints = (fTestNet ? mapCheckpointsTestnet : mapCheckpoints);
-
+        MapCheckpoints& checkpoints = mapCheckpoints;
         MapCheckpoints::const_iterator 
             i = checkpoints.find(nHeight);
 
@@ -109,22 +104,19 @@ namespace Checkpoints
 
     int GetTotalBlocksEstimate()
     {
-        MapCheckpoints& checkpoints = (fTestNet ? mapCheckpointsTestnet : mapCheckpoints);
-
+        MapCheckpoints& checkpoints = mapCheckpoints;
         return checkpoints.rbegin()->first;
     }
 
     unsigned int GetLastCheckpointTime()
     {
-        MapCheckpoints& checkpoints = (fTestNet ? mapCheckpointsTestnet : mapCheckpoints);
-
+        MapCheckpoints& checkpoints = mapCheckpoints;
         return checkpoints.rbegin()->second.second;
     }
 
     CBlockIndex* GetLastCheckpoint(const BlockMap& mapBlockIndex)
     {
-        MapCheckpoints& checkpoints = (fTestNet ? mapCheckpointsTestnet : mapCheckpoints);
-
+        MapCheckpoints& checkpoints = mapCheckpoints;
         for (const MapCheckpoints::value_type& i : reverse_iterate(checkpoints)) {
             const uint256& hash = i.second.first;
             BlockMap::const_iterator t = mapBlockIndex.find(hash);

@@ -4,13 +4,8 @@
 #ifndef PPCOIN_KERNEL_H
 #define PPCOIN_KERNEL_H
 
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
-
-#ifndef BITCOIN_WALLET_H
- #include "wallet.h"
-#endif
+#include "main.h"
+#include "wallet.h"
 
 extern bool fCoinsDataActual;
 

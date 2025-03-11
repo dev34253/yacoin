@@ -46,6 +46,9 @@
 
 #include "tokens/tokens.h"
 #include "tokens/tokendb.h"
+#ifdef QT_GUI
+ #include "explorer.h"
+#endif
 
 #include <atomic>
 #include <sstream>
@@ -406,7 +409,7 @@ static void UpdateMempoolForReorg(DisconnectedBlockTransactions &disconnectpool,
     // the disconnectpool that were added back and cleans up the mempool state.
     mempool.UpdateTransactionsFromBlock(vHashUpdate);
     // We also need to remove any now-immature transactions
-    mempool.removeForReorg(chainActive.Tip()->nHeight + 1, STANDARD_LOCKTIME_VERIFY_FLAGS);
+    mempool.removeForReorg(pcoinsTip, chainActive.Tip()->nHeight + 1, STANDARD_LOCKTIME_VERIFY_FLAGS);
 }
 
 static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool& pool, CValidationState& state, const CTransactionRef& ptx,
@@ -633,7 +636,7 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
 
 #ifdef QT_GUI
     {
-        LOCK(cs);
+        LOCK(pool.cs);
 
     lastTxHash.storeLasthash( hash );
     //uiInterface.NotifyBlocksChanged();
@@ -968,7 +971,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
     AddCoins(inputs, tx, nHeight, blockHash, false, tokenCache, undoTokenData); /** YAC_TOKEN START */ /* Pass tokenCache into function */ /** YAC_TOKEN END */
 }
 
-bool CScriptCheck::operator()() const
+bool CScriptCheck::operator()()
 {
     const CScript
         &scriptSig = ptxTo->vin[nIn].scriptSig;
@@ -1227,7 +1230,7 @@ static DisconnectResult DisconnectBlock(const CBlock& block, const CBlockIndex* 
     // undo transactions in reverse order
     CTokensCache tempCache(*tokensCache);
     for (int i = block.vtx.size() - 1; i >= 0; i--) {
-        const CTransaction &tx = *(block.vtx[i]);
+        const CTransaction &tx = block.vtx[i];
         uint256 hash = tx.GetHash();
         bool is_coinbase = tx.IsCoinBase();
         bool is_coinstake = tx.IsCoinStake();
@@ -1514,7 +1517,7 @@ static DisconnectResult DisconnectBlock(const CBlock& block, const CBlockIndex* 
 
     // ppcoin: clean up wallet after disconnecting coinstake
     // TODO: Support wallet notification
-    for(CTransaction& tx : block.vtx)
+    for(const CTransaction& tx : block.vtx)
         SyncWithWallets(tx, &block, false, false);
 
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
@@ -1545,6 +1548,22 @@ void static FlushBlockFile(bool fFinalize = false)
 }
 
 static bool FindUndoPos(CValidationState &state, int nFile, CDiskBlockPos &pos, unsigned int nAddSize);
+
+static CCheckQueue<CScriptCheck> scriptcheckqueue(128);
+
+void ThreadScriptCheck(void*)
+{
+    ++vnThreadsRunning[THREAD_SCRIPTCHECK];
+    RenameThread("yacoin-scriptch");
+    scriptcheckqueue.Thread();
+    LogPrintf("ThreadScriptCheck shutdown\n");
+    --vnThreadsRunning[THREAD_SCRIPTCHECK];
+}
+
+void ThreadScriptCheckQuit()
+{
+    scriptcheckqueue.Quit();
+}
 
 static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& consensusparams) {
     AssertLockHeld(cs_main);
@@ -1679,7 +1698,7 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
     // Iterate through all transaction (both inputs and outputs) to do various check and update database cache
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
-        const CTransaction &tx = *(block.vtx[i]);
+        const CTransaction &tx = block.vtx[i];
         const uint256 txhash = tx.GetHash();
 
         nInputs += tx.vin.size();
@@ -1979,7 +1998,7 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
 
     // Watch for transactions paying to me
     // TODO: Support wallet notification
-    for(CTransaction& tx : block.vtx)
+    for(const CTransaction& tx : block.vtx)
         SyncWithWallets(tx, &block, true);
     static uint256 hashPrevBestCoinBase;
     UpdatedTransaction(hashPrevBestCoinBase);
@@ -3012,7 +3031,7 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
                              REJECT_INVALID, "bad-cs-time", false, "coinstake timestamp violation");
 
         // NovaCoin: check proof-of-stake block signature
-        if (fCheckSig && !block.CheckBlockSignature()) {
+        if (fCheckSig && !CheckBlockSignature(block)) {
             LogPrintf("\nbad PoS block signature, in block:\n\n");
             return state.DoS(100, error("CheckBlock () : bad proof-of-stake block signature"));
         }
@@ -3547,7 +3566,7 @@ bool static LoadBlockIndexDB(const CChainParams& chainparams)
     for (it = mapBlockIndex.begin(); it != mapBlockIndex.end(); it++)
     {
         CBlockIndex* pindexCurrent = (*it).second;
-        mapHash.insert(make_pair(pindexCurrent->GetSHA256Hash(), (*it).first)).first;
+        mapHash.insert(std::make_pair(pindexCurrent->GetSHA256Hash(), (*it).first)).first;
     }
 
     // Calculate bnChainTrust and initialize block index: START
@@ -3693,12 +3712,14 @@ bool LoadChainTip(const CChainParams& chainparams)
 
 CVerifyDB::CVerifyDB()
 {
-    uiInterface.ShowProgress(_("Verifying blocks..."), 0);
+    // TODO: Support UI interface
+//    uiInterface.ShowProgress(_("Verifying blocks..."), 0);
 }
 
 CVerifyDB::~CVerifyDB()
 {
-    uiInterface.ShowProgress("", 100);
+    // TODO: Support UI interface
+//    uiInterface.ShowProgress("", 100);
 }
 
 bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview, int nCheckLevel, int nCheckDepth)
@@ -3810,14 +3831,14 @@ static bool RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& inputs,
         return error("ReplayBlock(): ReadBlockFromDisk failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
     }
 
-    for (const CTransactionRef& tx : block.vtx) {
-        if (!tx->IsCoinBase()) {
-            for (const CTxIn &txin : tx->vin) {
+    for (const CTransaction& tx : block.vtx) {
+        if (!tx.IsCoinBase()) {
+            for (const CTxIn &txin : tx.vin) {
                 inputs.SpendCoin(txin.prevout, nullptr, tokensCache);
             }
         }
         // Pass check = true as every addition may be an overwrite.
-        AddCoins(inputs, *tx, pindex->nHeight, pindex->GetBlockHash(), true, tokensCache);
+        AddCoins(inputs, tx, pindex->nHeight, pindex->GetBlockHash(), true, tokensCache);
     }
     return true;
 }
@@ -4403,6 +4424,11 @@ void static CheckBlockIndex(const Consensus::Params& consensusParams)
     assert(nNodes == forward.size());
 }
 
+std::string CBlockFileInfo::ToString() const
+{
+    return strprintf("CBlockFileInfo(blocks=%u, size=%u, heights=%u...%u, time=%s...%s)", nBlocks, nSize, nHeightFirst, nHeightLast, DateTimeStrFormat("%Y-%m-%d", nTimeFirst), DateTimeStrFormat("%Y-%m-%d", nTimeLast));
+}
+
 static const uint64_t MEMPOOL_DUMP_VERSION = 1;
 
 bool LoadMempool(void)
@@ -4583,6 +4609,13 @@ bool GetAddressUnspent(uint160 addressHash, int type,
     return true;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//
+// dispatching functions
+//
+
+// These functions dispatch to one or all registered wallets
+
 // notify wallets about a new best chain
 static void SetBestChain(const CBlockLocator& loc)
 {
@@ -4595,6 +4628,65 @@ static void UpdatedTransaction(const uint256& hashTx)
 {
     for(CWallet* pwallet : vpwalletRegistered)
         pwallet->UpdatedTransaction(hashTx);
+}
+
+// erases transaction with the given hash from all wallets
+static void EraseFromWallets(uint256 hash)
+{
+    for(CWallet* pwallet : vpwalletRegistered)
+        pwallet->EraseFromWallet(hash);
+}
+
+void RegisterWallet(CWallet* pwalletIn)
+{
+    {
+        LOCK(cs_vpwalletRegistered);
+        vpwalletRegistered.push_back(pwalletIn);
+    }
+}
+
+void CloseWallets()
+{
+    {
+        LOCK(cs_vpwalletRegistered);
+        for(CWallet* pwallet : vpwalletRegistered)
+            delete pwallet;
+        vpwalletRegistered.clear();
+    }
+}
+
+// notify wallets about an incoming inventory (for request counts)
+void Inventory(const uint256& hash)
+{
+    for(CWallet* pwallet : vpwalletRegistered)
+        pwallet->Inventory(hash);
+}
+
+// ask wallets to resend their transactions
+void ResendWalletTransactions()
+{
+    for(CWallet* pwallet : vpwalletRegistered)
+        pwallet->ResendWalletTransactions();
+}
+
+void SyncWithWallets(const CTransaction& tx, const CBlock* pblock, bool fUpdate, bool fConnect)
+{
+    if (!fConnect)
+    {
+        // ppcoin: wallets need to refund inputs when disconnecting coinstake
+        if (tx.IsCoinStake())
+        {
+            for(CWallet* pwallet : vpwalletRegistered)
+                if (pwallet->IsFromMe(tx))
+                    pwallet->DisableTransaction(tx);
+        }
+        return;
+    }
+
+    for(CWallet* pwallet : vpwalletRegistered)
+        pwallet->AddToWalletIfInvolvingMe(tx, pblock, fUpdate);
+    // Preloaded coins cache invalidation
+    fCoinsDataActual = false;
 }
 
 //! Guess how far we are in the verification process at the given block index
@@ -4680,4 +4772,74 @@ bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& n
         LogPrintf("coin age bnCoinDay=%s\n", bnCoinDay.ToString());
     nCoinAge = bnCoinDay.GetLow64();
     return true;
+}
+
+// ppcoin: check block signature
+bool CheckBlockSignature(const CBlock& block)
+{
+    if (block.GetHash() == Params().GetConsensus().hashGenesisBlock)  // from 0.4.4 code
+        return block.vchBlockSig.empty();
+
+    std::vector<valtype> vSolutions;
+
+    txnouttype whichType;
+
+    if (block.IsProofOfWork())
+    {
+        for(unsigned int i = 0; i < block.vtx[0].vout.size(); i++)
+        {
+            const CTxOut& txout = block.vtx[0].vout[i];
+
+            if (!Solver(txout.scriptPubKey, whichType, vSolutions))
+                return false;
+
+            if (whichType == TX_PUBKEY)
+            {
+                // Verify
+                valtype& vchPubKey = vSolutions[0];
+                CKey key;
+                if (!key.SetPubKey(vchPubKey))
+                    continue;
+                if (block.vchBlockSig.empty())
+                    continue;
+                if(!key.Verify(block.GetHash(), block.vchBlockSig))
+                    continue;
+
+                return true;
+            }
+        }
+    }
+    else  // is PoS
+    {
+        // so we are only concerned with PoS blocks!
+        const CTxOut& txout = block.vtx[1].vout[1];
+
+        if (!Solver(txout.scriptPubKey, whichType, vSolutions))
+            return false;
+
+        if (whichType == TX_PUBKEY)
+        {
+            valtype
+                & vchPubKey = vSolutions[0];
+
+            CKey
+                key;
+
+            if (!key.SetPubKey(vchPubKey))
+                return false;
+            if (block.vchBlockSig.empty())
+                return false;
+
+            bool
+                fVerifyOK = key.Verify(block.GetHash(), block.vchBlockSig);
+
+            if( false == fVerifyOK )
+                return false;       // so I can trap it
+            else
+            {   // just to see if it ever is true? It is!!!
+                return true;
+            }
+        }
+    }
+    return false;
 }
