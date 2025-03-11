@@ -624,18 +624,21 @@ bool CTxDB::LoadBlockIndex()
     }
 
     // Calculate current block reward
-    BlockMap::iterator mi = mapBlockIndex.find(bestEpochIntervalHash);
-    if (mi != mapBlockIndex.end())
-    {
-        CBlockIndex *pBestEpochIntervalIndex = (*mi).second;
-        nBlockRewardPrev =
-            (::int64_t)((pBestEpochIntervalIndex->pprev ? pBestEpochIntervalIndex->pprev->nMoneySupply : pBestEpochIntervalIndex->nMoneySupply) /
-                        nNumberOfBlocksPerYear) *
-            nInflation;
-    }
-    else
-    {
-        LogPrintf("There is something wrong, can't find best epoch interval block\n");
+    if (chainActive.Height() >= nMainnetNewLogicBlockNumber) {
+        LogPrintf("CTxDB::LoadBlockIndex(), bestEpochIntervalHash = %s\n", bestEpochIntervalHash.GetHex());
+        BlockMap::iterator mi = mapBlockIndex.find(bestEpochIntervalHash);
+        if (mi != mapBlockIndex.end())
+        {
+            CBlockIndex *pBestEpochIntervalIndex = (*mi).second;
+            nBlockRewardPrev =
+                (::int64_t)((pBestEpochIntervalIndex->pprev ? pBestEpochIntervalIndex->pprev->nMoneySupply : pBestEpochIntervalIndex->nMoneySupply) /
+                            nNumberOfBlocksPerYear) *
+                nInflation;
+        }
+        else
+        {
+            LogPrintf("There is something wrong, can't find best epoch interval block\n");
+        }
     }
 
     if (fRequestShutdown)
