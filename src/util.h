@@ -442,8 +442,6 @@ inline void Sleep(::int64_t n)
 extern std::atomic<bool> fRequestShutdown;
 extern bool 
     fDebug,
-    fDebugNet,
-    fPrintToDebugLog,
     fShutdown,
     fDaemon,
     fServer,
@@ -456,7 +454,7 @@ extern ::uint32_t
 extern ::int64_t
     nYac10HardforkTime;
 extern std::string strMiscWarning;
-extern unsigned char MAXIMUM_YAC1DOT0_N_FACTOR;
+extern unsigned char nFactorAtHardfork;
 
 extern unsigned long long getTotalSystemMemory( void );
 void PrintException(std::exception* pex, const char* pszThread);

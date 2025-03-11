@@ -26,11 +26,6 @@ using std::map;
 using std::make_pair;
 using std::string;
 
-// Note: user must upgrade before the protocol switch deadline, otherwise it's required to
-//   re-download the blockchain. The timestamp of upgrade is recorded in the blockchain 
-//   database.
-unsigned int nModifierUpgradeTime = 0;
-
 typedef std::map<int, unsigned int> MapModifierCheckpoints;
 
 // Hard checkpoints of stake modifiers to ensure they are deterministic

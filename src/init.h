@@ -30,8 +30,8 @@ extern std::string strWalletFileName;
 void Interrupt(boost::thread_group& threadGroup);
 void StartShutdown();
 bool ShutdownRequested();
-void Shutdown(void* parg);
-bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler);
+void Shutdown();
+bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler);
 std::string HelpMessage();
 
 #endif

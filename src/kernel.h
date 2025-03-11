@@ -12,9 +12,6 @@
  #include "wallet.h"
 #endif
 
-// ChainDB upgrade time
-extern unsigned int nModifierUpgradeTime;
-
 extern bool fCoinsDataActual;
 
 struct PosMiningStuff {

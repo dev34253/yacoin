@@ -49,7 +49,6 @@ using std::vector;
 // BitcoinMiner
 //
 
-extern unsigned int nMinerSleep;
 int nBlocksToGenerate = -10;
 
 int static FormatHashBlocks(void* pbuffer, unsigned int len) {
@@ -624,7 +623,7 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey) {
   // Found a solution
   {
     LOCK(cs_main);
-    if (pblock->hashPrevBlock != hashBestChain)
+    if (pblock->hashPrevBlock != chainActive.Tip()->blockHash)
       return error("CheckWork () : generated block is stale");
   }
   // Remove key from key pool

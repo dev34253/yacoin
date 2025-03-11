@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
         guiref = &window;
         boost::thread_group threadGroup;
         CScheduler scheduler;
-        if(AppInit2(threadGroup, scheduler))
+        if(AppInitMain(threadGroup, scheduler))
         {
             {
                 // Put this in a block, so that the Model objects are cleaned up before
@@ -288,7 +288,7 @@ int main(int argc, char *argv[])
                 guiref = 0;
             }
             // Shutdown the core and its threads, but don't exit Yacoin-Qt here
-            Shutdown(NULL);
+            Shutdown();
         }
         else
         {

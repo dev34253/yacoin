@@ -725,7 +725,7 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
       // produce output
       file << strprintf("# Wallet dump created by Yacoin %s (%s)\n", CLIENT_BUILD.c_str(), CLIENT_DATE.c_str());
       file << strprintf("# * Created on %s\n", EncodeDumpTime(GetTime()).c_str());
-      file << strprintf("# * Best block at time of backup was %i (%s),\n", chainActive.Height(), hashBestChain.ToString().c_str());
+      file << strprintf("# * Best block at time of backup was %i (%s),\n", chainActive.Height(), chainActive.Tip()->blockHash.ToString().c_str());
       file << strprintf("#   mined on %s\n", EncodeDumpTime(chainActive.Tip()->nTime).c_str());
       file << "\n";
       file << "@ BELOW ARE LIST OF P2PKH ADDRESSES AND THEIR PRIVATE KEYS:";

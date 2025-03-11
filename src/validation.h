@@ -87,6 +87,8 @@ static const unsigned int DATABASE_FLUSH_INTERVAL = 60 * 60; // 24 * 60 * 60 for
 /** Time to wait (in seconds) between flushing to database if in initial block sync interval */
 static const unsigned int DATABASE_FLUSH_INTERVAL_INITIAL_SYNC = 10 * 60;
 
+/** Default for -persistmempool */
+static const bool DEFAULT_PERSIST_MEMPOOL = true;
 /** Maximum number of headers to announce when relaying blocks with headers message.*/
 static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
 
@@ -166,7 +168,6 @@ extern ::int64_t nBlockRewardPrev;
 
 // Mempool
 extern CTxMemPool mempool;
-extern uint256 hashBestChain;
 
 /** Global variable that points to the coins database (protected by cs_main) */
 extern CCoinsViewDB *pcoinsdbview;
@@ -210,6 +211,8 @@ const ::uint32_t
 /** Block files containing a block-height within MIN_BLOCKS_TO_KEEP of chainActive.Tip() will not be pruned. */
 static const unsigned int MIN_BLOCKS_TO_KEEP = 288;
 
+static const signed int DEFAULT_CHECKBLOCKS = 60;
+static const unsigned int DEFAULT_CHECKLEVEL = 3;
 /**
  * Process an incoming block. This only returns after the best known valid
  * block is made active. Note that it does not, however, guarantee that the
@@ -250,6 +253,8 @@ bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
 FILE* OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 /** Translation to a filesystem path */
 fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
+/** Import blocks from an external file */
+bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskBlockPos *dbp = nullptr);
 /** Ensures we have a genesis block in the block tree, possibly writing one to disk. */
 bool LoadGenesisBlock(const CChainParams& chainparams);
 /** Load the block tree and coins database from disk,
@@ -257,6 +262,8 @@ bool LoadGenesisBlock(const CChainParams& chainparams);
 bool LoadBlockIndex(const CChainParams& chainparams);
 /** Update the chain tip based on database information. */
 bool LoadChainTip(const CChainParams& chainparams);
+/** Load block reward and highest difficulty when starting node */
+void LoadBlockRewardAndHighestDiff();
 /** Unload database information */
 void UnloadBlockIndex();
 /** Check whether we are doing an initial block download (synchronizing from disk or network) */
@@ -349,12 +356,15 @@ bool ReadBlockFromDisk(CBlock& block, const CBlockIndex* pindex, const Consensus
 /** Context-independent validity checks */
 bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW=true, bool fCheckMerkleRoot=true, bool fCheckSig=true);
 
+/** When there are blocks in the active chain with missing data, rewind the chainstate and remove them from the block index */
+//bool RewindBlockIndex(const CChainParams& params);
+
 /** RAII wrapper for VerifyDB: Verify consistency of the block and coin databases */
 class CVerifyDB {
 public:
     CVerifyDB();
     ~CVerifyDB();
-    bool VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth);
+    bool VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview, int nCheckLevel, int nCheckDepth);
 };
 
 /** Replay blocks that aren't fully applied to the database. */
@@ -368,6 +378,12 @@ bool ReplayBlocks(const CChainParams& params, CCoinsView* view);
 int GetSpendHeight(const CCoinsViewCache& inputs);
 
 bool AbortNode(const std::string &msg);
+
+/** Dump the mempool to disk. */
+void DumpMempool();
+
+/** Load the mempool from disk. */
+bool LoadMempool();
 
 //
 // FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM

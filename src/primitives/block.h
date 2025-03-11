@@ -65,8 +65,6 @@ extern bool fReindexOnlyHeaderSync;
        const ::uint32_t Nfactor_1dot0 = 17;
 #endif
 
-FILE* AppendBlockFile(unsigned int& nFileRet);
-
 struct ConnectedBlockTokenData
 {
     std::set<CTokenCacheNewToken> newTokensToAdd;
@@ -154,7 +152,7 @@ public:
             block_data.nonce = nNonce;
             if (!scrypt_hash(CVOIDBEGIN(block_data),
                              sizeof(struct block_header), UINTBEGIN(thash),
-                             MAXIMUM_YAC1DOT0_N_FACTOR))
+                             nFactorAtHardfork))
             {
                 thash = 0;  // perhaps? should error("lack of memory for scrypt hash?");
             }

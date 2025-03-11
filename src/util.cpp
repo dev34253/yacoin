@@ -8,6 +8,7 @@
 
 #include "util.h"
 
+#include "chainparamsbase.h"
 #include "fs.h"
 #include "random.h"
 #include "serialize.h"
@@ -577,10 +578,9 @@ using std::set;
 namespace bt = boost::posix_time;
 
 bool fDebug = false;
-bool fDebugNet = false;
 ::int32_t nMainnetNewLogicBlockNumber;
 ::int32_t nTokenSupportBlockNumber;
-unsigned char MAXIMUM_YAC1DOT0_N_FACTOR;
+unsigned char nFactorAtHardfork;
 ::int64_t nYac10HardforkTime = 1619048730;
 // Epoch interval is a difficulty period. Right now on testnet, it is 21,000 blocks
 ::uint32_t nEpochInterval = 21000;
@@ -755,8 +755,8 @@ const fs::path &GetDataDir(bool fNetSpecific)
     } else {
         path = GetDefaultDataDir();
     }
-    if (fNetSpecific && gArgs.GetBoolArg("-testnet", false))
-        path /= "testnet";
+    if (fNetSpecific)
+        path /= BaseParams().DataDir();
 
     fs::create_directories(path);
 

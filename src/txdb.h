@@ -67,12 +67,12 @@ struct CDiskTxPos : public CDiskBlockPos
 };
 
 /** CCoinsView backed by the coin database (chainstate/) */
-class CCoinsViewDB final : public CCoinsView
+class CCoinsViewDB : public CCoinsView
 {
 protected:
     CDBWrapper db;
 public:
-    explicit CCoinsViewDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
+    CCoinsViewDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
 
     bool GetCoin(const COutPoint &outpoint, Coin &coin) const override;
     bool HaveCoin(const COutPoint &outpoint) const override;
@@ -110,18 +110,18 @@ private:
 class CBlockTreeDB : public CDBWrapper
 {
 public:
-    explicit CBlockTreeDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false, size_t maxFileSize = 2 << 20);
-
-    CBlockTreeDB(const CBlockTreeDB&) = delete;
-    CBlockTreeDB& operator=(const CBlockTreeDB&) = delete;
-
+    CBlockTreeDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
+private:
+    CBlockTreeDB(const CBlockTreeDB&);
+    void operator=(const CBlockTreeDB&);
+public:
     bool WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*> >& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
-    bool ReadBlockFileInfo(int nFile, CBlockFileInfo &info);
+    bool ReadBlockFileInfo(int nFile, CBlockFileInfo &fileinfo);
     bool ReadLastBlockFile(int &nFile);
-    bool WriteReindexing(bool fReindexing);
-    bool ReadReindexing(bool &fReindexing);
+    bool WriteReindexing(bool fReindex);
+    bool ReadReindexing(bool &fReindex);
     bool ReadTxIndex(const uint256 &txid, CDiskTxPos &pos);
-    bool WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos> > &vect);
+    bool WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos> > &list);
     bool UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue > >&vect);
     bool ReadAddressUnspentIndex(uint160 addressHash, int type, std::string assetName,
                                  std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &vect);
@@ -141,7 +141,6 @@ public:
 
     // OLD APIs
     bool ContainsTx(uint256 hash);
-    bool WriteBlockIndex(const CDiskBlockIndex& blockindex);
     bool WriteBlockHash(const CDiskBlockIndex& blockindex);
     bool WriteBlockHash(const CDiskBlockPos &blockPos, uint256 hash);
     bool ReadBlockHash(const unsigned int nFile, const unsigned int nBlockPos, uint256& blockhash);
@@ -149,8 +148,6 @@ public:
     bool WriteSyncCheckpoint(uint256 hashCheckpoint);
     bool ReadCheckpointPubKey(std::string& strPubKey);
     bool WriteCheckpointPubKey(const std::string& strPubKey);
-    bool ReadModifierUpgradeTime(unsigned int& nUpgradeTime);
-    bool WriteModifierUpgradeTime(const unsigned int& nUpgradeTime);
     bool LoadBlockIndex();
     bool BuildMapHash();
 };

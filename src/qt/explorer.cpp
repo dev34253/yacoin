@@ -1186,13 +1186,13 @@ void ExplorerPage::setNumBlocks( int currentHeight )
             nSECONDsPerHOUR = nSECONDsPerMINUTE * nMINUTEsPerHOUR;
             
         // really should get the block determined from height parameter currentHeight
-        // but chainActive.Height() & hashBestChain refer to the best block, I think!?
+        // but chainActive.Height() & chainActive.Tip()->blockHash refer to the best block, I think!?
 
         int
             nHeight = currentHeight;
 
         CBlockIndex
-            * pblockindex = mapBlockIndex[ hashBestChain ]; // hash of best block
+            * pblockindex = mapBlockIndex[ chainActive.Tip()->blockHash ]; // hash of best block
 
         while (pblockindex->nHeight > nHeight)              // in case we don't have the latest block
             pblockindex = pblockindex->pprev;               // I think??
@@ -2607,7 +2607,7 @@ std::string BuildBlockinfoDetailsFrom(
 void BlockExplorerPage::fillBlockInfoPage( int currentHeight )
 {
     CBlockIndex
-        * pblockindex = mapBlockIndex[hashBestChain];
+        * pblockindex = mapBlockIndex[chainActive.Tip()->blockHash];
 
     while (pblockindex->nHeight > currentHeight)
         pblockindex = pblockindex->pprev;

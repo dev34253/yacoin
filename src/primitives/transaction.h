@@ -21,7 +21,6 @@ class CValidationState;
 class CDiskTxPos;
 class CScriptCheck;
 class CBlockIndex;
-FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 
 static const int SERIALIZE_TRANSACTION_NO_WITNESS = 0x40000000;
 

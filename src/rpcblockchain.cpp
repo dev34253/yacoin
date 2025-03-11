@@ -171,7 +171,7 @@ Value getbestblockhash(const Array& params, bool fHelp)
             "getbestblockhash\n"
             "Returns the hash of the best block in the longest block chain.");
 
-    return hashBestChain.GetHex();
+    return chainActive.Tip()->blockHash.GetHex();
 }
 
 Value gettimechaininfo(const Array& params, bool fHelp)
@@ -600,7 +600,7 @@ Value getblocktimes(const Array& params, bool fHelp)
         throw runtime_error("Number of blocks is out of range.");
 
     CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[ hashBestChain ];
+    CBlockIndex* pblockindex = mapBlockIndex[ chainActive.Tip()->blockHash ];
 
     block.ReadFromDisk(pblockindex, true);
 
@@ -645,7 +645,7 @@ Value getblockbynumber(const Array& params, bool fHelp)
         throw runtime_error("Block number out of range.");
 
     CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[hashBestChain];
+    CBlockIndex* pblockindex = mapBlockIndex[chainActive.Tip()->blockHash];
     while (pblockindex->nHeight > nHeight)
         pblockindex = pblockindex->pprev;
 

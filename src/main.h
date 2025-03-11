@@ -40,8 +40,6 @@ class CInv;
 class CRequestTracker;
 class CNode;
 
-/** Translation to a filesystem path */
-boost::filesystem::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
 //
 // END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
 //
@@ -82,7 +80,6 @@ inline ::int64_t FutureDrift(::int64_t nTime)
     { return nTime + nMaxClockDrift; } // up to 2 hours from the future
 
 extern CScript COINBASE_FLAGS;
-extern unsigned int nNodeLifespan;
 //extern unsigned int nStakeMinAge;
 extern int nCoinbaseMaturity;
 extern ::uint64_t nLastBlockTx;
@@ -94,7 +91,6 @@ extern const ::int64_t nSimulatedMOneySupplyAtFork;
 
 // Settings
 extern ::int64_t nTransactionFee;
-extern ::int64_t nMinimumInputValue;
 extern int nScriptCheckThreads;
 extern const uint256 entropyStore[38];
 
@@ -115,12 +111,8 @@ void Inventory(const uint256& hash);
 void RegisterWallet(CWallet* pwalletIn);
 void CloseWallets();
 
-bool LoadBlockIndex(bool fAllowNew=true);
-void PrintBlockTree();
 bool ProcessMessages(CNode* pfrom);
 bool SendMessages(CNode* pto, bool fSendTrickle);
-/** Import blocks from an external file */
-bool LoadExternalBlockFile(FILE* fileIn, CDiskBlockPos *dbp = NULL);
 
 // Run an instance of the script checking thread
 void ThreadScriptCheck(void* parg);
