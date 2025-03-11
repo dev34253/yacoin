@@ -17,12 +17,10 @@
 #include "utilmoneystr.h"
 
 class CTxDB;
-class CTxIndex;
 class CValidationState;
 class CDiskTxPos;
 class CScriptCheck;
 class CBlockIndex;
-typedef std::map<uint256, std::pair<CTxIndex, CTransaction> > MapPrevTx;
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 
 static const int SERIALIZE_TRANSACTION_NO_WITNESS = 0x40000000;
@@ -423,24 +421,12 @@ public:
         return nValueOut;
     }
 
-    /** Amount of bitcoins coming in to this transaction
-        Note that lightweight clients may not know anything besides the hash of previous transactions,
-        so may not be able to calculate this.
-
-        @param[in] mapInputs	Map of previous transactions that have outputs we're spending
-        @return	Sum of value of all inputs (scriptSigs)
-        @see CTransaction::FetchInputs
-     */
-    ::int64_t GetValueIn(const MapPrevTx& mapInputs) const;
-
     static bool AllowFree(double dPriority)
     {
         // Large (in bytes) low-priority (new, small-coin) transactions
         // need a fee.
         return dPriority > COIN * 144 / 250;
     }
-
-    bool ReadFromDisk(CDiskTxPos pos, FILE** pfileRet=NULL);
 
     friend bool operator==(const CTransaction& a, const CTransaction& b)
     {
@@ -495,11 +481,7 @@ public:
     }
 
 
-    bool ReadFromDisk(COutPoint prevout, CTxIndex& txindexRet);
-    bool ReadFromDisk(COutPoint prevout);
-    bool DisconnectInputs(CValidationState &state, CTxDB& txdb);
     bool ClientConnectInputs();
-    bool GetCoinAge(::uint64_t& nCoinAge) const;  // ppcoin: get transaction coin age
 
     /** YAC_TOKEN START */
     bool IsNewToken() const;
@@ -509,9 +491,6 @@ public:
     bool IsReissueToken() const;
     bool VerifyReissueToken(std::string& strError) const;
     /** YAC_TOKEN END */
-
-protected:
-    const CTxOut& GetOutputFor(const CTxIn& input, const MapPrevTx& inputs) const;
 };
 
 typedef std::shared_ptr<const CTransaction> CTransactionRef;

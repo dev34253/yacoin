@@ -334,6 +334,11 @@ bool CBlockTreeDB::WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos>
     return WriteBatch(batch);
 }
 
+bool CBlockTreeDB::ContainsTx(uint256 hash) // old API
+{
+    return Exists(std::make_pair(DB_TXINDEX, hash));
+}
+
 bool CBlockTreeDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue > >&vect) {
     bool result = true;
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=vect.begin(); it!=vect.end(); it++) {
@@ -565,63 +570,6 @@ bool CBlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, 
            alreadyStoredBlock);
 
     return true;
-}
-
-// TACA: OLD CODE BEGIN
-bool CBlockTreeDB::ReadTxIndex(uint256 hash, CTxIndex &txindex)
-{
-    txindex.SetNull();
-    return Read(make_pair(string("tx"), hash), txindex);
-}
-
-bool CBlockTreeDB::UpdateTxIndex(uint256 hash, const CTxIndex &txindex)
-{
-    return Write(make_pair(string("tx"), hash), txindex);
-}
-
-bool CBlockTreeDB::AddTxIndex(const CTransaction &tx, const CDiskTxPos &pos, int nHeight)
-{
-    // Add to tx index
-    uint256 hash = tx.GetHash();
-    CTxIndex txindex(pos, tx.vout.size());
-    return Write(make_pair(string("tx"), hash), txindex);
-}
-
-bool CBlockTreeDB::EraseTxIndex(const CTransaction &tx)
-{
-    uint256 hash = tx.GetHash();
-
-    return Erase(make_pair(string("tx"), hash));
-}
-
-bool CBlockTreeDB::ContainsTx(uint256 hash)
-{
-    return Exists(make_pair(string("tx"), hash));
-}
-
-bool CBlockTreeDB::ReadDiskTx(uint256 hash, CTransaction &tx, CTxIndex &txindex)
-{
-    tx.SetNull();
-    if (!ReadTxIndex(hash, txindex))
-        return false;
-    return (tx.ReadFromDisk(txindex.pos));
-}
-
-bool CBlockTreeDB::ReadDiskTx(uint256 hash, CTransaction &tx)
-{
-    CTxIndex txindex;
-    return ReadDiskTx(hash, tx, txindex);
-}
-
-bool CBlockTreeDB::ReadDiskTx(COutPoint outpoint, CTransaction &tx, CTxIndex &txindex)
-{
-    return ReadDiskTx(outpoint.COutPointGetHash(), tx, txindex);
-}
-
-bool CBlockTreeDB::ReadDiskTx(COutPoint outpoint, CTransaction &tx)
-{
-    CTxIndex txindex;
-    return ReadDiskTx(outpoint.COutPointGetHash(), tx, txindex);
 }
 
 bool CBlockTreeDB::WriteBlockIndex(const CDiskBlockIndex &blockindex)

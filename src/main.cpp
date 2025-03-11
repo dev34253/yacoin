@@ -305,22 +305,29 @@ int GetCoinbaseMaturityOffset()
         return 20;
     }
 }
-//////////////////////////////////////////////////////////////////////////////
-//
-// CTxIndex
-//
 
 int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
 {
     CBlock blockTmp;
     if (pblock == NULL)
     {
-        // Load the block this tx is in
-        CTxIndex txindex;
-        if (!CTxDB("r").ReadTxIndex(GetHash(), txindex))
+        // Transaction index is required to get to block
+        if (!fTxIndex) {
             return 0;
-        if (!blockTmp.ReadFromDisk(txindex.pos.Get_CDiskTxPos_nFile(), txindex.pos.Get_CDiskTxPos_nBlockPos()))
+        }
+
+        // Read transaction position
+        CDiskTxPos postx;
+        if (!pblocktree->ReadTxIndex(GetHash(), postx)) {
             return 0;
+        }
+
+        // Read block
+        CBlock block;
+        const Consensus::Params& consensusParams = Params().GetConsensus();
+        if (!ReadBlockFromDisk(block, postx, consensusParams)) {
+            return 0;
+        }
         pblock = &blockTmp;
     }
 
@@ -415,55 +422,6 @@ bool CWalletTx::AcceptWalletTransaction()
     }
     return false;
 }
-
-int CTxIndex::GetDepthInMainChain() const
-{
-    // Read block header
-    CBlock block;
-    if (!block.ReadFromDisk(pos.Get_CDiskTxPos_nFile(), pos.Get_CDiskTxPos_nBlockPos(), false))
-        return 0;
-    // Find the block in the index
-    BlockMap::iterator mi = mapBlockIndex.find(block.GetHash());
-    if (mi == mapBlockIndex.end())
-        return 0;
-    CBlockIndex* pindex = (*mi).second;
-    if (!pindex || !pindex->IsInMainChain())
-        return 0;
-    return 1 + chainActive.Height() - pindex->nHeight;
-}
-
-// Return transaction in tx, and if it was found inside a block, its hash is placed in hashBlock
-bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock)
-{
-    {
-        LOCK(cs_main);
-        {
-            LOCK(mempool.cs);
-            if (mempool.exists(hash))
-            {
-                tx = mempool.get(hash);
-                return true;
-            }
-        }
-        CTxDB txdb("r");
-        CTxIndex txindex;
-        if (tx.ReadFromDisk(txdb, COutPoint(hash, 0), txindex))
-        {
-            CBlock block;
-            if (block.ReadFromDisk(txindex.pos.Get_CDiskTxPos_nFile(), txindex.pos.Get_CDiskTxPos_nBlockPos(), false))
-                hashBlock = block.GetHash();
-            return true;
-        }
-    }
-    return false;
-}
-
-
-
-
-
-
-
 
 //////////////////////////////////////////////////////////////////////////////
 //

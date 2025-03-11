@@ -23,7 +23,6 @@ class CDiskBlockIndex;
 class CDiskTxPos;
 class CMasterKey;
 class COutPoint;
-class CTxIndex;
 class CWallet;
 class CWalletTx;
 

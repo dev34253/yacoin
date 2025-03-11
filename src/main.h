@@ -103,7 +103,6 @@ static const ::uint64_t nMinDiskSpace = 52428800;
 
 class CReserveKey;
 class CTxDB;
-class CTxIndex;
 class CScriptCheck;
 class CBlockLocator;
 class CValidationState;
@@ -136,7 +135,6 @@ unsigned int ComputeMinWork(unsigned int nBase, ::int64_t nTime);
 unsigned int ComputeMinStake(unsigned int nBase, ::int64_t nTime, unsigned int nBlockTime);
 int GetNumBlocksOfPeers();
 std::string GetWarnings(std::string strFor);
-bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock);
 
 void StakeMinter(CWallet *pwallet);
 void ResendWalletTransactions();
@@ -163,75 +161,6 @@ int GetCoinbaseMaturity();
  * Get an extra confirmations to add coinbase to balance
  */
 int GetCoinbaseMaturityOffset();
-
-//bool GetWalletFile(CWallet* pwallet, std::string &strWalletFileOut);
-
-/** Position on disk for a particular transaction. */
-class CDiskTxPos
-{
-//public:   // if the data isn't private this isn't more than a plain old C struct
-            // if private we can name the privates with no change to the code
-private:
-    ::uint32_t nFile;
-    ::uint32_t nBlockPos;
-    ::uint32_t nTxPos;
-public:
-    ::uint32_t Get_CDiskTxPos_nFile() const { return nFile; }
-    ::uint32_t Get_CDiskTxPos_nBlockPos() const { return nBlockPos; }
-    ::uint32_t Get_CDiskTxPos_nTxPos() const { return nTxPos; }
-    // these 'getters' are most probably optimized compiles to the equivalent
-    // return of the variable, no different than if they were public, just read only
-    // this should/will be done for all these old fashioned classes with no privacy
-    CDiskTxPos()
-    {
-        SetNull();
-    }
-
-    CDiskTxPos(unsigned int nFileIn, unsigned int nBlockPosIn, unsigned int nTxPosIn)
-    {
-        nFile = nFileIn;
-        nBlockPos = nBlockPosIn;
-        nTxPos = nTxPosIn;
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        READWRITE(nFile);
-        READWRITE(nBlockPos);
-        READWRITE(nTxPos);
-    }
-
-    void SetNull() { nFile = (unsigned int) -1; nBlockPos = 0; nTxPos = 0; }
-    bool IsNull() const { return (nFile == (unsigned int) -1); }
-
-    friend bool operator==(const CDiskTxPos& a, const CDiskTxPos& b)
-    {
-        return (a.nFile     == b.nFile &&
-                a.nBlockPos == b.nBlockPos &&
-                a.nTxPos    == b.nTxPos);
-    }
-
-    friend bool operator!=(const CDiskTxPos& a, const CDiskTxPos& b)
-    {
-        return !(a == b);
-    }
-
-
-    std::string ToString() const
-    {
-        if (IsNull())
-            return "null";
-        else
-            return strprintf("(nFile=%u, nBlockPos=%u, nTxPos=%u)", nFile, nBlockPos, nTxPos);
-    }
-
-    void print() const
-    {
-        LogPrintf("%s\n", ToString());
-    }
-};
 
 /** A transaction with a merkle branch linking it to the block chain. */
 class CMerkleTx : public CTransaction
@@ -279,66 +208,6 @@ public:
     bool IsInMainChain() const { return GetDepthInMainChain() > 0; }
     int GetBlocksToMaturity() const;
     bool AcceptToMemoryPool();
-};
-
-
-
-
-/**  A txdb record that contains the disk location of a transaction and the
- * locations of transactions that spend its outputs.  vSpent is really only
- * used as a flag, but having the location is very helpful for debugging.
- */
-class CTxIndex
-{
-public:
-    CDiskTxPos pos;
-    std::vector<CDiskTxPos> vSpent;
-
-    CTxIndex()
-    {
-        SetNull();
-    }
-
-    CTxIndex(const CDiskTxPos& posIn, unsigned int nOutputs)
-    {
-        pos = posIn;
-        vSpent.resize(nOutputs);
-    }
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action) {
-        int _nVersion = s.GetVersion();
-        if (!(s.GetType() & SER_GETHASH))
-            READWRITE(_nVersion);
-        READWRITE(pos);
-        READWRITE(vSpent);
-    }
-
-    void SetNull()
-    {
-        pos.SetNull();
-        vSpent.clear();
-    }
-
-    bool IsNull()
-    {
-        return pos.IsNull();
-    }
-
-    friend bool operator==(const CTxIndex& a, const CTxIndex& b)
-    {
-        return (a.pos    == b.pos &&
-                a.vSpent == b.vSpent);
-    }
-
-    friend bool operator!=(const CTxIndex& a, const CTxIndex& b)
-    {
-        return !(a == b);
-    }
-    int GetDepthInMainChain() const;
-
 };
 
 #endif
