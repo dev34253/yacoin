@@ -1227,6 +1227,7 @@ bool CTokensCache::AddNewToken(const CNewToken& token, const std::string address
 
     setNewTokensToAdd.insert(newToken);
 
+    LogPrintf("TACA ===> CTokensCache::AddNewToken, Add new token to cache\n");
     if (fTokenIndex) {
         // Insert the token into the assests address amount map
         mapTokensAddressAmount[std::make_pair(token.strName, address)] = token.nAmount;
@@ -1399,6 +1400,7 @@ bool CTokensCache::RemoveTransfer(const CTokenTransfer &transfer, const std::str
 
 bool CTokensCache::DumpCacheToDatabase()
 {
+    LogPrintf("TACA ===> CTokensCache::DumpCacheToDatabase() Start\n");
     try {
         bool dirty = false;
         std::string message;
@@ -1406,6 +1408,7 @@ bool CTokensCache::DumpCacheToDatabase()
         // Remove new tokens from the database
         for (auto newToken : setNewTokensToRemove) {
             ptokensCache->Erase(newToken.token.strName);
+            LogPrintf("TACA ===> CTokensCache::DumpCacheToDatabase(), remove new token %s from token database\n", newToken.token.strName);
             if (!ptokensdb->EraseTokenData(newToken.token.strName)) {
                 dirty = true;
                 message = "_Failed Erasing New Token Data from database";
@@ -1434,6 +1437,7 @@ bool CTokensCache::DumpCacheToDatabase()
 
         // Add the new tokens to the database
         for (auto newToken : setNewTokensToAdd) {
+            LogPrintf("TACA ===> CTokensCache::DumpCacheToDatabase(), add new token %s to token database\n", newToken.token.strName);
             ptokensCache->Put(newToken.token.strName, CDatabasedTokenData(newToken.token, newToken.blockHeight, newToken.blockHash));
             if (!ptokensdb->WriteTokenData(newToken.token, newToken.blockHeight, newToken.blockHash)) {
                 dirty = true;
@@ -1738,18 +1742,20 @@ bool CTokensCache::DumpCacheToDatabase()
 //! Do not call this function on the ptokens pointer
 bool CTokensCache::Flush()
 {
-
+    LogPrintf("TACA ===> CTokensCache::Flush Start\n");
     if (!ptokens)
         return error("%s: Couldn't find ptokens pointer while trying to flush tokens cache", __func__);
 
     try {
         for (auto &item : setNewTokensToAdd) {
+            LogPrintf("TACA ===> CTokensCache::Flush, add new token %s to ptokens\n", item.token.strName);
             if (ptokens->setNewTokensToRemove.count(item))
                 ptokens->setNewTokensToRemove.erase(item);
             ptokens->setNewTokensToAdd.insert(item);
         }
 
         for (auto &item : setNewTokensToRemove) {
+            LogPrintf("TACA ===> CTokensCache::Flush, remove new token %s from ptokens\n", item.token.strName);
             if (ptokens->setNewTokensToAdd.count(item))
                 ptokens->setNewTokensToAdd.erase(item);
             ptokens->setNewTokensToRemove.insert(item);
@@ -1762,12 +1768,14 @@ bool CTokensCache::Flush()
             ptokens->mapReissuedTokenData[item.first] = item.second;
 
         for (auto &item : setNewOwnerTokensToAdd) {
+            LogPrintf("TACA ===> CTokensCache::Flush, add new token owner %s to ptokens\n", item.tokenName);
             if (ptokens->setNewOwnerTokensToRemove.count(item))
                 ptokens->setNewOwnerTokensToRemove.erase(item);
             ptokens->setNewOwnerTokensToAdd.insert(item);
         }
 
         for (auto &item : setNewOwnerTokensToRemove) {
+            LogPrintf("TACA ===> CTokensCache::Flush, remove new owner token %s from ptokens\n", item.tokenName);
             if (ptokens->setNewOwnerTokensToAdd.count(item))
                 ptokens->setNewOwnerTokensToAdd.erase(item);
             ptokens->setNewOwnerTokensToRemove.insert(item);
@@ -1786,12 +1794,14 @@ bool CTokensCache::Flush()
         }
 
         for (auto &item : setNewTransferTokensToAdd) {
+            LogPrintf("TACA ===> CTokensCache::Flush, add transfer token %s to ptokens\n", item.transfer.strName);
             if (ptokens->setNewTransferTokensToRemove.count(item))
                 ptokens->setNewTransferTokensToRemove.erase(item);
             ptokens->setNewTransferTokensToAdd.insert(item);
         }
 
         for (auto &item : setNewTransferTokensToRemove) {
+            LogPrintf("TACA ===> CTokensCache::Flush, remove transfer token %s from ptokens\n", item.transfer.strName);
             if (ptokens->setNewTransferTokensToAdd.count(item))
                 ptokens->setNewTransferTokensToAdd.erase(item);
             ptokens->setNewTransferTokensToRemove.insert(item);
