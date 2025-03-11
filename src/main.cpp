@@ -171,9 +171,8 @@ int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
         }
 
         // Read block
-        CBlock block;
         const Consensus::Params& consensusParams = Params().GetConsensus();
-        if (!ReadBlockFromDisk(block, postx, consensusParams)) {
+        if (!ReadBlockFromDisk(blockTmp, postx, consensusParams)) {
             return 0;
         }
         pblock = &blockTmp;
@@ -284,10 +283,8 @@ const unsigned char maxNfactorYc1dot0 = 21;
 
 unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx)
 {
-	if (fYac1dot0BlockOrTx)
-	{
-		return nFactorAtHardfork;
-	}
+    // Always return nFactor = 21
+    return nFactorAtHardfork;
 
     int nBitCount = 0;
 

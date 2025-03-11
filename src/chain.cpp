@@ -222,3 +222,15 @@ const CBlockIndex* LastCommonAncestor(const CBlockIndex* pa, const CBlockIndex* 
     assert(pa == pb);
     return pa;
 }
+
+CBlockIndex* FindBlockByHeight(int nHeight)
+{
+    CBlockIndex *pblockindex;
+    // Check input parameter
+    if (nHeight <= 0)
+        return chainActive.Genesis();
+    if (nHeight >= chainActive.Tip()->nHeight)
+        return chainActive.Tip();
+
+    return chainActive[nHeight];
+}

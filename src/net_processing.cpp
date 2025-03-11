@@ -2750,7 +2750,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         for (unsigned int n = 0; n < nCount; n++) {
             vRecv >> headers[n];
             // TODO: TACA Need to check this
-//            ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
+            ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
+            ReadCompactSize(vRecv); // needed for vchBlockSig.
         }
 
         // Headers received via a HEADERS message should be valid, and reflect

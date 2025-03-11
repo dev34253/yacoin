@@ -126,8 +126,7 @@ namespace BCLog {
 /** Return true if log accepts specified category */
 static inline bool LogAcceptCategory(uint32_t category)
 {
-    return true;
-//    return (logCategories.load(std::memory_order_relaxed) & category) != 0;
+    return (logCategories.load(std::memory_order_relaxed) & category) != 0;
 }
 
 /** Returns a string with the log categories. */

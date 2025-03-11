@@ -15,8 +15,10 @@
 
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
     static const uint256 hashGenesisBlock("0x0000060fc90618113cde415ead019a1052a9abc43afcccff38608ff8751353e5");
+    static const uint32_t nNonceGenesisBlock = 127357;
 #else
     static const uint256 hashGenesisBlock("0x1ddf335eb9c59727928cabf08c4eb1253348acde8f36c6c4b75d0b9686a28848");
+    static const uint32_t nNonceGenesisBlock = 127358;
 #endif
 
 const uint256
@@ -43,7 +45,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
     block.nTime = (::uint32_t)(fTestNet ? nChainStartTimeTestNet + 20
                                         : nChainStartTime + 20);
     block.nBits = bnProofOfWorkLimit.GetCompact();
-    block.nNonce = !fTestNet ? 127357 :  // main net genesis block nonce
+    block.nNonce = !fTestNet ? nNonceGenesisBlock :  // main net genesis block nonce
                                0x1F656;
 
     return block;

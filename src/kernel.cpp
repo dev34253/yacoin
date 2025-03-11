@@ -386,24 +386,6 @@ static bool GetKernelStakeModifier(CBlockIndex* pindexPrev, uint256 hashBlockFro
     return true;
 }
 
-// yacoin2015: nfactor for stake hash
-// doc/GetStakeNfactor.html
-uint8_t GetStakeNfactor (uint64_t nTime, uint64_t nCoinDayWeight)
-{
-	// coin day weight factor, used for ProofOfStake kernel hash
-	// human friendly notation: nCoinDayWeight / ( ( nTime - 268435456 ) / 131072 - 8192 );
-	uint64_t cdwfactor = nCoinDayWeight / ( ( ( nTime - ( 1<<28 ) ) >> 17 ) - ( 1<<13 ) ) ;
-	uint8_t nfactor = GetNfactor(nTime, chainActive.Height() + 1 >= nMainnetNewLogicBlockNumber? true : false);
-
-	if ( cdwfactor > (uint64_t)( nfactor - 4 ) )
-		return 4;
-
-	if ( cdwfactor < 2 )
-		return 0;
-
-	return nfactor + 1 - (uint8_t)cdwfactor;
-}
-
 // yacoin2015
 uint256 GetProofOfStakeHash( 
                             uint64_t nStakeModifier, 

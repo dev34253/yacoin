@@ -100,6 +100,7 @@ bool fAddressIndex = false;
 //
 
 static void CheckBlockIndex(const Consensus::Params& consensusParams);
+static bool PoSContextualBlockChecks(const CBlock& block, CValidationState& state, CBlockIndex* pindex);
 
 // Internal stuff
 namespace {
@@ -642,6 +643,7 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
     //uiInterface.NotifyBlocksChanged();
     }
 #endif
+    return true;
 }
 
 /** (try to) add transaction to memory pool with a specified acceptance time **/
@@ -830,7 +832,7 @@ bool IsInitialBlockDownload()
     if (nHeight != 0 && nHeight >= nMainnetNewLogicBlockNumber)
     {
         ::int32_t startEpochBlockHeight = (nHeight / nEpochInterval) * nEpochInterval;
-        const CBlockIndex* pindexMoneySupplyBlock = chainActive[(startEpochBlockHeight - 1)];
+        const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(startEpochBlockHeight - 1);
         return (pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
     }
 
@@ -849,7 +851,7 @@ bool IsInitialBlockDownload()
             ::int32_t startEpochBlockHeight = (chainActive.Tip()->nHeight / nEpochInterval) * nEpochInterval;
             ::int32_t moneySupplyBlockHeight =
                 reorgToHardforkBlock ? nMainnetNewLogicBlockNumber - 1 : startEpochBlockHeight - 1;
-            const CBlockIndex* pindexMoneySupplyBlock = chainActive[moneySupplyBlockHeight];
+            const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(moneySupplyBlockHeight);
             nBlockRewardExcludeFees = (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
             nBlockRewardPrev = nBlockRewardExcludeFees;
         }
@@ -868,8 +870,7 @@ bool IsInitialBlockDownload()
                 nBlockRewardExcludeFees = (::int64_t)nBlockRewardPrev;
                 if (!nBlockRewardPrev)
                 {
-                    const CBlockIndex* pindexMoneySupplyBlock =
-                            chainActive[(nMainnetNewLogicBlockNumber ? nMainnetNewLogicBlockNumber - 1 : 0)];
+                    const CBlockIndex* pindexMoneySupplyBlock = FindBlockByHeight(nMainnetNewLogicBlockNumber ? nMainnetNewLogicBlockNumber - 1 : 0);
                     nBlockRewardExcludeFees =
                         (::int64_t)(pindexMoneySupplyBlock->nMoneySupply * nInflation / nNumberOfBlocksPerYear);
                 }
@@ -2135,7 +2136,7 @@ bool static FlushStateToDisk(const CChainParams& chainparams, CValidationState &
             // twice (once in the log, and once in the tables). This is already
             // an overestimation, as most will delete an existing entry or
             // overwrite one. Still, use a conservative safety factor of 2.
-            if (!CheckDiskSpace(48 * 2 * 2 * pcoinsTip->GetCacheSize()) + tokenDirtyCacheSize * 2) /** YAC_TOKEN START */ /** YAC_TOKEN END */
+            if (!CheckDiskSpace((48 * 2 * 2 * pcoinsTip->GetCacheSize()) + tokenDirtyCacheSize * 2)) /** YAC_TOKEN START */ /** YAC_TOKEN END */
                 return state.Error("out of disk space");
             // Flush the chainstate (which may refer to block index entries).
             if (!pcoinsTip->Flush())
@@ -2182,7 +2183,7 @@ void FlushStateToDisk() {
 void static UpdateTip(CBlockIndex *pindexNew) {
     // Store old and new height for recalculate block reward and min target in case of reorg through two or many epochs
     // FIXME: Fix reorg issue
-    int32_t oldHeight = chainActive.Tip()->nHeight;
+    int32_t oldHeight = chainActive.Tip() ? chainActive.Tip()->nHeight : 0;
     int32_t newHeight = pindexNew->nHeight;
 
     // Update tip
@@ -2802,6 +2803,10 @@ static CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
     // ppcoin: compute chain trust score
     pindexNew->bnChainTrust = (pindexNew->pprev ? pindexNew->pprev->bnChainTrust : 0)  + pindexNew->GetBlockTrust();
 
+    // ppcoin: compute stake entropy bit for stake modifier
+    if (!pindexNew->SetStakeEntropyBit(block.GetStakeEntropyBit(pindexNew->nHeight)))
+        error("AddToBlockIndex() : SetStakeEntropyBit() failed");
+
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == nullptr || pindexBestHeader->bnChainTrust < pindexNew->bnChainTrust)
         pindexBestHeader = pindexNew;
@@ -2847,6 +2852,21 @@ static bool ReceivedBlockTransactions(const CBlock &block, CValidationState& sta
                 queue.push_back(it->second);
                 range.first++;
                 mapBlocksUnlinked.erase(it);
+            }
+
+            if ((pindex->nHeight + 1) < nMainnetNewLogicBlockNumber)
+            {
+                // ppcoin: compute stake modifier
+                ::uint64_t nStakeModifier = 0;
+                bool fGeneratedStakeModifier = false;
+                if (!ComputeNextStakeModifier(pindex, nStakeModifier, fGeneratedStakeModifier))
+                    return error("ReceivedBlockTransactions() : ComputeNextStakeModifier() failed");
+                pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
+
+                pindex->nStakeModifierChecksum = GetStakeModifierChecksum(pindex);
+                if (!CheckStakeModifierCheckpoints(pindex->nHeight, pindex->nStakeModifierChecksum))
+                    return error("ReceivedBlockTransactions() : Rejected by stake modifier checkpoint height=%d, modifier=0x%016llx\n", pindex->nHeight, nStakeModifier);
+                setDirtyBlockIndex.insert(pindex);  // queue a write to disk
             }
         }
     } else {
@@ -3144,20 +3164,6 @@ static bool PoSContextualBlockChecks(const CBlock& block, CValidationState& stat
         pindex->hashProofOfStake = hashProofOfStake;
     }
 
-    // ppcoin: compute stake entropy bit for stake modifier
-    if (!pindex->SetStakeEntropyBit(block.GetStakeEntropyBit(pindex->nHeight)))
-        return error("PoSContextualBlockChecks() : SetStakeEntropyBit() failed");
-
-    // ppcoin: compute stake modifier
-    ::uint64_t nStakeModifier = 0;
-    bool fGeneratedStakeModifier = false;
-    if (!ComputeNextStakeModifier(pindex, nStakeModifier, fGeneratedStakeModifier))
-        return error("PoSContextualBlockChecks() : ComputeNextStakeModifier() failed");
-    pindex->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
-
-    pindex->nStakeModifierChecksum = GetStakeModifierChecksum(pindex);
-    if (!CheckStakeModifierCheckpoints(pindex->nHeight, pindex->nStakeModifierChecksum))
-        return error("PoSContextualBlockChecks() : Rejected by stake modifier checkpoint height=%d, modifier=0x%016\n" PRIx64, pindex->nHeight, nStakeModifier);
     setDirtyBlockIndex.insert(pindex);  // queue a write to disk
 
     return true;

@@ -1139,6 +1139,7 @@ void CWalletTx::AddSupportingTransactions()
                 setAlreadyDone.insert(hash);
 
                 CMerkleTx tx;
+                uint256 blockHash;
                 map<uint256, CWalletTx>::const_iterator mi = pwallet->mapWallet.find(hash);
                 if (mi != pwallet->mapWallet.end())
                 {
@@ -1149,6 +1150,10 @@ void CWalletTx::AddSupportingTransactions()
                 else if (mapWalletPrev.count(hash))
                 {
                     tx = *mapWalletPrev[hash];
+                }
+                else if (GetTransaction(hash, tx, blockHash, true))
+                {
+                    ;
                 }
                 else
                 {

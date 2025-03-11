@@ -53,6 +53,7 @@ public:
         ::Unserialize(s, VARINT(nCode));
         txout->nHeight = nCode / 2;
         txout->fCoinBase = nCode & 1;
+        ::Unserialize(s, VARINT(txout->nTime));
         if (txout->nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
             // ppcoin flags
             unsigned int nFlag = 0;
