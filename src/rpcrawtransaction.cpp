@@ -525,20 +525,18 @@ Value signrawtransaction(const Array& params, bool fHelp)
         }
         const CScript& prevPubKey = mapPrevOut[txin.prevout];
 
-        txin.scriptSig.clear();
+        SignatureData sigdata;
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
         if (!fHashSingle || (i < mergedTx.vout.size()))
-            SignSignature(keystore, prevPubKey, mergedTx, i, nHashType);
+            ProduceSignature(TransactionSignatureCreator(&keystore, &mergedTx, i, nHashType), prevPubKey, sigdata);
+        sigdata = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), sigdata, DataFromTransaction(mergedTx, i));
 
-        // ... and merge in other signatures:
-        for(const CTransaction& txv : txVariants)
-        {
-            txin.scriptSig = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), txin.scriptSig, txv.vin[i].scriptSig);
-        }
+        UpdateTransaction(mergedTx, i, sigdata);
 
         ScriptError serror = SCRIPT_ERR_OK;
-        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror))
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror)) {
             fComplete = false;
+        }
     }
 
     Object result;

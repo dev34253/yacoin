@@ -476,12 +476,16 @@ void MultisigDialog::on_signTransactionButton_clicked()
         }
         const CScript& prevPubKey = mapPrevOut[txin.prevout];
 
-        txin.scriptSig.clear();
-        SignSignature(*wallet, prevPubKey, mergedTx, i, SIGHASH_ALL);
-        txin.scriptSig = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), txin.scriptSig, tx.vin[i].scriptSig);
+        SignatureData sigdata;
+        ProduceSignature(TransactionSignatureCreator(wallet, &mergedTx, i, SIGHASH_ALL), prevPubKey, sigdata);
+        sigdata = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), sigdata, DataFromTransaction(mergedTx, i));
+
+        UpdateTransaction(mergedTx, i, sigdata);
+
         ScriptError serror = SCRIPT_ERR_OK;
-        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror))
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror)) {
             fComplete = false;
+        }
     }
 
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);

@@ -3001,7 +3001,7 @@ bool CWallet::CreateTransactionAll(
                 int nIn = 0;
                 for (const auto& coin : setCoins)
                 {
-                    if (!SignSignature(*this, coin.txout, wtxNew, nIn++))
+                    if (!SignSignature(*this, coin.txout, wtxNew, nIn++, SIGHASH_ALL))
                     {
                         strFailReason = _("Signing transaction failed");
                         return false;
@@ -3011,7 +3011,7 @@ bool CWallet::CreateTransactionAll(
                 if (AreTokensDeployed()) {
                     for (const auto& token : setTokens)
                     {
-                        if (!SignSignature(*this, token.txout, wtxNew, nIn++))
+                        if (!SignSignature(*this, token.txout, wtxNew, nIn++, SIGHASH_ALL))
                         {
                             strFailReason = _("Signing token transaction failed");
                             return false;
@@ -3159,7 +3159,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
             const CWalletTx *txin = vwtxPrev[i];
 
             // Sign scripts to get actual transaction size for fee calculation
-            if (!SignSignature(*this, *txin, wtxNew, i))
+            if (!SignSignature(*this, *txin, wtxNew, i, SIGHASH_ALL))
                 return false;
         }
 */
@@ -3179,7 +3179,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
                 const CWalletTx *txin = vwtxPrev[i];
 
                 // Sign all scripts
-                if (!SignSignature(*this, *txin, wtxNew, i))
+                if (!SignSignature(*this, *txin, wtxNew, i, SIGHASH_ALL))
                     return false;
             }
 
@@ -3212,7 +3212,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
             const CWalletTx *txin = vwtxPrev[i];
 
             // Sign all scripts again
-            if (!SignSignature(*this, *txin, wtxNew, i))
+            if (!SignSignature(*this, *txin, wtxNew, i, SIGHASH_ALL))
                 return false;
         }
 
