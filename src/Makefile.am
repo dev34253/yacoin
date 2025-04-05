@@ -74,6 +74,7 @@ libyacoin_common_a_SOURCES= \
     support/cleanse.cpp \
     dbwrapper.cpp \
     txdb.cpp \
+    eccryptoverify.cpp \
     ecwrapper.cpp \
     hash.cpp \
     base58.cpp \
@@ -104,6 +105,7 @@ libyacoin_common_a_SOURCES= \
     arith_uint256.cpp \
     net_processing.cpp \
     protocol.cpp \
+    pubkey.cpp \
     bitcoinrpc.cpp \
     price.cpp \
     random_nonce.cpp \

@@ -224,6 +224,7 @@ obj/chain.o \
 obj/chainparams.o \
 obj/chainparamsbase.o \
 obj/hash.o \
+obj/eccryptoverify.o \
 obj/ecwrapper.o \
 obj/siphash.o \
 obj/chacha20.o \
@@ -270,6 +271,7 @@ obj/noui.o \
 obj/pbkdf2.o \
 obj/price.o \
 obj/protocol.o \
+obj/pubkey.o \
 obj/policy.o \
 obj/feerate.o \
 obj/fees.o \

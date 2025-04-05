@@ -266,6 +266,7 @@ BITCOIN_QT_CPP = \
   init.cpp \
   dbwrapper.cpp \
   txdb.cpp \
+  eccryptoverify.cpp \
   ecwrapper.cpp \
   hash.cpp \
   base58.cpp \
@@ -296,6 +297,7 @@ BITCOIN_QT_CPP = \
   arith_uint256.cpp \
   net_processing.cpp \
   protocol.cpp \
+  pubkey.cpp \
   bitcoinrpc.cpp \
   price.cpp \
   random_nonce.cpp \
