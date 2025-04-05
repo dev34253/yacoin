@@ -52,18 +52,18 @@ Value importprivkey(const Array& params, bool fHelp)
     if (fWalletUnlockMintOnly) // ppcoin: no importprivkey in mint-only mode
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Wallet is unlocked for minting only.");
 
-    CKey key;
-    bool fCompressed;
-    CSecret secret = vchSecret.GetSecret(fCompressed);
-    key.SetSecret(secret, fCompressed);
-    CKeyID vchAddress = key.GetPubKey().GetID();
+    CKey key = vchSecret.GetKey();
+    if (!key.IsValid()) throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Private key outside allowed range");
+
+    CPubKey pubkey = key.GetPubKey();
+    CKeyID vchAddress = pubkey.GetID();
     {
         LOCK2(cs_main, pwalletMain->cs_wallet);
 
         pwalletMain->MarkDirty();
         pwalletMain->SetAddressBookName(vchAddress, strLabel);
 
-        if (!pwalletMain->AddKey(key))
+        if (!pwalletMain->AddKeyPubKey(key, pubkey))
             throw JSONRPCError(RPC_WALLET_ERROR, "Error adding key to wallet");
 
         pwalletMain->ScanForWalletTransactions(chainActive.Genesis(), true);
@@ -203,24 +203,27 @@ Value dumpprivkey(const Array& params, bool fHelp)
     if (!IsMine(*pwalletMain,scriptPubKey))
         throw JSONRPCError(RPC_WALLET_ERROR, "Wallet doesn't manage coins in this address");
 
-    CSecret vchSecret;
+    CKeyingMaterial vchSecret;
     txnouttype whichTypeRet;
     bool fCompressed;
     CScript subscript;
     if (!pwalletMain->GetSecret(scriptPubKey, vchSecret, fCompressed, whichTypeRet, subscript))
         throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address " + strAddress + " is not known");
 
+    CKey key;
+    key.Set(vchSecret.begin(), vchSecret.end(), fCompressed);
+
     Object result;
     if (whichTypeRet == TX_CLTV_P2SH || whichTypeRet == TX_CSV_P2SH)
     {
         result.push_back(Pair("address_type", "P2SH address"));
-        result.push_back(Pair("private_key", CBitcoinSecret(vchSecret, fCompressed).ToString()));
+        result.push_back(Pair("private_key", CBitcoinSecret(key).ToString()));
         result.push_back(Pair("redeem_script", HexStr(subscript.begin(), subscript.end())));
     }
     else
     {
         result.push_back(Pair("address_type", "P2PKH address"));
-        result.push_back(Pair("private_key", CBitcoinSecret(vchSecret, fCompressed).ToString()));
+        result.push_back(Pair("private_key", CBitcoinSecret(key).ToString()));
     }
     return result;
 }

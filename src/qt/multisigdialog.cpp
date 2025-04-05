@@ -150,7 +150,7 @@ void MultisigDialog::on_createAddressButton_clicked()
     if(!model)
         return;
 
-    std::vector<CKey> pubkeys;
+    std::vector<CPubKey> pubkeys;
     pubkeys.resize(ui->pubkeyEntries->count());
     unsigned int required = ui->requiredSignatures->text().toUInt();
 
@@ -161,9 +161,9 @@ void MultisigDialog::on_createAddressButton_clicked()
             return;
         QString str = entry->getPubkey();
         CPubKey vchPubKey(ParseHex(str.toStdString().c_str()));
-        if(!vchPubKey.IsValid())
+        if (!vchPubKey.IsFullyValid())
             return;
-        pubkeys[i].SetPubKey(vchPubKey);
+        pubkeys[i] = vchPubKey;
     }
 
     if(pubkeys.size() > 16)

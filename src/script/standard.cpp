@@ -247,7 +247,7 @@ bool Solver(
         {
             CPubKey vch;
             keystore.GetPubKey(keyID, vch);
-            scriptSigRet << vch;
+            scriptSigRet << ToByteVector(vch);
         }
         return true;
     case TX_SCRIPTHASH:
@@ -333,13 +333,13 @@ bool CScriptVisitor::operator()(const CNoDestination& dest) const {
 
 bool CScriptVisitor::operator()(const CKeyID& keyID) const {
     script->clear();
-    *script << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
+    *script << OP_DUP << OP_HASH160 << ToByteVector(keyID) << OP_EQUALVERIFY << OP_CHECKSIG;
     return true;
 }
 
 bool CScriptVisitor::operator()(const CScriptID& scriptID) const {
     script->clear();
-    *script << OP_HASH160 << scriptID << OP_EQUAL;
+    *script << OP_HASH160 << ToByteVector(scriptID) << OP_EQUAL;
     return true;
 }
 
@@ -351,12 +351,12 @@ CScript GetScriptForDestination(const CTxDestination& dest)
     return script;
 }
 
-CScript GetScriptForMultisig(int nRequired, const std::vector<CKey>& keys)
+CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys)
 {
     CScript script;
     script << CScript::EncodeOP_N(nRequired);
-    for(const CKey& key : keys)
-        script << key.GetPubKey();
+    for (const CPubKey& key : keys)
+        script << ToByteVector(key);
     script << CScript::EncodeOP_N(keys.size()) << OP_CHECKMULTISIG;
     return script;
 }
@@ -366,7 +366,7 @@ CScript GetScriptForCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey)
     CScript script;
     script << (CScriptNum)nLockTime;
     script << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
-    script << pubKey << OP_CHECKSIG;
+    script << ToByteVector(pubKey) << OP_CHECKSIG;
     return script;
 }
 
@@ -384,7 +384,7 @@ CScript GetScriptForCsvP2SH(::uint32_t nSequence, const CPubKey& pubKey)
     CScript script;
     script << (CScriptNum)nSequence;
     script << OP_CHECKSEQUENCEVERIFY << OP_DROP;
-    script << pubKey << OP_CHECKSIG;
+    script << ToByteVector(pubKey) << OP_CHECKSIG;
     return script;
 }
 

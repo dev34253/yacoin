@@ -82,27 +82,27 @@ class CSignatureCache
 private:
      // sigdata_type is (signature hash, signature, public key):
     typedef boost::tuple<uint256, std::vector<unsigned char>, CPubKey > sigdata_type;
-    typedef boost::tuple<uint256, std::vector<unsigned char>, std::vector<unsigned char> > sigdata_type044;
+//    typedef boost::tuple<uint256, std::vector<unsigned char>, std::vector<unsigned char> > sigdata_type044;
     std::set< sigdata_type> setValid;
     boost::shared_mutex cs_sigcache;
 
 public:
-    bool
-    Get(
-        uint256 hash,
-        const std::vector<unsigned char>& vchSig,
-        const std::vector<unsigned char>& pubKey
-       )
-    {
-        boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
-        //LOCK(cs_sigcache);
-
-        sigdata_type044 k(hash, vchSig, pubKey);
-        std::set<sigdata_type>::iterator mi = setValid.find(k);
-        if (mi != setValid.end())
-            return true;
-        return false;
-    }
+//    bool
+//    Get(
+//        uint256 hash,
+//        const std::vector<unsigned char>& vchSig,
+//        const std::vector<unsigned char>& pubKey
+//       )
+//    {
+//        boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
+//        //LOCK(cs_sigcache);
+//
+//        sigdata_type044 k(hash, vchSig, pubKey);
+//        std::set<sigdata_type>::iterator mi = setValid.find(k);
+//        if (mi != setValid.end())
+//            return true;
+//        return false;
+//    }
     bool
     Get(
         const uint256 &hash,
@@ -119,42 +119,42 @@ public:
         return false;
     }
 
-    void Set(
-             uint256 hash,
-             const std::vector<unsigned char>& vchSig,
-             const std::vector<unsigned char>& pubKey
-            )
-    {
-        // DoS prevention: limit cache size to less than 10MB
-        // (~200 bytes per cache entry times 50,000 entries)
-        // Since there are a maximum of 20,000 signature operations per block
-        // 50,000 is a reasonable default.
-        ::int64_t nMaxCacheSize = gArgs.GetArg("-maxsigcachesize", 50000);
-        if (nMaxCacheSize <= 0) return;
-
-        // We must use unique_lock, instead of shared_lock for writer
-//        boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
-        //LOCK(cs_sigcache);
-        boost::unique_lock< boost::shared_mutex > lock(cs_sigcache);
-
-        while (static_cast< ::int64_t>(setValid.size()) > nMaxCacheSize)
-        {
-            // Evict a random entry. Random because that helps
-            // foil would-be DoS attackers who might try to pre-generate
-            // and re-use a set of valid signatures just-slightly-greater
-            // than our cache size.
-            uint256 randomHash = GetRandHash();
-            std::vector<unsigned char> unused;
-            std::set<sigdata_type>::iterator it =
-                setValid.lower_bound(sigdata_type(randomHash, unused, unused));
-            if (it == setValid.end())
-                it = setValid.begin();
-            setValid.erase(*it);
-        }
-
-        sigdata_type044 k(hash, vchSig, pubKey);
-        setValid.insert(k);
-    }
+//    void Set(
+//             uint256 hash,
+//             const std::vector<unsigned char>& vchSig,
+//             const std::vector<unsigned char>& pubKey
+//            )
+//    {
+//        // DoS prevention: limit cache size to less than 10MB
+//        // (~200 bytes per cache entry times 50,000 entries)
+//        // Since there are a maximum of 20,000 signature operations per block
+//        // 50,000 is a reasonable default.
+//        ::int64_t nMaxCacheSize = gArgs.GetArg("-maxsigcachesize", 50000);
+//        if (nMaxCacheSize <= 0) return;
+//
+//        // We must use unique_lock, instead of shared_lock for writer
+////        boost::shared_lock<boost::shared_mutex> lock(cs_sigcache);
+//        //LOCK(cs_sigcache);
+//        boost::unique_lock< boost::shared_mutex > lock(cs_sigcache);
+//
+//        while (static_cast< ::int64_t>(setValid.size()) > nMaxCacheSize)
+//        {
+//            // Evict a random entry. Random because that helps
+//            // foil would-be DoS attackers who might try to pre-generate
+//            // and re-use a set of valid signatures just-slightly-greater
+//            // than our cache size.
+//            uint256 randomHash = GetRandHash();
+//            std::vector<unsigned char> unused;
+//            std::set<sigdata_type>::iterator it =
+//                setValid.lower_bound(sigdata_type(randomHash, unused, unused));
+//            if (it == setValid.end())
+//                it = setValid.begin();
+//            setValid.erase(*it);
+//        }
+//
+//        sigdata_type044 k(hash, vchSig, pubKey);
+//        setValid.insert(k);
+//    }
 
     void Set(
              const uint256 &hash,
@@ -208,61 +208,6 @@ bool IsCanonicalPubKey(const valtype &vchPubKey, unsigned int flags) {
     } else {
         return error("Non-canonical public key: compressed nor uncompressed");
     }
-    return true;
-}
-
-bool IsCanonicalSignature(const valtype &vchSig, unsigned int flags) {
-    if (!(flags & SCRIPT_VERIFY_STRICTENC))
-        return true;
-
-    // See https://bitcointalk.org/index.php?topic=8392.msg127623#msg127623
-    // A canonical signature exists of: <30> <total len> <02> <len R> <R> <02> <len S> <S> <hashtype>
-    // Where R and S are not negative (their first byte has its highest bit not set), and not
-    // excessively padded (do not start with a 0 byte, unless an otherwise negative number follows,
-    // in which case a single 0 byte is necessary and even required).
-    if (vchSig.size() < 9)
-        return error("Non-canonical signature: too short");
-    if (vchSig.size() > 73)
-        return error("Non-canonical signature: too long");
-    unsigned char nHashType = vchSig[vchSig.size() - 1] & (~(SIGHASH_ANYONECANPAY));
-    if (nHashType < SIGHASH_ALL || nHashType > SIGHASH_SINGLE)
-        return error("Non-canonical signature: unknown hashtype byte");
-    if (vchSig[0] != 0x30)
-        return error("Non-canonical signature: wrong type");
-    if (vchSig[1] != vchSig.size()-3)
-        return error("Non-canonical signature: wrong length marker");
-    unsigned int nLenR = vchSig[3];
-    if (5 + nLenR >= vchSig.size())
-        return error("Non-canonical signature: S length misplaced");
-    unsigned int nLenS = vchSig[5+nLenR];
-    if ((unsigned long)(nLenR+nLenS+7) != vchSig.size())
-        return error("Non-canonical signature: R+S length mismatch");
-
-    const unsigned char *R = &vchSig[4];
-    if (R[-2] != 0x02)
-        return error("Non-canonical signature: R value type mismatch");
-    if (nLenR == 0)
-        return error("Non-canonical signature: R length is zero");
-    if (R[0] & 0x80)
-        return error("Non-canonical signature: R value negative");
-    if (nLenR > 1 && (R[0] == 0x00) && !(R[1] & 0x80))
-        return error("Non-canonical signature: R value excessively padded");
-
-    const unsigned char *S = &vchSig[6+nLenR];
-    if (S[-2] != 0x02)
-        return error("Non-canonical signature: S value type mismatch");
-    if (nLenS == 0)
-        return error("Non-canonical signature: S length is zero");
-    if (S[0] & 0x80)
-        return error("Non-canonical signature: S value negative");
-    if (nLenS > 1 && (S[0] == 0x00) && !(S[1] & 0x80))
-        return error("Non-canonical signature: S value excessively padded");
-
-    if (flags & SCRIPT_VERIFY_LOW_S) {
-        if (!CKey::CheckSignatureElement(S, nLenS, true))
-            return error("Non-canonical signature: S value is unnecessarily high");
-    }
-
     return true;
 }
 
@@ -1275,6 +1220,10 @@ bool CheckSig(
 {
     static CSignatureCache signatureCache;
 
+    CPubKey pubkey(vchPubKey);
+    if (!pubkey.IsValid())
+        return false;
+
     // Hash type is one byte tacked on to the end of the signature
     if (vchSig.empty())
         return false;
@@ -1287,19 +1236,13 @@ bool CheckSig(
     uint256
         sighash = SignatureHash(scriptCode, txTo, nIn, nHashType);
 
-    if (signatureCache.Get(sighash, vchSig, vchPubKey))
+    if (signatureCache.Get(sighash, vchSig, pubkey))
         return true;
 
-    CKey
-        key;
-
-    if (!key.SetPubKey(vchPubKey))
+    if (!pubkey.Verify(sighash, vchSig))
         return false;
 
-    if (!key.Verify(sighash, vchSig))
-        return false;
-
-    signatureCache.Set(sighash, vchSig, vchPubKey);
+    signatureCache.Set(sighash, vchSig, pubkey);
     return true;
 }
 

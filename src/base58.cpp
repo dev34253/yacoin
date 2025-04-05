@@ -365,22 +365,19 @@ bool CBitcoinAddress::GetIndexKey(uint160& hashBytes, int& type) const
     return false;
 }
 
-/** A base58-encoded secret key */
-void CBitcoinSecret::SetSecret(const CSecret& vchSecret, bool fCompressed)
+void CBitcoinSecret::SetKey(const CKey& vchSecret)
 {
-    Yassert(vchSecret.size() == 32);
-    SetData(128 + (fTestNet ? CBitcoinAddress::PUBKEY_ADDRESS_TEST : CBitcoinAddress::PUBKEY_ADDRESS), &vchSecret[0], vchSecret.size());
-    if (fCompressed)
+    Yassert(vchSecret.IsValid());
+    SetData(128 + (fTestNet ? CBitcoinAddress::PUBKEY_ADDRESS_TEST : CBitcoinAddress::PUBKEY_ADDRESS), vchSecret.begin(), vchSecret.size());
+    if (vchSecret.IsCompressed())
         vchData.push_back(1);
 }
 
-CSecret CBitcoinSecret::GetSecret(bool &fCompressedOut)
+CKey CBitcoinSecret::GetKey()
 {
-    CSecret vchSecret;
-    vchSecret.resize(32);
-    memcpy(&vchSecret[0], &vchData[0], 32);
-    fCompressedOut = vchData.size() == 33;
-    return vchSecret;
+    CKey ret;
+    ret.Set(&vchData[0], &vchData[32], vchData.size() > 32 && vchData[32] == 1);
+    return ret;
 }
 
 bool CBitcoinSecret::IsValid() const
@@ -409,13 +406,4 @@ bool CBitcoinSecret::SetString(const char* pszSecret)
 bool CBitcoinSecret::SetString(const std::string& strSecret)
 {
     return SetString(strSecret.c_str());
-}
-
-CBitcoinSecret::CBitcoinSecret(const CSecret& vchSecret, bool fCompressed)
-{
-    SetSecret(vchSecret, fCompressed);
-}
-
-CBitcoinSecret::CBitcoinSecret()
-{
 }

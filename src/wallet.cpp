@@ -113,17 +113,18 @@ static void ExtractAffectedKeys(const CKeyStore &keystore, const CScript& script
 
 CPubKey CWallet::GenerateNewKey()
 {
+    AssertLockHeld(cs_wallet); // mapKeyMetadata
     bool fCompressed = CanSupportFeature(FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
 
     RandAddSeedPerfmon();
-    CKey key;
-    key.MakeNewKey(fCompressed);
+    CKey secret;
+    secret.MakeNewKey(fCompressed);
 
     // Compressed public keys were introduced in version 0.6.0
     if (fCompressed)
         SetMinVersion(FEATURE_COMPRPUBKEY);
 
-    CPubKey pubkey = key.GetPubKey();
+    CPubKey pubkey = secret.GetPubKey();
 
     // Create new metadata
     int64_t nCreationTime = GetTime();
@@ -131,20 +132,23 @@ CPubKey CWallet::GenerateNewKey()
     if (!nTimeFirstKey || nCreationTime < nTimeFirstKey)
         nTimeFirstKey = nCreationTime;
 
-    if (!AddKey(key))
+    if (!AddKeyPubKey(secret, pubkey))
         throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
-    return key.GetPubKey();
+    return pubkey;
 }
 
-bool CWallet::AddKey(const CKey& key)
+bool CWallet::AddKeyPubKey(const CKey& secret, const CPubKey &pubkey)
 {
-    CPubKey pubkey = key.GetPubKey();
-    if (!CCryptoKeyStore::AddKey(key))
+    AssertLockHeld(cs_wallet); // mapKeyMetadata
+    if (!CCryptoKeyStore::AddKeyPubKey(secret, pubkey))
         return false;
     if (!fFileBacked)
         return true;
-    if (!IsCrypted())
-        return CWalletDB(strWalletFile).WriteKey(pubkey, key.GetPrivKey(), mapKeyMetadata[pubkey.GetID()]);
+    if (!IsCrypted()) {
+        return CWalletDB(strWalletFile).WriteKey(pubkey,
+                                                 secret.GetPrivKey(),
+                                                 mapKeyMetadata[pubkey.GetID()]);
+    }
     return true;
 }
 
@@ -470,7 +474,7 @@ bool CWallet::DecryptWallet(const SecureString& strWalletPassphrase)
 
     {
         LOCK(cs_wallet);
-        BOOST_FOREACH(const MasterKeyMap::value_type& pMasterKey, mapMasterKeys)
+        for(const MasterKeyMap::value_type& pMasterKey : mapMasterKeys)
         {
             if(!crypter.SetKeyFromPassphrase(strWalletPassphrase, pMasterKey.second.vchSalt, pMasterKey.second.nDeriveIterations, pMasterKey.second.nDerivationMethod))
                 return false;
@@ -500,8 +504,7 @@ bool CWallet::DecryptWallet(const SecureString& strWalletPassphrase)
             KeyMap::const_iterator mi = mapKeys.begin();
             while (mi != mapKeys.end())
             {
-                CKey key;
-                key.SetSecret((*mi).second.first, (*mi).second.second);
+                CKey key = (*mi).second;
                 pwalletdbDecryption->EraseCryptedKey(key.GetPubKey());
                 pwalletdbDecryption->WriteKey(key.GetPubKey(), key.GetPrivKey(), mapKeyMetadata[(*mi).first]);
                 mi++;

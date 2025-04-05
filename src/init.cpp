@@ -39,7 +39,6 @@
 
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 ::int64_t nUpTimeStart = 0;
-bool fNewerOpenSSL = false; // for key.cpp's benefit
 static const ::uint32_t mainnetNewLogicBlockNumber = 1890000;
 static const ::uint32_t testnetNewLogicBlockNumber = 0;
 static const ::uint32_t tokenSupportBlockNumber = 1911210;
@@ -907,13 +906,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 #if defined( USE_UPNP )
         LogPrintf( "USE_UPNP is defined\n" );
 #endif
-
-    unsigned int nCutoffVersion = (unsigned int)((int)'j' - (int)'`');
-    unsigned int nV = SSLEAY_VERSION_NUMBER;
-    nV &= 0x000000f0;
-    nV >>= 4;
-    if( nV > nCutoffVersion )
-        fNewerOpenSSL = true;
 
     std::ostringstream strErrors;
     ::int64_t nStart;

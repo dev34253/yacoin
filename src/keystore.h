@@ -24,7 +24,8 @@ public:
     virtual ~CKeyStore() {}
 
     // Add a key to the store.
-    virtual bool AddKey(const CKey& key) =0;
+    virtual bool AddKeyPubKey(const CKey &key, const CPubKey &pubkey) =0;
+    virtual bool AddKey(const CKey &key);
 
     // Check whether a key corresponding to a given address is present in the store.
     virtual bool HaveKey(const CKeyID &address) const =0;
@@ -43,18 +44,10 @@ public:
     virtual bool HaveWatchOnly(const CScript &dest) const =0;
     virtual bool HaveWatchOnly() const =0;
 
-    virtual bool GetSecret(const CScript& scriptPubKey, CSecret& vchSecret, bool &fCompressed, txnouttype& whichTypeRet, CScript& subscript) const = 0;
-    virtual bool GetSecret(const CKeyID &address, CSecret& vchSecret, bool &fCompressed) const
-    {
-        CKey key;
-        if (!GetKey(address, key))
-            return false;
-        vchSecret = key.GetSecret(fCompressed);
-        return true;
-    }
+    virtual bool GetSecret(const CScript& scriptPubKey, CKeyingMaterial& vchSecret, bool &fCompressed, txnouttype& whichTypeRet, CScript& subscript) const = 0;
 };
 
-typedef std::map<CKeyID, std::pair<CSecret, bool> > KeyMap;
+typedef std::map<CKeyID, CKey> KeyMap;
 typedef std::map<CScriptID, CScript > ScriptMap;
 typedef std::set<CScript> WatchOnlySet;
 
@@ -67,7 +60,7 @@ protected:
     WatchOnlySet setWatchOnly;
 
 public:
-    bool AddKey(const CKey& key);
+    bool AddKeyPubKey(const CKey& key, const CPubKey &pubkey);
     bool HaveKey(const CKeyID &address) const
     {
         bool result;
@@ -97,14 +90,13 @@ public:
             KeyMap::const_iterator mi = mapKeys.find(address);
             if (mi != mapKeys.end())
             {
-                keyOut.Reset();
-                keyOut.SetSecret((*mi).second.first, (*mi).second.second);
+                keyOut = mi->second;
                 return true;
             }
         }
         return false;
     }
-    bool GetSecret(const CScript& scriptPubKey, CSecret& vchSecret, bool &fCompressed, txnouttype& whichTypeRet, CScript& subscript) const;
+    bool GetSecret(const CScript& scriptPubKey, CKeyingMaterial& vchSecret, bool &fCompressed, txnouttype& whichTypeRet, CScript& subscript) const;
     virtual bool AddCScript(const CScript& redeemScript);
     virtual bool HaveCScript(const CScriptID &hash) const;
     virtual bool GetCScript(const CScriptID &hash, CScript& redeemScriptOut) const;
@@ -115,6 +107,7 @@ public:
     virtual bool HaveWatchOnly() const;
 };
 
+typedef std::vector<unsigned char, secure_allocator<unsigned char> > CKeyingMaterial;
 typedef std::map<CKeyID, std::pair<CPubKey, std::vector<unsigned char> > > CryptedKeyMap;
 
 /** Keystore which keeps the private keys encrypted.
@@ -165,7 +158,7 @@ public:
     bool Lock();
 
     virtual bool AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret);
-    bool AddKey(const CKey& key);
+    bool AddKeyPubKey(const CKey& key, const CPubKey &pubkey);
     bool HaveKey(const CKeyID &address) const
     {
         {

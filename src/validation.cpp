@@ -4759,9 +4759,7 @@ bool CheckBlockSignature(const CBlock& block)
             {
                 // Verify
                 valtype& vchPubKey = vSolutions[0];
-                CKey key;
-                if (!key.SetPubKey(vchPubKey))
-                    continue;
+                CPubKey key(vchPubKey);
                 if (block.vchBlockSig.empty())
                     continue;
                 if(!key.Verify(block.GetHash(), block.vchBlockSig))
@@ -4784,11 +4782,7 @@ bool CheckBlockSignature(const CBlock& block)
             valtype
                 & vchPubKey = vSolutions[0];
 
-            CKey
-                key;
-
-            if (!key.SetPubKey(vchPubKey))
-                return false;
+            CPubKey key(vchPubKey);
             if (block.vchBlockSig.empty())
                 return false;
 

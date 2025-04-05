@@ -92,7 +92,7 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
 bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<CTxDestination>& addressRet, int& nRequiredRet);
 
 CScript GetScriptForDestination(const CTxDestination& dest);
-CScript GetScriptForMultisig(int nRequired, const std::vector<CKey>& keys);
+CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
 CScript GetScriptForCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey);
 CScript GetScriptForCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID);
 CScript GetScriptForCsvP2SH(::uint32_t nSequence, const CPubKey& pubKey);

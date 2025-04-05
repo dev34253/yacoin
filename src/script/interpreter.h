@@ -59,6 +59,5 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
 bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn, unsigned int flags, int nHashType);
 
 bool IsCanonicalPubKey(const std::vector<unsigned char> &vchPubKey, unsigned int flags);
-bool IsCanonicalSignature(const std::vector<unsigned char> &vchSig, unsigned int flags);
 
 #endif // BITCOIN_SCRIPT_INTERPRETER_H

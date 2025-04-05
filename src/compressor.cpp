@@ -30,20 +30,17 @@ bool CScriptCompressor::IsToScriptID(CScriptID &hash) const
     return false;
 }
 
-bool CScriptCompressor::IsToPubKey(std::vector<unsigned char> &pubkey) const
+bool CScriptCompressor::IsToPubKey(CPubKey &pubkey) const
 {
     if (script.size() == 35 && script[0] == 33 && script[34] == OP_CHECKSIG
                             && (script[1] == 0x02 || script[1] == 0x03)) {
-        pubkey.resize(33);
-        memcpy(&pubkey[0], &script[1], 33);
+        pubkey.Set(&script[1], &script[34]);
         return true;
     }
     if (script.size() == 67 && script[0] == 65 && script[66] == OP_CHECKSIG
                             && script[1] == 0x04) {
-        pubkey.resize(65);
-        memcpy(&pubkey[0], &script[1], 65);
-        CKey key;
-        return (key.SetPubKey(CPubKey(pubkey))); // SetPubKey fails if this is not a valid public key, a case that would not be compressible
+        pubkey.Set(&script[1], &script[66]);
+        return pubkey.IsFullyValid(); // if not fully valid, a case that would not be compressible
     }
     return false;
 }
@@ -64,7 +61,7 @@ bool CScriptCompressor::Compress(std::vector<unsigned char> &out) const
         memcpy(&out[1], &scriptID, 20);
         return true;
     }
-    std::vector<unsigned char> pubkey;
+    CPubKey pubkey;
     if (IsToPubKey(pubkey)) {
         out.resize(33);
         memcpy(&out[1], &pubkey[1], 32);
@@ -117,17 +114,16 @@ bool CScriptCompressor::Decompress(unsigned int nSize, const std::vector<unsigne
         return true;
     case 0x04:
     case 0x05:
-        std::vector<unsigned char> vch(33, 0x00);
+        unsigned char vch[33] = {};
         vch[0] = nSize - 2;
         memcpy(&vch[1], &in[0], 32);
-        CKey key;
-        if (!key.SetPubKey(CPubKey(vch)))
+        CPubKey pubkey(&vch[0], &vch[33]);
+        if (!pubkey.Decompress())
             return false;
-        key.SetCompressedPubKey(false); // Decompress public key
-        CPubKey pubkey = key.GetPubKey();
+        assert(pubkey.size() == 65);
         script.resize(67);
         script[0] = 65;
-        memcpy(&script[1], &pubkey.Raw()[0], 65);
+        memcpy(&script[1], pubkey.begin(), 65);
         script[66] = OP_CHECKSIG;
         return true;
     }

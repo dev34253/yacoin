@@ -138,11 +138,11 @@ bool inline CBitcoinAddressVisitor::operator()(const CNoDestination &id) const {
 class CBitcoinSecret : public CBase58Data
 {
 public:
-    CBitcoinSecret();
-    CBitcoinSecret(const CSecret& vchSecret, bool fCompressed);
+    CBitcoinSecret(const CKey& vchSecret) { SetKey(vchSecret); }
+    CBitcoinSecret() {}
 
-    void SetSecret(const CSecret& vchSecret, bool fCompressed);
-    CSecret GetSecret(bool &fCompressedOut);
+    void SetKey(const CKey& vchSecret);
+    CKey GetKey();
 
     bool IsValid() const;
     bool SetString(const char* pszSecret);

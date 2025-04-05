@@ -47,7 +47,7 @@ protected:
      */
     bool IsToKeyID(CKeyID &hash) const;
     bool IsToScriptID(CScriptID &hash) const;
-    bool IsToPubKey(std::vector<unsigned char> &pubkey) const;
+    bool IsToPubKey(CPubKey &pubkey) const;
 
     bool Compress(std::vector<unsigned char> &out) const;
     unsigned int GetSpecialSize(unsigned int nSize) const;

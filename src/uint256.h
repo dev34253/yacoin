@@ -16,8 +16,6 @@
 
 inline int Testuint256AdHoc(std::vector<std::string> vArg);
 
-extern bool fNewerOpenSSL;  // for key.h => key.cpp's benefit
-
 /** Base class without constructors for uint256 and uint160.
  * This makes the compiler let u use it in a union.
  */
