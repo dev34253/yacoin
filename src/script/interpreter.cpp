@@ -16,6 +16,9 @@
 #include "streams.h"
 #include "random.h"
 
+#include <openssl/ripemd.h>
+#include <openssl/sha.h>
+
 typedef std::vector<unsigned char> valtype;
 
 static const valtype vchFalse(0);

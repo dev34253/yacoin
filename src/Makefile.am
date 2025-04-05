@@ -52,6 +52,7 @@ libyacoin_common_a_SOURCES= \
     chainparamsbase.cpp \
     crypto/siphash.cpp \
     crypto/chacha20.cpp \
+    crypto/sha1.cpp \
     crypto/sha256.cpp \
     crypto/sha512.cpp \
     crypto/ripemd160.cpp \
@@ -113,7 +114,12 @@ libyacoin_common_a_SOURCES= \
     rpcwallet.cpp \
     rpcblockchain.cpp \
     rpcrawtransaction.cpp \
+    script/interpreter.cpp \
+    script/ismine.cpp \
     script/script.cpp \
+    script/script_error.cpp \
+    script/sign.cpp \
+    script/standard.cpp \
     sync.cpp \
     util.cpp \
     utilstrencodings.cpp \

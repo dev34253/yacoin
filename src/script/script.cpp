@@ -15,12 +15,10 @@
 #include "streams.h"
 #include "policy/policy.h"
 #include "validation.h"
+#include "keystore.h"
 
 #include <boost/foreach.hpp>
 #include <boost/tuple/tuple.hpp>
-
-#include <openssl/ripemd.h>
-#include <openssl/sha.h>
 
 using namespace boost;
 

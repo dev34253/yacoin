@@ -21,6 +21,7 @@
 #include "policy/policy.h"
 #include "validation.h"
 #include "utilmoneystr.h"
+#include "script/sign.h"
 
 #include <boost/algorithm/string/replace.hpp>
 #include <openssl/rand.h>

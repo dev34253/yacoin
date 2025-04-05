@@ -5,13 +5,9 @@
 #ifndef BITCOIN_KEYSTORE_H
 #define BITCOIN_KEYSTORE_H
 
-#ifndef __CRYPTER_H__
- #include "crypter.h"
-#endif
-
-#ifndef BITCOIN_SYNC_H
- #include "sync.h"
-#endif
+#include "crypter.h"
+#include "sync.h"
+#include "script/standard.h"
 
 #include <boost/signals2/signal.hpp>
 #include <boost/variant.hpp>

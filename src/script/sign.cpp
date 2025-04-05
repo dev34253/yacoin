@@ -13,9 +13,15 @@
 #include "script/standard.h"
 #include "uint256.h"
 
-typedef std::vector<unsigned char> valtype;
+static CScript PushAll(const std::vector<valtype>& values)
+{
+    CScript result;
+    for(const valtype& v: values)
+        result << v;
+    return result;
+}
 
-static bool Sign1(const CKeyID& address, const CKeyStore& keystore, uint256 hash, int nHashType, CScript& scriptSigRet)
+bool Sign1(const CKeyID& address, const CKeyStore& keystore, uint256 hash, int nHashType, CScript& scriptSigRet)
 {
     CKey key;
     if (!keystore.GetKey(address, key))
@@ -30,15 +36,9 @@ static bool Sign1(const CKeyID& address, const CKeyStore& keystore, uint256 hash
     return true;
 }
 
-static bool SignN(
-           const std::vector<valtype>& multisigdata,
-           const CKeyStore& keystore,
-           uint256 hash,
-           int nHashType,
-           CScript& scriptSigRet
-          )
-{
-    int nSigned = 0;
+bool SignN(const std::vector<valtype>& multisigdata, const CKeyStore& keystore,
+           uint256 hash, int nHashType, CScript& scriptSigRet) {
+  int nSigned = 0;
 #ifdef _MSC_VER
     bool
         fTest = false;
@@ -57,14 +57,6 @@ static bool SignN(
             ++nSigned;
     }
     return nSigned==nRequired;
-}
-
-static CScript PushAll(const std::vector<valtype>& values)
-{
-    CScript result;
-    for(const valtype& v: values)
-        result << v;
-    return result;
 }
 
 bool SignSignature(const CKeyStore &keystore, const CScript& fromPubKey, CTransaction& txTo, unsigned int nIn, int nHashType)

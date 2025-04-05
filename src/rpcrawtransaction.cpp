@@ -10,23 +10,16 @@
 
 #include <boost/assign/list_of.hpp>
 
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
-
-#ifndef BITCOIN_TXDB_H
- #include "txdb.h"
-#endif
- 
-#ifndef BITCOIN_INIT_H
- #include "init.h"
-#endif
+#include "bitcoinrpc.h"
+#include "txdb.h"
+#include "init.h"
 #include "streams.h"
 #include "net_processing.h"
 #include "consensus/validation.h"
 #include "policy/policy.h"
 #include "validation.h"
 #include "script/standard.h"
+#include "script/sign.h"
 
 using namespace boost;
 using namespace boost::assign;

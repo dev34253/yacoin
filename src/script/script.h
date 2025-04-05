@@ -10,14 +10,16 @@
 
 #include <boost/foreach.hpp>
 
-#ifndef BITCOIN_KEYSTORE_H
- #include "keystore.h"
-#endif
 #include "prevector.h"
+#include "pubkey.h"
+#include "key.h"
 
-class CTransaction;
-class CTxOut;
 class CScriptID;
+class CNoDestination;
+class CKeyID;
+class CKeyStore;
+
+typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 
 // Maximum number of bytes pushable to the stack
 static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 520;

@@ -226,6 +226,7 @@ obj/chainparamsbase.o \
 obj/hash.o \
 obj/siphash.o \
 obj/chacha20.o \
+obj/sha1.o \
 obj/sha256.o \
 obj/sha512.o \
 obj/ripemd160.o \
@@ -281,7 +282,12 @@ obj/rpcmisc.o \
 obj/rpcnet.o \
 obj/rpcrawtransaction.o \
 obj/rpcwallet.o \
+obj/interpreter.o \
+obj/ismine.o \
 obj/script.o \
+obj/script_error.o \
+obj/sign.o \
+obj/standard.o \
 obj/scrypt.o \
 obj/scrypt-arm.o \
 obj/scrypt-x86.o \
@@ -326,7 +332,22 @@ leveldb/libleveldb.a:
 #.genjane:
 #	touch .genjane; gcc -c -O3 -DSCRYPT_CHACHA -DSCRYPT_KECCAK512 -DSCRYPT_CHOOSE_COMPILETIME -o obj/scrypt-jane.o scrypt-jane/scrypt-jane.c
 
+obj/interpreter.o: script/interpreter.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/ismine.o: script/ismine.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
 obj/script.o: script/script.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/script_error.o: script/script_error.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/sign.o: script/sign.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/standard.o: script/standard.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/block.o: primitives/block.cpp
@@ -363,6 +384,9 @@ obj/siphash.o: crypto/siphash.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/chacha20.o: crypto/chacha20.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/sha1.o: crypto/sha1.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/sha256.o: crypto/sha256.cpp

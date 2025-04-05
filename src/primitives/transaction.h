@@ -18,6 +18,7 @@ class CValidationState;
 class CDiskTxPos;
 class CScriptCheck;
 class CBlockIndex;
+class CTransaction;
 
 static const int SERIALIZE_TRANSACTION_NO_WITNESS = 0x40000000;
 

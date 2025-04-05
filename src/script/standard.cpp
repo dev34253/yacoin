@@ -7,9 +7,13 @@
 
 #include "pubkey.h"
 #include "script/script.h"
+#include "script/sign.h"
 #include "util.h"
 #include "utilstrencodings.h"
 #include "tokens/tokens.h"
+#include "keystore.h"
+
+#include <map>
 
 CScriptID::CScriptID(const CScript& in) : uint160(Hash160(in.begin(), in.end())) {}
 
@@ -46,7 +50,7 @@ bool Solver(
            )
 {
     // Templates
-    static map<txnouttype, CScript> mTemplates;
+    static std::map<txnouttype, CScript> mTemplates;
     if (mTemplates.empty())
     {
         // Standard tx, sender provides pubkey, receiver adds signature
@@ -318,33 +322,26 @@ bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::
     return true;
 }
 
-namespace
-{
-class CScriptVisitor : public boost::static_visitor<bool>
-{
-private:
-    CScript *script;
-public:
-    CScriptVisitor(CScript *scriptin) { script = scriptin; }
+CScriptVisitor::CScriptVisitor(CScript* scriptin) {
+    script = scriptin;
+}
 
-    bool operator()(const CNoDestination &dest) const {
-        script->clear();
-        return false;
-    }
+bool CScriptVisitor::operator()(const CNoDestination& dest) const {
+    script->clear();
+    return false;
+}
 
-    bool operator()(const CKeyID &keyID) const {
-        script->clear();
-        *script << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
-        return true;
-    }
+bool CScriptVisitor::operator()(const CKeyID& keyID) const {
+    script->clear();
+    *script << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
+    return true;
+}
 
-    bool operator()(const CScriptID &scriptID) const {
-        script->clear();
-        *script << OP_HASH160 << scriptID << OP_EQUAL;
-        return true;
-    }
-};
-} // namespace
+bool CScriptVisitor::operator()(const CScriptID& scriptID) const {
+    script->clear();
+    *script << OP_HASH160 << scriptID << OP_EQUAL;
+    return true;
+}
 
 CScript GetScriptForDestination(const CTxDestination& dest)
 {
