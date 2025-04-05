@@ -40,40 +40,38 @@ const char* GetTxnOutputType(txnouttype t)
     return NULL;
 }
 
-//
-// Return public keys or hashes from scriptPubKey, for 'standard' transaction types.
-//
-bool Solver(
-            const CScript& scriptPubKey,
-            txnouttype& typeRet,
-            std::vector<std::vector<unsigned char> >& vSolutionsRet
-           )
+/**
+ * Return public keys or hashes from scriptPubKey, for 'standard' transaction types.
+ */
+bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
 {
     // Templates
     static std::map<txnouttype, CScript> mTemplates;
     if (mTemplates.empty())
     {
         // Standard tx, sender provides pubkey, receiver adds signature
-        mTemplates.insert(make_pair(TX_PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TX_PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG));
 
         // Bitcoin address tx, sender provides hash of pubkey, receiver provides signature and pubkey
-        mTemplates.insert(make_pair(TX_PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TX_PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
 
         // Sender provides N pubkeys, receivers provides M signatures
-        mTemplates.insert(make_pair(TX_MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
+        mTemplates.insert(std::make_pair(TX_MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
 
         // CLTV-P2SH transaction, sender provides pubkey, receiver provides redeemscript and signature
-        mTemplates.insert(make_pair(TX_CLTV_P2SH, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TX_CLTV_P2SH, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
 
         // CSV-P2SH transaction, sender provides pubkey, receiver provides redeemscript and signature
-        mTemplates.insert(make_pair(TX_CSV_P2SH, CScript() << OP_SMALLDATA << OP_NOP3 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TX_CSV_P2SH, CScript() << OP_SMALLDATA << OP_NOP3 << OP_DROP << OP_PUBKEYS << OP_CHECKSIG));
 
         // CLTV-P2PKH transaction, sender provides hash of pubkey, receiver provides signature and pubkey
-        mTemplates.insert(make_pair(TX_CLTV_P2PKH, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TX_CLTV_P2PKH, CScript() << OP_SMALLDATA << OP_NOP2 << OP_DROP << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
 
         // CSV-P2PKH transaction, sender provides hash of pubkey, receiver provides signature and pubkey
-        mTemplates.insert(make_pair(TX_CSV_P2PKH, CScript() << OP_SMALLDATA << OP_NOP3 << OP_DROP << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TX_CSV_P2PKH, CScript() << OP_SMALLDATA << OP_NOP3 << OP_DROP << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
     }
+
+    vSolutionsRet.clear();
 
     // Shortcut for pay-to-script-hash, which are more constrained than the other types:
     // it is always OP_HASH160 20 [20 byte hash] OP_EQUAL
@@ -97,6 +95,16 @@ bool Solver(
     }
     /** YAC_TOKEN END */
 
+    // Provably prunable, data-carrying output
+    //
+    // So long as script passes the IsUnspendable() test and all but the first
+    // byte passes the IsPushOnly() test we don't care what exactly is in the
+    // script.
+    if (scriptPubKey.size() >= 1 && scriptPubKey[0] == OP_RETURN && scriptPubKey.IsPushOnly(scriptPubKey.begin()+1)) {
+        typeRet = TX_NULL_DATA;
+        return true;
+    }
+
     // Scan templates
     const CScript& script1 = scriptPubKey;
     for (const std::pair<txnouttype, CScript>& tplate : mTemplates)
@@ -118,15 +126,6 @@ bool Solver(
                 typeRet = tplate.first;
                 if (typeRet == TX_MULTISIG)
                 {
-#ifdef WIN32
-//#ifdef _MSC_VER
-                    if( vSolutionsRet.empty() ) // trouble!
-                    {
-                        //typeRet = TX_NONSTANDARD;
-                        return false;
-                    }
-//#endif
-#endif
                     // Additional checks for TX_MULTISIG:
                     unsigned char m = vSolutionsRet.front()[0];
                     unsigned char n = vSolutionsRet.back()[0];
@@ -200,13 +199,7 @@ bool Solver(
 // unless whichTypeRet is TX_SCRIPTHASH, in which case scriptSigRet is the redemption script.
 // Returns false if scriptPubKey could not be completely satisfied.
 //
-bool Solver(
-            const CKeyStore& keystore,
-            const CScript& scriptPubKey,
-            uint256 hash, int nHashType,
-            CScript& scriptSigRet,
-            txnouttype& whichTypeRet
-           )
+bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash, int nHashType, CScript& scriptSigRet, txnouttype& whichTypeRet)
 {
     scriptSigRet.clear();
 
@@ -215,15 +208,6 @@ bool Solver(
         return false;
 
     CKeyID keyID;
-#ifdef _MSC_VER
-    bool
-        fTest = false;
-    if( vSolutions.empty() )
-        {       // one can't technically access vSolutions[ 0 ]
-        fTest = true;
-        return false;
-        }
-#endif
     switch (whichTypeRet)
     {
     case TX_NONSTANDARD:
@@ -306,9 +290,16 @@ bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::
         nRequiredRet = vSolutions.front()[0];
         for (unsigned int i = 1; i < vSolutions.size()-1; i++)
         {
-            CTxDestination address = CPubKey(vSolutions[i]).GetID();
+            CPubKey pubKey(vSolutions[i]);
+            if (!pubKey.IsValid())
+                continue;
+
+            CTxDestination address = pubKey.GetID();
             addressRet.push_back(address);
         }
+
+        if (addressRet.empty())
+            return false;
     }
     else
     {
@@ -322,33 +313,44 @@ bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::
     return true;
 }
 
-CScriptVisitor::CScriptVisitor(CScript* scriptin) {
-    script = scriptin;
-}
+namespace
+{
+class CScriptVisitor : public boost::static_visitor<bool>
+{
+private:
+    CScript *script;
+public:
+    CScriptVisitor(CScript *scriptin) { script = scriptin; }
 
-bool CScriptVisitor::operator()(const CNoDestination& dest) const {
-    script->clear();
-    return false;
-}
+    bool operator()(const CNoDestination &dest) const {
+        script->clear();
+        return false;
+    }
 
-bool CScriptVisitor::operator()(const CKeyID& keyID) const {
-    script->clear();
-    *script << OP_DUP << OP_HASH160 << ToByteVector(keyID) << OP_EQUALVERIFY << OP_CHECKSIG;
-    return true;
-}
+    bool operator()(const CKeyID &keyID) const {
+        script->clear();
+        *script << OP_DUP << OP_HASH160 << ToByteVector(keyID) << OP_EQUALVERIFY << OP_CHECKSIG;
+        return true;
+    }
 
-bool CScriptVisitor::operator()(const CScriptID& scriptID) const {
-    script->clear();
-    *script << OP_HASH160 << ToByteVector(scriptID) << OP_EQUAL;
-    return true;
-}
-
+    bool operator()(const CScriptID &scriptID) const {
+        script->clear();
+        *script << OP_HASH160 << ToByteVector(scriptID) << OP_EQUAL;
+        return true;
+    }
+};
+} // namespace
 CScript GetScriptForDestination(const CTxDestination& dest)
 {
     CScript script;
 
     boost::apply_visitor(CScriptVisitor(&script), dest);
     return script;
+}
+
+CScript GetScriptForRawPubKey(const CPubKey& pubKey)
+{
+    return CScript() << std::vector<unsigned char>(pubKey.begin(), pubKey.end()) << OP_CHECKSIG;
 }
 
 CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys)
@@ -375,7 +377,7 @@ CScript GetScriptForCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID)
     CScript script;
     script << (CScriptNum)nLockTime;
     script << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
-    script  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
+    script  << OP_DUP << OP_HASH160 << ToByteVector(keyID) << OP_EQUALVERIFY << OP_CHECKSIG;
     return script;
 }
 
@@ -393,7 +395,7 @@ CScript GetScriptForCsvP2PKH(::uint32_t nSequence, const CKeyID &keyID)
     CScript script;
     script << (CScriptNum)nSequence;
     script << OP_CHECKSEQUENCEVERIFY << OP_DROP;
-    script  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
+    script  << OP_DUP << OP_HASH160 << ToByteVector(keyID) << OP_EQUALVERIFY << OP_CHECKSIG;
     return script;
 }
 

@@ -23,6 +23,8 @@ using std::vector;
 using std::map;
 using std::set;
 
+CTransaction::CTransaction(const CMutableTransaction &tx) : nVersion(tx.nVersion), nTime(tx.nTime), vin(tx.vin), vout(tx.vout), nLockTime(tx.nLockTime) {}
+CTransaction::CTransaction(CMutableTransaction &&tx) : nVersion(tx.nVersion), nTime(tx.nTime), vin(std::move(tx.vin)), vout(std::move(tx.vout)), nLockTime(tx.nLockTime) {}
 void CTransaction::SetNull()
 {
 	// TODO: Need update for mainet
@@ -51,5 +53,27 @@ std::string CTxOut::ToString() const
     if (scriptPubKey.size() < 6)
         return "CTxOut(error)";
     return strprintf("CTxOut(nValue=%s, scriptPubKey=%s)", FormatMoney(nValue).c_str(), scriptPubKey.ToString().c_str());
+}
+
+CMutableTransaction::CMutableTransaction(){
+    // TODO: Need update for mainet
+    if (chainActive.Height() != -1 && chainActive.Genesis() && (chainActive.Height() + 1) >= nMainnetNewLogicBlockNumber)
+    {
+        nVersion = CTransaction::CURRENT_VERSION;
+    }
+    else
+    {
+        nVersion = CTransaction::CURRENT_VERSION_of_Tx_for_yac_old;
+    }
+    nTime = GetAdjustedTime();
+    vin.clear();
+    vout.clear();
+    nLockTime = 0;
+}
+CMutableTransaction::CMutableTransaction(const CTransaction& tx) : nVersion(tx.nVersion), nTime(tx.nTime), vin(tx.vin), vout(tx.vout), nLockTime(tx.nLockTime) {}
+
+uint256 CMutableTransaction::GetHash() const
+{
+    return SerializeHash(*this, SER_GETHASH, SERIALIZE_TRANSACTION_NO_WITNESS);
 }
 

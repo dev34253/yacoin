@@ -533,9 +533,11 @@ Value signrawtransaction(const Array& params, bool fHelp)
         // ... and merge in other signatures:
         for(const CTransaction& txv : txVariants)
         {
-            txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, txv.vin[i].scriptSig);
+            txin.scriptSig = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), txin.scriptSig, txv.vin[i].scriptSig);
         }
-        if (!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, STANDARD_SCRIPT_VERIFY_FLAGS, 0))
+
+        ScriptError serror = SCRIPT_ERR_OK;
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror))
             fComplete = false;
     }
 

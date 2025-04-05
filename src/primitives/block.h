@@ -17,7 +17,6 @@
 
 class CWallet;
 class CTransaction;
-class CScriptCheck;
 class CKeyStore;
 
 #pragma pack(push, 1)

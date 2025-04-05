@@ -218,11 +218,30 @@ public:
 
     static const size_t nDefaultMaxNumSize = 4;
 
-	explicit CScriptNum(const std::vector<unsigned char> &vch,
-			const size_t nMaxNumSize = nDefaultMaxNumSize)
+    explicit CScriptNum(const std::vector<unsigned char>& vch, bool fRequireMinimal,
+                        const size_t nMaxNumSize = nDefaultMaxNumSize)
     {
-        if (vch.size() > nMaxNumSize)
-            throw scriptnum_error("CScriptNum(const std::vector<unsigned char>&) : overflow");
+        if (vch.size() > nMaxNumSize) {
+            throw scriptnum_error("script number overflow");
+        }
+        if (fRequireMinimal && vch.size() > 0) {
+            // Check that the number is encoded with the minimum possible
+            // number of bytes.
+            //
+            // If the most-significant-byte - excluding the sign bit - is zero
+            // then we're not minimal. Note how this test also rejects the
+            // negative-zero encoding, 0x80.
+            if ((vch.back() & 0x7f) == 0) {
+                // One exception: if there's more than one byte and the most
+                // significant bit of the second-most-significant-byte is set
+                // it would conflict with the sign bit. An example of this case
+                // is +-255, which encode to 0xff00 and 0xff80 respectively.
+                // (big-endian).
+                if (vch.size() <= 1 || (vch[vch.size() - 2] & 0x80) == 0) {
+                    throw scriptnum_error("non-minimally encoded script number");
+                }
+            }
+        }
         m_value = set_vch(vch);
     }
 
@@ -366,7 +385,7 @@ private:
 inline std::string ValueString(const std::vector<unsigned char>& vch)
 {
     if (vch.size() <= 4)
-        return strprintf("%d", CScriptNum(vch).getint());
+        return strprintf("%d", CScriptNum(vch, false).getint());
     else
         return HexStr(vch);
 }
@@ -680,18 +699,10 @@ public:
     /** YAC_TOKEN END */
 
     // Called by CTransaction::IsStandard and P2SH VerifyScript (which makes it consensus-critical).
+    bool IsPushOnly(const_iterator pc) const;
     bool IsPushOnly() const
     {
-        const_iterator pc = begin();
-        while (pc < end())
-        {
-            opcodetype opcode;
-            if (!GetOp(pc, opcode))
-                return false;
-            if (opcode > OP_16)
-                return false;
-        }
-        return true;
+        return this->IsPushOnly(begin());
     }
 
     /**

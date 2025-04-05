@@ -948,12 +948,9 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
 
 bool CScriptCheck::operator()()
 {
-    const CScript
-        &scriptSig = ptxTo->vin[nIn].scriptSig;
-    if (!VerifyScript(scriptSig, scriptPubKey, *ptxTo, nIn, nFlags, nHashType))
-        return error("CScriptCheck() : %s VerifySignature failed",
-                     ptxTo->GetHash().ToString().substr(0,10).c_str()
-                    );
+    const CScript&scriptSig = ptxTo->vin[nIn].scriptSig;
+    if (!VerifyScript(scriptSig, scriptPubKey, nFlags, TransactionSignatureChecker(ptxTo, nIn), &error))
+        return ::error("CScriptCheck() : %s VerifySignature failed", ptxTo->GetHash().ToString().substr(0,10).c_str());
     return true;
 }
 
@@ -1009,7 +1006,7 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
                 const CAmount amount = coin.out.nValue;
 
                 // Verify signature
-                CScriptCheck check(scriptPubKey, tx, i, flags, 0);
+                CScriptCheck check(scriptPubKey, amount, tx, i, flags, true);
                 if (pvChecks) {
                     pvChecks->push_back(CScriptCheck());
                     check.swap(pvChecks->back());
@@ -1018,7 +1015,7 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
                     if (flags & STANDARD_SCRIPT_VERIFY_FLAGS)
                     {
                         // Don't trigger DoS code in case of STANDARD_SCRIPT_VERIFY_FLAGS caused failure.
-                        CScriptCheck check2(scriptPubKey, tx, i, flags & ~STANDARD_SCRIPT_VERIFY_FLAGS, 0);
+                        CScriptCheck check2(scriptPubKey, amount, tx, i, flags & ~STANDARD_SCRIPT_VERIFY_FLAGS, true);
                         if (check2())
                             return state.Invalid(error("CheckInputs() : %s strict VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()), REJECT_NONSTANDARD);
                     }

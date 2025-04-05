@@ -1,10 +1,11 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SCRIPT_STANDARD_H
-#define BITCOIN_SCRIPT_STANDARD_H
+#ifndef YACOIN_SCRIPT_STANDARD_H
+#define YACOIN_SCRIPT_STANDARD_H
 
 #include "script/interpreter.h"
 #include "uint256.h"
@@ -63,18 +64,6 @@ public:
     friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
 };
 
-class CScriptVisitor : public boost::static_visitor<bool>
-{
-private:
-    CScript* script;
-
-public:
-    explicit CScriptVisitor(CScript* scriptin);
-    bool operator()(const CNoDestination& dest) const;
-    bool operator()(const CKeyID& keyID) const;
-    bool operator()(const CScriptID& scriptID) const;
-};
-
 /** 
  * A txout script template with a specific destination. It is either:
  *  * CNoDestination: no destination set
@@ -92,6 +81,7 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
 bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<CTxDestination>& addressRet, int& nRequiredRet);
 
 CScript GetScriptForDestination(const CTxDestination& dest);
+CScript GetScriptForRawPubKey(const CPubKey& pubkey);
 CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys);
 CScript GetScriptForCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey);
 CScript GetScriptForCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID);
@@ -103,4 +93,4 @@ bool IsSpendableTimelockUTXO(const CKeyStore &keystore, const CScript& scriptPub
 /** Check whether a CTxDestination is a CNoDestination. */
 bool IsValidDestination(const CTxDestination& dest);
 
-#endif // BITCOIN_SCRIPT_STANDARD_H
+#endif // YACOIN_SCRIPT_STANDARD_H

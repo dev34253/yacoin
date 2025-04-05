@@ -17,7 +17,6 @@
 
 class CValidationState;
 class CDiskTxPos;
-class CScriptCheck;
 class CBlockIndex;
 class CTransaction;
 
@@ -259,6 +258,8 @@ public:
     }
 };
 
+struct CMutableTransaction;
+
 /** The basic transaction that is broadcasted on the network and contained in
  * blocks.  A transaction can contain multiple inputs and outputs.
  */
@@ -288,6 +289,10 @@ public:
     {
         SetNull();
     }
+
+    /** Convert a CMutableTransaction into a CTransaction. */
+    CTransaction(const CMutableTransaction &tx);
+    CTransaction(CMutableTransaction &&tx);
 
     ADD_SERIALIZE_METHODS;
 
@@ -449,6 +454,56 @@ public:
     bool IsReissueToken() const;
     bool VerifyReissueToken(std::string& strError) const;
     /** YAC_TOKEN END */
+};
+
+/** A mutable version of CTransaction. */
+struct CMutableTransaction
+{
+    int nVersion;
+    mutable ::int64_t nTime;
+    std::vector<CTxIn> vin;
+    std::vector<CTxOut> vout;
+    ::uint32_t nLockTime;
+
+    CMutableTransaction();
+    CMutableTransaction(const CTransaction& tx);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(this->nVersion);
+        // nTime is extended to 64-bit since yacoin 1.0.0
+        if (this->nVersion >= CTransaction::CURRENT_VERSION_of_Tx_for_yac_new) // 64-bit nTime
+        {
+            READWRITE(nTime);
+        }
+        else // 32-bit nTime
+        {
+            ::uint32_t time = (::uint32_t)nTime; // needed for GetSerializeSize, Serialize function
+            READWRITE(time);
+            nTime = time; // needed for Unserialize function
+        }
+        READWRITE(vin);
+        READWRITE(vout);
+        READWRITE(nLockTime);
+    }
+
+    template <typename Stream>
+    CMutableTransaction(deserialize_type, Stream& s) {
+        Unserialize(s);
+    }
+
+    /** Compute the hash of this CMutableTransaction. This is computed on the
+     * fly, as opposed to GetHash() in CTransaction, which uses a cached result.
+     */
+    uint256 GetHash() const;
+
+    friend bool operator==(const CMutableTransaction& a, const CMutableTransaction& b)
+    {
+        return a.GetHash() == b.GetHash();
+    }
+
 };
 
 typedef std::shared_ptr<const CTransaction> CTransactionRef;

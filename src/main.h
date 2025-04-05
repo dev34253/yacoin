@@ -92,14 +92,11 @@ extern const uint256 entropyStore[38];
 static const ::uint64_t nMinDiskSpace = 52428800;
 
 class CReserveKey;
-class CScriptCheck;
 class CBlockLocator;
 class CValidationState;
 
 int GetNumBlocksOfPeers();
 std::string GetWarnings(std::string strFor);
-
-bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, unsigned int flags, int nHashType);
 
 // yacoin: calculate Nfactor using timestamp
 extern unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx = false);

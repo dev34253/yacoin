@@ -12,6 +12,7 @@
 #include "multisigaddressentry.h"
 #include "multisiginputentry.h"
 #include "multisigdialog.h"
+#include "policy/policy.h"
 #include "ui_multisigdialog.h"
 #include "script/script.h"
 #include "script/standard.h"
@@ -477,11 +478,10 @@ void MultisigDialog::on_signTransactionButton_clicked()
 
         txin.scriptSig.clear();
         SignSignature(*wallet, prevPubKey, mergedTx, i, SIGHASH_ALL);
-        txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, tx.vin[i].scriptSig);
-        if(!VerifyScript(txin.scriptSig, prevPubKey, mergedTx, i, true, 0))
-        {
+        txin.scriptSig = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), txin.scriptSig, tx.vin[i].scriptSig);
+        ScriptError serror = SCRIPT_ERR_OK;
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror))
             fComplete = false;
-        }
     }
 
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);

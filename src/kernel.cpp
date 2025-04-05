@@ -16,6 +16,7 @@
 #include "pow.h"
 #include "streams.h"
 #include "policy/policy.h"
+#include "script/interpreter.h"
 
 #include <boost/assign/list_of.hpp>
 
@@ -611,8 +612,14 @@ bool CheckProofOfStake(CValidationState &state, CBlockIndex* pindexPrev, const C
     }
 
     // Verify signature
-    if (!VerifySignature(txPrev, tx, 0, MANDATORY_SCRIPT_VERIFY_FLAGS, 0))
-        return state.DoS(100, error("CheckProofOfStake() : VerifySignature failed on coinstake %s", tx.GetHash().ToString().c_str()));
+    {
+        int nIn = 0;
+        const CTxOut& prevOut = txPrev.vout[tx.vin[nIn].prevout.n];
+        TransactionSignatureChecker checker(&tx, nIn);
+
+        if (!VerifyScript(tx.vin[nIn].scriptSig, prevOut.scriptPubKey, MANDATORY_SCRIPT_VERIFY_FLAGS, checker, nullptr))
+            return state.DoS(100, error("CheckProofOfStake() : VerifySignature failed on coinstake %s", tx.GetHash().ToString().c_str()));
+    }
 
     if (!CheckStakeKernelHash(nBits, pindexPrev, header, postx.nTxOffset + ::GetSerializeSize(header, SER_DISK, CLIENT_VERSION), txPrev, txin.prevout, tx.nTime, hashProofOfStake, targetProofOfStake, gArgs.GetBoolArg("-debug", false)))
         return state.DoS(1, error("CheckProofOfStake() : INFO: check kernel failed on coinstake %s, hashProof=%s", tx.GetHash().ToString(), hashProofOfStake.ToString())); // may occur during initial download or if behind on block chain sync

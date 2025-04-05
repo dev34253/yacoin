@@ -93,7 +93,8 @@ bool SignSignature(const CKeyStore &keystore, const CScript& fromPubKey, CTransa
     }
 
     // Test solution
-    return VerifyScript(txin.scriptSig, fromPubKey, txTo, nIn, STANDARD_SCRIPT_VERIFY_FLAGS, 0);
+    ScriptError serror = SCRIPT_ERR_OK;
+    return VerifyScript(txin.scriptSig, fromPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&txTo, nIn), &serror);
 }
 
 bool SignSignature(const CKeyStore &keystore, const CTransaction& txFrom, CTransaction& txTo, unsigned int nIn, int nHashType)
@@ -112,7 +113,7 @@ bool SignSignature(const CKeyStore &keystore, const CTxOut& txOutFrom, CTransact
     return SignSignature(keystore, txOutFrom.scriptPubKey, txTo, nIn, nHashType);
 }
 
-static CScript CombineMultisig(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn,
+static CScript CombineMultisig(CScript scriptPubKey, const BaseSignatureChecker& checker,
                                const std::vector<valtype>& vSolutions,
                                std::vector<valtype>& sigs1, std::vector<valtype>& sigs2)
 {
@@ -142,7 +143,7 @@ static CScript CombineMultisig(CScript scriptPubKey, const CTransaction& txTo, u
             if (sigs.count(pubkey))
                 continue; // Already got a sig for this pubkey
 
-            if (CheckSig(sig, pubkey, scriptPubKey, txTo, nIn, 0, 0))
+            if (checker.CheckSig(sig, pubkey, scriptPubKey))
             {
                 sigs[pubkey] = sig;
                 break;
@@ -167,7 +168,7 @@ static CScript CombineMultisig(CScript scriptPubKey, const CTransaction& txTo, u
     return result;
 }
 
-static CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn,
+static CScript CombineSignatures(CScript scriptPubKey, const BaseSignatureChecker& checker,
                                  const txnouttype txType, const std::vector<valtype>& vSolutions,
                                  std::vector<valtype>& sigs1, std::vector<valtype>& sigs2)
 {
@@ -201,18 +202,18 @@ static CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo,
             Solver(pubKey2, txType2, vSolutions2);
             sigs1.pop_back();
             sigs2.pop_back();
-            CScript result = CombineSignatures(pubKey2, txTo, nIn, txType2, vSolutions2, sigs1, sigs2);
+            CScript result = CombineSignatures(pubKey2, checker, txType2, vSolutions2, sigs1, sigs2);
             result << spk;
             return result;
         }
     case TX_MULTISIG:
-        return CombineMultisig(scriptPubKey, txTo, nIn, vSolutions, sigs1, sigs2);
+        return CombineMultisig(scriptPubKey, checker, vSolutions, sigs1, sigs2);
     }
 
     return CScript();
 }
 
-CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn,
+CScript CombineSignatures(CScript scriptPubKey, const BaseSignatureChecker& checker,
                           const CScript& scriptSig1, const CScript& scriptSig2)
 {
     txnouttype txType;
@@ -220,9 +221,9 @@ CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo, unsign
     Solver(scriptPubKey, txType, vSolutions);
 
     std::vector<valtype> stack1;
-    EvalScript(stack1, scriptSig1, CTransaction(), 0, SCRIPT_VERIFY_STRICTENC, 0);
+    EvalScript(stack1, scriptSig1, SCRIPT_VERIFY_STRICTENC, BaseSignatureChecker());
     std::vector<valtype> stack2;
-    EvalScript(stack2, scriptSig2, CTransaction(), 0, SCRIPT_VERIFY_STRICTENC, 0);
+    EvalScript(stack2, scriptSig2, SCRIPT_VERIFY_STRICTENC, BaseSignatureChecker());
 
-    return CombineSignatures(scriptPubKey, txTo, nIn, txType, vSolutions, stack1, stack2);
+    return CombineSignatures(scriptPubKey, checker, txType, vSolutions, stack1, stack2);
 }

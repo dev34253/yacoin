@@ -1194,7 +1194,7 @@ Value spendcltv(const Array& params, bool fHelp)
     vector<unsigned char> vch;
     if (!redeemScript.GetOp(pc, opcode, vch))
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet can't get lock time from redeemscript");
-    const CScriptNum nLockTime(vch);
+    const CScriptNum nLockTime(vch, false);
 
     // Check if destination address is valid
     CBitcoinAddress destAddress(params[1].get_str());
