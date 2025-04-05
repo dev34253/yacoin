@@ -1105,8 +1105,16 @@ public:
     void Serialize(S &s) const {
         // Serialize nVersion
         ::Serialize(s, txTo.nVersion);
-        // Serialize nTime
-        ::Serialize(s, txTo.nTime);
+        // nTime is extended to 64-bit since yacoin 1.0.0
+        if (this->txTo.nVersion >= CTransaction::CURRENT_VERSION_of_Tx_for_yac_new) // 64-bit nTime
+        {
+            ::Serialize(s, txTo.nTime);
+        }
+        else // 32-bit nTime
+        {
+            ::uint32_t time = (::uint32_t)txTo.nTime; // needed for GetSerializeSize, Serialize function
+            ::Serialize(s, time);
+        }
         // Serialize vin
         unsigned int nInputs = fAnyoneCanPay ? 1 : txTo.vin.size();
         ::WriteCompactSize(s, nInputs);
