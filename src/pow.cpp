@@ -212,7 +212,6 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
     CBigNum bnTarget;
     bnTarget.SetCompact(nBits);
 
-    LogPrintf("CheckProofOfWork: nBits: %d\n",nBits);
     // Check range
     if ((bnTarget <= 0) || (bnTarget > (params.powLimit)))
       return error("CheckProofOfWork() : nBits below minimum work");
