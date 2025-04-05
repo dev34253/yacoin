@@ -14,6 +14,7 @@
 #include "multisigdialog.h"
 #include "ui_multisigdialog.h"
 #include "script/script.h"
+#include "script/standard.h"
 #include "sendcoinsentry.h"
 #include "util.h"
 #include "wallet.h"

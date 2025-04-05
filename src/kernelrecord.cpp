@@ -9,6 +9,8 @@
 #include "pow.h"
 #include "wallet.h"
 
+#include "script/standard.h"
+
 using std::vector;
 using std::max;
 using std::min;

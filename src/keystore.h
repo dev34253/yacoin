@@ -17,39 +17,6 @@
 #include <boost/variant.hpp>
 
 class CScript;
-enum txnouttype {
-    TX_NONSTANDARD,
-    // 'standard' transaction types:
-    TX_PUBKEY,
-    TX_PUBKEYHASH,
-    TX_SCRIPTHASH,
-    TX_MULTISIG,
-    TX_CLTV_P2SH,
-    TX_CSV_P2SH,
-    TX_CLTV_P2PKH,
-    TX_CSV_P2PKH,
-    TX_NULL_DATA,
-    /** YAC_TOKEN START */
-    TX_NEW_TOKEN,
-    TX_REISSUE_TOKEN,
-    TX_TRANSFER_TOKEN,
-    /** YAC_TOKEN END */
-};
-
-class CNoDestination {
-public:
-    friend bool operator==(const CNoDestination &a, const CNoDestination &b) { return true; }
-    friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
-};
-
-/** A txout script template with a specific destination. It is either:
-  * CNoDestination: no destination set
-  * CKeyID: TX_PUBKEYHASH destination
-  * CScriptID: TX_SCRIPTHASH destination
-  *
-  * A CTxDestination is the internal data type encoded in a CBitcoinAddress.
-  */
-typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 
 /** A virtual base class for key stores */
 class CKeyStore

@@ -14,6 +14,7 @@
 #include "validation.h"
 #include "coincontrol.h"
 #include "streams.h"
+#include "script/standard.h"
 
 #include <sstream>
 

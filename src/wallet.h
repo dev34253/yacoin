@@ -10,18 +10,12 @@
 
 #include <stdlib.h>
 
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
-
-#ifndef BITCOIN_UI_INTERFACE_H
- #include "ui_interface.h"
-#endif
-
-#ifndef BITCOIN_WALLETDB_H
- #include "walletdb.h"
-#endif
+#include "main.h"
+#include "ui_interface.h"
+#include "walletdb.h"
 #include "streams.h"
+#include "script/standard.h"
+#include "script/ismine.h"
 
 static const unsigned int DEFAULT_KEYPOOL_SIZE = 100;
 

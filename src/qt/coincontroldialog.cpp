@@ -9,6 +9,7 @@
 #include "coincontrol.h"
 #include "dialogwindowflags.h"
 #include "policy/policy.h"
+#include "script/standard.h"
 
 #include <QApplication>
 #include <QCheckBox>

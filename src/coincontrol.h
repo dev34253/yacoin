@@ -1,6 +1,8 @@
 #ifndef COINCONTROL_H
 #define COINCONTROL_H
 
+#include "script/standard.h"
+
 /** Coin Control Features. */
 class CCoinControl
 {

@@ -9,7 +9,8 @@
 
 #include "consensus/consensus.h"
 #include "feerate.h"
-#include "script/script.h"
+#include "script/interpreter.h"
+#include "script/standard.h"
 
 #include <string>
 
@@ -27,17 +28,6 @@ static const unsigned int MAX_P2SH_SIGOPS = 21;
 // * force low S;
 // * ensure that CHECKMULTISIG dummy argument is null.
 static const unsigned int STRICT_FORMAT_FLAGS = SCRIPT_VERIFY_STRICTENC | SCRIPT_VERIFY_LOW_S | SCRIPT_VERIFY_NULLDUMMY;
-
-/**
- * Mandatory script verification flags that all new blocks must comply with for
- * them to be valid. (but old blocks may not comply with) Currently just P2SH,
- * but in the future other flags may be added, such as a soft-fork to enforce
- * strict DER encoding.
- *
- * Failing one of these tests may trigger a DoS ban - see CheckInputs() for
- * details.
- */
-static const unsigned int MANDATORY_SCRIPT_VERIFY_FLAGS = SCRIPT_VERIFY_P2SH;
 
 /**
  * Standard script verification flags that standard transactions will comply

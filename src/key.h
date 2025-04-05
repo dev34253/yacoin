@@ -60,15 +60,6 @@ public:
     explicit key_error(const std::string& str) : std::runtime_error(str) {}
 };
 
-/** A reference to a CScript: the Hash160 of its serialization (see script/script.h) */
-class CScriptID : public uint160
-{
-public:
-    CScriptID() : uint160(0) { }
-    CScriptID(const uint160 &in) : uint160(in) { }
-};
-
-
 // secure_allocator is defined in allocators.h
 // CPrivKey is a serialized private key, with all parameters included (279 bytes)
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > CPrivKey;

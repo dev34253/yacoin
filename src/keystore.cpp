@@ -8,13 +8,10 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_KEYSTORE_H
- #include "keystore.h"
-#endif
+#include "keystore.h"
 
-#ifndef BITCOIN_BASE58_H
- #include "base58.h"
-#endif
+#include "base58.h"
+#include "script/standard.h"
 
 extern bool fWalletUnlockMintOnly;
 using std::vector;

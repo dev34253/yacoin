@@ -18,17 +18,10 @@
 #include <string>
 #include <vector>
 
-#ifndef BITCOIN_BIGNUM_H
- #include "bignum.h"
-#endif
-
-#ifndef BITCOIN_KEY_H
- #include "key.h"
-#endif
-
-#ifndef H_BITCOIN_SCRIPT
- #include "script/script.h"
-#endif
+#include "bignum.h"
+#include "key.h"
+#include "script/script.h"
+#include "script/standard.h"
 
 // Encode a byte sequence as a base58-encoded string
 std::string EncodeBase58(const unsigned char* pbegin, const unsigned char* pend);

@@ -14,6 +14,7 @@
 #include "coincontrol.h"
 #include "init.h"
 #include "script/script.h"
+#include "script/standard.h"
 #include "txdb.h"
 #include "wallet.h"
 

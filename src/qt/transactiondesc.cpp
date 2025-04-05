@@ -13,6 +13,7 @@
 #include "validation.h"
 #include "ui_interface.h"
 #include "base58.h"
+#include "script/standard.h"
 
 #include <vector>
 #include <algorithm>

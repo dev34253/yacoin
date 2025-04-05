@@ -26,6 +26,7 @@
 #include "consensus/validation.h"
 #include "policy/policy.h"
 #include "validation.h"
+#include "script/standard.h"
 
 using namespace boost;
 using namespace boost::assign;

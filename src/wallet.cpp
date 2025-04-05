@@ -8,21 +8,10 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_TXDB_H
- #include "txdb.h"
-#endif
-
-#ifndef BITCOIN_WALLET_H
- #include "wallet.h"
-#endif
-
-#ifndef PPCOIN_KERNEL_H
- #include "kernel.h"
-#endif
-
-#ifndef COINCONTROL_H
- #include "coincontrol.h"
-#endif
+#include "txdb.h"
+#include "wallet.h"
+#include "kernel.h"
+#include "coincontrol.h"
 
 #include "random.h"
 #include "net_processing.h"

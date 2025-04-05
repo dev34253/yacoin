@@ -4,12 +4,12 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "regex"
-#include "script/script.h"
 #include "version.h"
 #include "streams.h"
 #include "serialize.h"
 #include "primitives/transaction.h"
-//#include "script/standard.h"
+#include "script/script.h"
+#include "script/standard.h"
 #include "util.h"
 #include "base58.h"
 #include "chainparams.h"

@@ -9,6 +9,7 @@
 #include "base58.h"
 #include "main.h"
 #include "script/script.h"
+#include "script/standard.h"
 #include "util.h"
 #include "validation.h"
 #include "wallet.h"
