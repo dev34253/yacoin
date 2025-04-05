@@ -624,7 +624,7 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
             return state.DoS(0, false, REJECT_NONSTANDARD, "too-long-mempool-chain", false, errString);
         }
 
-        unsigned int scriptVerifyFlags = SIG_SWITCH_TIME < tx.nTime ? STANDARD_SCRIPT_VERIFY_FLAGS : SOFT_FLAGS;
+        unsigned int scriptVerifyFlags = STANDARD_SCRIPT_VERIFY_FLAGS;
         if (!chainparams.RequireStandard()) {
             scriptVerifyFlags = gArgs.GetArg("-promiscuousmempoolflags", scriptVerifyFlags);
         }
@@ -1106,15 +1106,25 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
                     pvChecks->push_back(CScriptCheck());
                     check.swap(pvChecks->back());
                 } else if (!check()) {
-                    // TODO: Fix this logic, must replace STANDARD_SCRIPT_VERIFY_FLAGS with STANDARD_NOT_MANDATORY_VERIFY_FLAGS
-                    if (flags & STANDARD_SCRIPT_VERIFY_FLAGS)
-                    {
-                        // Don't trigger DoS code in case of STANDARD_SCRIPT_VERIFY_FLAGS caused failure.
-                        CScriptCheck check2(scriptPubKey, tx, i, flags & ~STANDARD_SCRIPT_VERIFY_FLAGS, cacheSigStore);
+                    if (flags & STANDARD_NOT_MANDATORY_VERIFY_FLAGS) {
+                        // Check whether the failure was caused by a
+                        // non-mandatory script verification check, such as
+                        // non-standard DER encodings or non-null dummy
+                        // arguments; if so, don't trigger DoS protection to
+                        // avoid splitting the network between upgraded and
+                        // non-upgraded nodes.
+                        CScriptCheck check2(scriptPubKey, tx, i, flags & ~STANDARD_NOT_MANDATORY_VERIFY_FLAGS, cacheSigStore);
                         if (check2())
-                            return state.Invalid(error("CheckInputs() : %s strict VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()), REJECT_NONSTANDARD);
+                            return state.Invalid(false, REJECT_NONSTANDARD, strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
                     }
-                    return state.DoS(100,error("CheckInputs() : %s VerifySignature failed", tx.GetHash().ToString().substr(0,10).c_str()), REJECT_INVALID);
+                    // Failures of other flags indicate a transaction that is
+                    // invalid in new blocks, e.g. an invalid P2SH. We DoS ban
+                    // such nodes as they are not following the protocol. That
+                    // said during an upgrade careful thought should be taken
+                    // as to the correct behavior - we may want to continue
+                    // peering with non-upgraded nodes even after soft-fork
+                    // super-majority signaling has occurred.
+                    return state.DoS(100,false, REJECT_INVALID, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
                 }
             }
 
@@ -1647,8 +1657,7 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
 
     unsigned int flags = fStrictPayToScriptHash ? SCRIPT_VERIFY_P2SH : SCRIPT_VERIFY_NONE;
 
-    // TODO: Support this script verification flag
-    // Start enforcing the DERSIG (BIP66) rule
+    // Start enforcing the DERSIG (BIP66) rule (yac doesn't need this rule)
 //    if (pindex->nHeight >= consensusparams.BIP66Height) {
 //        flags |= SCRIPT_VERIFY_DERSIG;
 //    }

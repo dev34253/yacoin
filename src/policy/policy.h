@@ -22,28 +22,24 @@ static const unsigned int DEFAULT_MAX_MEMPOOL_SIZE = 300;
 /** Maximum number of signature check operations in an IsStandard() P2SH script */
 static const unsigned int MAX_P2SH_SIGOPS = 21;
 
-// Strict verification:
-//
-// * force DER encoding;
-// * force low S;
-// * ensure that CHECKMULTISIG dummy argument is null.
-static const unsigned int STRICT_FORMAT_FLAGS = SCRIPT_VERIFY_STRICTENC | SCRIPT_VERIFY_LOW_S | SCRIPT_VERIFY_NULLDUMMY;
-
 /**
  * Standard script verification flags that standard transactions will comply
  * with. However scripts violating these flags may still be present in valid
  * blocks and we must accept those blocks.
  */
 static const unsigned int STANDARD_SCRIPT_VERIFY_FLAGS = MANDATORY_SCRIPT_VERIFY_FLAGS |
-                                                         STRICT_FORMAT_FLAGS |
+//                                                         SCRIPT_VERIFY_DERSIG |
+//                                                         SCRIPT_VERIFY_STRICTENC |
+//                                                         SCRIPT_VERIFY_MINIMALDATA |
+//                                                         SCRIPT_VERIFY_NULLDUMMY |
+//                                                         SCRIPT_VERIFY_CLEANSTACK |
+//                                                         SCRIPT_VERIFY_NULLFAIL |
+//                                                         SCRIPT_VERIFY_LOW_S |
                                                          SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY |
                                                          SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
 
 /** For convenience, standard but not mandatory verify flags. */
 static const unsigned int STANDARD_NOT_MANDATORY_VERIFY_FLAGS = STANDARD_SCRIPT_VERIFY_FLAGS & ~MANDATORY_SCRIPT_VERIFY_FLAGS;
-
-// Soft verifications, no extended signature format checkings
-static const unsigned int SOFT_FLAGS = STANDARD_SCRIPT_VERIFY_FLAGS & ~STRICT_FORMAT_FLAGS;
 
 /** Used as the flags parameter to sequence and nLocktime checks in non-consensus code. */
 // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)

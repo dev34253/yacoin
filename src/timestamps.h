@@ -52,11 +52,6 @@ static const unsigned int
     nSecondsOfFriNov12_2055 = 2709614280U,
     nSomeObscureFutureTime = nSecondsOfFriNov12_2055;
 
-static const unsigned int STAKE_SWITCH_TIME         = nSomeObscureFutureTime;  // for gcc's benefit, not MSVC++!
-static const unsigned int TARGETS_SWITCH_TIME       = nSomeObscureFutureTime;  // Fri, 12 Nov 2055 06:38:00 GMT
-//static const unsigned int CHAINCHECKS_SWITCH_TIME = 2709614280;
-static const unsigned int STAKECURVE_SWITCH_TIME    = nSomeObscureFutureTime; 
-
 static const unsigned int VALIDATION_SWITCH_TIME    = nSomeObscureFutureTime; 
 static const unsigned int SIG_SWITCH_TIME           = nSomeObscureFutureTime; 
 

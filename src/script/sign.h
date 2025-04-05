@@ -4,8 +4,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_SCRIPT_SIGN_H
-#define BITCOIN_SCRIPT_SIGN_H
+#ifndef YACOIN_SCRIPT_SIGN_H
+#define YACOIN_SCRIPT_SIGN_H
 
 #include "script/interpreter.h"
 
@@ -16,7 +16,6 @@ class CTransaction;
 
 typedef std::vector<unsigned char> valtype;
 
-// TACA: BEGIN NEW LOGIC
 struct CMutableTransaction;
 
 /** Virtual base class for signature creators. */
@@ -83,6 +82,5 @@ SignatureData CombineSignatures(const CScript& scriptPubKey, const BaseSignature
 /** Extract signature data from a transaction, and insert it. */
 SignatureData DataFromTransaction(const CTransaction& tx, unsigned int nIn);
 void UpdateTransaction(CTransaction& tx, unsigned int nIn, const SignatureData& data);
-// TACA: END NEW LOGIC
 
-#endif // BITCOIN_SCRIPT_SIGN_H
+#endif // YACOIN_SCRIPT_SIGN_H

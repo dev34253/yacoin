@@ -13,7 +13,6 @@
 #include "script/standard.h"
 #include "uint256.h"
 
-// TACA: BEGIN NEW LOGIC
 TransactionSignatureCreator::TransactionSignatureCreator(const CKeyStore* keystoreIn, const CTransaction* txToIn, unsigned int nInIn, int nHashTypeIn) : BaseSignatureCreator(keystoreIn), txTo(txToIn), nIn(nInIn), nHashType(nHashTypeIn), checker(txTo, nIn) {}
 
 bool TransactionSignatureCreator::CreateSig(std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode) const
@@ -360,6 +359,3 @@ bool DummySignatureCreator::CreateSig(std::vector<unsigned char>& vchSig, const 
     vchSig[6 + 33 + 32] = SIGHASH_ALL;
     return true;
 }
-// TACA: END NEW LOGIC
-
-
