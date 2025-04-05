@@ -1,10 +1,15 @@
-DIST_SUBDIRS =
+DIST_SUBDIRS = secp256k1
 AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS)
 
 BITCOIN_CONFIG_INCLUDES=-I$(builddir)/config
 BITCOIN_INCLUDES=-I$(builddir) -I$(builddir)/obj $(BOOST_CPPFLAGS) $(LEVELDB_CPPFLAGS) $(CRYPTO_CFLAGS) $(SSL_CFLAGS)
+BITCOIN_INCLUDES += -I$(srcdir)/secp256k1/include
 
 LIBYACOIN_COMMON=libyacoin_common.a
+LIBSECP256K1=secp256k1/libsecp256k1.la
+
+$(LIBSECP256K1): $(wildcard secp256k1/src/*) $(wildcard secp256k1/include/*)
+	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
 EXTRA_LIBRARIES = \
   libyacoin_common.a
@@ -74,8 +79,6 @@ libyacoin_common_a_SOURCES= \
     support/cleanse.cpp \
     dbwrapper.cpp \
     txdb.cpp \
-    eccryptoverify.cpp \
-    ecwrapper.cpp \
     hash.cpp \
     base58.cpp \
     version.cpp \
@@ -144,12 +147,12 @@ libyacoin_common_a_SOURCES= \
     scrypt-jane/scrypt-jane.c
 
 libyacoin_common_a_CPPFLAGS = $(BITCOIN_INCLUDES)
-libyacoin_common_a_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt
+libyacoin_common_a_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt -L$(srcdir)/src/secp256k1/.libs
 
 yacoind_SOURCES = init.cpp
 
 yacoind_LDADD = $(LIBYACOIN_COMMON)
-yacoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS)
+yacoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(LIBSECP256K1)
 yacoind_CPPFLAGS = $(BITCOIN_INCLUDES)
 yacoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt
 
@@ -161,6 +164,7 @@ EXTRA_DIST = leveldb
 
 clean-local:
 	-$(MAKE) -C leveldb clean
+	-$(MAKE) -C secp256k1 clean
 	rm -f leveldb/*/*.gcno leveldb/helpers/memenv/*.gcno
 	rm -f config.h
 

@@ -9,6 +9,7 @@
 #include "chainparams.h"
 #include "consensus/validation.h"
 #include "fs.h"
+#include "key.h"
 #include "validation.h"
 #include "net_processing.h"
 #include "policy/policy.h"
@@ -146,6 +147,7 @@ public:
 };
 
 static CCoinsViewErrorCatcher *pcoinscatcher = nullptr;
+static std::unique_ptr<ECCVerifyHandle> globalVerifyHandle;
 
 void WaitForShutdown(boost::thread_group* threadGroup)
 {
@@ -252,6 +254,8 @@ void Shutdown()
     GetMainSignals().UnregisterBackgroundSignalScheduler();
     CloseWallets();
     LogPrintf("wallet unregistered\n");
+    globalVerifyHandle.reset();
+    ECC_Stop();
     LogPrintf("Yacoin exited\n\n");
 }
 #endif
@@ -810,9 +814,35 @@ static bool LockDataDirectory(bool probeOnly)
     return true;
 }
 
+/** Sanity checks
+ *  Ensure that Bitcoin is running in a usable environment with all
+ *  necessary library support.
+ */
+bool InitSanityCheck(void)
+{
+    if(!ECC_InitSanityCheck()) {
+        InitError("Elliptic curve cryptography sanity check failure. Aborting.");
+        return false;
+    }
+
+    if (!Random_SanityCheck()) {
+        InitError("OS cryptographic RNG sanity check failure. Aborting.");
+        return false;
+    }
+
+    return true;
+}
+
 bool AppInitSanityChecks()
 {
     // ********************************************************* Step 4: sanity checks
+
+    // Initialize elliptic curve code
+    std::string sha256_algo = SHA256AutoDetect();
+    LogPrintf("Using the '%s' SHA256 implementation\n", sha256_algo);
+    RandomInit();
+    ECC_Start();
+    globalVerifyHandle.reset(new ECCVerifyHandle());
 
     // Probe the data directory lock to give an early error message, if possible
     // We cannot hold the data directory lock here, as the forking for daemon() hasn't yet happened,

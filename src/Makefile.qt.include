@@ -266,8 +266,6 @@ BITCOIN_QT_CPP = \
   init.cpp \
   dbwrapper.cpp \
   txdb.cpp \
-  eccryptoverify.cpp \
-  ecwrapper.cpp \
   hash.cpp \
   base58.cpp \
   version.cpp \

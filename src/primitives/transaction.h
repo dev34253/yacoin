@@ -13,6 +13,7 @@
 #include "script/script.h"
 #include "serialize.h"
 #include "uint256.h"
+#include "util.h"
 
 class CValidationState;
 class CDiskTxPos;

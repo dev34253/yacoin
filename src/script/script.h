@@ -13,6 +13,9 @@
 #include "prevector.h"
 #include "pubkey.h"
 #include "key.h"
+#include "tinyformat.h"
+#include "utilstrencodings.h"
+#include "util.h"
 
 class CKeyID;
 

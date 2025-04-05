@@ -224,8 +224,6 @@ obj/chain.o \
 obj/chainparams.o \
 obj/chainparamsbase.o \
 obj/hash.o \
-obj/eccryptoverify.o \
-obj/ecwrapper.o \
 obj/siphash.o \
 obj/chacha20.o \
 obj/sha1.o \

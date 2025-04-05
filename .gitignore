@@ -38,7 +38,6 @@ qrc_*.cpp
 #mac specific
 .DS_Store
 build
-README.md
 .genjane
 .genleveldb
 yacoind-*
