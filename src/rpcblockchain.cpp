@@ -2,21 +2,14 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include "msvc_warnings.push.h"
-#endif
-
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
-
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
+#include "main.h"
+#include "bitcoinrpc.h"
 #include "streams.h"
 #include "price.h"
 #include "consensus/validation.h"
 #include "policy/policy.h"
+
+#include <boost/foreach.hpp>
 
 using namespace json_spirit;
 

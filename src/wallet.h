@@ -17,6 +17,8 @@
 #include "script/standard.h"
 #include "script/ismine.h"
 
+#include <boost/foreach.hpp>
+
 static const unsigned int DEFAULT_KEYPOOL_SIZE = 100;
 
 //extern unsigned int nStakeMaxAge;

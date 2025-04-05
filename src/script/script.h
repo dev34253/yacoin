@@ -5,17 +5,16 @@
 #ifndef H_BITCOIN_SCRIPT
 #define H_BITCOIN_SCRIPT
 
-#include <string>
-#include <vector>
-
-#include <boost/foreach.hpp>
-
+#include "crypto/common.h"
 #include "prevector.h"
 #include "pubkey.h"
 #include "key.h"
 #include "tinyformat.h"
 #include "utilstrencodings.h"
 #include "util.h"
+
+#include <string>
+#include <vector>
 
 class CKeyID;
 
@@ -192,6 +191,9 @@ enum opcodetype
 
     OP_INVALIDOPCODE = 0xff,
 };
+
+// Maximum value that an opcode can be
+static const unsigned int MAX_OPCODE = OP_NOP10;
 
 const char* GetOpName(opcodetype opcode);
 
@@ -390,7 +392,7 @@ inline std::string ValueString(const std::vector<unsigned char>& vch)
         return HexStr(vch);
 }
 
-typedef std::vector< ::uint8_t> CScriptBase;
+typedef std::vector< unsigned char> CScriptBase;
 
 /** Serialized script, used inside transaction inputs and outputs */
 class CScript : public CScriptBase

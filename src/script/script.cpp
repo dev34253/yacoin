@@ -2,12 +2,6 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
-
-    #include "msvc_warnings.push.h"
-#endif
-
 #include "script/script.h"
 #include "main.h"
 #include "tokens/tokens.h"
@@ -15,11 +9,6 @@
 #include "policy/policy.h"
 #include "validation.h"
 #include "keystore.h"
-
-#include <boost/foreach.hpp>
-#include <boost/tuple/tuple.hpp>
-
-using namespace boost;
 
 using std::vector;
 using std::runtime_error;
@@ -281,9 +270,9 @@ bool CScript::IsPayToScriptHash() const
 {
     // Extra-fast test for pay-to-script-hash CScripts:
     return (this->size() == 23 &&
-            this->at(0) == OP_HASH160 &&
-            this->at(1) == 0x14 &&
-            this->at(22) == OP_EQUAL);
+            (*this)[0] == OP_HASH160 &&
+            (*this)[1] == 0x14 &&
+            (*this)[22] == OP_EQUAL);
 }
 
 bool CScript::IsP2PKHTimelock(std::vector<unsigned char>& addressRet) const
@@ -571,8 +560,3 @@ bool AmountFromReissueScript(const CScript& scriptPubKey, CAmount& nAmount)
     nAmount = token.nAmount;
     return true;
 }
-//!--------------------------------------------------------------------------------------------------------------------------!//
-
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif
