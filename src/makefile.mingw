@@ -287,6 +287,7 @@ obj/interpreter.o \
 obj/ismine.o \
 obj/script.o \
 obj/script_error.o \
+obj/sigcache.o \
 obj/sign.o \
 obj/standard.o \
 obj/scrypt.o \
@@ -343,6 +344,9 @@ obj/script.o: script/script.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/script_error.o: script/script_error.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/sigcache.o: script/sigcache.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/sign.o: script/sign.cpp

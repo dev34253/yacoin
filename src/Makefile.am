@@ -124,6 +124,7 @@ libyacoin_common_a_SOURCES= \
     script/ismine.cpp \
     script/script.cpp \
     script/script_error.cpp \
+    script/sigcache.cpp \
     script/sign.cpp \
     script/standard.cpp \
     sync.cpp \
