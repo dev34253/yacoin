@@ -869,11 +869,11 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
           }
 
           if (pwallet->HaveKey(keyid)) {
-              if (readState == readP2SH && !pwallet->GetCScript(scriptP2SH.GetID(), scriptP2SH))
+              if (readState == readP2SH && !pwallet->GetCScript(CScriptID(scriptP2SH), scriptP2SH))
               {
                   pwallet->AddCScript(scriptP2SH);
                   if (fLabel)
-                      pwallet->SetAddressBookName(scriptP2SH.GetID(), strLabel);
+                      pwallet->SetAddressBookName(CScriptID(scriptP2SH), strLabel);
               }
               LogPrintf("Skipping import of %s (key already present)\n", CBitcoinAddress(keyid).ToString());
              continue;
@@ -896,7 +896,7 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
           {
               pwallet->AddCScript(scriptP2SH);
               if (fLabel)
-                  pwallet->SetAddressBookName(scriptP2SH.GetID(), strLabel);
+                  pwallet->SetAddressBookName(CScriptID(scriptP2SH), strLabel);
           }
       }
       file.close();

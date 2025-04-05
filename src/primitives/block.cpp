@@ -13,6 +13,7 @@
 #include "wallet.h"
 #include "validationinterface.h"
 #include "net_processing.h"
+#include "keystore.h"
 
 using std::vector;
 using std::map;

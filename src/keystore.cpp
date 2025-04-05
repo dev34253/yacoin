@@ -101,11 +101,11 @@ bool CBasicKeyStore::AddCScript(const CScript& redeemScript)
         LOCK(cs_KeyStore);
 #ifdef _MSC_VER
         if( 0 < redeemScript.size() )
-            mapScripts[redeemScript.GetID()] = redeemScript;  // will crash if redeemScript is 0 length []
+            mapScripts[CScriptID(redeemScript)] = redeemScript;  // will crash if redeemScript is 0 length []
         else
             return error("CBasicKeyStore::AddCScript() : redeemScript is nul vector?");
 #else
-        mapScripts[redeemScript.GetID()] = redeemScript;
+        mapScripts[CScriptID(redeemScript)] = redeemScript;
 #endif
     }
     return true;
@@ -235,8 +235,8 @@ bool CCryptoKeyStore::AddKey(const CKey& key)
     {
         LOCK(cs_KeyStore);
 
-        CScript script;
-        script.SetDestination(key.GetPubKey().GetID());
+        // build standard output script via GetScriptForDestination()
+        CScript script = GetScriptForDestination(key.GetPubKey().GetID());
 
         if (HaveWatchOnly(script))
             return false;

@@ -169,7 +169,7 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
     }
 
     // Pre-check input data for validity
-    foreach(const SendCoinsRecipient &rcp, recipients)
+    for(const SendCoinsRecipient &rcp : recipients)
     {
         if(!validateAddress(rcp.address))
         {
@@ -212,10 +212,10 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
 
         // Sendmany
         std::vector<CRecipient> vecSend;
-        foreach(const SendCoinsRecipient &rcp, recipients)
+        for(const SendCoinsRecipient &rcp : recipients)
         {
-            CScript scriptPubKey;
-            scriptPubKey.SetDestination(CBitcoinAddress(rcp.address.toStdString()).Get());
+            // build standard output script via GetScriptForDestination()
+            CScript scriptPubKey = GetScriptForDestination(CBitcoinAddress(rcp.address.toStdString()).Get());
             CRecipient recipient = {scriptPubKey, rcp.amount, false};
             vecSend.push_back(recipient);
         }

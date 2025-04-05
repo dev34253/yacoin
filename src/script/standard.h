@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 class CKeyID;
+class CKeyStore;
 class CScript;
 
 typedef std::vector<unsigned char> valtype;
@@ -91,6 +92,11 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
 bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<CTxDestination>& addressRet, int& nRequiredRet);
 
 CScript GetScriptForDestination(const CTxDestination& dest);
+CScript GetScriptForMultisig(int nRequired, const std::vector<CKey>& keys);
+CScript GetScriptForCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey);
+CScript GetScriptForCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID);
+CScript GetScriptForCsvP2SH(::uint32_t nSequence, const CPubKey& pubKey);
+CScript GetScriptForCsvP2PKH(::uint32_t nSequence, const CKeyID &keyID);
 
 int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions);
 bool IsSpendableTimelockUTXO(const CKeyStore &keystore, const CScript& scriptPubKey, txnouttype& retType, uint32_t& retLockDur);

@@ -29,8 +29,8 @@ unsigned int HaveKeys(const std::vector<valtype>& pubkeys, const CKeyStore& keys
 
 isminetype IsMine(const CKeyStore &keystore, const CTxDestination& dest)
 {
-    CScript script;
-    script.SetDestination(dest);
+    // build standard output script via GetScriptForDestination()
+    CScript script = GetScriptForDestination(dest);
     return IsMine(keystore, script);
 }
 

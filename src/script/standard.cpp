@@ -351,6 +351,52 @@ CScript GetScriptForDestination(const CTxDestination& dest)
     return script;
 }
 
+CScript GetScriptForMultisig(int nRequired, const std::vector<CKey>& keys)
+{
+    CScript script;
+    script << CScript::EncodeOP_N(nRequired);
+    for(const CKey& key : keys)
+        script << key.GetPubKey();
+    script << CScript::EncodeOP_N(keys.size()) << OP_CHECKMULTISIG;
+    return script;
+}
+
+CScript GetScriptForCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey)
+{
+    CScript script;
+    script << (CScriptNum)nLockTime;
+    script << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
+    script << pubKey << OP_CHECKSIG;
+    return script;
+}
+
+CScript GetScriptForCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID)
+{
+    CScript script;
+    script << (CScriptNum)nLockTime;
+    script << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
+    script  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
+    return script;
+}
+
+CScript GetScriptForCsvP2SH(::uint32_t nSequence, const CPubKey& pubKey)
+{
+    CScript script;
+    script << (CScriptNum)nSequence;
+    script << OP_CHECKSEQUENCEVERIFY << OP_DROP;
+    script << pubKey << OP_CHECKSIG;
+    return script;
+}
+
+CScript GetScriptForCsvP2PKH(::uint32_t nSequence, const CKeyID &keyID)
+{
+    CScript script;
+    script << (CScriptNum)nSequence;
+    script << OP_CHECKSEQUENCEVERIFY << OP_DROP;
+    script  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
+    return script;
+}
+
 int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions)
 {
     switch (t)

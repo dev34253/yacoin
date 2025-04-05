@@ -5,13 +5,9 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#ifndef BITCOIN_INIT_H
- #include "init.h" // for pwalletMain
-#endif
-
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
+#include "init.h" // for pwalletMain
+#include "bitcoinrpc.h"
+#include "script/standard.h"
 
 using namespace json_spirit;
 
@@ -87,7 +83,7 @@ Value importaddress(const Array& params, bool fHelp)
     CScript script;
     CBitcoinAddress address(params[0].get_str());
     if (address.IsValid()) {
-        script.SetDestination(address.Get());
+        script = GetScriptForDestination(address.Get());
     } else if (IsHex(params[0].get_str())) {
         std::vector<unsigned char> data(ParseHex(params[0].get_str()));
         script = CScript(data.begin(), data.end());
@@ -147,7 +143,7 @@ Value removeaddress(const Array& params, bool fHelp)
 
     CBitcoinAddress address(params[0].get_str());
     if (address.IsValid()) {
-        script.SetDestination(address.Get());
+        script = GetScriptForDestination(address.Get());
     } else if (IsHex(params[0].get_str())) {
         std::vector<unsigned char> data(ParseHex(params[0].get_str()));
         script = CScript(data.begin(), data.end());
@@ -203,8 +199,7 @@ Value dumpprivkey(const Array& params, bool fHelp)
     if (fWalletUnlockMintOnly) // ppcoin: no dumpprivkey in mint-only mode
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Wallet is unlocked for minting only.");
 
-    CScript scriptPubKey;
-    scriptPubKey.SetDestination(address.Get());
+    CScript scriptPubKey = GetScriptForDestination(address.Get());
     if (!IsMine(*pwalletMain,scriptPubKey))
         throw JSONRPCError(RPC_WALLET_ERROR, "Wallet doesn't manage coins in this address");
 

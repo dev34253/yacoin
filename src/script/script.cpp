@@ -9,7 +9,6 @@
 #endif
 
 #include "script/script.h"
-#include "script/standard.h"
 #include "main.h"
 #include "tokens/tokens.h"
 #include "streams.h"
@@ -184,43 +183,6 @@ bool ExtractLockDuration(const CScript& scriptPubKey, uint32_t& lockDuration)
 
     lockDuration = CScriptNum(vch).getuint();
     return true;
-}
-
-class CAffectedKeysVisitor : public boost::static_visitor<void> {
-private:
-    const CKeyStore &keystore;
-    std::vector<CKeyID> &vKeys;
-
-public:
-    CAffectedKeysVisitor(const CKeyStore &keystoreIn, std::vector<CKeyID> &vKeysIn) : keystore(keystoreIn), vKeys(vKeysIn) {}
-
-    void Process(const CScript &script) {
-        txnouttype type;
-        std::vector<CTxDestination> vDest;
-        int nRequired;
-        if (ExtractDestinations(script, type, vDest, nRequired)) {
-            for(const CTxDestination &dest : vDest)
-                boost::apply_visitor(*this, dest);
-        }
-    }
-
-    void operator()(const CKeyID &keyId) {
-        if (keystore.HaveKey(keyId))
-            vKeys.push_back(keyId);
-    }
-
-    void operator()(const CScriptID &scriptId) {
-        CScript script;
-        if (keystore.GetCScript(scriptId, script))
-            Process(script);
-    }
-
-    void operator()(const CNoDestination &none) {}
-};
-
-
-void ExtractAffectedKeys(const CKeyStore &keystore, const CScript& scriptPubKey, std::vector<CKeyID> &vKeys) {
-    CAffectedKeysVisitor(keystore, vKeys).Process(scriptPubKey);
 }
 
 unsigned int CScript::GetSigOpCount(bool fAccurate) const
@@ -447,66 +409,10 @@ bool CScript::HasCanonicalPushes() const
     return true;
 }
 
-void CScript::SetDestination(const CTxDestination& dest)
-{
-    boost::apply_visitor(CScriptVisitor(this), dest);
-}
-
-void CScript::SetMultisig(int nRequired, const std::vector<CKey>& keys)
-{
-    this->clear();
-
-    *this << EncodeOP_N(nRequired);
-    BOOST_FOREACH(const CKey& key, keys)
-        *this << key.GetPubKey();
-    *this << EncodeOP_N((int)(keys.size())) << OP_CHECKMULTISIG;
-}
-
-void CScript::SetCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey)
-{
-    this->clear();
-
-    *this << (CScriptNum)nLockTime;
-    *this << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
-	*this << pubKey << OP_CHECKSIG;
-}
-
-void CScript::SetCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID)
-{
-    this->clear();
-
-    *this << (CScriptNum)nLockTime;
-    *this << OP_CHECKLOCKTIMEVERIFY << OP_DROP;
-    *this  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
-}
-
-void CScript::SetCsvP2SH(::uint32_t nSequence, const CPubKey& pubKey)
-{
-    this->clear();
-
-    *this << (CScriptNum)nSequence;
-    *this << OP_CHECKSEQUENCEVERIFY << OP_DROP;
-    *this << pubKey << OP_CHECKSIG;
-}
-
-void CScript::SetCsvP2PKH(::uint32_t nSequence, const CKeyID &keyID)
-{
-    this->clear();
-
-    *this << (CScriptNum)nSequence;
-    *this << OP_CHECKSEQUENCEVERIFY << OP_DROP;
-    *this  << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
-}
-
 bool CScript::IsUnspendable() const
 {
     CAmount nAmount;
     return (size() > 0 && *begin() == OP_RETURN) || (size() > 0 && *begin() == OP_YAC_TOKEN) || (size() > MAX_SCRIPT_SIZE) || (GetTokenAmountFromScript(*this, nAmount) && nAmount == 0);
-}
-
-CScriptID CScript::GetID() const
-{
-    return CScriptID(Hash160(*this));
 }
 //!--------------------------------------------------------------------------------------------------------------------------!//
 //! These are needed because script.h and script.cpp do not have access to tokens.h and tokens.cpp functions. This is

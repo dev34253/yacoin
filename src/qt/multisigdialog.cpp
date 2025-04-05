@@ -184,14 +184,13 @@ void MultisigDialog::on_createAddressButton_clicked()
         return;
     }
     
-    CScript script;
-    script.SetMultisig(required, pubkeys);
+    CScript script = GetScriptForMultisig(required, pubkeys);
     if (script.size() > MAX_SCRIPT_ELEMENT_SIZE)
     {
         QMessageBox::warning(this, tr("Error"), tr("Redeem script exceeds size limit: %1 > %2\nReduce the number of addresses involved in the address creation.").arg(script.size()).arg(MAX_SCRIPT_ELEMENT_SIZE), QMessageBox::Ok);
         return;
     }
-    CScriptID scriptID = script.GetID();
+    CScriptID scriptID(script);
     CBitcoinAddress address(scriptID);
 
     ui->multisigAddress->setText(address.ToString().c_str());
@@ -217,7 +216,7 @@ void MultisigDialog::on_saveRedeemScriptButton_clicked()
     std::string redeemScript = ui->redeemScript->text().toStdString();
     std::vector<unsigned char> scriptData(ParseHex(redeemScript));
     CScript script(scriptData.begin(), scriptData.end());
-    CScriptID scriptID = script.GetID();
+    CScriptID scriptID(script);
 
     LOCK(wallet->cs_wallet);
     if(!wallet->HaveCScript(scriptID))
@@ -239,7 +238,7 @@ void MultisigDialog::on_saveMultisigAddressButton_clicked()
 
     std::vector<unsigned char> scriptData(ParseHex(redeemScript));
     CScript script(scriptData.begin(), scriptData.end());
-    CScriptID scriptID = script.GetID();
+    CScriptID scriptID(script);
 
     LOCK(wallet->cs_wallet);
     if(!wallet->HaveCScript(scriptID))
@@ -312,8 +311,8 @@ void MultisigDialog::on_createTransactionButton_clicked()
             {
                 SendCoinsRecipient recipient = entry->getValue();
                 CBitcoinAddress address(recipient.address.toStdString());
-                CScript scriptPubKey;
-                scriptPubKey.SetDestination(address.Get());
+                // build standard output script via GetScriptForDestination()
+                CScript scriptPubKey = GetScriptForDestination(address.Get());
                 int64_t amount = recipient.amount;
                 CTxOut output(amount, scriptPubKey);
                 transaction.vout.push_back(output);

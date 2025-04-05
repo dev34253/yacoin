@@ -14,12 +14,7 @@
 #include "pubkey.h"
 #include "key.h"
 
-class CScriptID;
-class CNoDestination;
 class CKeyID;
-class CKeyStore;
-
-typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 
 // Maximum number of bytes pushable to the stack
 static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 520;
@@ -704,13 +699,6 @@ public:
     // Called by CTransaction::IsStandard.
     bool HasCanonicalPushes() const;
 
-    void SetDestination(const CTxDestination& address);
-    void SetMultisig(int nRequired, const std::vector<CKey>& keys);
-    void SetCltvP2SH(uint32_t nLockTime, const CPubKey& pubKey);
-    void SetCltvP2PKH(uint32_t nLockTime, const CKeyID &keyID);
-    void SetCsvP2SH(::uint32_t nSequence, const CPubKey& pubKey);
-    void SetCsvP2PKH(::uint32_t nSequence, const CKeyID &keyID);
-
     void PrintHex() const
     {
         LogPrintf("CScript(%s)\n", HexStr(begin(), end(), true));
@@ -744,10 +732,8 @@ public:
         LogPrintf("%s\n", ToString());
     }
 
-    CScriptID GetID() const;
 };
 
-void ExtractAffectedKeys(const CKeyStore &keystore, const CScript& scriptPubKey, std::vector<CKeyID> &vKeys);
 bool ExtractLockDuration(const CScript& scriptPubKey, uint32_t& lockDuration);
 
 //! These are needed because script.h and script.cpp do not have access to tokens.h and tokens.cpp functions. This is
