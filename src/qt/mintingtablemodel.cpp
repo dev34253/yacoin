@@ -13,7 +13,7 @@
 #include "util.h"
 #include "kernel.h"
 
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 #include <QLocale>
 #include <QList>
@@ -292,6 +292,7 @@ int MintingTableModel::columnCount(const QModelIndex &parent) const
 
 QVariant MintingTableModel::data(const QModelIndex &index, int role) const
 {
+    const Consensus::Params& params = Params().GetConsensus();
     if(!index.isValid())
         return QVariant();
     KernelRecord *rec = static_cast<KernelRecord*>(index.internalPointer());
@@ -363,8 +364,8 @@ QVariant MintingTableModel::data(const QModelIndex &index, int role) const
         }
         break;
       case Qt::BackgroundColorRole:
-        int minAge = nStakeMinAge / 60 / 60 / 24;
-        int maxAge = nStakeMaxAge / 60 / 60 / 24;
+        int minAge = params.nStakeMinAge / 60 / 60 / 24;
+        int maxAge = params.nStakeMaxAge / 60 / 60 / 24;
         if(rec->getAge() < minAge)
         {
             return COLOR_MINT_YOUNG;

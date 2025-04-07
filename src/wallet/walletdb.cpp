@@ -2,15 +2,10 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
+#include "wallet/walletdb.h"
 
-    #include "msvc_warnings.push.h"
-#endif
-
-#include "walletdb.h"
-
-#include "wallet.h"
+#include "wallet/wallet.h"
+#include "base58.h"
 #include "streams.h"
 #include "chain.h"
 #include "consensus/tx_verify.h"
@@ -43,6 +38,7 @@ using std::ifstream;
 
 static ::uint64_t nAccountingEntryNumber = 0;
 extern bool fWalletUnlockMintOnly;
+unsigned int nWalletDBUpdated;
 
 //
 // CWalletDB
@@ -60,6 +56,128 @@ bool CWalletDB::EraseName(const string& strAddress)
     // receiving addresses must always have an address book entry if they're not change return.
     nWalletDBUpdated++;
     return Erase(make_pair(string("name"), strAddress));
+}
+
+bool CWalletDB::WriteTx(uint256 hash, const CWalletTx& wtx)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("tx"), hash), wtx);
+}
+
+bool CWalletDB::EraseTx(uint256 hash)
+{
+    nWalletDBUpdated++;
+    return Erase(std::make_pair(std::string("tx"), hash));
+}
+
+bool CWalletDB::WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey, const CKeyMetadata &keyMeta)
+{
+    nWalletDBUpdated++;
+    if(!Write(std::make_pair(std::string("keymeta"), vchPubKey), keyMeta))
+        return false;
+
+    if(!Write(std::make_pair(std::string("key"), vchPubKey), vchPrivKey, false))
+        return false;
+
+    return true;
+}
+
+bool CWalletDB::WriteCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret, const CKeyMetadata &keyMeta)
+{
+    nWalletDBUpdated++;
+    bool fEraseUnencryptedKey = true;
+
+    if(!Write(std::make_pair(std::string("keymeta"), vchPubKey), keyMeta))
+        return false;
+
+    if (!Write(std::make_pair(std::string("ckey"), vchPubKey), vchCryptedSecret, false))
+        return false;
+    if (fEraseUnencryptedKey)
+    {
+        Erase(std::make_pair(std::string("key"), vchPubKey));
+        Erase(std::make_pair(std::string("wkey"), vchPubKey));
+    }
+    return true;
+}
+
+bool CWalletDB::WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("mkey"), nID), kMasterKey, true);
+}
+
+bool CWalletDB::EraseMasterKey(unsigned int nID)
+{
+    nWalletDBUpdated++;
+    return Erase(std::make_pair(std::string("mkey"), nID));
+}
+
+bool CWalletDB::EraseCryptedKey(const CPubKey& vchPubKey)
+{
+    return Erase(std::make_pair(std::string("ckey"), vchPubKey));
+}
+
+bool CWalletDB::WriteCScript(const uint160& hash, const CScript& redeemScript)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("cscript"), hash), redeemScript, false);
+}
+
+bool CWalletDB::WriteWatchOnly(const CScript &dest)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("watchs"), dest), '1');
+}
+
+bool CWalletDB::EraseWatchOnly(const CScript &dest)
+{
+    nWalletDBUpdated++;
+    return Erase(std::make_pair(std::string("watchs"), dest));
+}
+
+bool CWalletDB::WriteBestBlock(const CBlockLocator& locator)
+{
+    nWalletDBUpdated++;
+    return Write(std::string("bestblock"), locator);
+}
+
+bool CWalletDB::ReadBestBlock(CBlockLocator& locator)
+{
+    return Read(std::string("bestblock"), locator);
+}
+
+bool CWalletDB::WriteOrderPosNext(::int64_t nOrderPosNext)
+{
+    nWalletDBUpdated++;
+    return Write(std::string("orderposnext"), nOrderPosNext);
+}
+
+bool CWalletDB::WriteDefaultKey(const CPubKey& vchPubKey)
+{
+    nWalletDBUpdated++;
+    return Write(std::string("defaultkey"), vchPubKey);
+}
+
+bool CWalletDB::ReadPool(::int64_t nPool, CKeyPool& keypool)
+{
+    return Read(std::make_pair(std::string("pool"), nPool), keypool);
+}
+
+bool CWalletDB::WritePool(::int64_t nPool, const CKeyPool& keypool)
+{
+    nWalletDBUpdated++;
+    return Write(std::make_pair(std::string("pool"), nPool), keypool);
+}
+
+bool CWalletDB::ErasePool(::int64_t nPool)
+{
+    nWalletDBUpdated++;
+    return Erase(std::make_pair(std::string("pool"), nPool));
+}
+
+bool CWalletDB::WriteMinVersion(int nVersion)
+{
+    return Write(std::string("minversion"), nVersion);
 }
 
 bool CWalletDB::ReadAccount(const string& strAccount, CAccount& account)
@@ -89,7 +207,7 @@ bool CWalletDB::WriteAccountingEntry(const CAccountingEntry& acentry)
     ListAccountCreditDebit(strAccount, entries);
 
     ::int64_t nCreditDebit = 0;
-    BOOST_FOREACH (const CAccountingEntry& entry, entries)
+    for(const CAccountingEntry& entry : entries)
         nCreditDebit += entry.nCreditDebit;
 
     return nCreditDebit;
@@ -1018,6 +1136,3 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename)
 {
     return CWalletDB::Recover(dbenv, filename, false);
 }
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif

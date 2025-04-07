@@ -8,14 +8,16 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#include "txdb.h"
-#include "wallet.h"
-#include "kernel.h"
-#include "coincontrol.h"
+#include "wallet/wallet.h"
 
+#include "base58.h"
+#include "txdb.h"
+#include "kernel.h"
+#include "wallet/coincontrol.h"
 #include "random.h"
 #include "net_processing.h"
 #include "coins.h"
+#include "consensus/consensus.h"
 #include "consensus/validation.h"
 #include "consensus/tx_verify.h"
 #include "policy/policy.h"
@@ -886,6 +888,123 @@ bool CWallet::IsTimelockUTXOExpired(const CInputCoin& inputCoin, txnouttype utxo
         return false;
     }
     return true;
+}
+
+int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
+{
+    CBlock blockTmp;
+    if (pblock == NULL)
+    {
+        // Transaction index is required to get to block
+        if (!fTxIndex) {
+            return 0;
+        }
+
+        // Read transaction position
+        CDiskTxPos postx;
+        if (!pblocktree->ReadTxIndex(GetHash(), postx)) {
+            return 0;
+        }
+
+        // Read block
+        const Consensus::Params& consensusParams = Params().GetConsensus();
+        if (!ReadBlockFromDisk(blockTmp, postx, consensusParams)) {
+            return 0;
+        }
+        pblock = &blockTmp;
+    }
+
+    // Update the tx's hashBlock
+    hashBlock = pblock->GetHash();
+
+    // Locate the transaction
+    for (nIndex = 0; nIndex < (int)pblock->vtx.size(); nIndex++)
+        if (pblock->vtx[nIndex] == *(CTransaction*)this)
+            break;
+    if (nIndex == (int)pblock->vtx.size())
+    {
+        vMerkleBranch.clear();
+        nIndex = -1;
+        LogPrintf("ERROR: SetMerkleBranch() : couldn't find tx in block\n");
+        return 0;
+    }
+
+    // Fill in merkle branch
+    vMerkleBranch = pblock->GetMerkleBranch(nIndex);
+
+    // Is the tx in a block that's in the main chain
+    BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
+    if (mi == mapBlockIndex.end())
+        return 0;
+    CBlockIndex* pindex = (*mi).second;
+    if (!pindex || !pindex->IsInMainChain())
+        return 0;
+
+    return chainActive.Tip()->nHeight - pindex->nHeight + 1;
+}
+
+int CMerkleTx::GetDepthInMainChain(CBlockIndex* &pindexRet) const
+{
+    if (hashBlock == 0 || nIndex == -1)
+        return 0;
+
+    // Find the block it claims to be in
+    BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
+    if (mi == mapBlockIndex.end())
+        return 0;
+    CBlockIndex* pindex = (*mi).second;
+    if (!pindex || !chainActive.Contains(pindex))
+        return 0;
+
+    // Make sure the merkle branch connects to this block
+    if (!fMerkleVerified)
+    {
+        if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) != pindex->hashMerkleRoot)
+            return 0;
+        fMerkleVerified = true;
+    }
+
+    pindexRet = pindex;
+    return chainActive.Height() - pindex->nHeight + 1;
+}
+
+
+int CMerkleTx::GetBlocksToMaturity() const
+{
+    if (!(IsCoinBase() || IsCoinStake()))
+        return 0;
+    return max(
+                0,
+                fTestNet?
+                (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
+                (GetCoinbaseMaturity() + GetCoinbaseMaturityOffset()) - GetDepthInMainChain()    // why is this 20?
+              );                                                    // what is this 20 from? For?
+}
+
+bool CMerkleTx::AcceptToMemoryPool()
+{
+    CValidationState state;
+    CTransactionRef ptx = std::make_shared<CTransaction>(*this);
+    return ::AcceptToMemoryPool(mempool, state, ptx, nullptr);
+}
+
+bool CWalletTx::AcceptWalletTransaction()
+{
+    {
+        LOCK(mempool.cs);
+        // Add previous supporting transactions first
+        for(CMerkleTx& tx : vtxPrev)
+        {
+            if (!(tx.IsCoinBase() || tx.IsCoinStake()))
+            {
+                uint256 hash = tx.GetHash();
+                if (!mempool.exists(hash) && !pblocktree->ContainsTx(hash))
+                    tx.AcceptToMemoryPool();
+            }
+        }
+        return AcceptToMemoryPool();
+    }
+    return false;
 }
 
 int64_t CWalletTx::GetTxTime() const
@@ -3226,51 +3345,6 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
     return true;
 }
 
-// yacoin2015
-static int64_t GetCombineCredit(int64_t nTime)
-{
-	// function to produce target credit value (rising with nTime) high enough
-	// for stake kernel hashing on stakeNfactor=4 three months after nTime 
-    // until year 2020.
-	// after that date credit value continues to rise (but also GetStakeNfactor 
-    // calculated from this credit input rises above 4)
-
-    // really? Is that what this mish mash of context challenged #s does?
-    // let's see if we can figure out, no, let's guess what these #s are!
-    // One should NEVER have to guess in reading code.
-	return (
-            ( 
-             (
-              nTime + 
-              24 *      // hours / day
-              60 *      // minutes / hour
-              60 *      // seconds / minute
-              90        // # of days
-             )          // so this whole thing is just nStakeMaxAge!  Or is it?????
-                        // WTF knows.
-             / 79       // What the f... is this 79 all about? Anyone?
-                        // Let's see, in binary it's 64 + 16 -1 or 0101 0000b -1 = 0100 1111b
-            ) - 
-            17268736    // 19 Jul 1970 20:52:16 GMT
-           ) 
-           / 90         // for extra points, is this 90 related to the above 90? Or not?
-                        // If so, why?
-           / 90         // Ditto.  And also, is this a / or a * on whats to the left??
-           * COIN;      // So can we infer (again we should NEVER have to infer), finally
-                        // that this return value is a scaling factor of one YACoin?
-}         // the laughable documentation mentions "... until 2020". OK 1/1/2020 is
-          // 1,577,836,800.  How is this reflected in the # 17,268,736 (or is it a date????) above,
-          // or anywhere?  Beats me!
-
-          // The kind of questions one SHOULD ask are:
-          // If the 90s referred to above are really 'Net nStakeMaxAge, then SHOULD they be changed
-          // for TestNet? Or not? 
-          // ????????????????????
-
-          // Since this function is not in old YAC 0.4.4, I must deduce that this is Novacoin code.
-          // What crap!!!
-          // End of epilogue.
-
 // Call after CreateTransaction unless you want to abort
 bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 {
@@ -3949,8 +4023,7 @@ void CWallet::GetKeyBirthTimes(std::map<CKeyID, int64_t> &mapKeyBirth) const
             mapKeyBirth[it->first] = it->second.nCreateTime;
     }
     // map in which we'll infer heights of other keys
-    CBlockIndex                                 // if this is one day in btc? then what for yac??
-        *pindexMax = chainActive[(std::max(0, chainActive.Height() - (int)nOnedayOfAverageBlocks))]; // the tip can be reorganised; use a 144-block safety margin
+    CBlockIndex *pindexMax = chainActive[std::max(0, chainActive.Height() - 144)]; // the tip can be reorganized; use a 144-block safety margin
 
     std::map<CKeyID, CBlockIndex*> mapKeyFirstBlock;
     std::set<CKeyID> setKeys;

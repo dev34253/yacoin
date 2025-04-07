@@ -3,11 +3,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <tokens/tokens.h>
-//#include <script/standard.h>
-#include <script/script.h>
-#include <util.h>
-#include <validation.h>
+#include "tokens/tokens.h"
+//#include "script/standard.h"
+#include "script/script.h"
+#include "util.h"
+#include "validation.h"
 #include "tx_verify.h"
 #include "chainparams.h"
 
@@ -16,16 +16,17 @@
 #include "policy/fees.h"
 #include "pow.h"
 //#include "script/interpreter.h"
-#include "validation.h"
-#include <cmath>
-#include <wallet.h>
-#include <base58.h>
-#include <tinyformat.h>
+#include "../validation.h"
+#include "wallet/wallet.h"
+#include "base58.h"
+#include "tinyformat.h"
 
 // TODO remove the following dependencies
 #include "chain.h"
 #include "coins.h"
 #include "utilmoneystr.h"
+
+#include <cmath>
 
 bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
 {

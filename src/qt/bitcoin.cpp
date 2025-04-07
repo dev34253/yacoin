@@ -11,6 +11,8 @@
 #include "init.h"
 #include "ui_interface.h"
 #include "qtipcserver.h"
+#include "policy/fees.h"
+#include "validation.h"
 
 #include <boost/thread.hpp>
 #include "scheduler.h"

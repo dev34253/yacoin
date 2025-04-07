@@ -7,21 +7,23 @@
 
 #include <string>
 #include <vector>
-
 #include <stdlib.h>
 
-#include "main.h"
+#include "primitives/block.h"
+#include "primitives/transaction.h"
+
 #include "ui_interface.h"
-#include "walletdb.h"
+#include "wallet/walletdb.h"
+#include "wallet/crypter.h"
 #include "streams.h"
 #include "script/standard.h"
 #include "script/ismine.h"
+#include "tokens/tokentypes.h"
 
 #include <boost/foreach.hpp>
 
 static const unsigned int DEFAULT_KEYPOOL_SIZE = 100;
 
-//extern unsigned int nStakeMaxAge;
 extern bool fWalletUnlockMintOnly;
 extern bool fConfChange;
 class CAccountingEntry;
@@ -582,6 +584,54 @@ struct CTokenOutputEntry
     int vout;
 };
 /** YAC_TOKEN END */
+
+/** A transaction with a merkle branch linking it to the block chain. */
+class CMerkleTx : public CTransaction
+{
+public:
+    uint256 hashBlock;
+    std::vector<uint256> vMerkleBranch;
+    ::int32_t nIndex;
+
+    // memory only
+    mutable bool fMerkleVerified;
+
+
+    CMerkleTx()
+    {
+        Init();
+    }
+
+    CMerkleTx(const CTransaction& txIn) : CTransaction(txIn)
+    {
+        Init();
+    }
+
+    void Init()
+    {
+        hashBlock = 0;
+        nIndex = -1;
+        fMerkleVerified = false;
+    }
+
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(*(CTransaction*)this);
+        READWRITE(hashBlock);
+        READWRITE(vMerkleBranch);
+        READWRITE(nIndex);
+    }
+
+    int SetMerkleBranch(const CBlock* pblock=NULL);
+    int GetDepthInMainChain(CBlockIndex* &pindexRet) const;
+    int GetDepthInMainChain() const { CBlockIndex *pindexRet; return GetDepthInMainChain(pindexRet); }
+    bool IsInMainChain() const { return GetDepthInMainChain() > 0; }
+    int GetBlocksToMaturity() const;
+    bool AcceptToMemoryPool();
+};
 
 /** A transaction with a bunch of additional info that only the owner cares about.
  * It includes any unrecorded transactions needed to link it back to the block chain.

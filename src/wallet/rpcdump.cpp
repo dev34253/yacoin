@@ -1,10 +1,7 @@
 // Copyright (c) 2009-2012 Bitcoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include "msvc_warnings.push.h"
-#endif
-
+#include "base58.h"
 #include "init.h" // for pwalletMain
 #include "bitcoinrpc.h"
 #include "script/standard.h"
@@ -275,7 +272,3 @@ Value getwalletinfo(const Array& params, bool fHelp)
     obj.push_back(Pair("keypoolsize",   (int64_t)pwalletMain->GetKeyPoolSize()));
     return obj;
 }
-
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif

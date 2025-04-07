@@ -10,7 +10,7 @@
 #include "txdb.h"
 #include "checkpoints.h"
 #include "kernel.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 #include "validationinterface.h"
 #include "net_processing.h"
 #include "keystore.h"

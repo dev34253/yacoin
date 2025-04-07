@@ -1,13 +1,9 @@
-#ifdef _MSC_VER
-    #include <stdint.h>
-
-    #include "msvc_warnings.push.h"
-#endif
-
 #include "kernelrecord.h"
 
+#include "base58.h"
+#include "chainparams.h"
 #include "pow.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 #include "script/standard.h"
 
@@ -38,12 +34,12 @@ bool KernelRecord::showTransaction(const CWalletTx &wtx)
  */
 vector<KernelRecord> KernelRecord::decomposeOutput(const CWallet *wallet, const CWalletTx &wtx)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     vector<KernelRecord> parts;
     ::int64_t nTime = wtx.GetTxTime();
     uint256 hash = wtx.GetHash();
     std::map<std::string, std::string> mapValue = wtx.mapValue;
-    ::int64_t nDayWeight = (min((GetAdjustedTime() - nTime), (::int64_t)(nStakeMaxAge+nStakeMinAge)) - nStakeMinAge); // DayWeight * 86400, чтобы был
-                                                                                                              // правильный расчёт CoinAge
+    ::int64_t nDayWeight = (min((GetAdjustedTime() - nTime), (::int64_t)(params.nStakeMaxAge+params.nStakeMinAge)) - params.nStakeMinAge); // DayWeight * 86400
     if (showTransaction(wtx))
     {
         for (unsigned int nOut = 0; nOut < wtx.vout.size(); nOut++)
@@ -86,19 +82,21 @@ std::string KernelRecord::getTxID()
 
 ::uint64_t KernelRecord::getCoinDay() const
 {
-    ::int64_t nWeight = GetAdjustedTime() - nTime - nStakeMinAge;
+    const Consensus::Params& params = Params().GetConsensus();
+    ::int64_t nWeight = GetAdjustedTime() - nTime - params.nStakeMinAge;
     if( nWeight <  0)
         return 0;
-    nWeight = min(nWeight, (::int64_t)nStakeMaxAge);
+    nWeight = min(nWeight, (::int64_t)params.nStakeMaxAge);
     ::uint64_t coinAge = (nValue * nWeight ) / (COIN * 86400);
     return coinAge;
 }
 
 ::int64_t KernelRecord::getPoSReward(int nBits, int minutes)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     ::int64_t PoSReward;
     ::int64_t nWeight = GetAdjustedTime() - nTime + minutes * 60;
-    if( nWeight <  nStakeMinAge)
+    if( nWeight <  params.nStakeMinAge)
         return 0;
     ::uint64_t coinAge = (nValue * nWeight ) / (COIN * 86400);
     PoSReward = GetProofOfStakeReward(coinAge, nBits, GetAdjustedTime() + minutes * 60);
@@ -107,12 +105,8 @@ std::string KernelRecord::getTxID()
 
 double KernelRecord::getProbToMintStake(double difficulty, int timeOffset) const
 {
-    //double maxTarget = pow(static_cast<double>(2), 224);
-    //double target = maxTarget / difficulty;
-    //int dayWeight = (min((GetAdjustedTime() - nTime) + timeOffset, (::int64_t)(nStakeMinAge+nStakeMaxAge)) - nStakeMinAge) / 86400;
-    //uint64_t coinAge = max(nValue * dayWeight / COIN, (::int64_t)0);
-    //return target * coinAge / pow(static_cast<double>(2), 256);
-    ::int64_t Weight = (min((GetAdjustedTime() - nTime) + timeOffset, (::int64_t)(nStakeMinAge+nStakeMaxAge)) - nStakeMinAge);
+    const Consensus::Params& params = Params().GetConsensus();
+    ::int64_t Weight = (min((GetAdjustedTime() - nTime) + timeOffset, (::int64_t)(params.nStakeMinAge+params.nStakeMaxAge)) - params.nStakeMinAge);
     ::uint64_t coinAge = max(nValue * Weight / (COIN * 86400), (::int64_t)0);
     return coinAge / (pow(static_cast<double>(2),32) * difficulty);
 }
@@ -147,6 +141,3 @@ double KernelRecord::getProbToMintWithinNMinutes(double difficulty, int minutes)
     }
     return prevProbability;
 }
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif

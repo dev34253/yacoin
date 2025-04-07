@@ -2,21 +2,17 @@
 // Copyright (c) 2023 The Yacoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
-
-    #include "msvc_warnings.push.h"
-#endif
-
 #include "tokens/tokens.h"
 #include "tokens/tokendb.h"
+
+#include "base58.h"
 #include "bitcoinrpc.h"
-#include "coincontrol.h"
+#include "wallet/coincontrol.h"
 #include "init.h"
 #include "script/script.h"
 #include "script/standard.h"
 #include "txdb.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 #include <boost/assign/list_of.hpp>
 #include <map>
@@ -979,7 +975,3 @@ Value listtokenbalancesbyaddress(const Array& params, bool fHelp)
 
     return result;
 }
-
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif

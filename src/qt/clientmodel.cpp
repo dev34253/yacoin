@@ -12,6 +12,7 @@
 #include "pow.h"
 #include "transactiontablemodel.h"
 #include "validation.h"
+#include "warnings.h"
 
 #include "main.h"
 #include "ui_interface.h"

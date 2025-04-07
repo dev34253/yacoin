@@ -243,9 +243,7 @@ obj/tx_verify.o \
 obj/merkleblock.o \
 obj/blockencodings.o \
 obj/checkpoints.o \
-obj/crypter.o \
 obj/compressor.o \
-obj/db.o \
 obj/fs.o \
 obj/validation.o \
 obj/validationinterface.o \
@@ -277,12 +275,10 @@ obj/pow.o \
 obj/random_nonce.o \
 obj/rpcblockchain.o \
 obj/rpctokens.o \
-obj/rpcdump.o \
 obj/rpcmining.o \
 obj/rpcmisc.o \
 obj/rpcnet.o \
 obj/rpcrawtransaction.o \
-obj/rpcwallet.o \
 obj/interpreter.o \
 obj/ismine.o \
 obj/script.o \
@@ -310,6 +306,10 @@ obj/timedata.o \
 obj/warnings.o \
 obj/version.o \
 obj/txmempool.o \
+obj/crypter.o \
+obj/db.o \
+obj/rpcdump.o \
+obj/rpcwallet.o \
 obj/wallet.o \
 obj/walletdb.o
 
@@ -407,6 +407,24 @@ obj/hmac_sha256.o: crypto/hmac_sha256.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/hmac_sha512.o: crypto/hmac_sha512.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/crypter.o: wallet/crypter.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/db.o: wallet/db.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/rpcdump.o: wallet/rpcdump.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/rpcwallet.o: wallet/rpcwallet.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/wallet.o: wallet/wallet.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/walletdb.o: wallet/walletdb.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/strnlen.o: compat/strnlen.cpp

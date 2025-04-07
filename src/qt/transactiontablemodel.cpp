@@ -5,6 +5,7 @@
 
 #include "transactiontablemodel.h"
 
+#include "consensus/consensus.h"
 #include "guiutil.h"
 #include "transactionrecord.h"
 #include "guiconstants.h"
@@ -14,7 +15,7 @@
 #include "addresstablemodel.h"
 #include "bitcoinunits.h"
 
-#include "wallet.h"
+#include "wallet/wallet.h"
 #include "ui_interface.h"
 #include "validation.h"
 

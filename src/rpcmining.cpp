@@ -15,6 +15,7 @@
 #include "miner.h"
 #include "txdb.h"
 #include "streams.h"
+#include "warnings.h"
 
 #include "pow.h"
 

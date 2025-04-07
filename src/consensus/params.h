@@ -65,6 +65,11 @@ struct Params {
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+
+    /** Proof of stake stuff */
+    int64_t nStakeMinAge;
+    int64_t nStakeMaxAge;
+    int64_t nModifierInterval;
 };
 } // namespace Consensus
 

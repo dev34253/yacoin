@@ -2,19 +2,16 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
-
-    #include "msvc_warnings.push.h"
-#endif
-
-#include "wallet.h"
+#include "amount.h"
+#include "wallet/wallet.h"
+#include "base58.h"
 #include "bitcoinrpc.h"
 #include "init.h"
 #include "validation.h"
-#include "coincontrol.h"
+#include "wallet/coincontrol.h"
 #include "streams.h"
 #include "script/standard.h"
+#include "warnings.h"
 
 #include <sstream>
 
@@ -32,6 +29,8 @@ using std::min;
 
 int64_t nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
+static const ::int64_t MIN_TXOUT_AMOUNT = CENT/100;
+extern ::int64_t nUpTimeStart;
 
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, json_spirit::Object& entry);
 
@@ -2660,6 +2659,3 @@ Value makekeypair(const Array& params, bool fHelp)
     result.push_back(Pair("PublicKey", HexStr(key.GetPubKey())));
     return result;
 }
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif

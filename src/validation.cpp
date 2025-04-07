@@ -75,7 +75,10 @@ CChain chainActive;
 // Best header we've seen so far (used for getheaders queries' starting points).
 CBlockIndex *pindexBestHeader = nullptr;
 size_t nCoinCacheUsage = 5000 * 300;
+int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 CTxMemPool mempool;
+int nScriptCheckThreads = 0;
+::int64_t nTransactionFee = MIN_TX_FEE;
 bool fReindex = false;
 bool fTxIndex = true;
 bool fRequireStandard = true;
@@ -97,6 +100,11 @@ bool fAddressIndex = false;
 
 static void CheckBlockIndex(const Consensus::Params& consensusParams);
 static bool PoSContextualBlockChecks(const CBlock& block, CValidationState& state, CBlockIndex* pindex);
+
+/** Constant stuff for coinbase transactions we create: */
+CScript COINBASE_FLAGS;
+
+const std::string strMessageMagic = "Yacoin Signed Message:\n";
 
 // Internal stuff
 namespace {
@@ -4823,7 +4831,7 @@ bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& n
             if (txPrev->GetHash() != prevout.hash)
                 return error("%s() : txid mismatch in GetCoinAge()", __PRETTY_FUNCTION__);
 
-            if (header.GetBlockTime() + nStakeMinAge > tx.nTime)
+            if (header.GetBlockTime() + Params().GetConsensus().nStakeMinAge > tx.nTime)
                 continue; // only count coins meeting min age requirement
 
             int64_t nValueIn = txPrev->vout[txin.prevout.n].nValue;

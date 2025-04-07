@@ -88,10 +88,8 @@ libyacoin_common_a_SOURCES= \
     addrdb.cpp \
     bloom.cpp \
     threadinterrupt.cpp \
-    crypter.cpp \
     compressor.cpp \
     key.cpp \
-    db.cpp \
     fs.cpp \
     validation.cpp \
     validationinterface.cpp \
@@ -113,11 +111,9 @@ libyacoin_common_a_SOURCES= \
     price.cpp \
     random_nonce.cpp \
     rpctokens.cpp \
-    rpcdump.cpp \
     rpcnet.cpp \
     rpcmining.cpp \
     rpcmisc.cpp \
-    rpcwallet.cpp \
     rpcblockchain.cpp \
     rpcrawtransaction.cpp \
     script/interpreter.cpp \
@@ -136,8 +132,12 @@ libyacoin_common_a_SOURCES= \
     timedata.cpp \
     warnings.cpp \
     txmempool.cpp \
-    wallet.cpp \
-    walletdb.cpp \
+    wallet/crypter.cpp \
+    wallet/db.cpp \
+    wallet/rpcdump.cpp \
+    wallet/rpcwallet.cpp \
+    wallet/wallet.cpp \
+    wallet/walletdb.cpp \
     noui.cpp \
     kernel.cpp \
     pbkdf2.cpp \

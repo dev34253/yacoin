@@ -5,7 +5,7 @@
 #define PPCOIN_KERNEL_H
 
 #include "main.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 extern bool fCoinsDataActual;
 

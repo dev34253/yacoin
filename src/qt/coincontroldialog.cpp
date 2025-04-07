@@ -2,14 +2,17 @@
 #include "ui_coincontroldialog.h"
 
 #include "init.h"
+#include "base58.h"
 #include "bitcoinunits.h"
 #include "walletmodel.h"
 #include "addresstablemodel.h"
 #include "optionsmodel.h"
-#include "coincontrol.h"
+#include "wallet/coincontrol.h"
 #include "dialogwindowflags.h"
 #include "policy/policy.h"
+#include "policy/fees.h"
 #include "script/standard.h"
+#include "validation.h"
 
 #include <QApplication>
 #include <QCheckBox>

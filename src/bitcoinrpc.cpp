@@ -27,8 +27,9 @@
 #include "ui_interface.h"
 #include "base58.h"
 #include "bitcoinrpc.h"
-#include "db.h"
+#include "wallet/db.h"
 #include "net_processing.h"
+#include "warnings.h"
 
 #undef printf
 #include <boost/asio.hpp>

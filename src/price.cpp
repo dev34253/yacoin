@@ -8,9 +8,10 @@
     #include "msvc_warnings.push.h"
 #endif
 
-#include "db.h"
+#include "wallet/db.h"
 #include "net.h"
 #include "price.h"
+#include "timestamps.h"
 
 #include <vector>
 

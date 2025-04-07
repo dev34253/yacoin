@@ -11,7 +11,7 @@
 #include "editaddressdialog.h"
 #include "optionsmodel.h"
 #include "guiutil.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 #include <QScrollBar>
 #include <QComboBox>

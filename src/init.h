@@ -6,7 +6,7 @@
 #define BITCOIN_INIT_H
 
 #ifndef BITCOIN_WALLET_H
- #include "wallet.h"
+ #include "wallet/wallet.h"
 #endif
 
 class CScheduler;

@@ -5,17 +5,17 @@
 
 #include "coins.h"
 
+#include "base58.h"
 #include "consensus/consensus.h"
 #include "memusage.h"
 #include "random.h"
 #include "util.h"
 #include "validation.h"
 #include "tinyformat.h"
-#include "base58.h"
+#include "tokens/tokens.h"
+#include "wallet/wallet.h"
 
 #include <assert.h>
-#include <tokens/tokens.h>
-#include <wallet.h>
 
 extern bool AreTokensDeployed();
 

@@ -4,7 +4,7 @@
 
 #include "transactionrecord.h"
 
-#include "wallet.h"
+#include "wallet/wallet.h"
 #include "base58.h"
 #include "validation.h"
 #include "script/standard.h"

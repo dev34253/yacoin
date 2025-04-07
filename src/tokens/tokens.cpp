@@ -23,7 +23,7 @@
 //#include "wallet/wallet.h"
 //#include "wallet/coincontrol.h"
 //#include "wallet/wallet.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 //#include "rpc/protocol.h"
 #include "bitcoinrpc.h"
 
@@ -35,7 +35,7 @@
 #include "tokens.h"
 #include "tokendb.h"
 #include "tokentypes.h"
-#include "coincontrol.h"
+#include "wallet/coincontrol.h"
 #include "protocol.h"
 #include "utilmoneystr.h"
 #include "coins.h"

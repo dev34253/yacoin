@@ -11,12 +11,13 @@
 #include "addressindex.h"
 #include "tokens/tokens.h"
 #include "tokens/tokendb.h"
+#include "base58.h"
 #include "bitcoinrpc.h"
-#include "coincontrol.h"
+#include "wallet/coincontrol.h"
 #include "init.h"
 #include "script/script.h"
 #include "txdb.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 #include <boost/assign/list_of.hpp>
 #include <map>

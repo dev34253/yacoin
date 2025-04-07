@@ -6,6 +6,7 @@
 #include "addresstablemodel.h"
 #include "addressbookpage.h"
 
+#include "base58.h"
 #include "bitcoinunits.h"
 #include "addressbookpage.h"
 #include "optionsmodel.h"
@@ -14,7 +15,7 @@
 #include "dialogwindowflags.h"
 #include "askpassphrasedialog.h"
 
-#include "coincontrol.h"
+#include "wallet/coincontrol.h"
 #include "coincontroldialog.h"
 
 #include <QMessageBox>

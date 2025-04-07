@@ -79,13 +79,14 @@ bool IsFixedModifierInterval(unsigned int nTimeBlock)
 // Get time weight
 ::int64_t GetWeight(int64_t nIntervalBeginning, ::int64_t nIntervalEnd)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     // Kernel hash weight starts from 0 at the 30-day min age
     // this change increases active coins participating the hash and helps
     // to secure the network when proof-of-stake difficulty is low
     //
     // Maximum TimeWeight is 90 days.
 
-    return min(nIntervalEnd - nIntervalBeginning - nStakeMinAge, (int64_t)nStakeMaxAge);
+    return min(nIntervalEnd - nIntervalBeginning - params.nStakeMinAge, (int64_t)params.nStakeMaxAge);
 }
 
 // Get the last stake modifier and its generation time from a given block
@@ -106,14 +107,7 @@ static bool GetLastStakeModifier(const CBlockIndex* pindex, uint64_t& nStakeModi
 static ::int64_t GetStakeModifierSelectionIntervalSection(int nSection)
 {
     Yassert (nSection >= 0 && nSection < 64);
-    return (                                        // what is the purpose of this calculation?
-            nModifierInterval * 63 /                // what is the range of inputs??? etc. 
-            (
-             63 + (
-                   (63 - nSection) * (MODIFIER_INTERVAL_RATIO - 1)
-                  )
-            )
-           );
+    return (Params().GetConsensus().nModifierInterval * 63 / (63 + ((63 - nSection) * (MODIFIER_INTERVAL_RATIO - 1))));
 }
 
 // Get stake modifier selection interval (in seconds)
@@ -197,6 +191,7 @@ bool ComputeNextStakeModifier(const CBlockIndex* pindexCurrent, uint64_t& nStake
         return true;
     }
 
+    const Consensus::Params& params = Params().GetConsensus();
     nStakeModifier = 0;
     fGeneratedStakeModifier = false;
     const CBlockIndex* pindexPrev = pindexCurrent->pprev;
@@ -218,7 +213,7 @@ bool ComputeNextStakeModifier(const CBlockIndex* pindexCurrent, uint64_t& nStake
                 nStakeModifier, DateTimeStrFormat(nModifierTime),
                 (unsigned int)nModifierTime);
     }
-    if (nModifierTime / nModifierInterval >= pindexPrev->GetBlockTime() / nModifierInterval)
+    if (nModifierTime / params.nModifierInterval >= pindexPrev->GetBlockTime() / params.nModifierInterval)
     {
         if (fDebug)
         {
@@ -229,7 +224,7 @@ bool ComputeNextStakeModifier(const CBlockIndex* pindexCurrent, uint64_t& nStake
         }
         return true;
     }
-    if (nModifierTime / nModifierInterval >= pindexCurrent->GetBlockTime() / nModifierInterval)
+    if (nModifierTime / params.nModifierInterval >= pindexCurrent->GetBlockTime() / params.nModifierInterval)
     {
         // fixed interval protocol requires current block timestamp also be in a different modifier interval
         if (IsFixedModifierInterval(pindexCurrent->nTime))
@@ -261,9 +256,9 @@ bool ComputeNextStakeModifier(const CBlockIndex* pindexCurrent, uint64_t& nStake
 
     // Sort candidate blocks by timestamp
     vector<pair< ::int64_t, uint256> > vSortedByTimestamp;
-    vSortedByTimestamp.reserve(64 * nModifierInterval / nStakeTargetSpacing);
+    vSortedByTimestamp.reserve(64 * params.nModifierInterval / nStakeTargetSpacing);
     ::int64_t nSelectionInterval = GetStakeModifierSelectionInterval();
-    ::int64_t nSelectionIntervalStart = (pindexPrev->GetBlockTime() / nModifierInterval) * nModifierInterval - nSelectionInterval;
+    ::int64_t nSelectionIntervalStart = (pindexPrev->GetBlockTime() / params.nModifierInterval) * params.nModifierInterval - nSelectionInterval;
     const CBlockIndex* pindex = pindexPrev;
     while (pindex && pindex->GetBlockTime() >= nSelectionIntervalStart)
     {
@@ -339,6 +334,7 @@ bool ComputeNextStakeModifier(const CBlockIndex* pindexCurrent, uint64_t& nStake
 // modifier about a selection interval later than the coin generating the kernel
 static bool GetKernelStakeModifier(CBlockIndex* pindexPrev, uint256 hashBlockFrom, uint64_t& nStakeModifier, int& nStakeModifierHeight, int64_t& nStakeModifierTime, bool fPrintProofOfStake)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     nStakeModifier = 0;
     if (!mapBlockIndex.count(hashBlockFrom))
         return error("GetKernelStakeModifier() : block not indexed");
@@ -371,7 +367,7 @@ static bool GetKernelStakeModifier(CBlockIndex* pindexPrev, uint256 hashBlockFro
         pindex = (!tmpChain.empty() && pindex->nHeight >= tmpChain[0]->nHeight - 1)? tmpChain[n++] : chainActive.Next(pindex);
         if (n > tmpChain.size() || pindex == NULL) // check if tmpChain[n+1] exists
         {   // reached best block; may happen if node is behind on block chain
-            if (fPrintProofOfStake || (old_pindex->GetBlockTime() + nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()))
+            if (fPrintProofOfStake || (old_pindex->GetBlockTime() + params.nStakeMinAge - nStakeModifierSelectionInterval > GetAdjustedTime()))
                 return error("GetKernelStakeModifier() : reached best block %s at height %d from block %s",
                     old_pindex->GetBlockHash().ToString(), old_pindex->nHeight, hashBlockFrom.ToString());
             else
@@ -444,11 +440,12 @@ bool CheckStakeKernelHash(uint32_t nBits, CBlockIndex* pindexPrev,
                           uint256& targetProofOfStake,
                           bool fPrintProofOfStake)
 {
+    const Consensus::Params& params = Params().GetConsensus();
     if ((::int64_t)nTimeTx < txPrev.nTime)  // Transaction timestamp violation
         return error("CheckStakeKernelHash () : nTime violation");
 
     uint32_t nTimeBlockFrom = (::uint64_t)blockFrom.GetBlockTime();
-    if (nTimeBlockFrom + nStakeMinAge > nTimeTx) // Min age requirement
+    if (nTimeBlockFrom + params.nStakeMinAge > nTimeTx) // Min age requirement
         return error("CheckStakeKernelHash () : min age violation");
 
     CBigNum bnTargetPerCoinDay;
@@ -456,7 +453,7 @@ bool CheckStakeKernelHash(uint32_t nBits, CBlockIndex* pindexPrev,
     ::int64_t nValueIn = txPrev.vout[prevout.COutPointGet_n()].nValue;
 
     ::int64_t
-        nTimeWeight = min((::int64_t)nTimeTx - txPrev.nTime, (::int64_t)nStakeMaxAge) - nStakeMinAge;
+        nTimeWeight = min((::int64_t)nTimeTx - txPrev.nTime, (::int64_t)params.nStakeMaxAge) - params.nStakeMinAge;
     CBigNum 
         bnCoinDayWeight = CBigNum(nValueIn) * GetWeight(
                                                         (int64_t)txPrev.nTime, 

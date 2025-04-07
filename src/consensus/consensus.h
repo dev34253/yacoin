@@ -31,8 +31,18 @@ static const unsigned int MAX_BLOCK_SERIALIZED_SIZE = 1000000;
 static const unsigned int MAX_GENESIS_BLOCK_SIZE = 1000000;
 static const size_t MIN_TRANSACTION_WEIGHT = 68; // 60 is the lower bound for the size of a valid serialized CTransaction
 static const size_t MIN_SERIALIZABLE_TRANSACTION_WEIGHT = 18; // 10 is the lower bound for the size of a serialized CTransaction
+extern int nCoinbaseMaturity;
 
 extern ::uint64_t GetMaxSize(enum GetMaxSize_mode mode, unsigned int nHeight = 0);
 extern ::int64_t GetProofOfWorkReward(unsigned int nBits=0, ::int64_t nFees=0, unsigned int nHeight=0);
+/**
+ * Get minimum confirmations to use coinbase
+ */
+int GetCoinbaseMaturity();
+
+/**
+ * Get an extra confirmations to add coinbase to balance
+ */
+int GetCoinbaseMaturityOffset();
 
 #endif // BITCOIN_CONSENSUS_CONSENSUS_H

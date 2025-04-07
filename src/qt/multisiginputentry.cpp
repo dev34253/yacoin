@@ -12,7 +12,7 @@
 #include "script/standard.h"
 #include "util.h"
 #include "validation.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 #include "walletmodel.h"
 
 

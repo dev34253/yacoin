@@ -14,7 +14,7 @@
 #include "txdb.h"
 #include "utilmoneystr.h"
 #include "validation.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 
 #include <map>

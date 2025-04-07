@@ -4,7 +4,7 @@
 #include "json/json_spirit_writer_template.h"
 
 #include "main.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 #include "script/script.h"
 
 using namespace std;

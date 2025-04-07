@@ -5,33 +5,22 @@
 #ifndef BITCOIN_DB_H
 #define BITCOIN_DB_H
 
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
+#include "clientversion.h"
+#include "fs.h"
+#include "serialize.h"
 #include "streams.h"
+#include "sync.h"
+#include "version.h"
 
+#include <atomic>
 #include <map>
 #include <string>
 #include <vector>
 
 #include <db_cxx.h>
 
-class CAddress;
-class CAddrMan;
-class CBlockLocator;
-class CDiskBlockIndex;
-class CDiskTxPos;
-class CMasterKey;
-class COutPoint;
-class CWallet;
-class CWalletTx;
-
-extern unsigned int nWalletDBUpdated;
-
-void ThreadFlushWalletDB(void* parg);
-bool BackupWallet(const CWallet& wallet, const std::string& strDest);
-bool DumpWallet(CWallet* pwallet, const std::string& strDest);
-bool ImportWallet(CWallet* pwallet, const std::string& strLocation);
+static const unsigned int DEFAULT_WALLET_DBLOGSIZE = 100;
+static const bool DEFAULT_WALLET_PRIVDB = true;
 
 class CDBEnv
 {

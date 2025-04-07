@@ -3,8 +3,9 @@
 #include <QSettings>
 
 #include "init.h"
-#include "walletdb.h"
+#include "wallet/walletdb.h"
 #include "guiutil.h"
+#include "validation.h"
 
 OptionsModel::OptionsModel(QObject *parent) :
     QAbstractListModel(parent)

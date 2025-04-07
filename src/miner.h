@@ -11,12 +11,12 @@
 #endif
 
 #ifndef BITCOIN_WALLET_H
-#include "wallet.h"
+#include "wallet/wallet.h"
 #endif
 
 #include "primitives/block.h"
 #include "txmempool.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 #include <stdint.h>
 #include <memory>

@@ -3,9 +3,9 @@
 #define BOOST_TEST_MODULE BitcoinTestSuite
 #include <boost/test/unit_test.hpp>
 
-#include "db.h"
+#include "wallet/db.h"
 #include "main.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 extern CWallet* pwalletMain;
 extern CClientUIInterface uiInterface;

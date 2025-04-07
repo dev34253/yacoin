@@ -1,22 +1,13 @@
 // Copyright (c) 2009-2012 Bitcoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
+#include "bitcoinrpc.h"
 
-    #include "msvc_warnings.push.h"
-#endif
-
-#ifndef _BITCOINRPC_H_
- #include "bitcoinrpc.h"
-#endif
-
-#ifndef BITCOIN_WALLET_H
- #include "wallet.h"
-#endif
+#include "wallet/wallet.h"
 #include "streams.h"
 #include "net_processing.h"
 #include "policy/policy.h"
+#include "warnings.h"
 
 using namespace json_spirit;
 
@@ -705,7 +696,3 @@ Value setnetworkactive(const Array& params, bool fHelp)
 
     return g_connman->GetNetworkActive();
 }
-
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif

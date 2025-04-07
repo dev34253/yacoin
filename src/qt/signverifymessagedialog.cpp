@@ -6,10 +6,11 @@
 #include "guiutil.h"
 #include "dialogwindowflags.h"
 #include "init.h"
+#include "validation.h" // For strMessageMagic
 #include "main.h"
 #include "optionsmodel.h"
 #include "walletmodel.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 #include "streams.h"
 
 #include <string>

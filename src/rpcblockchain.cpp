@@ -8,6 +8,7 @@
 #include "price.h"
 #include "consensus/validation.h"
 #include "policy/policy.h"
+#include "wallet/wallet.h"
 
 #include <boost/foreach.hpp>
 
