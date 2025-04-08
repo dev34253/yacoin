@@ -692,7 +692,6 @@ bool AppInitParameterInteraction()
     // Good that testnet is tested here, but closer to AppInit() => ReadConfigFile() would be better
     // Old logic
     fTestNet = gArgs.GetBoolArg("-testnet");
-    bitdb.SetDetach(gArgs.GetBoolArg("-detachdb", false));
 
     fDaemon = gArgs.GetBoolArg("-daemon", false);
 

@@ -131,8 +131,7 @@ CPubKey CWallet::GenerateNewKey()
     // Create new metadata
     int64_t nCreationTime = GetTime();
     mapKeyMetadata[pubkey.GetID()] = CKeyMetadata(nCreationTime);
-    if (!nTimeFirstKey || nCreationTime < nTimeFirstKey)
-        nTimeFirstKey = nCreationTime;
+    UpdateTimeFirstKey(nCreationTime);
 
     if (!AddKeyPubKey(secret, pubkey))
         throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
@@ -177,13 +176,28 @@ bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const vector<unsigned char
     return false;
 }
 
-bool CWallet::LoadKeyMetadata(const CPubKey &pubkey, const CKeyMetadata &meta)
+bool CWallet::LoadKeyMetadata(const CTxDestination& pubKey, const CKeyMetadata &meta)
 {
-    if (meta.nCreateTime && (!nTimeFirstKey || meta.nCreateTime < nTimeFirstKey))
-        nTimeFirstKey = meta.nCreateTime;
-
-    mapKeyMetadata[pubkey.GetID()] = meta;
+    AssertLockHeld(cs_wallet); // mapKeyMetadata
+    UpdateTimeFirstKey(meta.nCreateTime);
+    mapKeyMetadata[pubKey] = meta;
     return true;
+}
+
+/**
+ * Update wallet first key creation time. This should be called whenever keys
+ * are added to the wallet, with the oldest key creation time.
+ */
+void CWallet::UpdateTimeFirstKey(int64_t nCreateTime)
+{
+    AssertLockHeld(cs_wallet);
+    if (nCreateTime <= 1) {
+        // Cannot determine birthday information, so set the wallet birthday to
+        // the beginning of time.
+        nTimeFirstKey = 1;
+    } else if (!nTimeFirstKey || nCreateTime < nTimeFirstKey) {
+        nTimeFirstKey = nCreateTime;
+    }
 }
 
 bool CWallet::AddCScript(const CScript& redeemScript)
@@ -220,11 +234,12 @@ bool CWallet::AddWatchOnly(const CScript &dest)
 {
     if (!CCryptoKeyStore::AddWatchOnly(dest))
         return false;
-    nTimeFirstKey = 1; // No birthday information for watch-only keys.
+    const CKeyMetadata& meta = mapKeyMetadata[CScriptID(dest)];
+    UpdateTimeFirstKey(meta.nCreateTime);
     NotifyWatchonlyChanged(true);
     if (!fFileBacked)
         return true;
-    return CWalletDB(strWalletFile).WriteWatchOnly(dest);
+    return CWalletDB(strWalletFile).WriteWatchOnly(dest, meta);
 }
 
 bool CWallet::RemoveWatchOnly(const CScript &dest)
@@ -534,6 +549,83 @@ bool CWallet::DecryptWallet(const SecureString& strWalletPassphrase)
     NotifyStatusChanged(this);
 
     return true;
+}
+
+DBErrors CWallet::ReorderTransactions()
+{
+    LOCK(cs_wallet);
+    CWalletDB walletdb(*dbw);
+
+    // Old wallets didn't have any defined order for transactions
+    // Probably a bad idea to change the output of this
+
+    // First: get all CWalletTx and CAccountingEntry into a sorted-by-time multimap.
+    typedef std::pair<CWalletTx*, CAccountingEntry*> TxPair;
+    typedef std::multimap<int64_t, TxPair > TxItems;
+    TxItems txByTime;
+
+    for (std::map<uint256, CWalletTx>::iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
+    {
+        CWalletTx* wtx = &((*it).second);
+        txByTime.insert(std::make_pair(wtx->nTimeReceived, TxPair(wtx, (CAccountingEntry*)0)));
+    }
+    std::list<CAccountingEntry> acentries;
+    walletdb.ListAccountCreditDebit("", acentries);
+    for (CAccountingEntry& entry : acentries)
+    {
+        txByTime.insert(std::make_pair(entry.nTime, TxPair((CWalletTx*)0, &entry)));
+    }
+
+    nOrderPosNext = 0;
+    std::vector<int64_t> nOrderPosOffsets;
+    for (TxItems::iterator it = txByTime.begin(); it != txByTime.end(); ++it)
+    {
+        CWalletTx *const pwtx = (*it).second.first;
+        CAccountingEntry *const pacentry = (*it).second.second;
+        int64_t& nOrderPos = (pwtx != 0) ? pwtx->nOrderPos : pacentry->nOrderPos;
+
+        if (nOrderPos == -1)
+        {
+            nOrderPos = nOrderPosNext++;
+            nOrderPosOffsets.push_back(nOrderPos);
+
+            if (pwtx)
+            {
+                if (!walletdb.WriteTx(*pwtx))
+                    return DB_LOAD_FAIL;
+            }
+            else
+                if (!walletdb.WriteAccountingEntry(pacentry->nEntryNo, *pacentry))
+                    return DB_LOAD_FAIL;
+        }
+        else
+        {
+            int64_t nOrderPosOff = 0;
+            for (const int64_t& nOffsetStart : nOrderPosOffsets)
+            {
+                if (nOrderPos >= nOffsetStart)
+                    ++nOrderPosOff;
+            }
+            nOrderPos += nOrderPosOff;
+            nOrderPosNext = std::max(nOrderPosNext, nOrderPos + 1);
+
+            if (!nOrderPosOff)
+                continue;
+
+            // Since we're changing the order, write it back
+            if (pwtx)
+            {
+                if (!walletdb.WriteTx(*pwtx))
+                    return DB_LOAD_FAIL;
+            }
+            else
+                if (!walletdb.WriteAccountingEntry(pacentry->nEntryNo, *pacentry))
+                    return DB_LOAD_FAIL;
+        }
+    }
+    walletdb.WriteOrderPosNext(nOrderPosNext);
+
+    return DB_LOAD_OK;
 }
 
 int64_t CWallet::IncOrderPosNext(CWalletDB *pwalletdb)
@@ -1372,7 +1464,7 @@ bool CWalletTx::IsTrusted() const
 
 bool CWalletTx::WriteToDisk()
 {
-    return CWalletDB(pwallet->strWalletFile).WriteTx(GetHash(), *this);
+    return CWalletDB(pwallet->strWalletFile).WriteTx(*this);
 }
 
 #ifdef WIN32
@@ -3494,6 +3586,10 @@ DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
     return DB_LOAD_OK;
 }
 
+bool CWallet::BackupWallet(const std::string& strDest)
+{
+    return dbw->Backup(strDest);
+}
 
 bool CWallet::SetAddressBookName(const CTxDestination& address, const string& strName)
 {

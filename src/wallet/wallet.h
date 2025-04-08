@@ -76,6 +76,19 @@ public:
     }
 };
 
+/** Address book data */
+class CAddressBookData
+{
+public:
+    std::string name;
+    std::string purpose;
+
+    CAddressBookData() : purpose("unknown") {}
+
+    typedef std::map<std::string, std::string> StringMap;
+    StringMap destdata;
+};
+
 struct CRecipient
 {
     CScript scriptPubKey;
@@ -120,38 +133,64 @@ private:
     // stake mining statistics
     ::uint64_t nKernelsTried;
     ::uint64_t nCoinDaysTried;
+    std::unique_ptr<CWalletDBWrapper> dbw;
 
 public:
     mutable CCriticalSection cs_wallet;
 
+    /** Get database handle used by this wallet. Ideally this function would
+     * not be necessary.
+     */
+    CWalletDBWrapper& GetDBHandle()
+    {
+        return *dbw;
+    }
+
+    /** Get a name for this wallet for logging/debugging purposes.
+     */
+    std::string GetName() const
+    {
+        if (dbw) {
+            return dbw->GetName();
+        } else {
+            return "dummy";
+        }
+    }
+
     bool fFileBacked;
-    std::string strWalletFile;
 
     std::set< ::int64_t> setKeyPool;
-    std::map<CKeyID, CKeyMetadata> mapKeyMetadata;
+    // Map from Key ID (for regular keys) or Script ID (for watch-only keys) to
+    // key metadata.
+    std::map<CTxDestination, CKeyMetadata> mapKeyMetadata;
 
 
     typedef std::map<unsigned int, CMasterKey> MasterKeyMap;
     MasterKeyMap mapMasterKeys;
     unsigned int nMasterKeyMaxID;
 
-    CWallet()
+    // Create wallet with dummy database handle
+    CWallet(): dbw(new CWalletDBWrapper())
     {
-        nWalletVersion = FEATURE_BASE;
-        nWalletMaxVersion = FEATURE_BASE;
-        fFileBacked = false;
-        nMasterKeyMaxID = 0;
-        pwalletdbEncryption = NULL;
-        pwalletdbDecryption = NULL;
-        nOrderPosNext = 0;
-        nKernelsTried = 0;
-        nCoinDaysTried = 0;
+        SetNull();
     }
-    CWallet(std::string strWalletFileIn)
+
+    // Create wallet with passed-in database handle
+    CWallet(std::unique_ptr<CWalletDBWrapper> dbw_in) : dbw(std::move(dbw_in))
+    {
+        SetNull();
+    }
+
+    ~CWallet()
+    {
+        delete pwalletdbEncryption;
+        pwalletdbEncryption = nullptr;
+    }
+
+    void SetNull()
     {
         nWalletVersion = FEATURE_BASE;
         nWalletMaxVersion = FEATURE_BASE;
-        strWalletFile = strWalletFileIn;
         fFileBacked = true;
         nMasterKeyMaxID = 0;
         pwalletdbEncryption = NULL;
@@ -253,9 +292,10 @@ public:
     // Adds a key to the store, without saving it to disk (used by LoadWallet)
     bool LoadKey(const CKey& key, const CPubKey &pubkey) { return CCryptoKeyStore::AddKeyPubKey(key, pubkey); }
     // Load metadata (used by LoadWallet)
-    bool LoadKeyMetadata(const CPubKey &pubkey, const CKeyMetadata &metadata);
+    bool LoadKeyMetadata(const CTxDestination& pubKey, const CKeyMetadata &meta);
 
     bool LoadMinVersion(int nVersion) { nWalletVersion = nVersion; nWalletMaxVersion = std::max(nWalletMaxVersion, nVersion); return true; }
+    void UpdateTimeFirstKey(int64_t nCreateTime);
 
     // Adds an encrypted key to the store, and saves it to disk.
     bool AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret);
@@ -282,6 +322,7 @@ public:
         @return next transaction order id
      */
     ::int64_t IncOrderPosNext(CWalletDB *pwalletdb = NULL);
+    DBErrors ReorderTransactions();
 
     typedef std::pair<CWalletTx*, CAccountingEntry*> TxPair;
     typedef std::multimap< ::int64_t, TxPair > TxItems;
@@ -466,6 +507,7 @@ public:
     void SetBestChain(const CBlockLocator& loc);
 
     DBErrors LoadWallet(bool& fFirstRunRet);
+    bool BackupWallet(const std::string& strDest);
 
     bool SetAddressBookName(const CTxDestination& address, const std::string& strName);
 
@@ -1273,7 +1315,6 @@ private:
     std::vector<char> _ssExtra;
 };
 
-//bool GetWalletFile(CWallet* pwallet, std::string &strWalletFileOut);
 extern std::atomic<int64_t> nTimeBestReceived;
 
 #endif
