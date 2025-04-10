@@ -785,93 +785,34 @@ DBErrors CWalletDB::ZapWalletTx(std::vector<CWalletTx>& vWtx)
     return DB_LOAD_OK;
 }
 
-// TODO: TACA remove this
-void ThreadFlushWalletDB(void* parg)
+void MaybeCompactWalletDB()
 {
-    // Make this thread recognisable as the wallet flushing thread
-    RenameThread("yacoin-wallet flushing thread");
-
-    const string
-        & strFile = ((const string*)parg)[0];
-
-    static bool 
-        fOneThread;
-
-    if (fOneThread)
+    static std::atomic<bool> fOneThread(false);
+    if (fOneThread.exchange(true)) {
         return;
-
-    fOneThread = true;
-    if (!gArgs.GetBoolArg("-flushwallet", true))
+    }
+    if (!gArgs.GetBoolArg("-flushwallet", DEFAULT_FLUSHWALLET)) {
         return;
+    }
 
-    unsigned int 
-        nLastSeen = nWalletDBUpdated;
+    for (CWalletRef pwallet : vpwallets) {
+        CWalletDBWrapper& dbh = pwallet->GetDBHandle();
 
-    unsigned int 
-        nLastFlushed = nWalletDBUpdated;
+        unsigned int nUpdateCounter = dbh.nUpdateCounter;
 
-    ::int64_t 
-        nLastWalletUpdate = GetTime();
-
-    while (!fShutdown)
-    {
-        Sleep(500);
-
-        if (nLastSeen != nWalletDBUpdated)
-        {
-            nLastSeen = nWalletDBUpdated;
-            nLastWalletUpdate = GetTime();
+        if (dbh.nLastSeen != nUpdateCounter) {
+            dbh.nLastSeen = nUpdateCounter;
+            dbh.nLastWalletUpdate = GetTime();
         }
 
-        if (
-            (nLastFlushed != nWalletDBUpdated) && 
-            ((GetTime() - nLastWalletUpdate) >= 2)  // 2 seconds since last update
-           )
-        {
-            TRY_LOCK(bitdb.cs_db,lockDb);
-            if (lockDb)
-            {
-                // Don't do this if any databases are in use
-                int 
-                    nRefCount = 0;
-
-                map<string, int>::iterator 
-                    mi = bitdb.mapFileUseCount.begin();
-
-                while (mi != bitdb.mapFileUseCount.end())
-                {
-                    nRefCount += (*mi).second;
-                    ++mi;
-                }
-
-                if (nRefCount == 0 && !fShutdown)
-                {
-                    map<string, int>::iterator 
-                        mi = bitdb.mapFileUseCount.find(strFile);
-
-                    if (mi != bitdb.mapFileUseCount.end())
-                    {
-                        LogPrintf("Flushing "
-                                "wallet.dat"
-                                ""
-                                "\n"
-                              );
-                        nLastFlushed = nWalletDBUpdated;
-
-                        ::int64_t 
-                            nStart = GetTimeMillis();
-
-                        // Flush wallet.dat so it's self contained
-                        bitdb.CloseDb(strFile);
-                        bitdb.CheckpointLSN(strFile);
-
-                        bitdb.mapFileUseCount.erase(mi++);
-                        LogPrintf("Flushed wallet.dat %" PRId64 "ms\n", GetTimeMillis() - nStart);
-                    }
-                }
+        if (dbh.nLastFlushed != nUpdateCounter && GetTime() - dbh.nLastWalletUpdate >= 2) {
+            if (CDB::PeriodicFlush(dbh)) {
+                dbh.nLastFlushed = nUpdateCounter;
             }
         }
     }
+
+    fOneThread = false;
 }
 
 bool DumpWallet(CWallet* pwallet, const string& strDest)
@@ -882,17 +823,20 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
   while (!fShutdown)
   {
       // Populate maps
-      std::map<CKeyID, ::int64_t> mapKeyBirth;
+      std::map<CTxDestination, int64_t> mapKeyBirth;
       std::set<CKeyID> setKeyPool;
       ScriptMap mapScripts = pwallet->GetP2SHRedeemScriptMap();
       pwallet->GetKeyBirthTimes(mapKeyBirth);
       pwallet->GetAllReserveKeys(setKeyPool);
 
       // sort time/key pairs
-      std::vector<std::pair< ::int64_t, CKeyID> > vKeyBirth;
-      for (std::map<CKeyID, ::int64_t>::const_iterator it = mapKeyBirth.begin(); it != mapKeyBirth.end(); it++) {
-          vKeyBirth.push_back(std::make_pair(it->second, it->first));
+      std::vector<std::pair<int64_t, CKeyID> > vKeyBirth;
+      for (const auto& entry : mapKeyBirth) {
+          if (const CKeyID* keyID = boost::get<CKeyID>(&entry.first)) { // set and test
+              vKeyBirth.push_back(std::make_pair(entry.second, *keyID));
+          }
       }
+
       mapKeyBirth.clear();
       std::sort(vKeyBirth.begin(), vKeyBirth.end());
 

@@ -14,7 +14,6 @@
 #include "ui_interface.h"
 #include "validation.h"
 #include "wallet/wallet.h"
-#include "wallet/walletdb.h" // for BackupWallet
 #include "base58.h"
 #include "script/standard.h"
 
@@ -365,7 +364,7 @@ bool WalletModel::importWallet(const QString &filename)
 
 bool WalletModel::backupWallet(const QString &filename)
 {
-    return BackupWallet(*wallet, filename.toLocal8Bit().data());
+    return wallet->BackupWallet(filename.toLocal8Bit().data());
 }
 
 // Handlers for core signals

@@ -68,8 +68,6 @@
  */
 
 CCriticalSection cs_main;
-CCriticalSection cs_vpwalletRegistered;
-std::vector<CWallet*> vpwalletRegistered;
 BlockMap mapBlockIndex;
 CChain chainActive;
 // Best header we've seen so far (used for getheaders queries' starting points).
@@ -4696,53 +4694,53 @@ bool GetAddressUnspent(uint160 addressHash, int type,
 // notify wallets about a new best chain
 static void SetBestChain(const CBlockLocator& loc)
 {
-    for(CWallet* pwallet : vpwalletRegistered)
+    for(CWallet* pwallet : vpwallets)
         pwallet->SetBestChain(loc);
 }
 
 // notify wallets about an updated transaction
 static void UpdatedTransaction(const uint256& hashTx)
 {
-    for(CWallet* pwallet : vpwalletRegistered)
+    for(CWallet* pwallet : vpwallets)
         pwallet->UpdatedTransaction(hashTx);
 }
 
 // erases transaction with the given hash from all wallets
 static void EraseFromWallets(uint256 hash)
 {
-    for(CWallet* pwallet : vpwalletRegistered)
+    for(CWallet* pwallet : vpwallets)
         pwallet->EraseFromWallet(hash);
 }
 
 void RegisterWallet(CWallet* pwalletIn)
 {
     {
-        LOCK(cs_vpwalletRegistered);
-        vpwalletRegistered.push_back(pwalletIn);
+        LOCK(cs_vpwallets);
+        vpwallets.push_back(pwalletIn);
     }
 }
 
 void CloseWallets()
 {
     {
-        LOCK(cs_vpwalletRegistered);
-        for(CWallet* pwallet : vpwalletRegistered)
+        LOCK(cs_vpwallets);
+        for(CWallet* pwallet : vpwallets)
             delete pwallet;
-        vpwalletRegistered.clear();
+        vpwallets.clear();
     }
 }
 
 // notify wallets about an incoming inventory (for request counts)
 void Inventory(const uint256& hash)
 {
-    for(CWallet* pwallet : vpwalletRegistered)
+    for(CWallet* pwallet : vpwallets)
         pwallet->Inventory(hash);
 }
 
 // ask wallets to resend their transactions
 void ResendWalletTransactions()
 {
-    for(CWallet* pwallet : vpwalletRegistered)
+    for(CWallet* pwallet : vpwallets)
         pwallet->ResendWalletTransactions();
 }
 
@@ -4753,14 +4751,14 @@ void SyncWithWallets(const CTransaction& tx, const CBlock* pblock, bool fUpdate,
         // ppcoin: wallets need to refund inputs when disconnecting coinstake
         if (tx.IsCoinStake())
         {
-            for(CWallet* pwallet : vpwalletRegistered)
+            for(CWallet* pwallet : vpwallets)
                 if (pwallet->IsFromMe(tx))
                     pwallet->DisableTransaction(tx);
         }
         return;
     }
 
-    for(CWallet* pwallet : vpwalletRegistered)
+    for(CWallet* pwallet : vpwallets)
         pwallet->AddToWalletIfInvolvingMe(tx, pblock, fUpdate);
     // Preloaded coins cache invalidation
     fCoinsDataActual = false;

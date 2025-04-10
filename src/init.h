@@ -5,9 +5,7 @@
 #ifndef BITCOIN_INIT_H
 #define BITCOIN_INIT_H
 
-#ifndef BITCOIN_WALLET_H
- #include "wallet/wallet.h"
-#endif
+#include "wallet/wallet.h"
 
 class CScheduler;
 
@@ -22,9 +20,6 @@ extern ::int64_t
     nLongAverageBP200, 
     nLongAverageBP100, 
     nLongAverageBP;
-
-extern CWallet* pwalletMain;
-extern std::string strWalletFileName;
 
 /** Interrupt threads */
 void Interrupt(boost::thread_group& threadGroup);

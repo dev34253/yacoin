@@ -155,8 +155,6 @@ struct BlockHasher
 extern size_t nCoinCacheUsage;
 extern CScript COINBASE_FLAGS;
 extern CCriticalSection cs_main;
-extern CCriticalSection cs_vpwalletRegistered;
-extern std::vector<CWallet*> vpwalletRegistered;
 typedef std::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
 extern BlockMap mapBlockIndex;
 /** The currently-connected chain of blocks (protected by cs_main). */
@@ -184,10 +182,6 @@ extern CCoinsViewCache *pcoinsTip;
 
 /** Global variable that points to the active block tree (protected by cs_main) */
 extern CBlockTreeDB *pblocktree;
-
-// Wallet
-extern CCriticalSection cs_vpwalletRegistered;
-extern std::vector<CWallet*> vpwalletRegistered;
 
 //
 // GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM

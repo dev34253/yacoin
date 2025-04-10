@@ -1,28 +1,58 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
+// Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifndef BITCOIN_WALLET_H
-#define BITCOIN_WALLET_H
 
+#ifndef YACOIN_WALLET_WALLET_H
+#define YACOIN_WALLET_WALLET_H
+
+#include "amount.h"
+#include "policy/feerate.h"
+#include "streams.h"
+#include "tinyformat.h"
+#include "ui_interface.h"
+#include "utilstrencodings.h"
+#include "validationinterface.h"
+#include "script/ismine.h"
+#include "script/sign.h"
+#include "wallet/crypter.h"
+#include "wallet/walletdb.h"
+//#include "wallet/rpcwallet.h"
+
+#include <algorithm>
+#include <atomic>
+#include <map>
+#include <set>
+#include <stdexcept>
+#include <stdint.h>
 #include <string>
+#include <utility>
 #include <vector>
-#include <stdlib.h>
 
+// TACA: OLD LOGIC BEGIN
 #include "primitives/block.h"
 #include "primitives/transaction.h"
 
-#include "ui_interface.h"
-#include "wallet/walletdb.h"
-#include "wallet/crypter.h"
 #include "streams.h"
 #include "script/standard.h"
-#include "script/ismine.h"
 #include "tokens/tokentypes.h"
 
 #include <boost/foreach.hpp>
+#include <stdlib.h>
+// TACA: OLD LOGIC END
 
+typedef CWallet* CWalletRef;
+extern CCriticalSection cs_vpwallets;
+extern std::vector<CWalletRef> vpwallets;
+extern CWallet* pwalletMain;
+
+/**
+ * Settings
+ */
 static const unsigned int DEFAULT_KEYPOOL_SIZE = 100;
+static const bool DEFAULT_DISABLE_WALLET = false;
+extern const char * DEFAULT_WALLET_DAT;
 
 extern bool fWalletUnlockMintOnly;
 extern bool fConfChange;
@@ -102,6 +132,10 @@ struct CRecipient
 class CWallet : public CCryptoKeyStore
 {
 private:
+    static std::atomic<bool> fFlushScheduled;
+    std::atomic<bool> fAbortRescan;
+    std::atomic<bool> fScanningWallet;
+
 	bool SelectCoinsSimple(::int64_t nTargetValue, ::int64_t nMinValue,
 			::int64_t nMaxValue, int64_t nSpendTime, int nMinConf,
 			std::set<std::pair<const CWalletTx*, unsigned int> > &setCoinsRet,
@@ -133,9 +167,9 @@ private:
     // stake mining statistics
     ::uint64_t nKernelsTried;
     ::uint64_t nCoinDaysTried;
-    std::unique_ptr<CWalletDBWrapper> dbw;
 
 public:
+    std::unique_ptr<CWalletDBWrapper> dbw;
     mutable CCriticalSection cs_wallet;
 
     /** Get database handle used by this wallet. Ideally this function would
@@ -315,8 +349,11 @@ public:
     bool EncryptWallet(const SecureString& strWalletPassphrase);
     bool DecryptWallet(const SecureString& strWalletPassphrase);
 
-    void GetKeyBirthTimes(std::map<CKeyID, ::int64_t> &mapKeyBirth) const;
-
+    void GetKeyBirthTimes(std::map<CTxDestination, int64_t> &mapKeyBirth) const;
+    //! Responsible for reading and validating the -wallet arguments and verifying the wallet database.
+    //  This function will perform salvage on the wallet if requested, as long as only one wallet is
+    //  being loaded (CWallet::ParameterInteraction forbids -salvagewallet, -zapwallettxes or -upgradewallet with multiwallet).
+    static bool Verify();
 
     /** Increment the next transaction order id
         @return next transaction order id
@@ -339,11 +376,7 @@ public:
     bool EraseFromWallet(uint256 hash);
     void ClearOrphans();
     void WalletUpdateSpent(const CTransaction& prevout, bool fBlock = false);
-#ifdef WIN32
-    int ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate = false, int nTotalToScan = 0);
-#else
     int ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate = false);
-#endif
 //    int ScanForWalletTransaction(const uint256& hashTx);  NA
     void ReacceptWalletTransactions();
     void ResendWalletTransactions();
@@ -506,8 +539,20 @@ public:
     }
     void SetBestChain(const CBlockLocator& loc);
 
+    /* Wallets parameter interaction */
+    static bool ParameterInteraction();
+
+    /* Initializes the wallet, returns a new CWallet instance or a null pointer in case of an error */
+    static CWallet* CreateWalletFromFile(const std::string walletFile);
+    static bool InitLoadWallet();
     DBErrors LoadWallet(bool& fFirstRunRet);
     bool BackupWallet(const std::string& strDest);
+
+    /**
+     * Wallet post-init setup
+     * Gives the wallet a chance to register repetitive tasks and complete post-init tasks
+     */
+    void postInitProcess(CScheduler& scheduler);
 
     bool SetAddressBookName(const CTxDestination& address, const std::string& strName);
 
@@ -1317,4 +1362,4 @@ private:
 
 extern std::atomic<int64_t> nTimeBestReceived;
 
-#endif
+#endif // YACOIN_WALLET_WALLET_H

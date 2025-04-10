@@ -128,6 +128,7 @@ libyacoin_common_a_SOURCES= \
     utilstrencodings.cpp \
     utilmoneystr.cpp \
     utiltime.cpp \
+    ui_interface.cpp \
     netaddress.cpp \
     timedata.cpp \
     warnings.cpp \

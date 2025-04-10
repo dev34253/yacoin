@@ -315,6 +315,7 @@ BITCOIN_QT_CPP = \
   utilstrencodings.cpp \
   utilmoneystr.cpp \
   utiltime.cpp \
+  ui_interface.cpp \
   netaddress.cpp \
   timedata.cpp \
   warnings.cpp \

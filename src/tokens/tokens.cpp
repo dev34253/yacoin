@@ -2506,11 +2506,11 @@ void GetAllMyTokens(CWallet* pwallet, std::vector<std::string>& names, int nMinC
 bool GetAllMyTokenBalances(std::map<std::string, std::vector<COutput> >& outputs, std::map<std::string, CAmount>& amounts, const int confirmations, const std::string& prefix) {
 
     // Return false if no wallet was found to compute token balances
-    if (!vpwalletRegistered.size())
+    if (!vpwallets.size())
         return false;
 
     // Get the map of tokennames to outputs
-    vpwalletRegistered[0]->AvailableTokens(outputs, true, nullptr, 1, MAX_MONEY, MAX_MONEY, 0, confirmations);
+    vpwallets[0]->AvailableTokens(outputs, true, nullptr, 1, MAX_MONEY, MAX_MONEY, 0, confirmations);
 
     // Loop through all pairs of Token Name -> vector<COutput>
     for (const auto& pair : outputs) {
@@ -2531,12 +2531,12 @@ bool GetAllMyTokenBalances(std::map<std::string, std::vector<COutput> >& outputs
 bool GetMyTokenBalance(const std::string& name, CAmount& balance, const int& confirmations) {
 
     // Return false if no wallet was found to compute token balances
-    if (!vpwalletRegistered.size())
+    if (!vpwallets.size())
         return false;
 
     // Get the map of tokennames to outputs
     std::map<std::string, std::vector<COutput> > outputs;
-    vpwalletRegistered[0]->AvailableTokens(outputs, true, nullptr, 1, MAX_MONEY, MAX_MONEY, 0, confirmations);
+    vpwallets[0]->AvailableTokens(outputs, true, nullptr, 1, MAX_MONEY, MAX_MONEY, 0, confirmations);
 
     // Loop through all pairs of Token Name -> vector<COutput>
     if (outputs.count(name)) {
@@ -2870,8 +2870,8 @@ bool SendTokenTransaction(CWallet* pwallet, CWalletTx& transaction, CReserveKey&
 bool VerifyWalletHasToken(const std::string& token_name, std::pair<int, std::string>& pairError)
 {
     CWallet* pwallet;
-    if (vpwalletRegistered.size() > 0)
-        pwallet = vpwalletRegistered[0];
+    if (vpwallets.size() > 0)
+        pwallet = vpwallets[0];
     else {
         pairError = std::make_pair(RPC_WALLET_ERROR, strprintf("Wallet not found. Can't verify if it contains: %s", token_name));
         return false;

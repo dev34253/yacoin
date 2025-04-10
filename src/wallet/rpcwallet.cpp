@@ -276,7 +276,7 @@ Value getnewaddress(const Array& params, bool fHelp)
 
 CBitcoinAddress GetAccountAddress(string strAccount, bool bForceNew=false)
 {
-    CWalletDB walletdb(pwalletMain->strWalletFile);
+    CWalletDB walletdb(pwalletMain->GetDBHandle());
 
     CAccount account;
     walletdb.ReadAccount(strAccount, account);
@@ -712,7 +712,7 @@ int64_t GetAccountBalance(CWalletDB& walletdb, const string& strAccount, int nMi
 
 int64_t GetAccountBalance(const string& strAccount, int nMinDepth, const isminefilter& filter, bool fExcludeNotExpiredTimelock=false)
 {
-    CWalletDB walletdb(pwalletMain->strWalletFile);
+    CWalletDB walletdb(pwalletMain->GetDBHandle());
     return GetAccountBalance(walletdb, strAccount, nMinDepth, filter, fExcludeNotExpiredTimelock);
 }
 
@@ -886,7 +886,7 @@ Value movecmd(const Array& params, bool fHelp)
     if (params.size() > 4)
         strComment = params[4].get_str();
 
-    CWalletDB walletdb(pwalletMain->strWalletFile);
+    CWalletDB walletdb(pwalletMain->GetDBHandle());
     if (!walletdb.TxnBegin())
         throw JSONRPCError(RPC_DATABASE_ERROR, "database error");
 
@@ -2041,7 +2041,7 @@ Value listaccounts(const Array& params, bool fHelp)
     list<CAccountingEntry> 
         acentries;
 
-    CWalletDB(pwalletMain->strWalletFile).ListAccountCreditDebit("*", acentries);
+    CWalletDB(pwalletMain->GetDBHandle()).ListAccountCreditDebit("*", acentries);
     for (const CAccountingEntry& entry : acentries)
     {
         mapAccountBalances[entry.strAccount] += entry.nCreditDebit;

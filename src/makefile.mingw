@@ -302,6 +302,7 @@ obj/util.o \
 obj/utilstrencodings.o \
 obj/utilmoneystr.o \
 obj/utiltime.o \
+obj/ui_interface.o \
 obj/timedata.o \
 obj/warnings.o \
 obj/version.o \

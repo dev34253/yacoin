@@ -19,6 +19,7 @@
 #include "txdb.h"
 #include "torcontrol.h"
 #include "util.h"
+#include "ui_interface.h"
 #include "validationinterface.h"
 
 #include "bitcoinrpc.h"
@@ -52,9 +53,6 @@ using std::string;
 using std::max;
 using std::map;
 
-CWallet* pwalletMain;
-CClientUIInterface uiInterface;
-std::string strWalletFileName;
 bool fConfChange;
 bool fUseFastStakeMiner;
 bool fUseMemoryLog;
@@ -329,19 +327,6 @@ static void registerSignalHandler(int signal, void(*handler)(int))
     sigaction(signal, &sa, nullptr);
 }
 #endif
-
-bool static InitError(const std::string &str)
-{
-    uiInterface.ThreadSafeMessageBox(str, _("Yacoin"), CClientUIInterface::OK | CClientUIInterface::MODAL);
-    return false;
-}
-
-bool static InitWarning(const std::string &str)
-{
-    uiInterface.ThreadSafeMessageBox(str, _("Yacoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION | CClientUIInterface::MODAL);
-    return true;
-}
-
 
 bool static Bind(const CService &addr, bool fError = true) 
 {
@@ -711,13 +696,8 @@ bool AppInitParameterInteraction()
     const char* pszP2SH = "/P2SH/";
     COINBASE_FLAGS << std::vector<unsigned char>(pszP2SH, pszP2SH+strlen(pszP2SH));
 
-    if (gArgs.IsArgSet("-paytxfee"))
-    {
-        if (!ParseMoney(gArgs.GetArg("-paytxfee", ""), nTransactionFee))
-            return InitError(strprintf(_("Invalid amount for -paytxfee=<amount>: '%s'"), gArgs.GetArg("-paytxfee", "").c_str()));
-        if (nTransactionFee > 0.25 * COIN)
-            InitWarning(_("Warning: -paytxfee is set very high! This is the transaction fee you will pay if you send a transaction."));
-    }
+    if (!CWallet::ParameterInteraction())
+        return false;
 
     fConfChange = gArgs.GetBoolArg("-confchange", false);
 
@@ -774,11 +754,6 @@ void InitParameterInteraction()
         // if an explicit public IP is specified, do not try to find others
         if (gArgs.SoftSetBoolArg("-discover", false))
             LogPrintf("%s: parameter interaction: -externalip set -> setting -discover=0\n", __func__);
-    }
-
-    if (gArgs.GetBoolArg("-salvagewallet")) {
-        // Rewrite just private keys: rescan to find transactions
-        gArgs.SoftSetBoolArg("-rescan", true);
     }
 }
 
@@ -891,12 +866,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (!fLogTimestamps)
         LogPrintf("Startup time: %s\n", DateTimeStrFormat("%Y-%m-%d %H:%M:%S", GetTime()));
 
-    // strWalletFileName must be a plain filename without a directory
-    std::string strDataDir = GetDataDir().string();
-    strWalletFileName = gArgs.GetArg("-wallet", "wallet.dat");
-    if (strWalletFileName != boost::filesystem::basename(strWalletFileName) + boost::filesystem::extension(strWalletFileName))
-        return InitError(strprintf(_("Wallet %s resides outside data directory %s."), strWalletFileName.c_str(), strDataDir.c_str()));
-
     LogPrintf("Default data directory %s\n", GetDefaultDataDir().string());
     LogPrintf("Using data directory %s\n", GetDataDir().string());
     LogPrintf("Using config file %s\n", GetConfigFile(gArgs.GetArg("-conf", YACOIN_CONF_FILENAME)).string());
@@ -910,7 +879,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     (void)db_version( &nBdbMajor, &nBdbMinor, &nBdbPatch );
     LogPrintf("Using BerkeleyDB version %d.%d.%d\n\n", nBdbMajor, nBdbMinor, nBdbPatch);
     LogPrintf("Using OpenSSL version %s\n\n", SSLeay_version(SSLEAY_VERSION));
-    LogPrintf("Wallet is %s\n", strDataDir + "/" + strWalletFileName);
 
     InitSignatureCache();
     InitScriptExecutionCache();
@@ -946,38 +914,8 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     ::int64_t nStart;
 
     // ********************************************************* Step 5: verify wallet database integrity
-    // TODO: Improve wallet logic
-    uiInterface.InitMessage(_("<b>Verifying database integrity...</b>"));
-
-    if (!bitdb.Open(GetDataDir()))
-    {
-        string msg = strprintf(_("Error initializing database environment %s!"
-                                 " To recover, BACKUP THAT DIRECTORY, then remove"
-                                 " everything from it except for wallet.dat."), strDataDir.c_str());
-        return InitError(msg);
-    }
-
-    if (gArgs.GetBoolArg("-salvagewallet"))
-    {
-        // Recover readable keypairs:
-        if (!CWalletDB::Recover(bitdb, strWalletFileName, true))
-            return false;
-    }
-
-    if (filesystem::exists(GetDataDir() / strWalletFileName))
-    {
-        CDBEnv::VerifyResult r = bitdb.Verify(strWalletFileName, CWalletDB::Recover);
-        if (r == CDBEnv::RECOVER_OK)
-        {
-            string msg = strprintf(_("Warning: wallet.dat corrupt, data salvaged!"
-                                     " Original wallet.dat saved as wallet.{timestamp}.bak in %s; if"
-                                     " your balance or transactions are incorrect you should"
-                                     " restore from a backup."), strDataDir.c_str());
-            uiInterface.ThreadSafeMessageBox(msg, _("Yacoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION | CClientUIInterface::MODAL);
-        }
-        if (r == CDBEnv::RECOVER_FAIL)
-            return InitError(_("wallet.dat corrupt, salvage failed"));
-    }
+    if (!CWallet::Verify())
+        return false;
 
     // ********************************************************* Step 6: network initialization
     // Note that we absolutely cannot open any actual connections
@@ -1381,93 +1319,8 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     }
 
     // ********************************************************* Step 8: load wallet
-    // TODO: Improve wallet logic
-    uiInterface.InitMessage(_("<b>Loading wallet...</b>"));
-    LogPrintf("Loading wallet...\n");
-    nStart = GetTimeMillis();
-    bool fFirstRun = true;
-    pwalletMain = new CWallet(strWalletFileName);
-    DBErrors nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
-    if (nLoadWalletRet != DB_LOAD_OK)
-    {
-        if (nLoadWalletRet == DB_CORRUPT)
-            strErrors << _("Error loading wallet.dat: Wallet corrupted") << "\n";
-        else if (nLoadWalletRet == DB_NONCRITICAL_ERROR)
-        {
-            string msg(_("Warning: error reading wallet.dat! All keys read correctly, but transaction data"
-                         " or address book entries might be missing or incorrect."));
-            uiInterface.ThreadSafeMessageBox(msg, _("Yacoin"), CClientUIInterface::OK | CClientUIInterface::ICON_EXCLAMATION | CClientUIInterface::MODAL);
-        }
-        else if (nLoadWalletRet == DB_TOO_NEW)
-            strErrors << _("Error loading wallet.dat: Wallet requires newer version of Yacoin") << "\n";
-        else if (nLoadWalletRet == DB_NEED_REWRITE)
-        {
-            strErrors << _("Wallet needed to be rewritten: restart Yacoin to complete") << "\n";
-            LogPrintf("%s\n", strErrors.str());
-            return InitError(strErrors.str());
-        }
-        else
-            strErrors << _("Error loading wallet.dat") << "\n";
-    }
-
-    if (gArgs.GetBoolArg("-upgradewallet", fFirstRun))
-    {
-        int nMaxVersion = (int)(gArgs.GetArg("-upgradewallet", 0));
-        if (nMaxVersion == 0) // the -upgradewallet without argument case
-        {
-            LogPrintf("Performing wallet upgrade to %i\n", FEATURE_LATEST);
-            nMaxVersion = CLIENT_VERSION;
-            pwalletMain->SetMinVersion(FEATURE_LATEST); // permanently upgrade the wallet immediately
-        }
-        else
-            LogPrintf("Allowing wallet upgrade up to %i\n", nMaxVersion);
-        if (nMaxVersion < pwalletMain->GetVersion())
-            strErrors << _("Cannot downgrade wallet") << "\n";
-        pwalletMain->SetMaxVersion(nMaxVersion);
-    }
-
-    if (fFirstRun)
-    {
-        // Create new keyUser and set as default key
-        RandAddSeedPerfmon();
-
-        CPubKey newDefaultKey;
-        if (!pwalletMain->GetKeyFromPool(newDefaultKey, false))
-            strErrors << _("Cannot initialize keypool") << "\n";
-        pwalletMain->SetDefaultKey(newDefaultKey);
-        if (!pwalletMain->SetAddressBookName(pwalletMain->vchDefaultKey.GetID(), ""))
-            strErrors << _("Cannot write default address") << "\n";
-    }
-
-    LogPrintf("%s\n", strErrors.str());
-    LogPrintf(" wallet      %15" PRId64 "ms\n", GetTimeMillis() - nStart);
-
-    RegisterWallet(pwalletMain);
-
-    CBlockIndex *pindexRescan = chainActive.Tip();
-    if (gArgs.GetBoolArg("-rescan"))
-        pindexRescan = chainActive.Genesis();
-    else
-    {
-        CWalletDB walletdb(strWalletFileName);
-        CBlockLocator locator;
-        if (walletdb.ReadBestBlock(locator))
-            pindexRescan = FindForkInGlobalIndex(chainActive, locator);
-        else
-            pindexRescan = chainActive.Genesis();
-    }
-    if (chainActive.Tip() != pindexRescan && chainActive.Tip() && pindexRescan && chainActive.Tip()->nHeight > pindexRescan->nHeight)
-    {
-        uiInterface.InitMessage(_("<b>Please wait, rescanning blocks...</b>"));
-        LogPrintf("Rescanning last %i blocks (from block %i)...\n", chainActive.Tip()->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
-        nStart = GetTimeMillis();
-#ifdef WIN32
-        pwalletMain->ScanForWalletTransactions(pindexRescan, true, chainActive.Tip()->nHeight - pindexRescan->nHeight);
-#else
-        pwalletMain->ScanForWalletTransactions(pindexRescan, true);
-#endif
-        LogPrintf(" rescan      %15" PRId64 "ms\n", GetTimeMillis() - nStart);
-    }
+    if (!CWallet::InitLoadWallet())
+        return false;
 
     // ********************************************************* Step 9: data directory maintenance
     // Do nothing at the moment
@@ -1550,9 +1403,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     // debug print
     LogPrintf("mapBlockIndex.size() = %u\n",   mapBlockIndex.size());
     LogPrintf("nBestHeight = %d\n",                   chainActive.Height());
-    LogPrintf("setKeyPool.size() = %" PRIszu "\n",      pwalletMain->setKeyPool.size());
-    LogPrintf("mapWallet.size() = %" PRIszu " transactions\n",       pwalletMain->mapWallet.size());
-    LogPrintf("mapAddressBook.size() = %" PRIszu "\n",  pwalletMain->mapAddressBook.size());
 
     if (gArgs.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION))
         StartTorControl(threadGroup, scheduler);
@@ -1629,8 +1479,9 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     if (!strErrors.str().empty())
         return InitError(strErrors.str());
 
-     // Add wallet transactions that aren't already in a block to mapTransactions
-    pwalletMain->ReacceptWalletTransactions();
+    for (CWalletRef pwallet : vpwallets) {
+        pwallet->postInitProcess(scheduler);
+    }
 
     return !fRequestShutdown;
 }

@@ -50,7 +50,6 @@ extern unsigned int nWalletDBUpdated;
 
 bool DumpWallet(CWallet* pwallet, const std::string& strDest);
 bool ImportWallet(CWallet* pwallet, const std::string& strLocation);
-void ThreadFlushWalletDB(void* parg);
 
 /** Error statuses for the wallet database */
 enum DBErrors
