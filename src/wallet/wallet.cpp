@@ -814,9 +814,8 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn)
                 wtx.hashBlock = wtxIn.hashBlock;
                 fUpdated = true;
             }
-            if (wtxIn.nIndex != -1 && (wtxIn.vMerkleBranch != wtx.vMerkleBranch || wtxIn.nIndex != wtx.nIndex))
+            if (wtxIn.nIndex != -1 && (wtxIn.nIndex != wtx.nIndex))
             {
-                wtx.vMerkleBranch = wtxIn.vMerkleBranch;
                 wtx.nIndex = wtxIn.nIndex;
                 fUpdated = true;
             }
@@ -1003,63 +1002,21 @@ bool CWallet::IsTimelockUTXOExpired(const CInputCoin& inputCoin, txnouttype utxo
     return true;
 }
 
-int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
+void CMerkleTx::SetMerkleBranch(const CBlockIndex* pindex, int posInBlock)
 {
-    CBlock blockTmp;
-    if (pblock == NULL)
-    {
-        // Transaction index is required to get to block
-        if (!fTxIndex) {
-            return 0;
-        }
-
-        // Read transaction position
-        CDiskTxPos postx;
-        if (!pblocktree->ReadTxIndex(GetHash(), postx)) {
-            return 0;
-        }
-
-        // Read block
-        const Consensus::Params& consensusParams = Params().GetConsensus();
-        if (!ReadBlockFromDisk(blockTmp, postx, consensusParams)) {
-            return 0;
-        }
-        pblock = &blockTmp;
-    }
-
     // Update the tx's hashBlock
-    hashBlock = pblock->GetHash();
+    hashBlock = pindex->GetBlockHash();
 
-    // Locate the transaction
-    for (nIndex = 0; nIndex < (int)pblock->vtx.size(); nIndex++)
-        if (pblock->vtx[nIndex] == *(CTransaction*)this)
-            break;
-    if (nIndex == (int)pblock->vtx.size())
-    {
-        vMerkleBranch.clear();
-        nIndex = -1;
-        LogPrintf("ERROR: SetMerkleBranch() : couldn't find tx in block\n");
-        return 0;
-    }
-
-    // Fill in merkle branch
-    vMerkleBranch = pblock->GetMerkleBranch(nIndex);
-
-    // Is the tx in a block that's in the main chain
-    BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
-    if (mi == mapBlockIndex.end())
-        return 0;
-    CBlockIndex* pindex = (*mi).second;
-    if (!pindex || !pindex->IsInMainChain())
-        return 0;
-
-    return chainActive.Tip()->nHeight - pindex->nHeight + 1;
+    // set the position of the transaction in the block
+    nIndex = posInBlock;
 }
 
-int CMerkleTx::GetDepthInMainChain(CBlockIndex* &pindexRet) const
+int CMerkleTx::GetDepthInMainChain(const CBlockIndex* &pindexRet) const
 {
-    if (hashBlock == 0 || nIndex == -1)
+    if (hashUnset())
         return 0;
+
+    AssertLockHeld(cs_main);
 
     // Find the block it claims to be in
     BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
@@ -1069,40 +1026,25 @@ int CMerkleTx::GetDepthInMainChain(CBlockIndex* &pindexRet) const
     if (!pindex || !chainActive.Contains(pindex))
         return 0;
 
-    // Make sure the merkle branch connects to this block
-    if (!fMerkleVerified)
-    {
-        if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) != pindex->hashMerkleRoot)
-            return 0;
-        fMerkleVerified = true;
-    }
-
     pindexRet = pindex;
-    return chainActive.Height() - pindex->nHeight + 1;
+    return ((nIndex == -1) ? (-1) : 1) * (chainActive.Height() - pindex->nHeight + 1);
 }
-
 
 int CMerkleTx::GetBlocksToMaturity() const
 {
     if (!(IsCoinBase() || IsCoinStake()))
         return 0;
-    return max(
-                0,
-                fTestNet?
-                (GetCoinbaseMaturity() +  0) - GetDepthInMainChain():   //<<<<<<<<<<< test
-                (GetCoinbaseMaturity() + GetCoinbaseMaturityOffset()) - GetDepthInMainChain()    // why is this 20?
-              );                                                    // what is this 20 from? For?
+    return std::max(0, (GetCoinbaseMaturity() + GetCoinbaseMaturityOffset()) - GetDepthInMainChain());
 }
 
-bool CMerkleTx::AcceptToMemoryPool()
+bool CMerkleTx::AcceptToMemoryPool(CValidationState& state)
 {
-    CValidationState state;
-    CTransactionRef ptx = std::make_shared<CTransaction>(*this);
-    return ::AcceptToMemoryPool(mempool, state, ptx, nullptr);
+    return ::AcceptToMemoryPool(mempool, state, tx, nullptr);
 }
 
 bool CWalletTx::AcceptWalletTransaction()
 {
+    CValidationState state;
     {
         LOCK(mempool.cs);
         // Add previous supporting transactions first
@@ -1112,10 +1054,10 @@ bool CWalletTx::AcceptWalletTransaction()
             {
                 uint256 hash = tx.GetHash();
                 if (!mempool.exists(hash) && !pblocktree->ContainsTx(hash))
-                    tx.AcceptToMemoryPool();
+                    tx.AcceptToMemoryPool(state);
             }
         }
-        return AcceptToMemoryPool();
+        return AcceptToMemoryPool(state);
     }
     return false;
 }
@@ -3273,6 +3215,7 @@ bool CWallet::MergeCoins(const int64_t& nAmount, const int64_t& nMinValue, const
 // Call after CreateTransaction unless you want to abort
 bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 {
+    CValidationState state;
     {
         LogPrintf("CommitTransaction: %s\n", wtxNew.ToString());
 
@@ -3280,7 +3223,7 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
         mapRequestCount[wtxNew.GetHash()] = 0;
 
         // Try to broadcast before saving
-        if (!wtxNew.AcceptToMemoryPool())
+        if (!wtxNew.AcceptToMemoryPool(state))
         {
             // This must not fail. The transaction has already been signed.
             LogPrintf("CommitTransaction() : Error: Transaction not valid\n");
@@ -4266,4 +4209,17 @@ bool CWallet::Verify()
     }
 
     return true;
+}
+
+CKeyPool::CKeyPool()
+{
+    nTime = GetTime();
+    fInternal = false;
+}
+
+CKeyPool::CKeyPool(const CPubKey& vchPubKeyIn, bool internalIn)
+{
+    nTime = GetTime();
+    vchPubKey = vchPubKeyIn;
+    fInternal = internalIn;
 }

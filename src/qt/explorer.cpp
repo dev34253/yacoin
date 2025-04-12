@@ -389,12 +389,6 @@ void ExplorerPage::showBlockHashLineDetails()
         const Consensus::Params& consensusParams = Params().GetConsensus();
         ReadBlockFromDisk(block, pblockindex, consensusParams);
 
-        CMerkleTx 
-            txGen( block.vtx[ 0 ] );
-
-        if( 0 == txGen.SetMerkleBranch( &block ) )  
-            pop_a_message_box( "curious?" );  
-
         std::string
             sX = BuildBlockinfoDetailsFrom( 
                                         block, 
@@ -519,14 +513,6 @@ void ExplorerPage::showTxInfoDetails( QModelIndex QMI )
             const Consensus::Params& consensusParams = Params().GetConsensus();
             ReadBlockFromDisk(block, pblockindex, consensusParams);
 
-            CMerkleTx 
-                txGen( block.vtx[ 0 ] );    // fixed it!!! Code that is inside read JSON!!!!!
-
-            if( 0 == txGen.SetMerkleBranch( &block ) )  
-            {
-                pop_a_message_box( "curious?" );  
-            }
-
             std::string
                 sX = BuildBlockinfoDetailsFrom( 
                                         block, 
@@ -603,14 +589,6 @@ void ExplorerPage::showBkInfoDetails( QModelIndex QMI )
 
         const Consensus::Params& consensusParams = Params().GetConsensus();
         ReadBlockFromDisk(block, pblockindex, consensusParams);
-
-        CMerkleTx 
-            txGen( block.vtx[ 0 ] );    // fixed it!!! Code that is inside read JSON!!!!!
-
-        if( 0 == txGen.SetMerkleBranch( &block ) )  
-        {
-            pop_a_message_box( "curious?" );  
-        }
 
         std::string
             sX = BuildBlockinfoDetailsFrom( 
@@ -2608,14 +2586,6 @@ void BlockExplorerPage::fillBlockInfoPage( int currentHeight )
     CBlock block;
     const Consensus::Params& consensusParams = Params().GetConsensus();
     ReadBlockFromDisk(block, pblockindex, consensusParams);
-
-    CMerkleTx 
-        txGen( block.vtx[ 0 ] );    // fixed it!!! Code that is inside read JSON!!!!!
-
-    if( 0 == txGen.SetMerkleBranch( &block ) )  
-    {
-        pop_a_message_box( "curious?" );  
-    }
 
     /********************************************/
     // now pblockindex & by implication, block contain all the information
