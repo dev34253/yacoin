@@ -753,6 +753,15 @@ public:
 
 };
 
+class CReserveScript
+{
+public:
+    CScript reserveScript;
+    virtual void KeepScript() {}
+    CReserveScript() {}
+    virtual ~CReserveScript() {}
+};
+
 bool ExtractLockDuration(const CScript& scriptPubKey, uint32_t& lockDuration);
 
 //! These are needed because script.h and script.cpp do not have access to tokens.h and tokens.cpp functions. This is

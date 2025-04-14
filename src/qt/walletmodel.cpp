@@ -342,16 +342,6 @@ bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureStri
     return retval;
 }
 
-void WalletModel::getStakeStats(float &nKernelsRate, float &nCoinDaysRate)
-{
-    wallet->GetStakeStats(nKernelsRate, nCoinDaysRate);
-}
-
-void WalletModel::getStakeWeightFromValue(const int64_t& nTime, const int64_t& nValue, uint64_t& nWeight)
-{
-    wallet->GetStakeWeightFromValue(nTime, nValue, nWeight);
-}
-
 bool WalletModel::dumpWallet(const QString &filename)
 {
     return DumpWallet(wallet, filename.toLocal8Bit().data());
@@ -535,11 +525,6 @@ void WalletModel::unlockCoin(COutPoint& output)
 void WalletModel::listLockedCoins(std::vector<COutPoint>& vOutpts)
 {
     return;
-}
-
-void WalletModel::clearOrphans()
-{
-    wallet->ClearOrphans();
 }
 
 CWallet* WalletModel::getWallet()

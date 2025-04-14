@@ -113,21 +113,24 @@ private:
 
     CKeyingMaterial vMasterKey;
 
-    // if fUseCrypto is true, mapKeys must be empty
-    // if fUseCrypto is false, vMasterKey must be empty
+    //! if fUseCrypto is true, mapKeys must be empty
+    //! if fUseCrypto is false, vMasterKey must be empty
     bool fUseCrypto;
+
+    //! keeps track of whether Unlock has run a thorough check before
+    bool fDecryptionThoroughlyChecked;
 
 protected:
     bool SetCrypted();
 
-    // will encrypt previously unencrypted keys
+    //! will encrypt previously unencrypted keys
     bool EncryptKeys(CKeyingMaterial& vMasterKeyIn);
     bool DecryptKeys(const CKeyingMaterial& vMasterKeyIn);
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn);
 
 public:
-    CCryptoKeyStore() : fUseCrypto(false)
+    CCryptoKeyStore() : fUseCrypto(false), fDecryptionThoroughlyChecked(false)
     {
     }
 
@@ -151,8 +154,8 @@ public:
     bool Lock();
 
     virtual bool AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret);
-    bool AddKeyPubKey(const CKey& key, const CPubKey &pubkey);
-    bool HaveKey(const CKeyID &address) const
+    bool AddKeyPubKey(const CKey& key, const CPubKey &pubkey) override;
+    bool HaveKey(const CKeyID &address) const override
     {
         {
             LOCK(cs_KeyStore);
@@ -162,9 +165,9 @@ public:
         }
         return false;
     }
-    bool GetKey(const CKeyID &address, CKey& keyOut) const;
-    bool GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const;
-    void GetKeys(std::set<CKeyID> &setAddress) const
+    bool GetKey(const CKeyID &address, CKey& keyOut) const override;
+    bool GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const override;
+    void GetKeys(std::set<CKeyID> &setAddress) const override
     {
         if (!IsCrypted())
         {
@@ -180,7 +183,8 @@ public:
         }
     }
 
-    /* Wallet status (encrypted, locked) changed.
+    /**
+     * Wallet status (encrypted, locked) changed.
      * Note: Called without locks held.
      */
     boost::signals2::signal<void (CCryptoKeyStore* wallet)> NotifyStatusChanged;

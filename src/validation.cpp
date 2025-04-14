@@ -214,7 +214,6 @@ static bool FlushStateToDisk(const CChainParams& chainParams, CValidationState &
 bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, std::vector<CScriptCheck> *pvChecks = nullptr);
 static FILE* OpenUndoFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 static void SetBestChain(const CBlockLocator& loc);
-static void UpdatedTransaction(const uint256& hashTx);
 
 static bool isHardforkHappened()
 {
@@ -2088,7 +2087,6 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
     for(const CTransaction& tx : block.vtx)
         SyncWithWallets(tx, &block, true);
     static uint256 hashPrevBestCoinBase;
-    UpdatedTransaction(hashPrevBestCoinBase);
     hashPrevBestCoinBase = block.vtx[0].GetHash();
 
     assert(pindex->phashBlock);
@@ -4698,20 +4696,6 @@ static void SetBestChain(const CBlockLocator& loc)
         pwallet->SetBestChain(loc);
 }
 
-// notify wallets about an updated transaction
-static void UpdatedTransaction(const uint256& hashTx)
-{
-    for(CWallet* pwallet : vpwallets)
-        pwallet->UpdatedTransaction(hashTx);
-}
-
-// erases transaction with the given hash from all wallets
-static void EraseFromWallets(uint256 hash)
-{
-    for(CWallet* pwallet : vpwallets)
-        pwallet->EraseFromWallet(hash);
-}
-
 void RegisterWallet(CWallet* pwalletIn)
 {
     {
@@ -4746,17 +4730,17 @@ void ResendWalletTransactions()
 
 void SyncWithWallets(const CTransaction& tx, const CBlock* pblock, bool fUpdate, bool fConnect)
 {
-    if (!fConnect)
-    {
-        // ppcoin: wallets need to refund inputs when disconnecting coinstake
-        if (tx.IsCoinStake())
-        {
-            for(CWallet* pwallet : vpwallets)
-                if (pwallet->IsFromMe(tx))
-                    pwallet->DisableTransaction(tx);
-        }
-        return;
-    }
+//    if (!fConnect)
+//    {
+//        // ppcoin: wallets need to refund inputs when disconnecting coinstake
+//        if (tx.IsCoinStake())
+//        {
+//            for(CWallet* pwallet : vpwallets)
+//                if (pwallet->IsFromMe(tx))
+//                    pwallet->DisableTransaction(tx);
+//        }
+//        return;
+//    }
 
     for(CWallet* pwallet : vpwallets)
         pwallet->AddToWalletIfInvolvingMe(tx, pblock, fUpdate);

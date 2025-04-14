@@ -207,7 +207,6 @@ Value getinfo(const Array& params, bool fHelp)
     obj.push_back(Pair("walletversion", pwalletMain->GetVersion()));
     obj.push_back(Pair("balance",       ValueFromAmount(pwalletMain->GetBalance())));
     obj.push_back(Pair("unspendable",   ValueFromAmount(pwalletMain->GetWatchOnlyBalance())));
-    obj.push_back(Pair("newmint",       ValueFromAmount(pwalletMain->GetNewMint())));
     obj.push_back(Pair("stake",         ValueFromAmount(pwalletMain->GetStake())));
     obj.push_back(Pair("blocks",        (int)chainActive.Height()));
     obj.push_back(Pair("timeoffset",    (boost::int64_t)GetTimeOffset()));
@@ -2577,51 +2576,6 @@ Value validateaddress(const Array& params, bool fHelp)
             ret.push_back(Pair("account", pwalletMain->mapAddressBook[dest]));
     }
     return ret;
-}
-
-// ppcoin: check wallet integrity
-Value checkwallet(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() > 0)
-        throw runtime_error(
-            "checkwallet\n"
-            "Check wallet for integrity.\n");
-
-    int nMismatchSpent;
-    int64_t nBalanceInQuestion;
-    pwalletMain->FixSpentCoins(nMismatchSpent, nBalanceInQuestion, true);
-    Object result;
-    if (nMismatchSpent == 0)
-        result.push_back(Pair("wallet check passed", true));
-    else
-    {
-        result.push_back(Pair("mismatched spent coins", nMismatchSpent));
-        result.push_back(Pair("amount in question", ValueFromAmount(nBalanceInQuestion)));
-    }
-    return result;
-}
-
-
-// ppcoin: repair wallet
-Value repairwallet(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() > 0)
-        throw runtime_error(
-            "repairwallet\n"
-            "Repair wallet if checkwallet reports any problem.\n");
-
-    int nMismatchSpent;
-    int64_t nBalanceInQuestion;
-    pwalletMain->FixSpentCoins(nMismatchSpent, nBalanceInQuestion);
-    Object result;
-    if (nMismatchSpent == 0)
-        result.push_back(Pair("wallet check passed", true));
-    else
-    {
-        result.push_back(Pair("mismatched spent coins", nMismatchSpent));
-        result.push_back(Pair("amount affected by repair", ValueFromAmount(nBalanceInQuestion)));
-    }
-    return result;
 }
 
 // Yacoin: resend unconfirmed wallet transactions

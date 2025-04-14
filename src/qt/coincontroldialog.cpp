@@ -624,7 +624,6 @@ void CoinControlDialog::updateView()
         {
             int nInputSize = 148; // 180 if uncompressed public key
             nSum += out.tx->vout[out.i].nValue;
-            model->getStakeWeightFromValue(out.tx->GetTxTime(), out.tx->vout[out.i].nValue, nTxWeight);
             nTxWeightSum += nTxWeight;
             nChildren++;
 

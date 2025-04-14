@@ -241,36 +241,7 @@ MintingTableModel::~MintingTableModel()
 
 void MintingTableModel::update()
 {
-    QList<uint256> updated;
-
-    // Check if there are changes to wallet map
-    {
-        TRY_LOCK(wallet->cs_wallet, lockWallet);
-        if (lockWallet && !wallet->vMintingWalletUpdated.empty())
-        {
-            BOOST_FOREACH(uint256 hash, wallet->vMintingWalletUpdated)
-            {
-                updated.append(hash);
-
-                // Also check the inputs to remove spent outputs from the table if necessary
-                CWalletTx wtx;
-                if(wallet->GetTransaction(hash, wtx))
-                {
-                    BOOST_FOREACH(const CTxIn& txin, wtx.vin)
-                    {
-                        updated.append(txin.prevout.COutPointGetHash());
-                    }
-                }
-            }
-            wallet->vMintingWalletUpdated.clear();
-        }
-    }
-
-    if(!updated.empty())
-    {
-        priv->updateWallet(updated);
-        mintingProxyModel->invalidate(); // Force deletion of empty rows
-    }
+    // Do nothing
 }
 
 void MintingTableModel::setMintingProxyModel(MintingFilterProxy *mintingProxy)
