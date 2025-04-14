@@ -496,7 +496,7 @@ void WalletModel::listCoins(std::map<QString, std::vector<COutput> >& mapCoins) 
     {
         if (!wallet->mapWallet.count(outpoint.COutPointGetHash())) continue;
         COutput out(&wallet->mapWallet[outpoint.COutPointGetHash()], outpoint.COutPointGet_n(), wallet->mapWallet[outpoint.COutPointGetHash()].GetDepthInMainChain(), true);
-        if (outpoint.COutPointGet_n() < out.tx->vout.size() && wallet->IsMine(out.tx->vout[outpoint.COutPointGet_n()]) == MINE_SPENDABLE)
+        if (outpoint.COutPointGet_n() < out.tx->vout.size() && wallet->IsMine(out.tx->vout[outpoint.COutPointGet_n()]) == ISMINE_SPENDABLE)
             vCoins.push_back(out);
     }
 

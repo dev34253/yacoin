@@ -17,10 +17,14 @@ class CScript;
 /** IsMine() return codes */
 enum isminetype
 {
-    MINE_NO = 0,
-    MINE_WATCH_ONLY = 1,
-    MINE_SPENDABLE = 2,
-    MINE_ALL = MINE_WATCH_ONLY | MINE_SPENDABLE
+    ISMINE_NO = 0,
+    //! Indicates that we don't know how to create a scriptSig that would solve this if we were given the appropriate private keys
+    ISMINE_WATCH_UNSOLVABLE = 1,
+    //! Indicates that we know how to create a scriptSig that would solve this if we were given the appropriate private keys
+    ISMINE_WATCH_SOLVABLE = 2,
+    ISMINE_WATCH_ONLY = ISMINE_WATCH_SOLVABLE | ISMINE_WATCH_UNSOLVABLE,
+    ISMINE_SPENDABLE = 4,
+    ISMINE_ALL = ISMINE_WATCH_ONLY | ISMINE_SPENDABLE
 };
 
 /** used for bitflags of isminetype */

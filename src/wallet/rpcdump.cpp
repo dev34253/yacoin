@@ -99,7 +99,7 @@ Value importaddress(const Array& params, bool fHelp)
 
     {
         LOCK2(cs_main, pwalletMain->cs_wallet);
-        if (::IsMine(*pwalletMain, script) == MINE_SPENDABLE)
+        if (::IsMine(*pwalletMain, script) == ISMINE_SPENDABLE)
             throw JSONRPCError(RPC_WALLET_ERROR, "The wallet already contains the private key for this address or script");
 
         // Don't throw error in case an address is already there
@@ -148,7 +148,7 @@ Value removeaddress(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Bitcoin address or script");
     }
 
-    if (::IsMine(*pwalletMain, script) == MINE_SPENDABLE)
+    if (::IsMine(*pwalletMain, script) == ISMINE_SPENDABLE)
         throw JSONRPCError(RPC_WALLET_ERROR, "The wallet contains the private key for this address or script - can't remove it");
 
     if (!pwalletMain->HaveWatchOnly(script))
