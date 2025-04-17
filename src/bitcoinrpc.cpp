@@ -1338,7 +1338,6 @@ static const CRPCCommand vRPCCommands[] =
     { "signrawtransaction",     &signrawtransaction,     false,  false },
     { "sendrawtransaction",     &sendrawtransaction,     false,  false },
     { "resendwallettransactions",               &resendwallettransactions,               false,  true  },
-    { "makekeypair",            &makekeypair,            false,  true  },
     /** YAC_TOKEN START */
     { "issue",                  &issue,                  false,  false },
     { "transfer",               &transfer,               false,  false },

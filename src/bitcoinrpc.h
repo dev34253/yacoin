@@ -164,8 +164,8 @@ extern double GetPoWMHashPS();
 extern double GetPoSKernelPS();
 
 extern std::string HexBits(unsigned int nBits);
-extern std::string HelpRequiringPassphrase();
-extern void EnsureWalletIsUnlocked();
+extern std::string HelpRequiringPassphrase(CWallet *);
+extern void EnsureWalletIsUnlocked(CWallet *);
 
 // Helper functions
 extern std::string HelpExampleCli(const std::string& methodname, const std::string& args);
@@ -250,7 +250,6 @@ extern json_spirit::Value encryptwallet(const json_spirit::Array& params, bool f
 extern json_spirit::Value validateaddress(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getinfo(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value resendwallettransactions(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value makekeypair(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value mergecoins(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value getrawtransaction(const json_spirit::Array& params, bool fHelp); // in rcprawtransaction.cpp

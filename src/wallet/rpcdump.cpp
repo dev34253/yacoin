@@ -11,8 +11,6 @@ using namespace json_spirit;
 using std::runtime_error;
 using std::string;
 
-void EnsureWalletIsUnlocked();
-
 class CTxDump
 {
 public:
