@@ -62,7 +62,7 @@ vector<KernelRecord> KernelRecord::decomposeOutput(const CWallet *wallet, const 
                     addrStr = mapValue["to"];
                 }
 
-                parts.push_back(KernelRecord(hash, nTime, addrStr, txOut.nValue, wtx.IsSpent(nOut), coinAge));
+                parts.push_back(KernelRecord(hash, nTime, addrStr, txOut.nValue, wallet->IsSpent(hash, nOut), coinAge));
             }
         }
     }

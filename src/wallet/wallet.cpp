@@ -2301,7 +2301,7 @@ CAmount CWallet::GetImmatureWatchOnlyBalance() const
 // wallet, and then subtracts the values of TxIns spending from the wallet. This
 // also has fewer restrictions on which unconfirmed transactions are considered
 // trusted.
-CAmount CWallet::GetLegacyBalance(const isminefilter& filter, int minDepth, const std::string* account) const
+CAmount CWallet::GetLegacyBalance(const isminefilter& filter, int minDepth, const std::string* account, bool fExcludeNotExpiredTimelock) const
 {
     LOCK2(cs_main, cs_wallet);
 
@@ -2317,7 +2317,27 @@ CAmount CWallet::GetLegacyBalance(const isminefilter& filter, int minDepth, cons
         // treat change outputs specially, as part of the amount debited.
         CAmount debit = wtx.GetDebit(filter);
         const bool outgoing = debit > 0;
-        for (const CTxOut& out : wtx.tx->vout) {
+        for (unsigned int i = 0; i < wtx.tx->vout; ++i)
+        {
+            const CTxOut& out = wtx.tx->vout[i];
+
+            if (fExcludeNotExpiredTimelock)
+            {
+                // Only count timelock UTXO if the timelock already expired
+                txnouttype utxoType = TX_NONSTANDARD;
+                uint32_t lockDuration = 0;
+                bool isSpendableTimelockUTXO = IsSpendableTimelockUTXO(out, utxoType, lockDuration);
+
+                if (isSpendableTimelockUTXO)
+                {
+                    CInputCoin inputCoin(&wtx, i);
+                    if(!IsTimelockUTXOExpired(inputCoin, utxoType, lockDuration))
+                    {
+                        continue;
+                    }
+                }
+            }
+
             if (outgoing && IsChange(out)) {
                 debit -= out.nValue;
             } else if (IsMine(out) & filter && depth >= minDepth && (!account || *account == GetAccountName(out.scriptPubKey))) {

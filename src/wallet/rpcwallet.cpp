@@ -689,6 +689,9 @@ Value getbalance(const Array& params, bool fHelp)
     if (params.size() == 0)
         return  ValueFromAmount(pwalletMain->GetBalance());
 
+    const std::string& account_param = params[0].get_str();
+    const std::string* account = account_param != "*" ? &account_param : nullptr;
+
     int nMinDepth = 1;
     if (params.size() > 1)
         nMinDepth = params[1].get_int();
@@ -697,57 +700,7 @@ Value getbalance(const Array& params, bool fHelp)
         if(params[2].get_bool())
             filter = filter | ISMINE_WATCH_ONLY;
 
-    if (params[0].get_str() == "*")
-    {
-        // Calculate total balance a different way from GetBalance()
-        // (GetBalance() sums up all unspent TxOuts)
-        // getbalance and getbalance '*' 0 should return the same number.
-        int64_t nBalance = 0;
-        for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
-        {
-            const CWalletTx& wtx = (*it).second;
-            if (!wtx.IsTrusted())
-                continue;
-
-            int64_t allGeneratedImmature, allGeneratedMature, allFee;
-            allGeneratedImmature = allGeneratedMature = allFee = 0;
-
-            string strSentAccount;
-            std::list<COutputEntry> listReceived;
-            std::list<COutputEntry> listSent;
-            wtx.GetAmounts(
-                            allGeneratedImmature,
-                            allGeneratedMature,
-                            listReceived,
-                            listSent,
-                            allFee,
-                            strSentAccount,
-                            filter
-                          );
-            if (wtx.GetDepthInMainChain() >= nMinDepth)
-            {
-                for (const COutputEntry& r : listReceived)
-                {
-                    nBalance += r.amount;
-                }
-            }
-            for (const COutputEntry& r : listSent)
-            {
-                nBalance -= r.amount;
-            }
-            nBalance -= allFee;
-            nBalance += allGeneratedMature;
-        }
-        return  ValueFromAmount(nBalance);
-    }
-
-    string 
-        strAccount = AccountFromValue(params[0]);
-
-    int64_t 
-        nBalance = GetAccountBalance(strAccount, nMinDepth, filter);
-
-    return ValueFromAmount(nBalance);
+    return ValueFromAmount(pwalletMain->GetLegacyBalance(filter, nMinDepth, account));
 }
 
 Value getavailablebalance(const Array& params, bool fHelp)
@@ -763,6 +716,9 @@ Value getavailablebalance(const Array& params, bool fHelp)
     if (params.size() == 0)
         return  ValueFromAmount(pwalletMain->GetBalance(fExcludeNotExpiredTimelock));
 
+    const std::string& account_param = params[0].get_str();
+    const std::string* account = account_param != "*" ? &account_param : nullptr;
+
     int nMinDepth = 1;
     if (params.size() > 1)
         nMinDepth = params[1].get_int();
@@ -771,58 +727,7 @@ Value getavailablebalance(const Array& params, bool fHelp)
         if(params[2].get_bool())
             filter = filter | ISMINE_WATCH_ONLY;
 
-    if (params[0].get_str() == "*")
-    {
-        // Calculate total balance a different way from GetBalance()
-        // (GetBalance() sums up all unspent TxOuts)
-        // getbalance and getbalance '*' 0 should return the same number.
-        int64_t nBalance = 0;
-        for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
-        {
-            const CWalletTx& wtx = (*it).second;
-            if (!wtx.IsTrusted())
-                continue;
-
-            int64_t allGeneratedImmature, allGeneratedMature, allFee;
-            allGeneratedImmature = allGeneratedMature = allFee = 0;
-
-            string strSentAccount;
-            std::list<COutputEntry> listReceived;
-            std::list<COutputEntry> listSent;
-            wtx.GetAmounts(
-                            allGeneratedImmature,
-                            allGeneratedMature,
-                            listReceived,
-                            listSent,
-                            allFee,
-                            strSentAccount,
-                            filter,
-                            fExcludeNotExpiredTimelock
-                          );
-            if (wtx.GetDepthInMainChain() >= nMinDepth)
-            {
-                for (const COutputEntry& r : listReceived)
-                {
-                    nBalance += r.amount;
-                }
-            }
-            for (const COutputEntry& r : listSent)
-            {
-                nBalance -= r.amount;
-            }
-            nBalance -= allFee;
-            nBalance += allGeneratedMature;
-        }
-        return  ValueFromAmount(nBalance);
-    }
-
-    string
-        strAccount = AccountFromValue(params[0]);
-
-    int64_t
-        nBalance = GetAccountBalance(strAccount, nMinDepth, filter, fExcludeNotExpiredTimelock);
-
-    return ValueFromAmount(nBalance);
+    return ValueFromAmount(pwalletMain->GetLegacyBalance(filter, nMinDepth, account, fExcludeNotExpiredTimelock));
 }
 
 Value movecmd(const Array& params, bool fHelp)
@@ -846,34 +751,9 @@ Value movecmd(const Array& params, bool fHelp)
     if (params.size() > 4)
         strComment = params[4].get_str();
 
-    CWalletDB walletdb(pwalletMain->GetDBHandle());
-    if (!walletdb.TxnBegin())
+    if (!pwalletMain->AccountMove(strFrom, strTo, nAmount, strComment)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "database error");
-
-    int64_t nNow = GetAdjustedTime();
-
-    // Debit
-    CAccountingEntry debit;
-    debit.nOrderPos = pwalletMain->IncOrderPosNext(&walletdb);
-    debit.strAccount = strFrom;
-    debit.nCreditDebit = -nAmount;
-    debit.nTime = nNow;
-    debit.strOtherAccount = strTo;
-    debit.strComment = strComment;
-    walletdb.WriteAccountingEntry(debit);
-
-    // Credit
-    CAccountingEntry credit;
-    credit.nOrderPos = pwalletMain->IncOrderPosNext(&walletdb);
-    credit.strAccount = strTo;
-    credit.nCreditDebit = nAmount;
-    credit.nTime = nNow;
-    credit.strOtherAccount = strFrom;
-    credit.strComment = strComment;
-    walletdb.WriteAccountingEntry(credit);
-
-    if (!walletdb.TxnCommit())
-        throw JSONRPCError(RPC_DATABASE_ERROR, "database error");
+    }
 
     return true;
 }
@@ -1910,7 +1790,7 @@ Value listtransactions(const Array& params, bool fHelp)
     const CWallet::TxItems & txOrdered = pwalletMain->wtxOrdered;
 
     // iterate backwards until we have nCount items to return:
-    for (CWallet::TxItems::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
+    for (CWallet::TxItems::const_reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
     {
         CWalletTx *const pwtx = (*it).second.first;
         if (pwtx != 0)
@@ -1994,18 +1874,14 @@ Value listaccounts(const Array& params, bool fHelp) {
 
   }
 
-  list<CAccountingEntry> acentries;
-
-  CWalletDB(pwalletMain->GetDBHandle()).ListAccountCreditDebit("*", acentries);
-  for (const CAccountingEntry& entry : acentries) {
-    mapAccountBalances[entry.strAccount] += entry.nCreditDebit;
-  }
+  const std::list<CAccountingEntry>& acentries = pwalletMain->laccentries;
+  for (const CAccountingEntry& entry : acentries)
+      mapAccountBalances[entry.strAccount] += entry.nCreditDebit;
 
   Object ret;
 
-  for (const PAIRTYPE(string, int64_t) & accountBalance : mapAccountBalances) {
-    ret.push_back(
-        Pair(accountBalance.first, ValueFromAmount(accountBalance.second)));
+  for (const std::pair<std::string, CAmount>& accountBalance : mapAccountBalances) {
+      ret.push_back(Pair(accountBalance.first, ValueFromAmount(accountBalance.second)));
   }
   return ret;
 }
