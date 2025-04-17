@@ -425,11 +425,4 @@ bool GetAddressUnspent(uint160 addressHash, int type,
 bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& nCoinAge); // ppcoin: get transaction coin age
 bool CheckBlockSignature(const CBlock& block);
 
-/* Wallet functions */
-void RegisterWallet(CWallet* pwalletIn);
-void CloseWallets();
-void Inventory(const uint256& hash);
-void ResendWalletTransactions();
-void SyncWithWallets(const CTransaction& tx, const CBlock* pblock = NULL, bool fUpdate = false, bool fConnect = true);
-
 #endif // YACOIN_VALIDATION_H

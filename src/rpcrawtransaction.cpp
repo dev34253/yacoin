@@ -186,7 +186,7 @@ Value listunspent(const Array& params, bool fHelp)
     Array results;
     vector<COutput> vecOutputs;
     pwalletMain->AvailableCoins(vecOutputs, false, NULL, NULL, true);
-    BOOST_FOREACH(const COutput& out, vecOutputs)
+    for(const COutput& out : vecOutputs)
     {
         if (out.nDepth < nMinDepth || out.nDepth > nMaxDepth)
             continue;
@@ -211,7 +211,7 @@ Value listunspent(const Array& params, bool fHelp)
         {
             entry.push_back(Pair("address", CBitcoinAddress(address).ToString()));
             if (pwalletMain->mapAddressBook.count(address))
-                entry.push_back(Pair("account", pwalletMain->mapAddressBook[address]));
+                entry.push_back(Pair("account", pwalletMain->mapAddressBook[address].name));
         }
         entry.push_back(Pair("scriptPubKey", HexStr(pk.begin(), pk.end())));
         if (pk.IsPayToScriptHash())
@@ -584,8 +584,6 @@ Value sendrawtransaction(const Array& params, bool fHelp)
         CValidationState state;
         if (!AcceptToMemoryPool(mempool, state, tx, &fMissingInputs))
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "TX rejected");
-
-        SyncWithWallets(*tx, NULL, true);
     }
     RelayTransaction(*tx, g_connman.get());
 

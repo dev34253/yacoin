@@ -157,7 +157,7 @@ Value issue(const Array& params, bool fHelp)
         }
         CKeyID keyID = newKey.GetID();
 
-        pwalletMain->SetAddressBookName(keyID, strAccount);
+        pwalletMain->SetAddressBook(keyID, strAccount, "receive");
 
         address = EncodeDestination(keyID);
     }
@@ -459,7 +459,7 @@ Value reissue(const Array& params, bool fHelp)
         }
         CKeyID keyID = newKey.GetID();
 
-        pwalletMain->SetAddressBookName(keyID, strAccount);
+        pwalletMain->SetAddressBook(keyID, strAccount, "receive");
 
         address = EncodeDestination(keyID);
     }
@@ -647,7 +647,7 @@ Value listmytokens(const Array& params, bool fHelp)
                 {
                     tempOut.push_back(Pair("address", CBitcoinAddress(address).ToString()));
                     if (pwalletMain->mapAddressBook.count(address))
-                        tempOut.push_back(Pair("account", pwalletMain->mapAddressBook[address]));
+                        tempOut.push_back(Pair("account", pwalletMain->mapAddressBook[address]).name);
                 }
 
                 //

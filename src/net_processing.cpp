@@ -1303,11 +1303,8 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                 LogPrintf("ProcessGetData, unknown inv type %d\n", inv.type);
             }
 
-            // TODO: Support this after upgrading wallet
-//            // Track requests for our stuff.
-//            GetMainSignals().Inventory(inv.hash);
-            // Track requests for our stuff
-            Inventory(inv.hash);
+            // Track requests for our stuff.
+            GetMainSignals().Inventory(inv.hash);
 
             // TODO: Support this in the future (it relates to MSG_CMPCT_BLOCK and MSG_FILTERED_BLOCK)
 //            if (inv.type == MSG_BLOCK || inv.type == MSG_FILTERED_BLOCK || inv.type == MSG_CMPCT_BLOCK || inv.type == MSG_WITNESS_BLOCK)
@@ -2060,11 +2057,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 }
             }
 
-            // TODO: Support this after upgrading wallet
-//            // Track requests for our stuff.
-//            GetMainSignals().Inventory(inv.hash);
-            // Track requests for our stuff
-            Inventory(inv.hash);
+            // Track requests for our stuff.
+            GetMainSignals().Inventory(inv.hash);
         }
     }
 
@@ -2282,7 +2276,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
         if (!AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, ptx, &fMissingInputs))
         {
-            SyncWithWallets(tx, NULL, true);
             RelayTransaction(tx, connman);
             for (unsigned int i = 0; i < tx.vout.size(); i++) {
                 vWorkQueue.emplace_back(inv.hash, i);
@@ -2320,7 +2313,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                         continue;
                     if (AcceptToMemoryPool(mempool, stateDummy, porphanTx, &fMissingInputs2)) {
                         LogPrint(BCLog::MEMPOOL, "   accepted orphan tx %s\n", orphanHash.ToString());
-                        SyncWithWallets(orphanTx, NULL, true);
                         RelayTransaction(orphanTx, connman);
                         for (unsigned int i = 0; i < orphanTx.vout.size(); i++) {
                             vWorkQueue.emplace_back(orphanHash, i);

@@ -246,7 +246,7 @@ void MultisigDialog::on_saveMultisigAddressButton_clicked()
     if(!wallet->HaveCScript(scriptID))
         wallet->AddCScript(script);
     if(!wallet->mapAddressBook.count(CBitcoinAddress(address).Get()))
-        wallet->SetAddressBookName(CBitcoinAddress(address).Get(), label);
+        wallet->SetAddressBook(CBitcoinAddress(address).Get(), label, "");
 }
 
 void MultisigDialog::clear()
@@ -561,7 +561,6 @@ void MultisigDialog::on_sendTransactionButton_clicked()
 	CValidationState state;
     if (!AcceptToMemoryPool(mempool, state, tx, &fMissingInputs))
         return;
-    SyncWithWallets(*tx, NULL, true);
     //(CInv(MSG_TX, txHash), tx);
     RelayTransaction(*tx, g_connman.get());
 }

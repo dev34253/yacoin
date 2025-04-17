@@ -4864,7 +4864,7 @@ CWallet* CWallet::CreateWalletFromFile(const std::string walletFile)
 
     LogPrintf(" wallet      %15dms\n", GetTimeMillis() - nStart);
 
-//    RegisterValidationInterface(walletInstance);
+    RegisterValidationInterface(walletInstance);
 
     // Try to top up keypool. No-op if the wallet is locked.
     walletInstance->TopUpKeyPool();

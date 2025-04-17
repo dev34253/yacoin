@@ -58,12 +58,12 @@ Value importprivkey(const Array& params, bool fHelp)
         LOCK2(cs_main, pwalletMain->cs_wallet);
 
         pwalletMain->MarkDirty();
-        pwalletMain->SetAddressBookName(vchAddress, strLabel);
+        pwalletMain->SetAddressBook(vchAddress, strLabel, "receive");
 
         if (!pwalletMain->AddKeyPubKey(key, pubkey))
             throw JSONRPCError(RPC_WALLET_ERROR, "Error adding key to wallet");
 
-        pwalletMain->ScanForWalletTransactions(chainActive.Genesis(), true);
+        pwalletMain->RescanFromTime(TIMESTAMP_MIN, true /* update */);
         pwalletMain->ReacceptWalletTransactions();
     }
 
@@ -109,14 +109,14 @@ Value importaddress(const Array& params, bool fHelp)
         pwalletMain->MarkDirty();
 
         if (address.IsValid())
-            pwalletMain->SetAddressBookName(address.Get(), strLabel);
+            pwalletMain->SetAddressBook(address.Get(), strLabel, "receive");
 
-        if (!pwalletMain->AddWatchOnly(script))
+        if (!pwalletMain->AddWatchOnly(script, 0 /* nCreateTime */))
             throw JSONRPCError(RPC_WALLET_ERROR, "Error adding address to wallet");
 
         if (fRescan)
         {
-            pwalletMain->ScanForWalletTransactions(chainActive.Genesis(), true);
+            pwalletMain->RescanFromTime(TIMESTAMP_MIN, true /* update */);
             pwalletMain->ReacceptWalletTransactions();
         }
     }

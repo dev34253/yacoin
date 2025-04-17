@@ -307,7 +307,13 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         {
             string strAddress;
             ssKey >> strAddress;
-            ssValue >> pwallet->mapAddressBook[CBitcoinAddress(strAddress).Get()];
+            ssValue >> pwallet->mapAddressBook[CBitcoinAddress(strAddress).Get()].name;
+        }
+        else if (strType == "purpose")
+        {
+            std::string strAddress;
+            ssKey >> strAddress;
+            ssValue >> pwallet->mapAddressBook[CBitcoinAddress(strAddress).Get()].purpose;
         }
         else if (strType == "tx")
         {
@@ -515,15 +521,8 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             ssKey >> nIndex;
             CKeyPool keypool;
             ssValue >> keypool;
-            pwallet->setKeyPool.insert(nIndex);
 
-            // If no metadata exists yet, create a default with the pool key's
-            // creation time. Note that this may be overwritten by actually
-            // stored metadata for that key later, which is fine.
-            CKeyID keyid = keypool.vchPubKey.GetID();
-            if (pwallet->mapKeyMetadata.count(keyid) == 0)
-                pwallet->mapKeyMetadata[keyid] = CKeyMetadata(keypool.nTime);
-
+            pwallet->LoadKeyPool(nIndex, keypool);
         }
         else if (strType == "version")
         {
@@ -817,17 +816,13 @@ void MaybeCompactWalletDB()
 
 bool DumpWallet(CWallet* pwallet, const string& strDest)
 {
-
-  if (!pwallet->fFileBacked)
-      return false;
   while (!fShutdown)
   {
       // Populate maps
       std::map<CTxDestination, int64_t> mapKeyBirth;
-      std::set<CKeyID> setKeyPool;
-      ScriptMap mapScripts = pwallet->GetP2SHRedeemScriptMap();
       pwallet->GetKeyBirthTimes(mapKeyBirth);
-      pwallet->GetAllReserveKeys(setKeyPool);
+      const std::map<CKeyID, int64_t>& mapKeyPool = pwallet->GetAllReserveKeys();
+      ScriptMap mapScripts = pwallet->GetP2SHRedeemScriptMap();
 
       // sort time/key pairs
       std::vector<std::pair<int64_t, CKeyID> > vKeyBirth;
@@ -866,9 +861,9 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
                   file << strprintf("%s %s label=%s # addr=%s\n",
                                     CBitcoinSecret(key).ToString(),
                                     strTime.c_str(),
-                                    EncodeDumpString(pwallet->mapAddressBook[keyid]).c_str(),
+                                    EncodeDumpString(pwallet->mapAddressBook[keyid].name),
                                     strAddr.c_str());
-              } else if (setKeyPool.count(keyid)) {
+              } else if (mapKeyPool.count(keyid)) {
                   file << strprintf("%s %s reserve=1 # addr=%s\n",
                                     CBitcoinSecret(key).ToString(),
                                     strTime.c_str(),
@@ -901,7 +896,7 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
               file << strprintf("%s type=%s label=%s redeemscript=%s # addr=%s\n",
                                 CBitcoinSecret(key).ToString(),
                                 GetTxnOutputType(whichTypeRet),
-                                EncodeDumpString(pwallet->mapAddressBook[redeemScriptHash]).c_str(),
+                                EncodeDumpString(pwallet->mapAddressBook[redeemScriptHash].name),
                                 HexStr(redeemScript.begin(), redeemScript.end()).c_str(),
                                 strAddr.c_str());
           } else {
@@ -923,9 +918,6 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
 
 bool ImportWallet(CWallet *pwallet, const string& strLocation)
 {
-
-   if (!pwallet->fFileBacked)
-       return false;
    while (!fShutdown)
    {
       // open inputfile as stream
@@ -994,7 +986,7 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
               {
                   pwallet->AddCScript(scriptP2SH);
                   if (fLabel)
-                      pwallet->SetAddressBookName(CScriptID(scriptP2SH), strLabel);
+                      pwallet->SetAddressBook(CScriptID(scriptP2SH), strLabel, "receive");
               }
               LogPrintf("Skipping import of %s (key already present)\n", CBitcoinAddress(keyid).ToString());
              continue;
@@ -1011,13 +1003,13 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
               pwallet->mapKeyMetadata[keyid].nCreateTime = nTime;
               nTimeBegin = std::min(nTimeBegin, nTime);
               if (fLabel)
-                  pwallet->SetAddressBookName(keyid, strLabel);
+                  pwallet->SetAddressBook(keyid, strLabel, "receive");
           }
           else if (readState == readP2SH)
           {
               pwallet->AddCScript(scriptP2SH);
               if (fLabel)
-                  pwallet->SetAddressBookName(CScriptID(scriptP2SH), strLabel);
+                  pwallet->SetAddressBook(CScriptID(scriptP2SH), strLabel, "receive");
           }
       }
       file.close();
@@ -1028,7 +1020,8 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
           pindex = pindex->pprev;
 
       LogPrintf("Rescanning last %i blocks\n", chainActive.Tip()->nHeight - pindex->nHeight + 1);
-      pwallet->ScanForWalletTransactions(pindex);
+      pwallet->UpdateTimeFirstKey(nTimeBegin);
+      pwallet->RescanFromTime(nTimeBegin, false /* update */);
       pwallet->ReacceptWalletTransactions();
       pwallet->MarkDirty();
 

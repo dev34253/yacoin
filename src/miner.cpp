@@ -463,8 +463,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
 
-    CReserveKey reservekey(pwallet);
-    txNew.vout[0].scriptPubKey << ToByteVector(reservekey.GetReservedKey()) << OP_CHECKSIG;
+    std::shared_ptr<CReserveScript> coinbase_script;
+    pwallet->GetScriptForMining(coinbase_script);
+    txNew.vout[0].scriptPubKey = coinbase_script->reserveScript;
 
     // Add coinbase tx as first transaction
     pblock->vtx.push_back(txNew);

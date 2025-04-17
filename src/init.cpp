@@ -110,7 +110,6 @@ void ExitTimeout(void* parg)
 #endif
 }
 
-#ifndef TESTS_ENABLED
 void StartShutdown()
 {
     fRequestShutdown = true;
@@ -188,8 +187,10 @@ void Shutdown()
     RenameThread("yacoin-shutoff");
     mempool.AddTransactionsUpdated(1);
 
+    for (CWalletRef pwallet : vpwallets) {
+        pwallet->Flush(false);
+    }
     MapPort(false);
-    bitdb.Flush(false);
 
     // Stop all background threads: miner, rpc, script validation and hash calculation
     StopNode();
@@ -236,12 +237,9 @@ void Shutdown()
         pblocktree = nullptr;
     }
 
-    {
-        LOCK(cs_main);
-        if (pwalletMain)
-            pwalletMain->SetBestChain(chainActive.GetLocator());
+    for (CWalletRef pwallet : vpwallets) {
+        pwallet->Flush(true);
     }
-    bitdb.Flush(true);
 
 #ifndef WIN32
     try {
@@ -252,13 +250,15 @@ void Shutdown()
 #endif
     UnregisterAllValidationInterfaces();
     GetMainSignals().UnregisterBackgroundSignalScheduler();
-    CloseWallets();
+    for (CWalletRef pwallet : vpwallets) {
+        delete pwallet;
+    }
+    vpwallets.clear();
     LogPrintf("wallet unregistered\n");
     globalVerifyHandle.reset();
     ECC_Stop();
     LogPrintf("Yacoin exited\n\n");
 }
-#endif
 
 void HandleSIGTERM(int)
 {

@@ -2858,7 +2858,7 @@ bool CreateTransferTokenTransaction(CWallet* pwallet, const CCoinControl& coinCo
 bool SendTokenTransaction(CWallet* pwallet, CWalletTx& transaction, CReserveKey& reserveKey, std::pair<int, std::string>& error, std::string& txid)
 {
     CValidationState state;
-    if (!pwallet->CommitTransaction(transaction, reserveKey)) {
+    if (!pwallet->CommitTransaction(transaction, reserveKey, g_connman.get(), state)) {
         error = std::make_pair(RPC_WALLET_ERROR, strprintf("Error: The transaction %s was rejected!", transaction.GetHash().GetHex().c_str()));
         return false;
     }
