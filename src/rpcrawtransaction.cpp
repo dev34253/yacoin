@@ -1,20 +1,42 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
+// Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include <boost/assign/list_of.hpp>
 
 #include "base58.h"
 #include "bitcoinrpc.h"
-#include "txdb.h"
+#include "chain.h"
+#include "coins.h"
+#include "consensus/validation.h"
+//#include "core_io.h"
 #include "init.h"
+#include "keystore.h"
+#include "validation.h"
+#include "merkleblock.h"
+#include "net.h"
+#include "policy/policy.h"
+//#include "policy/rbf.h"
+#include "primitives/transaction.h"
+//#include "rpc/server.h"
+#include "script/script.h"
+#include "script/script_error.h"
+#include "script/sign.h"
+#include "script/standard.h"
+#include "txmempool.h"
+#include "uint256.h"
+#include "utilstrencodings.h"
+#include "wallet/rpcwallet.h"
+#include "wallet/wallet.h"
+
+#include <stdint.h>
+#include <boost/assign/list_of.hpp>
+//#include <univalue.h>
+
+// TACA: OLD CODE BEGIN
+#include "txdb.h"
 #include "streams.h"
 #include "net_processing.h"
-#include "consensus/validation.h"
-#include "policy/policy.h"
-#include "validation.h"
-#include "script/standard.h"
-#include "script/sign.h"
 
 using namespace boost;
 using namespace boost::assign;
@@ -25,6 +47,7 @@ using std::runtime_error;
 using std::map;
 using std::string;
 using std::set;
+// TACA: OLD CODE END
 
 void ScriptPubKeyToJSON(const CScript& scriptPubKey, Object& out, bool fIncludeHex)
 {
@@ -149,6 +172,11 @@ Value getrawtransaction(const Array& params, bool fHelp)
 
 Value listunspent(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || params.size() > 3)
         throw runtime_error(
             "listunspent [minconf=1] [maxconf=9999999]  [\"address\",...]\n"
@@ -157,6 +185,8 @@ Value listunspent(const Array& params, bool fHelp)
             "Optionally filtered to only include txouts paid to specified addresses.\n"
             "Results are an array of Objects, each of which has:\n"
             "{txid, vout, scriptPubKey, amount, confirmations}");
+
+    LOCK2(cs_main, pwallet->cs_wallet);
 
     RPCTypeCheck(params, list_of(int_type)(int_type)(array_type));
 
@@ -172,7 +202,7 @@ Value listunspent(const Array& params, bool fHelp)
     if (params.size() > 2)
     {
         Array inputs = params[2].get_array();
-        BOOST_FOREACH(Value& input, inputs)
+        for(Value& input : inputs)
         {
             CBitcoinAddress address(input.get_str());
             if (!address.IsValid())
@@ -185,7 +215,7 @@ Value listunspent(const Array& params, bool fHelp)
 
     Array results;
     vector<COutput> vecOutputs;
-    pwalletMain->AvailableCoins(vecOutputs, false, NULL, NULL, true);
+    pwallet->AvailableCoins(vecOutputs, false, NULL, NULL, true);
     for(const COutput& out : vecOutputs)
     {
         if (out.nDepth < nMinDepth || out.nDepth > nMaxDepth)
@@ -202,7 +232,7 @@ Value listunspent(const Array& params, bool fHelp)
         }
 
         ::int64_t nValue = out.tx->vout[out.i].nValue;
-        const CScript& pk = out.tx->vout[out.i].scriptPubKey;
+        const CScript& scriptPubKey = out.tx->vout[out.i].scriptPubKey;
         Object entry;
         entry.push_back(Pair("txid", out.tx->GetHash().GetHex()));
         entry.push_back(Pair("vout", out.i));
@@ -210,18 +240,18 @@ Value listunspent(const Array& params, bool fHelp)
         if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
         {
             entry.push_back(Pair("address", CBitcoinAddress(address).ToString()));
-            if (pwalletMain->mapAddressBook.count(address))
-                entry.push_back(Pair("account", pwalletMain->mapAddressBook[address].name));
+            if (pwallet->mapAddressBook.count(address))
+                entry.push_back(Pair("account", pwallet->mapAddressBook[address].name));
         }
-        entry.push_back(Pair("scriptPubKey", HexStr(pk.begin(), pk.end())));
-        if (pk.IsPayToScriptHash())
+        entry.push_back(Pair("scriptPubKey", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
+        if (scriptPubKey.IsPayToScriptHash())
         {
             CTxDestination address;
-            if (ExtractDestination(pk, address))
+            if (ExtractDestination(scriptPubKey, address))
             {
                 const CScriptID& hash = boost::get<CScriptID>(address);
                 CScript redeemScript;
-                if (pwalletMain->GetCScript(hash, redeemScript))
+                if (pwallet->GetCScript(hash, redeemScript))
                     entry.push_back(Pair("redeemScript", HexStr(redeemScript.begin(), redeemScript.end())));
             }
         }
@@ -348,6 +378,8 @@ Value decodescript(const Array& params, bool fHelp)
 
 Value signrawtransaction(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+
     if (fHelp || params.size() < 1 || params.size() > 4)
         throw runtime_error(
             "signrawtransaction <hex string> [{\"txid\":txid,\"vout\":n,\"scriptPubKey\":hex,\"redeemScript\":hex},...] [<privatekey1>,...] [sighashtype=\"ALL\"]\n"
@@ -361,13 +393,15 @@ Value signrawtransaction(const Array& params, bool fHelp)
             "Returns json object with keys:\n"
             "  hex : raw transaction with signature(s) (hex-encoded string)\n"
             "  complete : 1 if transaction has a complete set of signature (0 if not)"
-            + HelpRequiringPassphrase());
+            + HelpRequiringPassphrase(pwallet));
+
+    LOCK2(cs_main, pwallet ? &pwallet->cs_wallet : nullptr);
 
     RPCTypeCheck(params, list_of(str_type)(array_type)(array_type)(str_type), true);
 
-    vector<unsigned char> txData(ParseHex(params[0].get_str()));
+    std::vector<unsigned char> txData(ParseHex(params[0].get_str()));
     CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
-    vector<CTransaction> txVariants;
+    std::vector<CTransaction> txVariants;
     while (!ssData.empty())
     {
         try {
@@ -383,13 +417,12 @@ Value signrawtransaction(const Array& params, bool fHelp)
     if (txVariants.empty())
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Missing transaction");
 
-    // mergedTx will end up with all the signatures; it
+    // mtx will end up with all the signatures; it
     // starts as a clone of the rawtx:
-    CTransaction mergedTx(txVariants[0]);
+    CTransaction mtx(txVariants[0]);
     bool fComplete = true;
 
     // Fetch previous transactions (inputs):
-    map<COutPoint, CScript> mapPrevOut;
     CCoinsView viewDummy;
     CCoinsViewCache view(&viewDummy);
     {
@@ -398,9 +431,8 @@ Value signrawtransaction(const Array& params, bool fHelp)
         CCoinsViewMemPool viewMempool(&viewChain, mempool);
         view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
 
-        for (const CTxIn& txin : mergedTx.vin) {
-            const Coin& existingCoin = view.AccessCoin(txin.prevout); // Load entries from viewChain into view; can fail.
-            mapPrevOut[txin.prevout] = existingCoin.out.scriptPubKey;
+        for (const CTxIn& txin : mtx.vin) {
+            view.AccessCoin(txin.prevout); // Load entries from viewChain into view; can fail.
         }
 
         view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
@@ -419,11 +451,14 @@ Value signrawtransaction(const Array& params, bool fHelp)
             if (!fGood)
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
             CKey key = vchSecret.GetKey();
+            if (!key.IsValid())
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Private key outside allowed range");
             tempKeystore.AddKey(key);
         }
     }
-    else
-        EnsureWalletIsUnlocked();
+    else if (pwallet) {
+        EnsureWalletIsUnlocked(pwallet);
+    }
 
     // Add previous txouts given in the RPC call:
     if (params.size() > 1 && params[1].type() != null_type)
@@ -438,7 +473,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
 
             RPCTypeCheck(prevOut, map_list_of("txid", str_type)("vout", int_type)("scriptPubKey", str_type));
 
-            string txidHex = find_value(prevOut, "txid").get_str();
+            std::string txidHex = find_value(prevOut, "txid").get_str();
             if (!IsHex(txidHex))
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "txid must be hexadecimal");
             uint256 txid;
@@ -448,26 +483,27 @@ Value signrawtransaction(const Array& params, bool fHelp)
             if (nOut < 0)
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "vout must be positive");
 
-            string pkHex = find_value(prevOut, "scriptPubKey").get_str();
+            std::string pkHex = find_value(prevOut, "scriptPubKey").get_str();
             if (!IsHex(pkHex))
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "scriptPubKey must be hexadecimal");
-            vector<unsigned char> pkData(ParseHex(pkHex));
+            std::vector<unsigned char> pkData(ParseHex(pkHex));
             CScript scriptPubKey(pkData.begin(), pkData.end());
 
-            COutPoint outpoint(txid, nOut);
-            if (mapPrevOut.count(outpoint))
+            COutPoint out(txid, nOut);
             {
-                // Complain if scriptPubKey doesn't match
-                if (mapPrevOut[outpoint] != scriptPubKey)
-                {
-                    string err("Previous output scriptPubKey mismatch:\n");
-                    err = err + mapPrevOut[outpoint].ToString() + "\nvs:\n"+
-                        scriptPubKey.ToString();
+                const Coin& coin = view.AccessCoin(out);
+                if (!coin.IsSpent() && coin.out.scriptPubKey != scriptPubKey) {
+                    std::string err("Previous output scriptPubKey mismatch:\n");
+                    err = err + coin.out.scriptPubKey.ToString() + "\nvs:\n"+ scriptPubKey.ToString();
                     throw JSONRPCError(RPC_DESERIALIZATION_ERROR, err);
                 }
+                Coin newcoin;
+                newcoin.out.scriptPubKey = scriptPubKey;
+                newcoin.out.nValue = 0;
+                newcoin.out.nValue = AmountFromValue(find_value(prevOut, "amount"));
+                newcoin.nHeight = 1;
+                view.AddCoin(out, std::move(newcoin), true);
             }
-            else
-                mapPrevOut[outpoint] = scriptPubKey;
 
             // if redeemScript given and not using the local wallet (private keys
             // given), add redeemScript to the tempKeystore so it can be signed:
@@ -478,7 +514,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
                 Value v = find_value(prevOut, "redeemScript");
                 if (!(v == Value::null))
                 {
-                    vector<unsigned char> rsData(ParseHexV(v, "redeemScript"));
+                    std::vector<unsigned char> rsData(ParseHexV(v, "redeemScript"));
                     CScript redeemScript(rsData.begin(), rsData.end());
                     tempKeystore.AddCScript(redeemScript);
                 }
@@ -486,19 +522,19 @@ Value signrawtransaction(const Array& params, bool fHelp)
         }
     }
 
-    const CKeyStore& keystore = (fGivenKeys ? tempKeystore : *pwalletMain);
+    const CKeyStore& keystore = ((fGivenKeys || !pwallet) ? tempKeystore : *pwallet);
 
     int nHashType = SIGHASH_ALL;
     if (params.size() > 3 && params[3].type() != null_type)
     {
-        static map<string, int> mapSigHashValues =
+        static std::map<string, int> mapSigHashValues =
             boost::assign::map_list_of
-            (string("ALL"), int(SIGHASH_ALL))
-            (string("ALL|ANYONECANPAY"), int(SIGHASH_ALL|SIGHASH_ANYONECANPAY))
-            (string("NONE"), int(SIGHASH_NONE))
-            (string("NONE|ANYONECANPAY"), int(SIGHASH_NONE|SIGHASH_ANYONECANPAY))
-            (string("SINGLE"), int(SIGHASH_SINGLE))
-            (string("SINGLE|ANYONECANPAY"), int(SIGHASH_SINGLE|SIGHASH_ANYONECANPAY))
+            (std::string("ALL"), int(SIGHASH_ALL))
+            (std::string("ALstd::std::stringNECANPAY"), int(SIGHASH_ALL|SIGHASH_ANYONECANPAY))
+            (std::string("NONE"), int(SIGHASH_NONE))
+            (std::string("NONE|ANYONECANPAY"), int(SIGHASH_NONE|SIGHASH_ANYONECANPAY))
+            (std::string("SINGLE"), int(SIGHASH_SINGLE))
+            (std::string("SINGLE|ANYONECANPAY"), int(SIGHASH_SINGLE|SIGHASH_ANYONECANPAY))
             ;
         string strHashType = params[3].get_str();
         if (mapSigHashValues.count(strHashType))
@@ -510,33 +546,36 @@ Value signrawtransaction(const Array& params, bool fHelp)
     bool fHashSingle = ((nHashType & ~SIGHASH_ANYONECANPAY) == SIGHASH_SINGLE);
 
     // Sign what we can:
-    for (unsigned int i = 0; i < mergedTx.vin.size(); i++)
+    for (unsigned int i = 0; i < mtx.vin.size(); i++)
     {
-        CTxIn& txin = mergedTx.vin[i];
-        if (mapPrevOut.count(txin.prevout) == 0)
-        {
+        CTxIn& txin = mtx.vin[i];
+        const Coin& coin = view.AccessCoin(txin.prevout);
+        if (coin.IsSpent()) {
             fComplete = false;
+//            TxInErrorToJSON(txin, vErrors, "Input not found or already spent");
             continue;
         }
-        const CScript& prevPubKey = mapPrevOut[txin.prevout];
+        const CScript& prevPubKey = coin.out.scriptPubKey;
+        const CAmount& amount = coin.out.nValue;
 
         SignatureData sigdata;
         // Only sign SIGHASH_SINGLE if there's a corresponding output:
-        if (!fHashSingle || (i < mergedTx.vout.size()))
-            ProduceSignature(TransactionSignatureCreator(&keystore, &mergedTx, i, nHashType), prevPubKey, sigdata);
-        sigdata = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mergedTx, i), sigdata, DataFromTransaction(mergedTx, i));
+        if (!fHashSingle || (i < mtx.vout.size()))
+            ProduceSignature(TransactionSignatureCreator(&keystore, &mtx, i, nHashType), prevPubKey, sigdata);
+        sigdata = CombineSignatures(prevPubKey, TransactionSignatureChecker(&mtx, i), sigdata, DataFromTransaction(mtx, i));
 
-        UpdateTransaction(mergedTx, i, sigdata);
+        UpdateTransaction(mtx, i, sigdata);
 
         ScriptError serror = SCRIPT_ERR_OK;
-        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror)) {
+        if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mtx, i), &serror)) {
+//            TxInErrorToJSON(txin, vErrors, ScriptErrorString(serror));
             fComplete = false;
         }
     }
 
     Object result;
     CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
-    ssTx << mergedTx;
+    ssTx << mtx;
     result.push_back(Pair("hex", HexStr(ssTx.begin(), ssTx.end())));
     result.push_back(Pair("complete", fComplete));
 
@@ -547,8 +586,7 @@ Value sendrawtransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 1)
         throw runtime_error(
-            "sendrawtransaction <hex string>\n"
-            "Submits raw transaction (serialized, hex-encoded) to local node and network.");
+            "sendrawtransaction <hex strinstd::string            "Submits raw transaction (serialized, hex-encoded) to local node and network.");
 
     RPCTypeCheck(params, list_of(str_type));
 
@@ -590,49 +628,42 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     return hashTx.GetHex();
 }
 
-Value createmultisig(const Array& params, bool fHelp)
+/**
+ * Used by addmultisigaddress / createmultisig:
+ */
+CScript _createmultisig_redeemScript(CWallet * const pwallet, const Array& params)
 {
-    if (fHelp || params.size() < 2 || params.size() > 3)
-    {
-        string msg = "createmultisig <nrequired> <'[\"key\",\"key\"]'>\n"
-            "\nCreates a multi-signature address with n signature of m keys required.\n"
-            "It returns a json object with the address and redeemScript.";
-        throw runtime_error(msg);
-    }
-
     int nRequired = params[0].get_int();
     const Array& keys = params[1].get_array();
-    string strAccount;
 
     // Gather public keys
     if (nRequired < 1)
-        throw runtime_error("a multisignature address must require at least one key to redeem");
+        throw std::runtime_error("a multisignature address must require at least one key to redeem");
     if ((int)keys.size() < nRequired)
-        throw runtime_error(
+        throw std::runtime_error(
             strprintf("not enough keys supplied "
-                      "(got %" PRIszu " keys, but need at least %d to redeem)", keys.size(), nRequired));
+                      "(got %u keys, but need at least %d to redeem)", keys.size(), nRequired));
     if (keys.size() > 16)
-        throw runtime_error("Number of addresses involved in the multisignature address creation > 16\nReduce the number");
+        throw std::runtime_error("Number of addresses involved in the multisignature address creation > 16\nReduce the number");
     std::vector<CPubKey> pubkeys;
     pubkeys.resize(keys.size());
     for (unsigned int i = 0; i < keys.size(); i++)
     {
         const std::string& ks = keys[i].get_str();
-
         // Case 1: Bitcoin address and we have full public key:
         CBitcoinAddress address(ks);
-        if (address.IsValid())
-        {
+        if (pwallet && address.IsValid()) {
             CKeyID keyID;
             if (!address.GetKeyID(keyID))
-                throw runtime_error(
-                    strprintf("%s does not refer to a key",ks.c_str()));
+                throw std::runtime_error(
+                    strprintf("%s does not refer to a key",ks));
             CPubKey vchPubKey;
-            if (!pwalletMain->GetPubKey(keyID, vchPubKey))
-                throw runtime_error(
-                    strprintf("no full public key for address %s",ks.c_str()));
+            if (!pwallet->GetPubKey(keyID, vchPubKey)) {
+                throw std::runtime_error(
+                    strprintf("no full public key for address %s",ks));
+            }
             if (!vchPubKey.IsFullyValid())
-                throw runtime_error(" Invalid public key: "+ks);
+                throw std::runtime_error(" Invalid public key: "+ks);
             pubkeys[i] = vchPubKey;
         }
 
@@ -641,17 +672,37 @@ Value createmultisig(const Array& params, bool fHelp)
         {
             CPubKey vchPubKey(ParseHex(ks));
             if (!vchPubKey.IsFullyValid())
-                throw runtime_error(" Invalid public key: "+ks);
+                throw std::runtime_error(" Invalid public key: "+ks);
             pubkeys[i] = vchPubKey;
         }
         else
         {
-            throw runtime_error(" Invalid public key: "+ks);
+            throw std::runtime_error(" Invalid public key: "+ks);
         }
+    }
+    CScript result = GetScriptForMultisig(nRequired, pubkeys);
+
+    if (result.size() > MAX_SCRIPT_ELEMENT_SIZE)
+        throw std::runtime_error(
+                strprintf("redeemScript exceeds size limit: %d > %d", result.size(), MAX_SCRIPT_ELEMENT_SIZE));
+
+    return result;
+}
+
+Value createmultisig(const Array& params, bool fHelp)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest();
+
+    if (fHelp || params.size() < 2 || params.size() > 3)
+    {
+        string msg = "createmultisig <nrequired> <'[\"key\",\"key\"]'>\n"
+            "\nCreates a multi-signature address with n signature of m keys required.\n"
+            "It returns a json object with the address and redeemScript.";
+        throw runtime_error(msg);
     }
 
     // Construct using pay-to-script-hash:
-    CScript inner = GetScriptForMultisig(nRequired, pubkeys);
+    CScript inner = _createmultisig_redeemScript(pwallet, params);
 
     if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
         throw runtime_error(
