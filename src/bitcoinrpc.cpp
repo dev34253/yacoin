@@ -1143,15 +1143,7 @@ json_spirit::Value CRPCTable::execute(const std::string &strMethod, const json_s
     {
         // Execute
         Value result;
-        {
-            if (pcmd->unlocked)
-                result = pcmd->actor(params, false);
-            else 
-            {
-                LOCK2(cs_main, pwalletMain->cs_wallet);
-                result = pcmd->actor(params, false);
-            }
-        }
+        result = pcmd->actor(params, false);
         return result;
     }
     catch (std::exception& e)

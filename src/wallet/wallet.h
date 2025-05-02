@@ -45,7 +45,6 @@
 typedef CWallet* CWalletRef;
 extern CCriticalSection cs_vpwallets;
 extern std::vector<CWalletRef> vpwallets;
-extern CWallet* pwalletMain;
 
 /**
  * Settings
@@ -1351,5 +1350,7 @@ public:
 };
 
 extern std::atomic<int64_t> nTimeBestReceived;
+
+CWallet *GetFirstWallet();
 
 #endif // YACOIN_WALLET_WALLET_H

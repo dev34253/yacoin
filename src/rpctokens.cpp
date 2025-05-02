@@ -13,6 +13,7 @@
 #include "script/standard.h"
 #include "txdb.h"
 #include "wallet/wallet.h"
+#include "wallet/rpcwallet.h"
 
 #include <boost/assign/list_of.hpp>
 #include <map>
@@ -47,6 +48,11 @@ void safe_advance(Iter& curr, const Iter& end, Incr n)
 
 Value issue(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || !AreTokensDeployed() || params.size() < 1 || params.size() > 8)
         throw runtime_error(
             "issue <token_name> [qty] [units] [reissuable] [has_ipfs] [ipfs_hash] [to_address] [change_address]\n"
@@ -79,7 +85,7 @@ Value issue(const Array& params, bool fHelp)
             + HelpExampleCli("issue", "\"YATOKEN_NAME#UNIQUE_TOKEN\"")
         );
 
-    if (pwalletMain->IsLocked())
+    if (pwallet->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     // Check token name and infer tokenType
@@ -146,18 +152,18 @@ Value issue(const Array& params, bool fHelp)
         // Create a new address
         std::string strAccount;
 
-        if (!pwalletMain->IsLocked()) {
-            pwalletMain->TopUpKeyPool();
+        if (!pwallet->IsLocked()) {
+            pwallet->TopUpKeyPool();
         }
 
         // Generate a new key that is added to wallet
         CPubKey newKey;
-        if (!pwalletMain->GetKeyFromPool(newKey)) {
+        if (!pwallet->GetKeyFromPool(newKey)) {
             throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out, please call keypoolrefill first");
         }
         CKeyID keyID = newKey.GetID();
 
-        pwalletMain->SetAddressBook(keyID, strAccount, "receive");
+        pwallet->SetAddressBook(keyID, strAccount, "receive");
 
         address = EncodeDestination(keyID);
     }
@@ -182,7 +188,7 @@ Value issue(const Array& params, bool fHelp)
 
     CNewToken token(tokenName, nAmount, units, reissuable ? 1 : 0, has_ipfs ? 1 : 0, raw_multihash);
 
-    CReserveKey reservekey(pwalletMain);
+    CReserveKey reservekey(pwallet);
     CWalletTx transaction;
     CAmount nRequiredFee;
     std::pair<int, std::string> error;
@@ -191,12 +197,12 @@ Value issue(const Array& params, bool fHelp)
     crtl.destChange = DecodeDestination(change_address);
 
     // Create the Transaction
-    if (!CreateTokenTransaction(pwalletMain, crtl, token, address, error, transaction, reservekey, nRequiredFee))
+    if (!CreateTokenTransaction(pwallet, crtl, token, address, error, transaction, reservekey, nRequiredFee))
         throw JSONRPCError(error.first, error.second);
 
     // Send the Transaction to the network
     std::string txid;
-    if (!SendTokenTransaction(pwalletMain, transaction, reservekey, error, txid))
+    if (!SendTokenTransaction(pwallet, transaction, reservekey, error, txid))
         throw JSONRPCError(error.first, error.second);
 
     return txid;
@@ -204,6 +210,11 @@ Value issue(const Array& params, bool fHelp)
 
 Value transfer(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || !AreTokensDeployed() || params.size() < 3 || params.size() > 5)
         throw runtime_error(
                 "transfer <token_name> [qty] <to_address> [change_address] [token_change_address]\n"
@@ -225,7 +236,7 @@ Value transfer(const Array& params, bool fHelp)
                 + HelpExampleCli("transfer", "\"TOKEN_NAME\" 20 \"address\"")
         );
 
-    if (pwalletMain->IsLocked())
+    if (pwallet->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     std::string token_name = capitalizeTokenName(params[0].get_str());
@@ -262,7 +273,7 @@ Value transfer(const Array& params, bool fHelp)
     CTokenTransfer transfer(token_name, nAmount);
 
     vTransfers.emplace_back(std::make_pair(transfer, to_address));
-    CReserveKey reservekey(pwalletMain);
+    CReserveKey reservekey(pwallet);
     CWalletTx transaction;
     CAmount nRequiredFee;
 
@@ -271,12 +282,12 @@ Value transfer(const Array& params, bool fHelp)
     ctrl.tokenDestChange = token_change_dest;
 
     // Create the Transaction
-    if (!CreateTransferTokenTransaction(pwalletMain, ctrl, vTransfers, error, transaction, reservekey, nRequiredFee))
+    if (!CreateTransferTokenTransaction(pwallet, ctrl, vTransfers, error, transaction, reservekey, nRequiredFee))
         throw JSONRPCError(error.first, error.second);
 
     // Send the Transaction to the network
     std::string txid;
-    if (!SendTokenTransaction(pwalletMain, transaction, reservekey, error, txid))
+    if (!SendTokenTransaction(pwallet, transaction, reservekey, error, txid))
         throw JSONRPCError(error.first, error.second);
 
     // Display the transaction id
@@ -285,6 +296,11 @@ Value transfer(const Array& params, bool fHelp)
 
 Value transferfromaddress(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || !AreTokensDeployed() || params.size() < 4 || params.size() > 6)
         throw runtime_error(
                 "transferfromaddress <token_name> <from_address> <qty> <to_address> [yac_change_address] [token_change_address]\n"
@@ -310,7 +326,7 @@ Value transferfromaddress(const Array& params, bool fHelp)
                 + HelpExampleRpc("transferfromaddress", "\"TOKEN_NAME\" \"fromaddress\" 20 \"address\"")
         );
 
-    if (pwalletMain->IsLocked())
+    if (pwallet->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     std::string token_name = capitalizeTokenName(params[0].get_str());
@@ -349,13 +365,13 @@ Value transferfromaddress(const Array& params, bool fHelp)
     std::vector< std::pair<CTokenTransfer, std::string> >vTransfers;
 
     vTransfers.emplace_back(std::make_pair(CTokenTransfer(token_name, nAmount), address));
-    CReserveKey reservekey(pwalletMain);
+    CReserveKey reservekey(pwallet);
     CWalletTx transaction;
     CAmount nRequiredFee;
 
     CCoinControl ctrl;
     std::map<std::string, std::vector<COutput> > mapTokenCoins;
-    pwalletMain->AvailableTokens(mapTokenCoins);
+    pwallet->AvailableTokens(mapTokenCoins);
 
     // Set the change addresses
     ctrl.destChange = yac_change_dest;
@@ -382,12 +398,12 @@ Value transferfromaddress(const Array& params, bool fHelp)
     }
 
     // Create the Transaction
-    if (!CreateTransferTokenTransaction(pwalletMain, ctrl, vTransfers, error, transaction, reservekey, nRequiredFee))
+    if (!CreateTransferTokenTransaction(pwallet, ctrl, vTransfers, error, transaction, reservekey, nRequiredFee))
         throw JSONRPCError(error.first, error.second);
 
     // Send the Transaction to the network
     std::string txid;
-    if (!SendTokenTransaction(pwalletMain, transaction, reservekey, error, txid))
+    if (!SendTokenTransaction(pwallet, transaction, reservekey, error, txid))
         throw JSONRPCError(error.first, error.second);
 
     // Display the transaction id
@@ -396,6 +412,11 @@ Value transferfromaddress(const Array& params, bool fHelp)
 
 Value reissue(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || !AreTokensDeployed() || params.size() > 7 || params.size() < 2)
         throw runtime_error(
                 "reissue <token_name> <qty> [reissuable] [to_address] [change_address] [new_unit] [new_ipfs]\n"
@@ -421,7 +442,7 @@ Value reissue(const Array& params, bool fHelp)
                 + HelpExampleRpc("reissue", "\"TOKEN_NAME\" 20 \"true\" \"address\" \"change_address\" 6 \"Qmd286K6pohQcTKYqnS1YhWrCiS4gz7Xi34sdwMe9USZ7u\"")
         );
 
-    if (pwalletMain->IsLocked())
+    if (pwallet->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     // Get that paramaters
@@ -448,18 +469,18 @@ Value reissue(const Array& params, bool fHelp)
         // Create a new address
         std::string strAccount;
 
-        if (!pwalletMain->IsLocked()) {
-            pwalletMain->TopUpKeyPool();
+        if (!pwallet->IsLocked()) {
+            pwallet->TopUpKeyPool();
         }
 
         // Generate a new key that is added to wallet
         CPubKey newKey;
-        if (!pwalletMain->GetKeyFromPool(newKey)) {
+        if (!pwallet->GetKeyFromPool(newKey)) {
             throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out, please call keypoolrefill first");
         }
         CKeyID keyID = newKey.GetID();
 
-        pwalletMain->SetAddressBook(keyID, strAccount, "receive");
+        pwallet->SetAddressBook(keyID, strAccount, "receive");
 
         address = EncodeDestination(keyID);
     }
@@ -494,7 +515,7 @@ Value reissue(const Array& params, bool fHelp)
     CReissueToken reissueToken(token_name, nAmount, newUnits, reissuable, raw_multihash);
 
     std::pair<int, std::string> error;
-    CReserveKey reservekey(pwalletMain);
+    CReserveKey reservekey(pwallet);
     CWalletTx transaction;
     CAmount nRequiredFee;
 
@@ -502,7 +523,7 @@ Value reissue(const Array& params, bool fHelp)
     crtl.destChange = DecodeDestination(changeAddress);
 
     // Create the Transaction
-    if (!CreateReissueTokenTransaction(pwalletMain, crtl, reissueToken, address, error, transaction, reservekey, nRequiredFee))
+    if (!CreateReissueTokenTransaction(pwallet, crtl, reissueToken, address, error, transaction, reservekey, nRequiredFee))
         throw JSONRPCError(error.first, error.second);
 
     std::string strError = "";
@@ -511,7 +532,7 @@ Value reissue(const Array& params, bool fHelp)
 
     // Send the Transaction to the network
     std::string txid;
-    if (!SendTokenTransaction(pwalletMain, transaction, reservekey, error, txid))
+    if (!SendTokenTransaction(pwallet, transaction, reservekey, error, txid))
         throw JSONRPCError(error.first, error.second);
 
     return txid;
@@ -519,6 +540,11 @@ Value reissue(const Array& params, bool fHelp)
 
 Value listmytokens(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || !AreTokensDeployed() || params.size() > 5)
         throw runtime_error(
                 "listmytokens [token] [verbose] [count] [start] (confs) \n"
@@ -566,7 +592,7 @@ Value listmytokens(const Array& params, bool fHelp)
                   + HelpExampleCli("listmytokens", "\"TOKEN*\" true 10 20 1")
         );
 
-    if (pwalletMain->IsLocked())
+    if (pwallet->IsLocked())
         throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, "Error: Please enter the wallet passphrase with walletpassphrase first.");
 
     std::string filter = "*";
@@ -646,15 +672,15 @@ Value listmytokens(const Array& params, bool fHelp)
                 if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
                 {
                     tempOut.push_back(Pair("address", CBitcoinAddress(address).ToString()));
-                    if (pwalletMain->mapAddressBook.count(address))
-                        tempOut.push_back(Pair("account", pwalletMain->mapAddressBook[address]).name);
+                    if (pwallet->mapAddressBook.count(address))
+                        tempOut.push_back(Pair("account", pwallet->mapAddressBook[address]).name);
                 }
 
                 //
                 // get amount for this outpoint
                 CAmount txAmount = 0;
-                auto it = pwalletMain->mapWallet.find(out.tx->GetHash());
-                if (it == pwalletMain->mapWallet.end()) {
+                auto it = pwallet->mapWallet.find(out.tx->GetHash());
+                if (it == pwallet->mapWallet.end()) {
                     throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction id");
                 }
                 const CWalletTx* wtx = out.tx;

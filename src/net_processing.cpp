@@ -95,7 +95,7 @@ void StartNode(void *parg)
     // Start threads
     //
     // Generate coins in the background
-    GenerateYacoins(gArgs.GetBoolArg("-gen", false), pwalletMain);
+    GenerateYacoins(gArgs.GetBoolArg("-gen", false));
 }
 
 void StopNode()

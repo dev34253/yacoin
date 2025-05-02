@@ -16,7 +16,7 @@
 #include "txdb.h"
 #include "streams.h"
 #include "warnings.h"
-
+#include "wallet/rpcwallet.h"
 #include "pow.h"
 
 using namespace json_spirit;
@@ -70,7 +70,7 @@ Value setgenerate(const Array& params, bool fHelp)
     }
     gArgs.ForceSetArg("-gen", (fGenerate ? "1" : "0"));
 
-    GenerateYacoins(fGenerate, pwalletMain);
+    GenerateYacoins(fGenerate);
     return Value::null;
 }
 
@@ -125,7 +125,7 @@ Value generatetoaddress(const Array& params, bool fHelp){
     // }
     gArgs.ForceSetArg("-gen", "1");
     gArgs.ForceSetArg("-genproclimit", "1");
-    GenerateYacoins(true, pwalletMain, nblocks);
+    GenerateYacoins(true, nblocks);
     gArgs.ForceSetArg("-gen", "0");
     return res;
 }
@@ -180,6 +180,11 @@ Value getmininginfo(const Array& params, bool fHelp)
 
 Value getworkex(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || params.size() > 2)
         throw runtime_error(
             "getworkex [data, coinbase]\n"
@@ -194,7 +199,7 @@ Value getworkex(const Array& params, bool fHelp)
 
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;
-    static CReserveKey reservekey(pwalletMain);
+    static CReserveKey reservekey(pwallet);
 
     if (params.size() == 0)
     {
@@ -218,7 +223,7 @@ Value getworkex(const Array& params, bool fHelp)
             nStart = GetTime();
 
             // Create new block
-            pblocktemplate = BlockAssembler().CreateNewBlock(pwalletMain);
+            pblocktemplate = BlockAssembler().CreateNewBlock(pwallet);
             if (!pblocktemplate.get())
                 throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         }
@@ -299,16 +304,21 @@ Value getworkex(const Array& params, bool fHelp)
 
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
-        if (!pblock->SignBlock(*pwalletMain))
+        if (!pblock->SignBlock(*pwallet))
             throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
 
-        return CheckWork(pblock, *pwalletMain, reservekey);
+        return CheckWork(pblock, *pwallet, reservekey);
     }
 }
 
 
 Value getwork(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "getwork [data]\n"
@@ -327,7 +337,7 @@ Value getwork(const Array& params, bool fHelp)
 
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
-    static CReserveKey reservekey(pwalletMain);
+    static CReserveKey reservekey(pwallet);
 
     if (params.size() == 0)
     {
@@ -358,7 +368,7 @@ Value getwork(const Array& params, bool fHelp)
             nStart = GetTime();
 
             // Create new block
-            pblocktemplate = BlockAssembler().CreateNewBlock(pwalletMain);
+            pblocktemplate = BlockAssembler().CreateNewBlock(pwallet);
             if (!pblocktemplate.get())
                 throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
 
@@ -464,19 +474,24 @@ Value getwork(const Array& params, bool fHelp)
 
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
-        if (!pblock->SignBlock(*pwalletMain))
+        if (!pblock->SignBlock(*pwallet))
         {
             LogPrintf("rpc getwork, Unable to sign block\n");
             throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
         }
         
-        return CheckWork(pblock, *pwalletMain, reservekey);
+        return CheckWork(pblock, *pwallet, reservekey);
     }
 }
 
 
 Value getblocktemplate(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "getblocktemplate [params]\n"
@@ -521,7 +536,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
     if (IsInitialBlockDownload())
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Yacoin is downloading blocks...");
 
-    static CReserveKey reservekey(pwalletMain);
+    static CReserveKey reservekey(pwallet);
 
     // Update block
     static unsigned int nTransactionsUpdatedLast;
@@ -541,7 +556,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         CBlockIndex* pindexPrevNew = chainActive.Tip();
         nStart = GetTime();
 
-        pblocktemplate = BlockAssembler().CreateNewBlock(pwalletMain);
+        pblocktemplate = BlockAssembler().CreateNewBlock(pwallet);
         if (!pblocktemplate.get())
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
 
@@ -620,6 +635,11 @@ Value getblocktemplate(const Array& params, bool fHelp)
 
 Value submitblock(const Array& params, bool fHelp)
 {
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
     if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
             "submitblock <hex data> [optional-params-obj]\n"
@@ -637,13 +657,13 @@ Value submitblock(const Array& params, bool fHelp)
     catch (std::exception &e) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block decode failed");
     }
-    while (pwalletMain->IsLocked())
+    while (pwallet->IsLocked())
     {
         //strMintWarning = strMintMessage;
         Sleep(nMillisecondsPerSecond);
     }
 
-    if (!block.SignBlock(*pwalletMain))
+    if (!block.SignBlock(*pwallet))
         throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
 
     bool fAccepted = ProcessNewBlock(Params(), blockptr, true, nullptr);

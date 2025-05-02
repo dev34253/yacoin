@@ -63,7 +63,6 @@ bool fCoinsDataActual;
 
 CCriticalSection cs_vpwallets;
 std::vector<CWalletRef> vpwallets;
-CWallet* pwalletMain;
 
 unsigned int nTxConfirmTarget = DEFAULT_TX_CONFIRM_TARGET;
 bool bSpendZeroConfChange = DEFAULT_SPEND_ZEROCONF_CHANGE;
@@ -4966,8 +4965,6 @@ bool CWallet::InitLoadWallet()
         vpwallets.push_back(pwallet);
     }
 
-    // TODO: TACA remove this later
-    pwalletMain = vpwallets[0];
     return true;
 }
 
@@ -5357,4 +5354,14 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64_t nV
 ScriptMap CWallet::GetP2SHRedeemScriptMap() const
 {
     return this->mapScripts;
+}
+
+CWallet *GetFirstWallet() {
+    while(vpwallets.size() == 0){
+        MilliSleep(100);
+    }
+    if (vpwallets.size() == 0)
+        return(NULL);
+    return(vpwallets[0]);
+    return(NULL);
 }
