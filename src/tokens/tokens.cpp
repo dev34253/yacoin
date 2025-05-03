@@ -2518,7 +2518,7 @@ bool GetAllMyTokenBalances(std::map<std::string, std::vector<COutput> >& outputs
             CAmount balance = 0;
             for (auto txout : pair.second) { // Compute balance of token by summing all Available Outputs
                 CTokenOutputEntry data;
-                if (GetTokenData(txout.tx->vout[txout.i].scriptPubKey, data))
+                if (GetTokenData(txout.tx->tx->vout[txout.i].scriptPubKey, data))
                     balance += data.nAmount;
             }
             amounts.insert(std::make_pair(pair.first, balance));
@@ -2543,7 +2543,7 @@ bool GetMyTokenBalance(const std::string& name, CAmount& balance, const int& con
         auto& ref = outputs.at(name);
         for (const auto& txout : ref) {
             CTokenOutputEntry data;
-            if (GetTokenData(txout.tx->vout[txout.i].scriptPubKey, data)) {
+            if (GetTokenData(txout.tx->tx->vout[txout.i].scriptPubKey, data)) {
                 balance += data.nAmount;
             }
         }

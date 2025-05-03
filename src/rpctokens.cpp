@@ -385,7 +385,7 @@ Value transferfromaddress(const Array& params, bool fHelp)
     for (const auto& out : mapTokenCoins.at(token_name)) {
         // Get the address that the coin resides in, because to send a valid message. You need to send it to the same address that it currently resides in.
         CTxDestination dest;
-        ExtractDestination(out.tx->vout[out.i].scriptPubKey, dest);
+        ExtractDestination(out.tx->tx->vout[out.i].scriptPubKey, dest);
 
         if (from_address == EncodeDestination(dest))
             ctrl.SelectToken(COutPoint(out.tx->GetHash(), out.i));
@@ -664,16 +664,16 @@ Value listmytokens(const Array& params, bool fHelp)
             Array outpoints;
             for (auto const& out : outputs.at(bal->first)) {
                 Object tempOut;
-                tempOut.push_back(Pair("txid", out.tx->GetHash().GetHex()));
+                tempOut.push_back(Pair("txid", out.tx->tx->GetHash().GetHex()));
                 tempOut.push_back(Pair("vout", (int)out.i));
 
                 // Get address
                 CTxDestination address;
-                if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
+                if (ExtractDestination(out.tx->tx->vout[out.i].scriptPubKey, address))
                 {
                     tempOut.push_back(Pair("address", CBitcoinAddress(address).ToString()));
                     if (pwallet->mapAddressBook.count(address))
-                        tempOut.push_back(Pair("account", pwallet->mapAddressBook[address]).name);
+                        tempOut.push_back(Pair("account", pwallet->mapAddressBook[address].name));
                 }
 
                 //
@@ -684,7 +684,7 @@ Value listmytokens(const Array& params, bool fHelp)
                     throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction id");
                 }
                 const CWalletTx* wtx = out.tx;
-                CTxOut txOut = wtx->vout[out.i];
+                CTxOut txOut = wtx->tx->vout[out.i];
                 std::string strAddress;
                 if (CheckIssueDataTx(txOut)) {
                     CNewToken token;

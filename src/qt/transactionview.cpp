@@ -432,7 +432,6 @@ void TransactionView::clearOrphans()
     if(!model)
         return;
 
-    model->clearOrphans();
     model->getTransactionTableModel()->refresh();
     delete transactionProxyModel;
     setModel(model, false);

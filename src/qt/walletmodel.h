@@ -12,6 +12,7 @@ class AddressTableModel;
 class TransactionTableModel;
 class MintingTableModel;
 class CWallet;
+class CKey;
 class CKeyID;
 class CPubKey;
 class COutput;

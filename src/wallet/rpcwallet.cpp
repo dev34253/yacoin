@@ -447,58 +447,6 @@ Value getaddressesbyaccount(const Array& params, bool fHelp)
     return ret;
 }
 
-Value mergecoins(const Array& params, bool fHelp)
-{
-    CWallet* const pwallet = GetWalletForJSONRPCRequest();
-    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
-        return Value::null;
-    }
-
-    if (fHelp || params.size() != 3)
-        throw runtime_error(
-            "mergecoins <amount> <minvalue> <outputvalue>\n"
-            "<amount> is resulting inputs sum\n"
-            "<minvalue> is minimum value of inputs which are used in join process\n"
-            "<outputvalue> is resulting value of inputs which will be created\n"
-            "All values are real and and rounded to the nearest " + FormatMoney(MIN_TXOUT_AMOUNT)
-            + HelpRequiringPassphrase(pwallet));
-
-    LOCK2(cs_main, pwallet->cs_wallet);
-
-    EnsureWalletIsUnlocked(pwallet);
-
-    // Total amount
-    int64_t nAmount = AmountFromValue(params[0]);
-
-    // Min input amount
-    int64_t nMinValue = AmountFromValue(params[1]);
-
-    // Output amount
-    int64_t nOutputValue = AmountFromValue(params[2]);
-
-    if (nAmount < MIN_TXOUT_AMOUNT)
-        throw JSONRPCError(-101, "Send amount too small");
-
-    if (nMinValue < MIN_TXOUT_AMOUNT)
-        throw JSONRPCError(-101, "Max value too small");
-
-    if (nOutputValue < MIN_TXOUT_AMOUNT)
-        throw JSONRPCError(-101, "Output value too small");
-
-    if (nOutputValue < nMinValue)
-        throw JSONRPCError(-101, "Output value is lower than min value");
-
-    list<uint256> listMerged;
-    if (!pwallet->MergeCoins(nAmount, nMinValue, nOutputValue, listMerged))
-        return Value::null;
-
-    Array mergedHashes;
-    for(const uint256 txHash : listMerged)
-        mergedHashes.push_back(txHash.GetHex());
-
-    return mergedHashes;
-}
-
 static void SendMoney(CWallet* const pwallet, const CTxDestination& address,
                       CAmount nValue, bool fSubtractFeeFromAmount,
                       CWalletTx& wtxNew, const CCoinControl& coin_control,
@@ -743,7 +691,7 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
         if (wtx.IsCoinBase() || wtx.IsCoinStake() || !CheckFinalTx(wtx))
             continue;
 
-        for (const auto& txout : wtx.vout)
+        for (const auto& txout : wtx.tx->vout)
         {
             CTxDestination addressRet;
             if (ExtractDestination(txout.scriptPubKey, addressRet) && addressRet == dest)
@@ -788,7 +736,7 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
         if (wtx.IsCoinBase() || wtx.IsCoinStake() || !CheckFinalTx(wtx))
             continue;
 
-        for(const CTxOut& txout : wtx.vout)
+        for(const CTxOut& txout : wtx.tx->vout)
         {
             CTxDestination address;
             if (ExtractDestination(txout.scriptPubKey, address) && IsMine(*pwallet, address) && setAddress.count(address))
@@ -1219,7 +1167,7 @@ Value spendcltv(const Array& params, bool fHelp)
         if (wtx.IsCoinBase() || wtx.IsCoinStake() || !CheckFinalTx(wtx))
             continue;
 
-        for(const CTxOut& txout : wtx.vout)
+        for(const CTxOut& txout : wtx.tx->vout)
             if (txout.scriptPubKey == scriptPubKey)
             	nTotalValue += txout.nValue;
     }
@@ -1289,7 +1237,7 @@ Value spendcsv(const Array& params, bool fHelp)
         if (wtx.IsCoinBase() || wtx.IsCoinStake() || !CheckFinalTx(wtx))
             continue;
 
-        for(const CTxOut& txout : wtx.vout)
+        for(const CTxOut& txout : wtx.tx->vout)
             if (txout.scriptPubKey == scriptPubKey)
                 nTotalValue += txout.nValue;
     }
@@ -1659,7 +1607,7 @@ Value ListReceived(CWallet * const pwallet, const Array& params, bool fByAccount
         fIncludeEmpty = params[1].get_bool();
 
     isminefilter filter = ISMINE_SPENDABLE;
-    if(!params[2].isNull())
+    if(params.size() > 2)
         if(params[2].get_bool())
             filter = filter | ISMINE_WATCH_ONLY;
 
@@ -1675,7 +1623,7 @@ Value ListReceived(CWallet * const pwallet, const Array& params, bool fByAccount
         if (nDepth < nMinDepth)
             continue;
 
-        for(const CTxOut& txout : wtx.vout)
+        for(const CTxOut& txout : wtx.tx->vout)
         {
             CTxDestination address;
             if (!ExtractDestination(txout.scriptPubKey, address))
@@ -2208,7 +2156,7 @@ Value gettransaction(const Array& params, bool fHelp)
         CAmount nCredit = wtx.GetCredit(filter);
         CAmount nDebit = wtx.GetDebit(filter);
         CAmount nNet = nCredit - nDebit;
-        CAmount nFee = (wtx.IsFromMe(filter) ? wtx.GetValueOut() - nDebit : 0);
+        CAmount nFee = (wtx.IsFromMe(filter) ? wtx.tx->GetValueOut() - nDebit : 0);
 
         entry.push_back(Pair("Credit", ValueFromAmount(nCredit)));
         entry.push_back(Pair("Debit", ValueFromAmount(nDebit)));
@@ -2336,7 +2284,7 @@ Value keypoolreset(const Array& params, bool fHelp)
 
     EnsureWalletIsUnlocked(pwallet);
 
-    pwallet->NewKeyPool(nSize);
+    pwallet->NewKeyPool();
 
     if (pwallet->GetKeyPoolSize() < nSize)
         throw JSONRPCError(RPC_WALLET_ERROR, "Error refreshing keypool.");

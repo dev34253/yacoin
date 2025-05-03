@@ -267,6 +267,7 @@ public:
 
     const uint256& GetHash() const { return tx->GetHash(); }
     bool IsCoinBase() const { return tx->IsCoinBase(); }
+    bool IsCoinStake() const { return tx->IsCoinStake(); }
 };
 
 /** YAC_TOKEN START */
@@ -465,7 +466,7 @@ public:
     CAmount GetDebit(const isminefilter& filter) const;
     CAmount GetCredit(const isminefilter& filter) const;
     CAmount GetImmatureCredit(bool fUseCache=true) const;
-    CAmount GetAvailableCredit(bool fUseCache, bool fExcludeNotExpiredTimelock) const;
+    CAmount GetAvailableCredit(bool fUseCache=true, bool fExcludeNotExpiredTimelock=false) const;
     CAmount GetImmatureWatchOnlyCredit(const bool& fUseCache=true) const;
     CAmount GetAvailableWatchOnlyCredit(const bool& fUseCache=true) const;
     CAmount GetChange() const;
@@ -684,11 +685,6 @@ private:
     std::atomic<bool> fAbortRescan;
     std::atomic<bool> fScanningWallet;
 
-    bool SelectCoinsSimple(::int64_t nTargetValue, ::int64_t nMinValue,
-            ::int64_t nMaxValue, int64_t nSpendTime, int nMinConf,
-            std::set<std::pair<const CWalletTx*, unsigned int> > &setCoinsRet,
-            ::int64_t &nValueRet) const;
-    void AvailableCoinsMinConf(std::vector<COutput>& vCoins, int nConf, ::int64_t nMinValue, ::int64_t nMaxValue) const;
     /**
      * Select a set of coins such that nValueRet >= nTargetValue and at least
      * all coins from coinControl are selected; Never select unconfirmed coins
@@ -1114,7 +1110,6 @@ public:
     static CFeeRate fallbackFee;
     static CFeeRate m_discard_rate;
 
-    bool MergeCoins(const ::int64_t& nAmount, const ::int64_t& nMinValue, const ::int64_t& nMaxValue, std::list<uint256>& listMerged);
     std::string SendMoney(CScript scriptPubKey, ::int64_t nValue, CWalletTx& wtxNew, bool fAskFee=false, const CScript* fromScriptPubKey=NULL, bool useExpiredTimelockUTXO = false);
     std::string SendMoneyToDestination(const CTxDestination &address, ::int64_t nValue, CWalletTx& wtxNew, bool fAskFee=false, const CScript* fromScriptPubKey=NULL, bool useExpiredTimelockUTXO = false);
 

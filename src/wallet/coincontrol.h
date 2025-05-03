@@ -47,6 +47,11 @@ public:
         return (setTokensSelected.size() > 0);
     }
 
+    bool IsSelected(const COutPoint& output) const
+    {
+        return (setSelected.count(output) > 0);
+    }
+
     bool IsSelected(const uint256& hash, unsigned int n) const
     {
         COutPoint outpt(hash, n);
@@ -58,7 +63,7 @@ public:
         return (setTokensSelected.count(output) > 0);
     }
 
-    void Select(COutPoint& output)
+    void Select(const COutPoint& output)
     {
         setSelected.insert(output);
     }

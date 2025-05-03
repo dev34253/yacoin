@@ -22,10 +22,10 @@ QString TransactionDesc::FormatTxStatus(const CWalletTx& wtx)
 {
     if (!CheckFinalTx(wtx))
     {
-        if (wtx.nLockTime < LOCKTIME_THRESHOLD)
-            return tr("Open for %n block(s)", "", chainActive.Height() - wtx.nLockTime);
+        if (wtx.tx->nLockTime < LOCKTIME_THRESHOLD)
+            return tr("Open for %n block(s)", "", chainActive.Height() - wtx.tx->nLockTime);
         else
-            return tr("Open until %1").arg(GUIUtil::dateTimeStr(wtx.nLockTime));
+            return tr("Open until %1").arg(GUIUtil::dateTimeStr(wtx.tx->nLockTime));
     }
     else
     {
@@ -84,7 +84,7 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
             if (nNet > 0)
             {
                 // Credit
-                for(const CTxOut& txout : wtx.vout)
+                for(const CTxOut& txout : wtx.tx->vout)
                 {
                     if (wallet->IsMine(txout))
                     {
@@ -94,10 +94,10 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
                             if (wallet->mapAddressBook.count(address))
                             {
                                 std::vector<CTxDestination> addedAddresses;
-                                for (unsigned int i = 0; i < wtx.vin.size(); i++)
+                                for (unsigned int i = 0; i < wtx.tx->vin.size(); i++)
                                 {
                                     uint256 hash;
-                                    const CTxIn& vin = wtx.vin[i];
+                                    const CTxIn& vin = wtx.tx->vin[i];
                                     hash.SetHex(vin.prevout.COutPointGetHash().ToString());
                                     CTransaction wtxPrev;
                                     uint256 hashBlock = 0;
@@ -163,7 +163,7 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
             // Coinbase
             //
             int64_t nUnmatured = 0;
-            BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+            for(const CTxOut& txout : wtx.tx->vout)
                 nUnmatured += wallet->GetCredit(txout, ISMINE_ALL);
             strHTML += "<b>" + tr("Credit") + ":</b> ";
             if (wtx.IsInMainChain())
@@ -182,11 +182,11 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
         else
         {
             bool fAllFromMe = true;
-            for(const CTxIn& txin : wtx.vin)
+            for(const CTxIn& txin : wtx.tx->vin)
                 fAllFromMe = fAllFromMe && wallet->IsMine(txin);
 
             bool fAllToMe = true;
-            for(const CTxOut& txout : wtx.vout)
+            for(const CTxOut& txout : wtx.tx->vout)
                 fAllToMe = fAllToMe && wallet->IsMine(txout);
 
             if (fAllFromMe)
@@ -194,7 +194,7 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
                 //
                 // Debit
                 //
-                for(const CTxOut& txout : wtx.vout)
+                for(const CTxOut& txout : wtx.tx->vout)
                 {
                     if (wallet->IsMine(txout))
                         continue;
@@ -225,7 +225,7 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
                     strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatWithUnit(BitcoinUnits::BTC, nValue) + "<br>";
                 }
 
-                int64_t nTxFee = nDebit - wtx.GetValueOut();
+                int64_t nTxFee = nDebit - wtx.tx->GetValueOut();
                 if (nTxFee > 0)
                     strHTML += "<b>" + tr("Transaction fee") + ":</b> " + BitcoinUnits::formatWithUnit(BitcoinUnits::BTC, -nTxFee) + "<br>";
             }
@@ -234,10 +234,10 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
                 //
                 // Mixed debit transaction
                 //
-                BOOST_FOREACH(const CTxIn& txin, wtx.vin)
+                for(const CTxIn& txin : wtx.tx->vin)
                     if (wallet->IsMine(txin))
                         strHTML += "<b>" + tr("Debit") + ":</b> " + BitcoinUnits::formatWithUnit(BitcoinUnits::BTC, -wallet->GetDebit(txin, ISMINE_ALL)) + "<br>";
-                BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+                for(const CTxOut& txout : wtx.tx->vout)
                     if (wallet->IsMine(txout))
                         strHTML += "<b>" + tr("Credit") + ":</b> " + BitcoinUnits::formatWithUnit(BitcoinUnits::BTC, wallet->GetCredit(txout, ISMINE_ALL)) + "<br>";
             }
@@ -264,13 +264,13 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
         if (fDebug)
         {
             strHTML += "<hr><br>" + tr("Debug information") + "<br><br>";
-            BOOST_FOREACH(const CTxIn& txin, wtx.vin)
+            for(const CTxIn& txin : wtx.tx->vin)
                 if(wallet->IsMine(txin))
                     strHTML += "<b>" + tr("Debit") + ":</b> " + 
                                BitcoinUnits::formatWithUnit(BitcoinUnits::BTC, 
                                                             -wallet->GetDebit(txin, ISMINE_ALL)
                                                            ) + "<br>";
-            BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+            for(const CTxOut& txout : wtx.tx->vout)
                 if(wallet->IsMine(txout))
                     strHTML += "<b>" + tr("Credit") + ":</b> " + 
                                BitcoinUnits::formatWithUnit(BitcoinUnits::BTC, 
@@ -278,14 +278,14 @@ QString TransactionDesc::toHTML(CWallet *wallet, CWalletTx &wtx)
                                                            ) + "<br>";
 
             strHTML += "<br><b>" + tr("Transaction") + ":</b><br>";
-            strHTML += GUIUtil::HtmlEscape(wtx.ToString(), true);
+            strHTML += GUIUtil::HtmlEscape(wtx.tx->ToString(), true);
 
             strHTML += "<br><b>" + tr("Inputs") + ":</b>";
             strHTML += "<ul>";
 
             {
                 LOCK(wallet->cs_wallet);
-                for (const CTxIn& txin : wtx.vin)
+                for (const CTxIn& txin : wtx.tx->vin)
                 {
                     COutPoint prevout = txin.prevout;
 

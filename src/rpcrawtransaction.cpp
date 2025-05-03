@@ -224,20 +224,20 @@ Value listunspent(const Array& params, bool fHelp)
         if(setAddress.size())
         {
             CTxDestination address;
-            if(!ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
+            if(!ExtractDestination(out.tx->tx->vout[out.i].scriptPubKey, address))
                 continue;
 
             if (!setAddress.count(address))
                 continue;
         }
 
-        ::int64_t nValue = out.tx->vout[out.i].nValue;
-        const CScript& scriptPubKey = out.tx->vout[out.i].scriptPubKey;
+        ::int64_t nValue = out.tx->tx->vout[out.i].nValue;
+        const CScript& scriptPubKey = out.tx->tx->vout[out.i].scriptPubKey;
         Object entry;
         entry.push_back(Pair("txid", out.tx->GetHash().GetHex()));
         entry.push_back(Pair("vout", out.i));
         CTxDestination address;
-        if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
+        if (ExtractDestination(out.tx->tx->vout[out.i].scriptPubKey, address))
         {
             entry.push_back(Pair("address", CBitcoinAddress(address).ToString()));
             if (pwallet->mapAddressBook.count(address))
@@ -586,7 +586,8 @@ Value sendrawtransaction(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() < 1 || params.size() > 1)
         throw runtime_error(
-            "sendrawtransaction <hex strinstd::string            "Submits raw transaction (serialized, hex-encoded) to local node and network.");
+            "sendrawtransaction <hex string>\n"
+            "Submits raw transaction (serialized, hex-encoded) to local node and network.");
 
     RPCTypeCheck(params, list_of(str_type));
 

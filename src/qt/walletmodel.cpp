@@ -11,6 +11,7 @@
 #include "mintingtablemodel.h"
 #include "transactiontablemodel.h"
 
+#include "consensus/validation.h"
 #include "ui_interface.h"
 #include "validation.h"
 #include "wallet/wallet.h"
@@ -192,9 +193,9 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
     std::vector<COutput> vCoins;
     wallet->AvailableCoins(vCoins, true, coinControl);
 
-    BOOST_FOREACH(const COutput& out, vCoins)
+    for(const COutput& out : vCoins)
         if(out.fSpendable)
-            nBalance += out.tx->vout[out.i].nValue;
+            nBalance += out.tx->tx->vout[out.i].nValue;
 
     if(total > nBalance)
     {
@@ -483,10 +484,10 @@ bool WalletModel::getPrivKey(const CKeyID &address, CKey& vchPrivKeyOut) const
 // returns a list of COutputs from COutPoints
 void WalletModel::getOutputs(const std::vector<COutPoint>& vOutpoints, std::vector<COutput>& vOutputs)
 {
-    BOOST_FOREACH(const COutPoint& outpoint, vOutpoints)
+    for(const COutPoint& outpoint : vOutpoints)
     {
         if (!wallet->mapWallet.count(outpoint.COutPointGetHash())) continue;
-        COutput out(&wallet->mapWallet[outpoint.COutPointGetHash()], outpoint.COutPointGet_n(), wallet->mapWallet[outpoint.COutPointGetHash()].GetDepthInMainChain(), true);
+        COutput out(&wallet->mapWallet[outpoint.COutPointGetHash()], outpoint.COutPointGet_n(), wallet->mapWallet[outpoint.COutPointGetHash()].GetDepthInMainChain(), true, true, true);
         vOutputs.push_back(out);
     }
 }

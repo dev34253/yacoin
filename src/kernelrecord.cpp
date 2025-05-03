@@ -42,9 +42,9 @@ vector<KernelRecord> KernelRecord::decomposeOutput(const CWallet *wallet, const 
     ::int64_t nDayWeight = (min((GetAdjustedTime() - nTime), (::int64_t)(params.nStakeMaxAge+params.nStakeMinAge)) - params.nStakeMinAge); // DayWeight * 86400
     if (showTransaction(wtx))
     {
-        for (unsigned int nOut = 0; nOut < wtx.vout.size(); nOut++)
+        for (unsigned int nOut = 0; nOut < wtx.tx->vout.size(); nOut++)
         {
-            CTxOut txOut = wtx.vout[nOut];
+            CTxOut txOut = wtx.tx->vout[nOut];
             if( wallet->IsMine(txOut) ) {
                 CTxDestination address;
                 std::string addrStr;
