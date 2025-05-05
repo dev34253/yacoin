@@ -1014,16 +1014,26 @@ bool CWallet::MarkReplaced(const uint256& originalHash, const uint256& newHash)
 
 bool CWallet::AddToWallet(const CWalletTx& wtxIn, bool fFlushOnClose)
 {
+    LogPrintf("TACA ===> CWallet::AddToWallet BEGIN\n");
     LOCK(cs_wallet);
 
+    LogPrintf("TACA ===> CWallet::AddToWallet open walletdb\n");
     CWalletDB walletdb(*dbw, "r+", fFlushOnClose);
 
+    LogPrintf("TACA ===> CWallet::AddToWallet transaction tx = %s\n", wtxIn.tx->ToString());
+    LogPrintf("TACA ===> CWallet::AddToWallet transaction hash = %s\n", wtxIn.tx->GetHash().ToString());
+
+    LogPrintf("TACA ===> CWallet::AddToWallet get hash\n");
     uint256 hash = wtxIn.GetHash();
 
+    LogPrintf("TACA ===> CWallet::AddToWallet insert tx\n");
     // Inserts only if not already there, returns tx inserted or tx found
     std::pair<std::map<uint256, CWalletTx>::iterator, bool> ret = mapWallet.insert(std::make_pair(hash, wtxIn));
     CWalletTx& wtx = (*ret.first).second;
+
+    LogPrintf("TACA ===> CWallet::AddToWallet BindWallet\n");
     wtx.BindWallet(this);
+
     bool fInsertedNew = ret.second;
     if (fInsertedNew)
     {
@@ -3804,7 +3814,7 @@ bool CWallet::CreateTransactionAll(
 //                /** YAC_TOKEN END */
 
                 // Limit size
-                unsigned int nBytes = ::GetSerializeSize(*(CTransaction*)&wtxNew, SER_NETWORK, PROTOCOL_VERSION);
+                unsigned int nBytes = ::GetSerializeSize(*wtxNew.tx, SER_NETWORK, PROTOCOL_VERSION);
                 if (nBytes >= (2*GetMaxSize(MAX_BLOCK_SIZE_GEN)/3) )
                     return false;
 
