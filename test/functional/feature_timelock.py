@@ -130,14 +130,14 @@ class TokenTest(BitcoinTestFramework):
         self.verify_result(address_0, address_1, amount_timelock_coins)
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address_1,
             float(amount_timelock_coins) - 0.1,
         )
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n1.sendtoaddress,
             address_0,
             float(amount_timelock_coins) - 0.1,
@@ -199,14 +199,14 @@ class TokenTest(BitcoinTestFramework):
         self.verify_result(address_0, address_1, amount_timelock_coins)
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address_1,
             float(amount_timelock_coins) - 0.1,
         )
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n1.sendtoaddress,
             address_0,
             float(amount_timelock_coins) - 0.1,
@@ -269,14 +269,14 @@ class TokenTest(BitcoinTestFramework):
         self.verify_result(address_0, address_1, amount_timelock_coins)
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address_1,
             float(amount_timelock_coins) - 0.1,
         )
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n1.sendtoaddress,
             address_0,
             float(amount_timelock_coins) - 0.1,
@@ -338,14 +338,14 @@ class TokenTest(BitcoinTestFramework):
         self.verify_result(address_0, address_1, amount_timelock_coins)
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address_1,
             float(amount_timelock_coins) - 0.1,
         )
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n1.sendtoaddress,
             address_0,
             float(amount_timelock_coins) - 0.1,

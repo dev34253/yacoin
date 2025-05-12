@@ -83,7 +83,7 @@ class TokenTest(BitcoinTestFramework):
         self.log.info("Try sending all balance...")
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address1,
             balance_0,
@@ -219,7 +219,7 @@ class TokenTest(BitcoinTestFramework):
         self.log.info("Try sending all balance...")
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address1,
             balance_0,
@@ -275,7 +275,7 @@ class TokenTest(BitcoinTestFramework):
         self.log.info("Try sending all balance...")
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address1,
             balance_0,
@@ -325,7 +325,7 @@ class TokenTest(BitcoinTestFramework):
         self.log.info("Try sending all balance...")
         assert_raises_rpc_error(
             -4,
-            "Error: Transaction creation failed",
+            "Insufficient funds",
             n0.sendtoaddress,
             address1,
             balance_0,

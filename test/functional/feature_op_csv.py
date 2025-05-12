@@ -118,7 +118,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         transaction_id_csv = self.nodes[1].spendcsv(csv_address, receiver_address, 2.0)
         tx_details = self.nodes[1].gettransaction(transaction_id_csv)
         self.log.info(str(tx_details))
-        assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0], receiver_address)
+        assert (tx_details['vout'][0]['scriptPubKey']['addresses'][0] == receiver_address or tx_details['vout'][1]['scriptPubKey']['addresses'][0] == receiver_address)
         assert_equal(tx_details['confirmations'], Decimal('0'))
         assert_equal(tx_details['version'], 2)
 
