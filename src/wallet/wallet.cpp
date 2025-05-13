@@ -3814,7 +3814,7 @@ bool CWallet::CreateTransactionAll(
 //                /** YAC_TOKEN END */
 
                 // Limit size
-                unsigned int nBytes = ::GetSerializeSize(*wtxNew.tx, SER_NETWORK, PROTOCOL_VERSION);
+                unsigned int nBytes = ::GetSerializeSize(txNew, SER_NETWORK, PROTOCOL_VERSION);
                 if (nBytes >= (2*GetMaxSize(MAX_BLOCK_SIZE_GEN)/3) )
                     return false;
 
