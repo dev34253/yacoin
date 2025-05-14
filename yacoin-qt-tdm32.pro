@@ -315,6 +315,7 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/blockencodings.cpp \
     src/policy/feerate.cpp \
     src/policy/fees.cpp \
+    src/crypto/aes.cpp \
     src/crypto/siphash.cpp \
     src/crypto/chacha20.cpp \
     src/crypto/sha256.cpp \
@@ -324,6 +325,7 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/crypto/hmac_sha512.cpp \
     src/compat/strnlen.cpp \
     src/support/cleanse.cpp \
+    src/support/lockedpool.cpp \
     src/qt/clientmodel.cpp \
     src/qt/guiutil.cpp \
     src/qt/transactionrecord.cpp \

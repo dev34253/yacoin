@@ -605,8 +605,6 @@ std::time_t pt_to_time_t(const bt::ptime& pt)
     return diff.ticks()/bt::time_duration::rep_type::ticks_per_second;
 }
 
-LockedPageManager LockedPageManager::instance;
-
 std::string GetDebugLogPathName(){
     return (GetDataDir() / "debug.log").string();
 }

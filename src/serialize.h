@@ -47,9 +47,7 @@
  #include "Yassert.h"
 #endif
 
-#ifndef BITCOIN_ALLOCATORS_H
- #include "allocators.h"
-#endif
+#include "support/allocators/secure.h"
 
 #ifndef BITCOIN_VERSION_H
  #include "version.h"

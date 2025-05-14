@@ -224,6 +224,7 @@ obj/chain.o \
 obj/chainparams.o \
 obj/chainparamsbase.o \
 obj/hash.o \
+obj/aes.o \
 obj/siphash.o \
 obj/chacha20.o \
 obj/sha1.o \
@@ -233,6 +234,7 @@ obj/ripemd160.o \
 obj/hmac_sha256.o \
 obj/hmac_sha512.o \
 obj/cleanse.o \
+obj/lockedpool.o \
 obj/base58.o \
 obj/bitcoinrpc.o \
 obj/block.o \
@@ -386,6 +388,9 @@ obj/feerate.o: policy/feerate.cpp
 obj/fees.o: policy/fees.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
+obj/aes.o: crypto/aes.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
 obj/siphash.o: crypto/siphash.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
@@ -432,6 +437,9 @@ obj/strnlen.o: compat/strnlen.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/cleanse.o: support/cleanse.cpp
+	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
+
+obj/lockedpool.o: support/lockedpool.cpp
 	$(CXX) -c -frandom-seed=$@ $(CFLAGS) $(INCLUDEPATHS) -o $@ $<
 
 obj/scrypt-jane.o: scrypt-jane/scrypt-jane.c

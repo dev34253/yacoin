@@ -241,6 +241,7 @@ BITCOIN_QT_CPP = \
   chain.cpp \
   chainparams.cpp \
   chainparamsbase.cpp \
+  crypto/aes.cpp \
   crypto/siphash.cpp \
   crypto/chacha20.cpp \
   crypto/sha1.cpp \
@@ -263,6 +264,7 @@ BITCOIN_QT_CPP = \
   policy/fees.cpp \
   pow.cpp \
   support/cleanse.cpp \
+  support/lockedpool.cpp \
   init.cpp \
   dbwrapper.cpp \
   txdb.cpp \

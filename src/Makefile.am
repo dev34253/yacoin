@@ -55,6 +55,7 @@ libyacoin_common_a_SOURCES= \
     chain.cpp \
     chainparams.cpp \
     chainparamsbase.cpp \
+    crypto/aes.cpp \
     crypto/siphash.cpp \
     crypto/chacha20.cpp \
     crypto/sha1.cpp \
@@ -77,6 +78,7 @@ libyacoin_common_a_SOURCES= \
     policy/policy.cpp \
     pow.cpp \
     support/cleanse.cpp \
+    support/lockedpool.cpp \
     dbwrapper.cpp \
     txdb.cpp \
     hash.cpp \
@@ -158,11 +160,17 @@ yacoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNP
 yacoind_CPPFLAGS = $(BITCOIN_INCLUDES)
 yacoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt
 
+CTAES_DIST =  crypto/ctaes/bench.c
+CTAES_DIST += crypto/ctaes/ctaes.c
+CTAES_DIST += crypto/ctaes/ctaes.h
+CTAES_DIST += crypto/ctaes/README.md
+CTAES_DIST += crypto/ctaes/test.c
+
 CLEANFILES = leveldb/libleveldb.a leveldb/libmemenv.a *.gcda *.gcno
 
 DISTCLEANFILES = obj/build.h
 
-EXTRA_DIST = leveldb
+EXTRA_DIST = leveldb $(CTAES_DIST)
 
 clean-local:
 	-$(MAKE) -C leveldb clean
