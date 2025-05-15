@@ -49,7 +49,6 @@ using std::vector;
 using std::ofstream;
 using std::ifstream;
 
-static ::uint64_t nAccountingEntryNumber = 0;
 extern bool fWalletUnlockMintOnly;
 unsigned int nWalletDBUpdated;
 // TACA: OLD LOGIC END
@@ -215,11 +214,6 @@ bool CWalletDB::WriteAccountingEntry(const uint64_t nAccEntryNum, const CAccount
     return WriteIC(std::make_pair(std::string("acentry"), std::make_pair(acentry.strAccount, nAccEntryNum)), acentry);
 }
 
-bool CWalletDB::WriteAccountingEntry(const CAccountingEntry& acentry)
-{
-    return WriteAccountingEntry(++nAccountingEntryNumber, acentry);
-}
-
 CAmount CWalletDB::GetAccountCreditDebit(const std::string& strAccount)
 {
     std::list<CAccountingEntry> entries;
@@ -305,7 +299,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         ssKey >> strType;
         if (strType == "name")
         {
-            string strAddress;
+            std::string strAddress;
             ssKey >> strAddress;
             ssValue >> pwallet->mapAddressBook[CBitcoinAddress(strAddress).Get()].name;
         }
@@ -352,12 +346,13 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         }
         else if (strType == "acentry")
         {
-            string strAccount;
+            std::string strAccount;
             ssKey >> strAccount;
-            ::uint64_t nNumber;
+            uint64_t nNumber;
             ssKey >> nNumber;
-            if (nNumber > nAccountingEntryNumber)
-                nAccountingEntryNumber = nNumber;
+            if (nNumber > pwallet->nAccountingEntryNumber) {
+                pwallet->nAccountingEntryNumber = nNumber;
+            }
 
             if (!wss.fAnyUnordered)
             {
@@ -369,6 +364,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         }
         else if (strType == "watchs")
         {
+            wss.nWatchKeys++;
             CScript script;
             ssKey >> script;
             char fYes;
@@ -510,7 +506,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         }
         else if (strType == "pool")
         {
-            ::int64_t nIndex;
+            int64_t nIndex;
             ssKey >> nIndex;
             CKeyPool keypool;
             ssValue >> keypool;
@@ -548,6 +544,16 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             if (!pwallet->LoadDestData(CBitcoinAddress(strAddress).Get(), strKey, strValue))
             {
                 strErr = "Error reading wallet database: LoadDestData failed";
+                return false;
+            }
+        }
+        else if (strType == "hdchain")
+        {
+            CHDChain chain;
+            ssValue >> chain;
+            if (!pwallet->SetHDChain(chain, true))
+            {
+                strErr = "Error reading wallet database: SetHDChain failed";
                 return false;
             }
         }
@@ -854,31 +860,42 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
       file << "\n";
       file << "@ BELOW ARE LIST OF P2PKH ADDRESSES AND THEIR PRIVATE KEYS:";
       file << "\n";
-      for (std::vector<std::pair< ::int64_t, CKeyID> >::const_iterator it = vKeyBirth.begin(); it != vKeyBirth.end(); it++) {
+
+      // add the base58check encoded extended master if the wallet uses HD
+      CKeyID masterKeyID = pwallet->GetHDChain().masterKeyID;
+      if (!masterKeyID.IsNull())
+      {
+          CKey key;
+          if (pwallet->GetKey(masterKeyID, key)) {
+              CExtKey masterKey;
+              masterKey.SetMaster(key.begin(), key.size());
+
+              CBitcoinExtKey b58extkey;
+              b58extkey.SetKey(masterKey);
+
+              file << "# extended private masterkey: " << b58extkey.ToString() << "\n\n";
+          }
+      }
+
+      for (std::vector<std::pair<int64_t, CKeyID> >::const_iterator it = vKeyBirth.begin(); it != vKeyBirth.end(); it++) {
           const CKeyID &keyid = it->second;
           std::string strTime = EncodeDumpTime(it->first);
           std::string strAddr = CBitcoinAddress(keyid).ToString();
-          bool IsCompressed;
-
           CKey key;
           if (pwallet->GetKey(keyid, key)) {
+              file << strprintf("%s %s ", CBitcoinSecret(key).ToString(), strTime);
               if (pwallet->mapAddressBook.count(keyid)) {
-                  file << strprintf("%s %s label=%s # addr=%s\n",
-                                    CBitcoinSecret(key).ToString(),
-                                    strTime.c_str(),
-                                    EncodeDumpString(pwallet->mapAddressBook[keyid].name),
-                                    strAddr.c_str());
+                  file << strprintf("label=%s", EncodeDumpString(pwallet->mapAddressBook[keyid].name));
+              } else if (keyid == masterKeyID) {
+                  file << "hdmaster=1";
               } else if (mapKeyPool.count(keyid)) {
-                  file << strprintf("%s %s reserve=1 # addr=%s\n",
-                                    CBitcoinSecret(key).ToString(),
-                                    strTime.c_str(),
-                                    strAddr.c_str());
+                  file << "reserve=1";
+              } else if (pwallet->mapKeyMetadata[keyid].hdKeypath == "m") {
+                  file << "inactivehdmaster=1";
               } else {
-                  file << strprintf("%s %s change=1 # addr=%s\n",
-                                    CBitcoinSecret(key).ToString(),
-                                    strTime.c_str(),
-                                    strAddr.c_str());
+                  file << "change=1";
               }
+              file << strprintf(" # addr=%s%s\n", strAddr, (pwallet->mapKeyMetadata[keyid].hdKeypath.size() > 0 ? " hdkeypath="+pwallet->mapKeyMetadata[keyid].hdKeypath : ""));
           }
       }
       file << "\n";
