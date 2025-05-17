@@ -2659,6 +2659,38 @@ Value getwalletinfo(const Array& params, bool fHelp)
     return obj;
 }
 
+Value listwallets(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw std::runtime_error(
+            "listwallets\n"
+            "Returns a list of currently loaded wallets.\n"
+            "For full information on the wallet, use \"getwalletinfo\"\n"
+            "\nResult:\n"
+            "[                         (json array of strings)\n"
+            "  \"walletname\"            (string) the wallet name\n"
+            "   ...\n"
+            "]\n"
+            "\nExamples:\n"
+            + HelpExampleCli("listwallets", "")
+            + HelpExampleRpc("listwallets", "")
+        );
+
+    Array obj;
+    for (CWalletRef pwallet : vpwallets) {
+
+        if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+            return Value::null;
+        }
+
+        LOCK(pwallet->cs_wallet);
+
+        obj.push_back(pwallet->GetName());
+    }
+
+    return obj;
+}
+
 // Yacoin: resend unconfirmed wallet transactions
 Value resendwallettransactions(const Array& params, bool fHelp)
 {

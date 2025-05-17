@@ -950,7 +950,7 @@ void JSONRequest::convertParameterObjectToArray(string method, Value& valParams)
         if(!maxtriesValue.is_null()){
             params.push_back(maxtriesValue);
         }
-    } else if (method == "getblockcount" || method == "getwalletinfo" || method == "stop") {
+    } else if (method == "getblockcount" || method == "getwalletinfo" || method == "listwallets" || method == "stop") {
         // these methods do not require any parameter
     }
 }
@@ -1241,6 +1241,7 @@ static const CRPCCommand vRPCCommands[] =
     { "gettimechaininfo",       &gettimechaininfo,       true,   false },
     { "getblockcount",          &getblockcount,          true,   false },
     { "getwalletinfo",          &getwalletinfo,          true,   false },
+    { "listwallets",            &listwallets,            true,   false },
     { "getrpcinfo",             &getrpcinfo,             true,   false },
     { "setmocktime",            &setmocktime,            true,   false },
     { "getyacprice",            &getYACprice,            true,   false },
