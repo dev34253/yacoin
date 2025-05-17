@@ -448,7 +448,7 @@ bool BlockAssembler::TestPackageTransactions(const CTxMemPool::setEntries& packa
     return true;
 }
 
-std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
+std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn)
 {
     int64_t nTimeStart = GetTimeMicros();
 
@@ -466,9 +466,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(CWallet* pwallet)
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
 
-    std::shared_ptr<CReserveScript> coinbase_script;
-    pwallet->GetScriptForMining(coinbase_script);
-    txNew.vout[0].scriptPubKey = coinbase_script->reserveScript;
+    txNew.vout[0].scriptPubKey = scriptPubKeyIn;
 
     // Add coinbase tx as first transaction
     pblock->vtx.push_back(txNew);
@@ -731,6 +729,8 @@ static void YacoinMiner()  // here fProofOfStake is always false
 
   // Each thread has its own key and counter
   CReserveKey reservekey(pWallet);
+  std::shared_ptr<CReserveScript> coinbase_script;
+  pWallet->GetScriptForMining(coinbase_script);
 
   while (fGenerateBitcoins && nBlocksToGenerate != 0) {
     while (IsInitialBlockDownload() || (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 && !fTestNet)) {
@@ -754,7 +754,7 @@ static void YacoinMiner()  // here fProofOfStake is always false
     CBlockIndex* pindexPrev = chainActive.Tip();
 
     // Create new block
-    std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler().CreateNewBlock(pWallet));
+    std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler().CreateNewBlock(coinbase_script->reserveScript));
     if (!pblocktemplate.get()) return;
     CBlock* pblock = &pblocktemplate->block;
     if (!pblock) return;

@@ -200,6 +200,8 @@ Value getworkex(const Array& params, bool fHelp)
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;
     static CReserveKey reservekey(pwallet);
+    std::shared_ptr<CReserveScript> coinbase_script;
+    pwallet->GetScriptForMining(coinbase_script);
 
     if (params.size() == 0)
     {
@@ -223,7 +225,7 @@ Value getworkex(const Array& params, bool fHelp)
             nStart = GetTime();
 
             // Create new block
-            pblocktemplate = BlockAssembler().CreateNewBlock(pwallet);
+            pblocktemplate = BlockAssembler().CreateNewBlock(coinbase_script->reserveScript);
             if (!pblocktemplate.get())
                 throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         }
@@ -338,6 +340,8 @@ Value getwork(const Array& params, bool fHelp)
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
     static CReserveKey reservekey(pwallet);
+    std::shared_ptr<CReserveScript> coinbase_script;
+    pwallet->GetScriptForMining(coinbase_script);
 
     if (params.size() == 0)
     {
@@ -368,7 +372,7 @@ Value getwork(const Array& params, bool fHelp)
             nStart = GetTime();
 
             // Create new block
-            pblocktemplate = BlockAssembler().CreateNewBlock(pwallet);
+            pblocktemplate = BlockAssembler().CreateNewBlock(coinbase_script->reserveScript);
             if (!pblocktemplate.get())
                 throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
 
@@ -537,6 +541,8 @@ Value getblocktemplate(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Yacoin is downloading blocks...");
 
     static CReserveKey reservekey(pwallet);
+    std::shared_ptr<CReserveScript> coinbase_script;
+    pwallet->GetScriptForMining(coinbase_script);
 
     // Update block
     static unsigned int nTransactionsUpdatedLast;
@@ -556,7 +562,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         CBlockIndex* pindexPrevNew = chainActive.Tip();
         nStart = GetTime();
 
-        pblocktemplate = BlockAssembler().CreateNewBlock(pwallet);
+        pblocktemplate = BlockAssembler().CreateNewBlock(coinbase_script->reserveScript);
         if (!pblocktemplate.get())
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
 
