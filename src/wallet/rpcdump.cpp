@@ -42,10 +42,27 @@ Value importprivkey(const Array& params, bool fHelp)
         return Value::null;
     }
 
-    if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
-            "importprivkey <yacoinprivkey> [label]\n"
-            "Adds a private key (as returned by dumpprivkey) to your wallet.");
+    if (fHelp || params.size() < 1 || params.size() > 3)
+        throw std::runtime_error(
+            "importprivkey \"privkey\" ( \"label\" ) ( rescan )\n"
+            "\nAdds a private key (as returned by dumpprivkey) to your wallet. Requires a new wallet backup.\n"
+            "\nArguments:\n"
+            "1. \"privkey\"          (string, required) The private key (see dumpprivkey)\n"
+            "2. \"label\"            (string, optional, default=\"\") An optional label\n"
+            "3. rescan               (boolean, optional, default=true) Rescan the wallet for transactions\n"
+            "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nExamples:\n"
+            "\nDump a private key\n"
+            + HelpExampleCli("dumpprivkey", "\"myaddress\"") +
+            "\nImport the private key with rescan\n"
+            + HelpExampleCli("importprivkey", "\"mykey\"") +
+            "\nImport using a label and without rescan\n"
+            + HelpExampleCli("importprivkey", "\"mykey\" \"testing\" false") +
+            "\nImport using default blank label and without rescan\n"
+            + HelpExampleCli("importprivkey", "\"mykey\" \"\" false") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("importprivkey", "\"mykey\", \"testing\", false")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -58,8 +75,8 @@ Value importprivkey(const Array& params, bool fHelp)
 
     // Whether to perform rescan after import
     bool fRescan = true;
-//    if (!params[2].isNull())
-//        fRescan = params[2].get_bool();
+    if (params.size() > 2)
+        fRescan = params[2].get_bool();
 
     CBitcoinSecret vchSecret;
     bool fGood = vchSecret.SetString(strSecret);
@@ -141,9 +158,26 @@ Value importaddress(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() < 1 || params.size() > 3)
-        throw runtime_error(
-            "importaddress <address> [label] [rescan=true]\n"
-            "Adds an address or script (in hex) that can be watched as if it were in your wallet but cannot be used to spend.");
+        throw std::runtime_error(
+            "importaddress \"address\" ( \"label\" rescan p2sh )\n"
+            "\nAdds a script (in hex) or address that can be watched as if it were in your wallet but cannot be used to spend. Requires a new wallet backup.\n"
+            "\nArguments:\n"
+            "1. \"script\"           (string, required) The hex-encoded script (or address)\n"
+            "2. \"label\"            (string, optional, default=\"\") An optional label\n"
+            "3. rescan               (boolean, optional, default=true) Rescan the wallet for transactions\n"
+            "4. p2sh                 (boolean, optional, default=false) Add the P2SH version of the script as well\n"
+            "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "If you have the full public key, you should call importpubkey instead of this.\n"
+            "\nNote: If you import a non-standard raw script in hex form, outputs sending to it will be treated\n"
+            "as change, and not show up in many RPCs.\n"
+            "\nExamples:\n"
+            "\nImport a script with rescan\n"
+            + HelpExampleCli("importaddress", "\"myscript\"") +
+            "\nImport using a label without rescan\n"
+            + HelpExampleCli("importaddress", "\"myscript\" \"testing\" false") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("importaddress", "\"myscript\", \"testing\", false")
+        );
 
     string strLabel = "";
     if (params.size() > 1)
@@ -156,15 +190,15 @@ Value importaddress(const Array& params, bool fHelp)
 
     // Whether to import a p2sh version, too
     bool fP2SH = false;
-//    if (!params[3].isNull())
-//        fP2SH = params[3].get_bool();
+    if (params.size() > 3)
+        fP2SH = params[3].get_bool();
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
-    CScript script;
     CBitcoinAddress address(params[0].get_str());
     if (address.IsValid()) {
-        script = GetScriptForDestination(address.Get());
+        if (fP2SH)
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot use the p2sh flag with an address - use a script instead");
         ImportAddress(pwallet, address, strLabel);
     } else if (IsHex(params[0].get_str())) {
         std::vector<unsigned char> data(ParseHex(params[0].get_str()));
@@ -226,6 +260,62 @@ Value removeaddress(const Array& params, bool fHelp)
     return Value::null;
 }
 
+Value importpubkey(const Array& params, bool fHelp)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
+    if (fHelp || params.size() < 1 || params.size() > 4)
+        throw std::runtime_error(
+            "importpubkey \"pubkey\" ( \"label\" rescan )\n"
+            "\nAdds a public key (in hex) that can be watched as if it were in your wallet but cannot be used to spend. Requires a new wallet backup.\n"
+            "\nArguments:\n"
+            "1. \"pubkey\"           (string, required) The hex-encoded public key\n"
+            "2. \"label\"            (string, optional, default=\"\") An optional label\n"
+            "3. rescan               (boolean, optional, default=true) Rescan the wallet for transactions\n"
+            "\nNote: This call can take minutes to complete if rescan is true.\n"
+            "\nExamples:\n"
+            "\nImport a public key with rescan\n"
+            + HelpExampleCli("importpubkey", "\"mypubkey\"") +
+            "\nImport using a label without rescan\n"
+            + HelpExampleCli("importpubkey", "\"mypubkey\" \"testing\" false") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("importpubkey", "\"mypubkey\", \"testing\", false")
+        );
+
+
+    std::string strLabel = "";
+    if (params.size() > 1)
+        strLabel = params[1].get_str();
+
+    // Whether to perform rescan after import
+    bool fRescan = true;
+    if (params.size() > 2)
+        fRescan = params[2].get_bool();
+
+    if (!IsHex(params[0].get_str()))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Pubkey must be a hex string");
+    std::vector<unsigned char> data(ParseHex(params[0].get_str()));
+    CPubKey pubKey(data.begin(), data.end());
+    if (!pubKey.IsFullyValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Pubkey is not a valid public key");
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    ImportAddress(pwallet, CBitcoinAddress(pubKey.GetID()), strLabel);
+    ImportScript(pwallet, GetScriptForRawPubKey(pubKey), strLabel, false);
+
+    if (fRescan)
+    {
+        pwallet->RescanFromTime(TIMESTAMP_MIN, true /* update */);
+        pwallet->ReacceptWalletTransactions();
+    }
+
+    return Value::null;
+}
+
 Value importwallet(const Array& params, bool fHelp)
 {
     CWallet* const pwallet = GetWalletForJSONRPCRequest();
@@ -234,10 +324,19 @@ Value importwallet(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "importwallet <filename>\n"
-            "Imports keys from a wallet dump file (see dumpwallet)."
-            + HelpRequiringPassphrase(pwallet));
+        throw std::runtime_error(
+            "importwallet \"filename\"\n"
+            "\nImports keys from a wallet dump file (see dumpwallet). Requires a new wallet backup to include imported keys.\n"
+            "\nArguments:\n"
+            "1. \"filename\"    (string, required) The wallet file\n"
+            "\nExamples:\n"
+            "\nDump the wallet\n"
+            + HelpExampleCli("dumpwallet", "\"test\"") +
+            "\nImport the wallet\n"
+            + HelpExampleCli("importwallet", "\"test\"") +
+            "\nImport using the json rpc call\n"
+            + HelpExampleRpc("importwallet", "\"test\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -371,9 +470,19 @@ Value dumpprivkey(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "dumpprivkey <yacoinaddress>\n"
-            "Reveals the private key corresponding to <yacoinaddress>.");
+        throw std::runtime_error(
+            "dumpprivkey \"address\"\n"
+            "\nReveals the private key corresponding to 'address'.\n"
+            "Then the importprivkey can be used with this output\n"
+            "\nArguments:\n"
+            "1. \"address\"   (string, required) The bitcoin address for the private key\n"
+            "\nResult:\n"
+            "\"key\"                (string) The private key\n"
+            "\nExamples:\n"
+            + HelpExampleCli("dumpprivkey", "\"myaddress\"")
+            + HelpExampleCli("importprivkey", "\"mykey\"")
+            + HelpExampleRpc("dumpprivkey", "\"myaddress\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -421,10 +530,22 @@ Value dumpwallet(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "dumpwallet <filename>\n"
-            "Dumps all wallet keys in a human-readable format."
-            + HelpRequiringPassphrase(pwallet));
+        throw std::runtime_error(
+            "dumpwallet \"filename\"\n"
+            "\nDumps all wallet keys in a human-readable format to a server-side file. This does not allow overwriting existing files.\n"
+            "Imported scripts are not currently included in wallet dumps, these must be backed up separately.\n"
+            "Note that if your wallet contains keys which are not derived from your HD seed (e.g. imported keys), these are not covered by\n"
+            "only backing up the seed itself, and must be backed up too (e.g. ensure you back up the whole dumpfile).\n"
+            "\nArguments:\n"
+            "1. \"filename\"    (string, required) The filename with path (either absolute or relative to bitcoind)\n"
+            "\nResult:\n"
+            "{                           (json object)\n"
+            "  \"filename\" : {        (string) The filename with full absolute path\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("dumpwallet", "\"test\"")
+            + HelpExampleRpc("dumpwallet", "\"test\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -434,4 +555,29 @@ Value dumpwallet(const Array& params, bool fHelp)
       throw JSONRPCError(RPC_WALLET_ERROR, "Error dumping wallet keys to file");
 
     return Value::null;
+}
+
+Value abortrescan(const Array& params, bool fHelp)
+{
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
+    if (fHelp || params.size() > 0)
+        throw std::runtime_error(
+            "abortrescan\n"
+            "\nStops current wallet rescan triggered e.g. by an importprivkey call.\n"
+            "\nExamples:\n"
+            "\nImport a private key\n"
+            + HelpExampleCli("importprivkey", "\"mykey\"") +
+            "\nAbort the running wallet rescan\n"
+            + HelpExampleCli("abortrescan", "") +
+            "\nAs a JSON-RPC call\n"
+            + HelpExampleRpc("abortrescan", "")
+        );
+
+    if (!pwallet->IsScanning() || pwallet->IsAbortingRescan()) return false;
+    pwallet->AbortRescan();
+    return true;
 }

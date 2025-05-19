@@ -293,11 +293,19 @@ Value getnewaddress(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() > 1)
-        throw runtime_error(
-            "getnewaddress [account]\n"
-            "Returns a new Yacoin address for receiving payments.  "
-            "If [account] is specified (recommended), it is added to the address book "
-            "so payments received with the address will be credited to [account].");
+        throw std::runtime_error(
+            "getnewaddress ( \"account\" )\n"
+            "\nReturns a new Yacoin address for receiving payments.\n"
+            "If 'account' is specified (DEPRECATED), it is added to the address book \n"
+            "so payments received with the address will be credited to 'account'.\n"
+            "\nArguments:\n"
+            "1. \"account\"        (string, optional) DEPRECATED. The account name for the address to be linked to. If not provided, the default account \"\" is used. It can also be set to the empty string \"\" to represent the default account. The account does not need to exist, it will be created if there is no account by the given name.\n"
+            "\nResult:\n"
+            "\"address\"    (string) The new yacoin address\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getnewaddress", "")
+            + HelpExampleRpc("getnewaddress", "")
+        );
 
     // Parse the account first so we don't generate a key if there's an error
     string strAccount;
@@ -337,9 +345,19 @@ Value getaccountaddress(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "getaccountaddress <account>\n"
-            "Returns the current Yacoin address for receiving payments to this account.");
+        throw std::runtime_error(
+            "getaccountaddress \"account\"\n"
+            "\nDEPRECATED. Returns the current Yacoin address for receiving payments to this account.\n"
+            "\nArguments:\n"
+            "1. \"account\"       (string, required) The account name for the address. It can also be set to the empty string \"\" to represent the default account. The account does not need to exist, it will be created and a new address created  if there is no account by the given name.\n"
+            "\nResult:\n"
+            "\"address\"          (string) The account yacoin address\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getaccountaddress", "")
+            + HelpExampleCli("getaccountaddress", "\"\"")
+            + HelpExampleCli("getaccountaddress", "\"myaccount\"")
+            + HelpExampleRpc("getaccountaddress", "\"myaccount\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -350,6 +368,43 @@ Value getaccountaddress(const Array& params, bool fHelp)
 
     ret = GetAccountAddress(pwallet, strAccount).ToString();
     return ret;
+}
+
+Value getrawchangeaddress(const Array& params, bool fHelp)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
+    if (fHelp || params.size() > 0)
+        throw std::runtime_error(
+            "getrawchangeaddress\n"
+            "\nReturns a new Bitcoin address, for receiving change.\n"
+            "This is for use with raw transactions, NOT normal use.\n"
+            "\nResult:\n"
+            "\"address\"    (string) The address\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getrawchangeaddress", "")
+            + HelpExampleRpc("getrawchangeaddress", "")
+       );
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    if (!pwallet->IsLocked()) {
+        pwallet->TopUpKeyPool();
+    }
+
+    CReserveKey reservekey(pwallet);
+    CPubKey vchPubKey;
+    if (!reservekey.GetReservedKey(vchPubKey, true))
+        throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out, please call keypoolrefill first");
+
+    reservekey.KeepKey();
+
+    CKeyID keyID = vchPubKey.GetID();
+
+    return CBitcoinAddress(keyID).ToString();
 }
 
 Value setaccount(const Array& params, bool fHelp)
@@ -400,9 +455,17 @@ Value getaccount(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "getaccount <yacoinaddress>\n"
-            "Returns the account associated with the given address.");
+        throw std::runtime_error(
+            "getaccount \"address\"\n"
+            "\nDEPRECATED. Returns the account associated with the given address.\n"
+            "\nArguments:\n"
+            "1. \"address\"         (string, required) The yacoin address for account lookup.\n"
+            "\nResult:\n"
+            "\"accountname\"        (string) the account address\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getaccount", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XX\"")
+            + HelpExampleRpc("getaccount", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XX\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -427,9 +490,20 @@ Value getaddressesbyaccount(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "getaddressesbyaccount <account>\n"
-            "Returns the list of addresses for the given account.");
+        throw std::runtime_error(
+            "getaddressesbyaccount \"account\"\n"
+            "\nDEPRECATED. Returns the list of addresses for the given account.\n"
+            "\nArguments:\n"
+            "1. \"account\"        (string, required) The account name.\n"
+            "\nResult:\n"
+            "[                     (json array of string)\n"
+            "  \"address\"         (string) a yacoin address associated with the given account\n"
+            "  ,...\n"
+            "]\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getaddressesbyaccount", "\"tabby\"")
+            + HelpExampleRpc("getaddressesbyaccount", "\"tabby\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -544,11 +618,27 @@ Value listaddressgroupings(const Array& params, bool fHelp)
     }
 
     if (fHelp)
-        throw runtime_error(
+        throw std::runtime_error(
             "listaddressgroupings\n"
-            "Lists groups of addresses which have had their common ownership\n"
+            "\nLists groups of addresses which have had their common ownership\n"
             "made public by common use as inputs or as the resulting change\n"
-            "in past transactions");
+            "in past transactions\n"
+            "\nResult:\n"
+            "[\n"
+            "  [\n"
+            "    [\n"
+            "      \"address\",            (string) The yacoin address\n"
+            "      amount,                 (numeric) The amount in " + CURRENCY_UNIT + "\n"
+            "      \"account\"             (string, optional) DEPRECATED. The account\n"
+            "    ]\n"
+            "    ,...\n"
+            "  ]\n"
+            "  ,...\n"
+            "]\n"
+            "\nExamples:\n"
+            + HelpExampleCli("listaddressgroupings", "")
+            + HelpExampleRpc("listaddressgroupings", "")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -661,9 +751,24 @@ Value getreceivedbyaddress(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
-            "getreceivedbyaddress <yacoinaddress> [minconf=1]\n"
-            "Returns the total amount received by <yacoinaddress> in transactions with at least [minconf] confirmations.");
+        throw std::runtime_error(
+            "getreceivedbyaddress \"address\" ( minconf )\n"
+            "\nReturns the total amount received by the given address in transactions with at least minconf confirmations.\n"
+            "\nArguments:\n"
+            "1. \"address\"         (string, required) The yacoin address for transactions.\n"
+            "2. minconf             (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
+            "\nResult:\n"
+            "amount   (numeric) The total amount in " + CURRENCY_UNIT + " received at this address.\n"
+            "\nExamples:\n"
+            "\nThe amount from transactions with at least 1 confirmation\n"
+            + HelpExampleCli("getreceivedbyaddress", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XX\"") +
+            "\nThe amount including unconfirmed transactions, zero confirmations\n"
+            + HelpExampleCli("getreceivedbyaddress", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XX\" 0") +
+            "\nThe amount with at least 6 confirmations\n"
+            + HelpExampleCli("getreceivedbyaddress", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XX\" 6") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("getreceivedbyaddress", "\"1D1ZrZNe3JUo7ZycKEYQQiQAWd9y54F4XX\", 6")
+       );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -713,9 +818,24 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
-            "getreceivedbyaccount <account> [minconf=1]\n"
-            "Returns the total amount received by addresses with <account> in transactions with at least [minconf] confirmations.");
+        throw std::runtime_error(
+            "getreceivedbyaccount \"account\" ( minconf )\n"
+            "\nDEPRECATED. Returns the total amount received by addresses with <account> in transactions with at least [minconf] confirmations.\n"
+            "\nArguments:\n"
+            "1. \"account\"      (string, required) The selected account, may be the default account using \"\".\n"
+            "2. minconf          (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
+            "\nResult:\n"
+            "amount              (numeric) The total amount in " + CURRENCY_UNIT + " received for this account.\n"
+            "\nExamples:\n"
+            "\nAmount received by the default account with at least 1 confirmation\n"
+            + HelpExampleCli("getreceivedbyaccount", "\"\"") +
+            "\nAmount received at the tabby account including unconfirmed amounts with zero confirmations\n"
+            + HelpExampleCli("getreceivedbyaccount", "\"tabby\" 0") +
+            "\nThe amount with at least 6 confirmations\n"
+            + HelpExampleCli("getreceivedbyaccount", "\"tabby\" 6") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("getreceivedbyaccount", "\"tabby\", 6")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -756,11 +876,37 @@ Value getbalance(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() > 2)
-        throw runtime_error(
-            "getbalance [account] [minconf=1] [watchonly=0]\n"
-            "If [account] is not specified, returns the server's total available balance.\n"
-            "If [account] is specified, returns the balance in the account.\n"
-            "if [includeWatchonly] is specified, include balance in watchonly addresses (see 'importaddress').");
+        throw std::runtime_error(
+            "getbalance ( \"account\" minconf include_watchonly )\n"
+            "\nIf account is not specified, returns the server's total available balance.\n"
+            "If account is specified (DEPRECATED), returns the balance in the account.\n"
+            "Note that the account \"\" is not the same as leaving the parameter out.\n"
+            "The server total may be different to the balance in the default \"\" account.\n"
+            "\nArguments:\n"
+            "1. \"account\"         (string, optional) DEPRECATED. The account string may be given as a\n"
+            "                     specific account name to find the balance associated with wallet keys in\n"
+            "                     a named account, or as the empty string (\"\") to find the balance\n"
+            "                     associated with wallet keys not in any named account, or as \"*\" to find\n"
+            "                     the balance associated with all wallet keys regardless of account.\n"
+            "                     When this option is specified, it calculates the balance in a different\n"
+            "                     way than when it is not specified, and which can count spends twice when\n"
+            "                     there are conflicting pending transactions (such as those created by\n"
+            "                     the bumpfee command), temporarily resulting in low or even negative\n"
+            "                     balances. In general, account balance calculation is not considered\n"
+            "                     reliable and has resulted in confusing outcomes, so it is recommended to\n"
+            "                     avoid passing this argument.\n"
+            "2. minconf           (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
+            "3. include_watchonly (bool, optional, default=false) Also include balance in watch-only addresses (see 'importaddress')\n"
+            "\nResult:\n"
+            "amount              (numeric) The total amount in " + CURRENCY_UNIT + " received for this account.\n"
+            "\nExamples:\n"
+            "\nThe total amount in the wallet with 1 or more confirmations\n"
+            + HelpExampleCli("getbalance", "") +
+            "\nThe total amount in the wallet at least 6 blocks confirmed\n"
+            + HelpExampleCli("getbalance", "\"*\" 6") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("getbalance", "\"*\", 6")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -789,11 +935,37 @@ Value getavailablebalance(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() > 2)
-        throw runtime_error(
-            "getavailablebalance [account] [minconf=1] [watchonly=0]\n"
-            "If [account] is not specified, returns the server's total available balance.\n"
-            "If [account] is specified, returns the balance in the account.\n"
-            "if [includeWatchonly] is specified, include balance in watchonly addresses (see 'importaddress').");
+        throw std::runtime_error(
+            "getavailablebalance ( \"account\" minconf include_watchonly )\n"
+            "\nIf account is not specified, returns the server's total available balance.\n"
+            "If account is specified (DEPRECATED), returns the balance in the account.\n"
+            "Note that the account \"\" is not the same as leaving the parameter out.\n"
+            "The server total may be different to the balance in the default \"\" account.\n"
+            "\nArguments:\n"
+            "1. \"account\"         (string, optional) DEPRECATED. The account string may be given as a\n"
+            "                     specific account name to find the balance associated with wallet keys in\n"
+            "                     a named account, or as the empty string (\"\") to find the balance\n"
+            "                     associated with wallet keys not in any named account, or as \"*\" to find\n"
+            "                     the balance associated with all wallet keys regardless of account.\n"
+            "                     When this option is specified, it calculates the balance in a different\n"
+            "                     way than when it is not specified, and which can count spends twice when\n"
+            "                     there are conflicting pending transactions (such as those created by\n"
+            "                     the bumpfee command), temporarily resulting in low or even negative\n"
+            "                     balances. In general, account balance calculation is not considered\n"
+            "                     reliable and has resulted in confusing outcomes, so it is recommended to\n"
+            "                     avoid passing this argument.\n"
+            "2. minconf           (numeric, optional, default=1) Only include transactions confirmed at least this many times.\n"
+            "3. include_watchonly (bool, optional, default=false) Also include balance in watch-only addresses (see 'importaddress')\n"
+            "\nResult:\n"
+            "amount              (numeric) The total amount in " + CURRENCY_UNIT + " received for this account.\n"
+            "\nExamples:\n"
+            "\nThe total amount in the wallet with 1 or more confirmations\n"
+            + HelpExampleCli("getbalance", "") +
+            "\nThe total amount in the wallet at least 6 blocks confirmed\n"
+            + HelpExampleCli("getbalance", "\"*\" 6") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("getbalance", "\"*\", 6")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -815,6 +987,23 @@ Value getavailablebalance(const Array& params, bool fHelp)
     return ValueFromAmount(pwallet->GetLegacyBalance(filter, nMinDepth, account, fExcludeNotExpiredTimelock));
 }
 
+Value getunconfirmedbalance(const Array& params, bool fHelp)
+{
+    CWallet * const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+        return Value::null;
+    }
+
+    if (fHelp || params.size() > 0)
+        throw std::runtime_error(
+                "getunconfirmedbalance\n"
+                "Returns the server's total unconfirmed balance\n");
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    return ValueFromAmount(pwallet->GetUnconfirmedBalance());
+}
+
 Value movecmd(const Array& params, bool fHelp)
 {
     CWallet* const pwallet = GetWalletForJSONRPCRequest();
@@ -823,9 +1012,25 @@ Value movecmd(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() < 3 || params.size() > 5)
-        throw runtime_error(
-            "move <fromaccount> <toaccount> <amount> [minconf=1] [comment]\n"
-            "Move from one account in your wallet to another.");
+        throw std::runtime_error(
+            "move \"fromaccount\" \"toaccount\" amount ( minconf \"comment\" )\n"
+            "\nDEPRECATED. Move a specified amount from one account in your wallet to another.\n"
+            "\nArguments:\n"
+            "1. \"fromaccount\"   (string, required) The name of the account to move funds from. May be the default account using \"\".\n"
+            "2. \"toaccount\"     (string, required) The name of the account to move funds to. May be the default account using \"\".\n"
+            "3. amount            (numeric) Quantity of " + CURRENCY_UNIT + " to move between accounts.\n"
+            "4. (dummy)           (numeric, optional) Ignored. Remains for backward compatibility.\n"
+            "5. \"comment\"       (string, optional) An optional comment, stored in the wallet only.\n"
+            "\nResult:\n"
+            "true|false           (boolean) true if successful.\n"
+            "\nExamples:\n"
+            "\nMove 0.01 " + CURRENCY_UNIT + " from the default account to the account named tabby\n"
+            + HelpExampleCli("move", "\"\" \"tabby\" 0.01") +
+            "\nMove 0.01 " + CURRENCY_UNIT + " timotei to akiko with a comment and funds have 6 confirmations\n"
+            + HelpExampleCli("move", "\"timotei\" \"akiko\" 0.01 6 \"happy birthday!\"") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("move", "\"timotei\", \"akiko\", 0.01, 6, \"happy birthday!\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -1000,11 +1205,30 @@ Value addmultisigaddress(const Array& params, bool fHelp)
 
     if (fHelp || params.size() < 2 || params.size() > 3)
     {
-        string msg = "addmultisigaddress <nrequired> <'[\"key\",\"key\"]'> [account]\n"
-            "Add a nrequired-to-sign multisignature address to the wallet\"\n"
-            "each key is a Yacoin address or hex-encoded public key\n"
-            "If [account] is specified, assign address to [account].";
-        throw runtime_error(msg);
+        std::string msg = "addmultisigaddress nrequired [\"key\",...] ( \"account\" )\n"
+            "\nAdd a nrequired-to-sign multisignature address to the wallet. Requires a new wallet backup.\n"
+            "Each key is a Yacoin address or hex-encoded public key.\n"
+            "If 'account' is specified (DEPRECATED), assign address to that account.\n"
+
+            "\nArguments:\n"
+            "1. nrequired        (numeric, required) The number of required signatures out of the n keys or addresses.\n"
+            "2. \"keys\"         (string, required) A json array of yacoin addresses or hex-encoded public keys\n"
+            "     [\n"
+            "       \"address\"  (string) yacoin address or hex-encoded public key\n"
+            "       ...,\n"
+            "     ]\n"
+            "3. \"account\"      (string, optional) DEPRECATED. An account to assign the addresses to.\n"
+
+            "\nResult:\n"
+            "\"address\"         (string) A yacoin address associated with the keys.\n"
+
+            "\nExamples:\n"
+            "\nAdd a multisig address from 2 addresses\n"
+            + HelpExampleCli("addmultisigaddress", "2 \"[\\\"16sSauSf5pF2UkUwvKGq4qjNRzBZYqgEL5\\\",\\\"171sgjn4YtPu27adkKGrdDwzRTxnRkBfKV\\\"]\"") +
+            "\nAs json rpc call\n"
+            + HelpExampleRpc("addmultisigaddress", "2, \"[\\\"16sSauSf5pF2UkUwvKGq4qjNRzBZYqgEL5\\\",\\\"171sgjn4YtPu27adkKGrdDwzRTxnRkBfKV\\\"]\"")
+        ;
+        throw std::runtime_error(msg);
     }
 
     LOCK2(cs_main, pwallet->cs_wallet);
@@ -1616,7 +1840,7 @@ Value ListReceived(CWallet * const pwallet, const Array& params, bool fByAccount
     for (const std::pair<uint256, CWalletTx>& pairWtx : pwallet->mapWallet) {
         const CWalletTx& wtx = pairWtx.second;
 
-        if (wtx.IsCoinBase() || wtx.IsCoinStake() || !CheckFinalTx(wtx))
+        if (wtx.IsCoinBase() || wtx.IsCoinStake() || !CheckFinalTx(*wtx.tx))
             continue;
 
         int nDepth = wtx.GetDepthInMainChain();
@@ -1720,16 +1944,37 @@ Value listreceivedbyaddress(const Array& params, bool fHelp)
         return Value::null;
     }
 
-    if (fHelp || params.size() > 2)
-        throw runtime_error(
-            "listreceivedbyaddress [minconf=1] [includeempty=false]\n"
-            "[minconf] is the minimum number of confirmations before payments are included.\n"
-            "[includeempty] whether to include addresses that haven't received any payments.\n"
-            "Returns an array of objects containing:\n"
-            "  \"address\" : receiving address\n"
-            "  \"account\" : the account of the receiving address\n"
-            "  \"amount\" : total amount received by the address\n"
-            "  \"confirmations\" : number of confirmations of the most recent transaction included");
+    if (fHelp || params.size() > 3)
+        throw std::runtime_error(
+            "listreceivedbyaddress ( minconf include_empty include_watchonly)\n"
+            "\nList balances by receiving address.\n"
+            "\nArguments:\n"
+            "1. minconf           (numeric, optional, default=1) The minimum number of confirmations before payments are included.\n"
+            "2. include_empty     (bool, optional, default=false) Whether to include addresses that haven't received any payments.\n"
+            "3. include_watchonly (bool, optional, default=false) Whether to include watch-only addresses (see 'importaddress').\n"
+
+            "\nResult:\n"
+            "[\n"
+            "  {\n"
+            "    \"involvesWatchonly\" : true,        (bool) Only returned if imported addresses were involved in transaction\n"
+            "    \"address\" : \"receivingaddress\",  (string) The receiving address\n"
+            "    \"account\" : \"accountname\",       (string) DEPRECATED. The account of the receiving address. The default account is \"\".\n"
+            "    \"amount\" : x.xxx,                  (numeric) The total amount in " + CURRENCY_UNIT + " received by the address\n"
+            "    \"confirmations\" : n,               (numeric) The number of confirmations of the most recent transaction included\n"
+            "    \"label\" : \"label\",               (string) A comment for the address/transaction, if any\n"
+            "    \"txids\": [\n"
+            "       n,                                (numeric) The ids of transactions received with the address \n"
+            "       ...\n"
+            "    ]\n"
+            "  }\n"
+            "  ,...\n"
+            "]\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("listreceivedbyaddress", "")
+            + HelpExampleCli("listreceivedbyaddress", "6 true")
+            + HelpExampleRpc("listreceivedbyaddress", "6, true, true")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -1744,14 +1989,31 @@ Value listreceivedbyaccount(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() > 2)
-        throw runtime_error(
-            "listreceivedbyaccount [minconf=1] [includeempty=false]\n"
-            "[minconf] is the minimum number of confirmations before payments are included.\n"
-            "[includeempty] whether to include accounts that haven't received any payments.\n"
-            "Returns an array of objects containing:\n"
-            "  \"account\" : the account of the receiving addresses\n"
-            "  \"amount\" : total amount received by addresses with this account\n"
-            "  \"confirmations\" : number of confirmations of the most recent transaction included");
+        throw std::runtime_error(
+            "listreceivedbyaccount ( minconf include_empty include_watchonly)\n"
+            "\nDEPRECATED. List balances by account.\n"
+            "\nArguments:\n"
+            "1. minconf           (numeric, optional, default=1) The minimum number of confirmations before payments are included.\n"
+            "2. include_empty     (bool, optional, default=false) Whether to include accounts that haven't received any payments.\n"
+            "3. include_watchonly (bool, optional, default=false) Whether to include watch-only addresses (see 'importaddress').\n"
+
+            "\nResult:\n"
+            "[\n"
+            "  {\n"
+            "    \"involvesWatchonly\" : true,   (bool) Only returned if imported addresses were involved in transaction\n"
+            "    \"account\" : \"accountname\",  (string) The account name of the receiving account\n"
+            "    \"amount\" : x.xxx,             (numeric) The total amount received by addresses with this account\n"
+            "    \"confirmations\" : n,          (numeric) The number of confirmations of the most recent transaction included\n"
+            "    \"label\" : \"label\"           (string) A comment for the address/transaction, if any\n"
+            "  }\n"
+            "  ,...\n"
+            "]\n"
+
+            "\nExamples:\n"
+            + HelpExampleCli("listreceivedbyaccount", "")
+            + HelpExampleCli("listreceivedbyaccount", "6 true")
+            + HelpExampleRpc("listreceivedbyaccount", "6, true, true")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -1926,10 +2188,65 @@ Value listtransactions(const Array& params, bool fHelp)
         return Value::null;
     }
 
-    if (fHelp || params.size() > 3)
-        throw runtime_error(
-            "listtransactions [account] [count=10] [from=0]\n"
-            "Returns up to [count] most recent transactions skipping the first [from] transactions for account [account].");
+    if (fHelp || params.size() > 4)
+        throw std::runtime_error(
+            "listtransactions ( \"account\" count skip include_watchonly)\n"
+            "\nReturns up to 'count' most recent transactions skipping the first 'from' transactions for account 'account'.\n"
+            "\nArguments:\n"
+            "1. \"account\"    (string, optional) DEPRECATED. The account name. Should be \"*\".\n"
+            "2. count          (numeric, optional, default=10) The number of transactions to return\n"
+            "3. skip           (numeric, optional, default=0) The number of transactions to skip\n"
+            "4. include_watchonly (bool, optional, default=false) Include transactions to watch-only addresses (see 'importaddress')\n"
+            "\nResult:\n"
+            "[\n"
+            "  {\n"
+            "    \"account\":\"accountname\",       (string) DEPRECATED. The account name associated with the transaction. \n"
+            "                                                It will be \"\" for the default account.\n"
+            "    \"address\":\"address\",    (string) The yacoin address of the transaction. Not present for \n"
+            "                                                move transactions (category = move).\n"
+            "    \"category\":\"send|receive|move\", (string) The transaction category. 'move' is a local (off blockchain)\n"
+            "                                                transaction between accounts, and not associated with an address,\n"
+            "                                                transaction id or block. 'send' and 'receive' transactions are \n"
+            "                                                associated with an address, transaction id and block details\n"
+            "    \"amount\": x.xxx,          (numeric) The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and for the\n"
+            "                                         'move' category for moves outbound. It is positive for the 'receive' category,\n"
+            "                                         and for the 'move' category for inbound funds.\n"
+            "    \"label\": \"label\",       (string) A comment for the address/transaction, if any\n"
+            "    \"vout\": n,                (numeric) the vout value\n"
+            "    \"fee\": x.xxx,             (numeric) The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the \n"
+            "                                         'send' category of transactions.\n"
+            "    \"confirmations\": n,       (numeric) The number of confirmations for the transaction. Available for 'send' and \n"
+            "                                         'receive' category of transactions. Negative confirmations indicate the\n"
+            "                                         transaction conflicts with the block chain\n"
+            "    \"trusted\": xxx,           (bool) Whether we consider the outputs of this unconfirmed transaction safe to spend.\n"
+            "    \"blockhash\": \"hashvalue\", (string) The block hash containing the transaction. Available for 'send' and 'receive'\n"
+            "                                          category of transactions.\n"
+            "    \"blockindex\": n,          (numeric) The index of the transaction in the block that includes it. Available for 'send' and 'receive'\n"
+            "                                          category of transactions.\n"
+            "    \"blocktime\": xxx,         (numeric) The block time in seconds since epoch (1 Jan 1970 GMT).\n"
+            "    \"txid\": \"transactionid\", (string) The transaction id. Available for 'send' and 'receive' category of transactions.\n"
+            "    \"time\": xxx,              (numeric) The transaction time in seconds since epoch (midnight Jan 1 1970 GMT).\n"
+            "    \"timereceived\": xxx,      (numeric) The time received in seconds since epoch (midnight Jan 1 1970 GMT). Available \n"
+            "                                          for 'send' and 'receive' category of transactions.\n"
+            "    \"comment\": \"...\",       (string) If a comment is associated with the transaction.\n"
+            "    \"otheraccount\": \"accountname\",  (string) DEPRECATED. For the 'move' category of transactions, the account the funds came \n"
+            "                                          from (for receiving funds, positive amounts), or went to (for sending funds,\n"
+            "                                          negative amounts).\n"
+            "    \"bip125-replaceable\": \"yes|no|unknown\",  (string) Whether this transaction could be replaced due to BIP125 (replace-by-fee);\n"
+            "                                                     may be unknown for unconfirmed transactions not in the mempool\n"
+            "    \"abandoned\": xxx          (bool) 'true' if the transaction has been abandoned (inputs are respendable). Only available for the \n"
+            "                                         'send' category of transactions.\n"
+            "  }\n"
+            "]\n"
+
+            "\nExamples:\n"
+            "\nList the most recent 10 transactions in the systems\n"
+            + HelpExampleCli("listtransactions", "") +
+            "\nList transactions 100 to 120\n"
+            + HelpExampleCli("listtransactions", "\"*\" 20 100") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("listtransactions", "\"*\", 20, 100")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -1996,10 +2313,27 @@ Value listaccounts(const Array& params, bool fHelp)
   }
 
   if (fHelp || params.size() > 2)
-    throw runtime_error(
-        "listaccounts [minconf=1]\n"
-        "Returns Object that has account names as keys, account balances as "
-        "values.");
+      throw std::runtime_error(
+          "listaccounts ( minconf include_watchonly)\n"
+          "\nDEPRECATED. Returns Object that has account names as keys, account balances as values.\n"
+          "\nArguments:\n"
+          "1. minconf             (numeric, optional, default=1) Only include transactions with at least this many confirmations\n"
+          "2. include_watchonly   (bool, optional, default=false) Include balances in watch-only addresses (see 'importaddress')\n"
+          "\nResult:\n"
+          "{                      (json object where keys are account names, and values are numeric balances\n"
+          "  \"account\": x.xxx,  (numeric) The property name is the account name, and the value is the total balance for the account.\n"
+          "  ...\n"
+          "}\n"
+          "\nExamples:\n"
+          "\nList account balances where there at least 1 confirmation\n"
+          + HelpExampleCli("listaccounts", "") +
+          "\nList account balances including zero confirmation transactions\n"
+          + HelpExampleCli("listaccounts", "0") +
+          "\nList account balances for 6 or more confirmations\n"
+          + HelpExampleCli("listaccounts", "6") +
+          "\nAs json rpc call\n"
+          + HelpExampleRpc("listaccounts", "6")
+      );
 
   LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -2063,10 +2397,54 @@ Value listsinceblock(const Array& params, bool fHelp)
       return Value::null;
     }
 
-    if (fHelp)
-        throw runtime_error(
-            "listsinceblock [blockhash] [target-confirmations]\n"
-            "Get all transactions in blocks since block [blockhash], or all transactions if omitted");
+    if (fHelp || params.size() > 4)
+        throw std::runtime_error(
+            "listsinceblock ( \"blockhash\" target_confirmations include_watchonly include_removed )\n"
+            "\nGet all transactions in blocks since block [blockhash], or all transactions if omitted.\n"
+            "If \"blockhash\" is no longer a part of the main chain, transactions from the fork point onward are included.\n"
+            "Additionally, if include_removed is set, transactions affecting the wallet which were removed are returned in the \"removed\" array.\n"
+            "\nArguments:\n"
+            "1. \"blockhash\"            (string, optional) The block hash to list transactions since\n"
+            "2. target_confirmations:    (numeric, optional, default=1) Return the nth block hash from the main chain. e.g. 1 would mean the best block hash. Note: this is not used as a filter, but only affects [lastblock] in the return value\n"
+            "3. include_watchonly:       (bool, optional, default=false) Include transactions to watch-only addresses (see 'importaddress')\n"
+            "4. include_removed:         (bool, optional, default=true) Show transactions that were removed due to a reorg in the \"removed\" array\n"
+            "                                                           (not guaranteed to work on pruned nodes)\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"transactions\": [\n"
+            "    \"account\":\"accountname\",       (string) DEPRECATED. The account name associated with the transaction. Will be \"\" for the default account.\n"
+            "    \"address\":\"address\",    (string) The yacoin address of the transaction. Not present for move transactions (category = move).\n"
+            "    \"category\":\"send|receive\",     (string) The transaction category. 'send' has negative amounts, 'receive' has positive amounts.\n"
+            "    \"amount\": x.xxx,          (numeric) The amount in " + CURRENCY_UNIT + ". This is negative for the 'send' category, and for the 'move' category for moves \n"
+            "                                          outbound. It is positive for the 'receive' category, and for the 'move' category for inbound funds.\n"
+            "    \"vout\" : n,               (numeric) the vout value\n"
+            "    \"fee\": x.xxx,             (numeric) The amount of the fee in " + CURRENCY_UNIT + ". This is negative and only available for the 'send' category of transactions.\n"
+            "    \"confirmations\": n,       (numeric) The number of confirmations for the transaction. Available for 'send' and 'receive' category of transactions.\n"
+            "                                          When it's < 0, it means the transaction conflicted that many blocks ago.\n"
+            "    \"blockhash\": \"hashvalue\",     (string) The block hash containing the transaction. Available for 'send' and 'receive' category of transactions.\n"
+            "    \"blockindex\": n,          (numeric) The index of the transaction in the block that includes it. Available for 'send' and 'receive' category of transactions.\n"
+            "    \"blocktime\": xxx,         (numeric) The block time in seconds since epoch (1 Jan 1970 GMT).\n"
+            "    \"txid\": \"transactionid\",  (string) The transaction id. Available for 'send' and 'receive' category of transactions.\n"
+            "    \"time\": xxx,              (numeric) The transaction time in seconds since epoch (Jan 1 1970 GMT).\n"
+            "    \"timereceived\": xxx,      (numeric) The time received in seconds since epoch (Jan 1 1970 GMT). Available for 'send' and 'receive' category of transactions.\n"
+            "    \"bip125-replaceable\": \"yes|no|unknown\",  (string) Whether this transaction could be replaced due to BIP125 (replace-by-fee);\n"
+            "                                                   may be unknown for unconfirmed transactions not in the mempool\n"
+            "    \"abandoned\": xxx,         (bool) 'true' if the transaction has been abandoned (inputs are respendable). Only available for the 'send' category of transactions.\n"
+            "    \"comment\": \"...\",       (string) If a comment is associated with the transaction.\n"
+            "    \"label\" : \"label\"       (string) A comment for the address/transaction, if any\n"
+            "    \"to\": \"...\",            (string) If a comment to is associated with the transaction.\n"
+            "  ],\n"
+            "  \"removed\": [\n"
+            "    <structure is the same as \"transactions\" above, only present if include_removed=true>\n"
+            "    Note: transactions that were readded in the active chain will appear as-is in this array, and may thus have a positive confirmation count.\n"
+            "  ],\n"
+            "  \"lastblock\": \"lastblockhash\"     (string) The hash of the block (target_confirmations-1) from the best block on the main chain. This is typically used to feed back into listsinceblock the next time you call it. So you would generally use a target_confirmations of say 6, so you will be continually re-notified of transactions until they've reached 6 confirmations plus any new ones\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("listsinceblock", "")
+            + HelpExampleCli("listsinceblock", "\"000000000000000bacf66f7497b7dc45ef753ee9a7d38571037cdb1a57f663ad\" 6")
+            + HelpExampleRpc("listsinceblock", "\"000000000000000bacf66f7497b7dc45ef753ee9a7d38571037cdb1a57f663ad\", 6")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -2104,6 +2482,10 @@ Value listsinceblock(const Array& params, bool fHelp)
         if(params[2].get_bool())
             filter = filter | ISMINE_WATCH_ONLY;
 
+    bool include_removed = false;
+    if(params.size() > 3)
+        include_removed = params[3].get_bool();
+
     int depth = pindex ? (1 + chainActive.Height() - pindex->nHeight) : -1;
 
     Array transactions;
@@ -2116,11 +2498,30 @@ Value listsinceblock(const Array& params, bool fHelp)
         }
     }
 
+    // when a reorg'd block is requested, we also list any relevant transactions
+    // in the blocks of the chain that was detached
+    Array removed;
+    while (include_removed && paltindex && paltindex != pindex) {
+        CBlock block;
+        if (!ReadBlockFromDisk(block, paltindex, Params().GetConsensus())) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");
+        }
+        for (const CTransaction& tx : block.vtx) {
+            if (pwallet->mapWallet.count(tx.GetHash()) > 0) {
+                // We want all transactions regardless of confirmation count to appear here,
+                // even negative confirmation ones, hence the big negative.
+                ListTransactions(pwallet, pwallet->mapWallet[tx.GetHash()], "*", -100000000, true, removed, filter);
+            }
+        }
+        paltindex = paltindex->pprev;
+    }
+
     CBlockIndex *pblockLast = chainActive[chainActive.Height() + 1 - target_confirms];
     uint256 lastblock = pblockLast ? pblockLast->GetBlockHash() : uint256();
 
     Object ret;
     ret.push_back(Pair("transactions", transactions));
+    if (include_removed) ret.push_back(Pair("removed", removed));
     ret.push_back(Pair("lastblock", lastblock.GetHex()));
     return ret;
 }
@@ -2202,6 +2603,44 @@ Value gettransaction(const Array& params, bool fHelp)
     return entry;
 }
 
+Value abandontransaction(const Array& params, bool fHelp)
+{
+    CWallet* const pwallet = GetWalletForJSONRPCRequest();
+    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
+      return Value::null;
+    }
+
+    if (fHelp || params.size() != 1)
+        throw std::runtime_error(
+            "abandontransaction \"txid\"\n"
+            "\nMark in-wallet transaction <txid> as abandoned\n"
+            "This will mark this transaction and all its in-wallet descendants as abandoned which will allow\n"
+            "for their inputs to be respent.  It can be used to replace \"stuck\" or evicted transactions.\n"
+            "It only works on transactions which are not included in a block and are not currently in the mempool.\n"
+            "It has no effect on transactions which are already conflicted or abandoned.\n"
+            "\nArguments:\n"
+            "1. \"txid\"    (string, required) The transaction id\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("abandontransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
+            + HelpExampleRpc("abandontransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
+        );
+
+    LOCK2(cs_main, pwallet->cs_wallet);
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+
+    if (!pwallet->mapWallet.count(hash)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction id");
+    }
+    if (!pwallet->AbandonTransaction(hash)) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Transaction not eligible for abandonment");
+    }
+
+    return Value::null;
+}
+
 Value backupwallet(const Array& params, bool fHelp)
 {
     CWallet* const pwallet = GetWalletForJSONRPCRequest();
@@ -2210,9 +2649,15 @@ Value backupwallet(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "backupwallet <destination>\n"
-            "Safely copies wallet.dat to destination, which can be a directory or a path with filename.");
+        throw std::runtime_error(
+            "backupwallet \"destination\"\n"
+            "\nSafely copies current wallet file to destination, which can be a directory or a path with filename.\n"
+            "\nArguments:\n"
+            "1. \"destination\"   (string) The destination directory or file\n"
+            "\nExamples:\n"
+            + HelpExampleCli("backupwallet", "\"backup.dat\"")
+            + HelpExampleRpc("backupwallet", "\"backup.dat\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -2232,12 +2677,18 @@ Value keypoolrefill(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() > 1)
-        throw runtime_error(
-            "keypoolrefill [new-size]\n"
-            "Fills the keypool.\n"
+        throw std::runtime_error(
+            "keypoolrefill ( newsize )\n"
+            "\nFills the keypool.\n"
             "IMPORTANT: Any previous backups you have made of your wallet file "
             "should be replaced with the newly generated one."
-            + HelpRequiringPassphrase(pwallet));
+            + HelpRequiringPassphrase(pwallet) + "\n"
+            "\nArguments\n"
+            "1. newsize     (numeric, optional, default=100) The new keypool size\n"
+            "\nExamples:\n"
+            + HelpExampleCli("keypoolrefill", "")
+            + HelpExampleRpc("keypoolrefill", "")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
@@ -2251,40 +2702,6 @@ Value keypoolrefill(const Array& params, bool fHelp)
     EnsureWalletIsUnlocked(pwallet);
 
     pwallet->TopUpKeyPool(nSize);
-
-    if (pwallet->GetKeyPoolSize() < nSize)
-        throw JSONRPCError(RPC_WALLET_ERROR, "Error refreshing keypool.");
-
-    return Value::null;
-}
-
-Value keypoolreset(const Array& params, bool fHelp)
-{
-    CWallet* const pwallet = GetWalletForJSONRPCRequest();
-    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
-      return Value::null;
-    }
-
-    if (fHelp || params.size() > 1)
-        throw runtime_error(
-            "keypoolreset [new-size]\n"
-            "Resets the keypool.\n"
-            "IMPORTANT: Any previous backups you have made of your wallet file "
-            "should be replaced with the newly generated one."
-            + HelpRequiringPassphrase(pwallet));
-
-    LOCK2(cs_main, pwallet->cs_wallet);
-
-    unsigned int nSize = max<unsigned int>(gArgs.GetArg("-keypool", DEFAULT_KEYPOOL_SIZE), 0);
-    if (params.size() > 0) {
-        if (params[0].get_int() < 0)
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid parameter, expected valid size");
-        nSize = (unsigned int) params[0].get_int();
-    }
-
-    EnsureWalletIsUnlocked(pwallet);
-
-    pwallet->NewKeyPool();
 
     if (pwallet->GetKeyPoolSize() < nSize)
         throw JSONRPCError(RPC_WALLET_ERROR, "Error refreshing keypool.");
@@ -2474,9 +2891,28 @@ Value encryptwallet(const Array& params, bool fHelp)
     }
 
     if (fHelp || params.size() != 1)
-      throw runtime_error(
-          "encryptwallet <passphrase>\n"
-          "Encrypts the wallet with <passphrase>.");
+        throw std::runtime_error(
+            "encryptwallet \"passphrase\"\n"
+            "\nEncrypts the wallet with 'passphrase'. This is for first time encryption.\n"
+            "After this, any calls that interact with private keys such as sending or signing \n"
+            "will require the passphrase to be set prior the making these calls.\n"
+            "Use the walletpassphrase call for this, and then walletlock call.\n"
+            "If the wallet is already encrypted, use the walletpassphrasechange call.\n"
+            "Note that this will shutdown the server.\n"
+            "\nArguments:\n"
+            "1. \"passphrase\"    (string) The pass phrase to encrypt the wallet with. It must be at least 1 character, but should be long.\n"
+            "\nExamples:\n"
+            "\nEncrypt your wallet\n"
+            + HelpExampleCli("encryptwallet", "\"my pass phrase\"") +
+            "\nNow set the passphrase to use the wallet, such as for signing or sending yacoin\n"
+            + HelpExampleCli("walletpassphrase", "\"my pass phrase\"") +
+            "\nNow we can do something like sign\n"
+            + HelpExampleCli("signmessage", "\"address\" \"test message\"") +
+            "\nNow lock the wallet again by removing the passphrase\n"
+            + HelpExampleCli("walletlock", "") +
+            "\nAs a json rpc call\n"
+            + HelpExampleRpc("encryptwallet", "\"my pass phrase\"")
+        );
 
     LOCK2(cs_main, pwallet->cs_wallet);
 
