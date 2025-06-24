@@ -100,9 +100,6 @@ ExplorerPage::ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent, 
 
     vBlockPeriods.resize(nROWS_OF_DISPLAYED_BLOCKS);
     pQLaverage = ui->AveBkPeriodField;
-    pQLpriceText = ui->labelPrice;
-    pQLprice = ui->label_ThePrice;
-    dLastPrice = 0.0;
 
     pBlockNumberLineEdit = ui->BlockNumberLineEdit;
     pBlockHashLineEdit = ui->BlockHashLineEdit;
@@ -488,42 +485,6 @@ void ExplorerPage::showBkInfoDetails(QModelIndex QMI) {
     }
     pExplorerBlockDialog->pQTVblockinfo->selectionModel()->select(QMI,
                                                                   QItemSelectionModel::Deselect);
-}
-//_____________________________________________________________________________
-// a POF to display YAC price & direction
-//_____________________________________________________________________________
-std::string doPrettyPrice(double &dlastPrice, double &dPrice) {
-    enum { PRICE_INCREASING = 1, PRICE_DECREASING = -1, PRICE_NOCHANGE = 0 };
-
-    std::string sColorText = "<font color = '", sTemp = strprintf("%0.8lf", dPrice);
-
-    int nPriceSignal;
-
-    if (dPrice > dlastPrice) {
-        nPriceSignal = (int)PRICE_INCREASING;
-    } else if (dPrice < dlastPrice) {
-        nPriceSignal = (int)PRICE_DECREASING;
-    } else // they are equal
-    {
-        nPriceSignal = (int)PRICE_NOCHANGE;
-    }
-    dlastPrice = dPrice;
-
-    switch (nPriceSignal) {
-    case (int)PRICE_INCREASING:
-        sColorText += "green' >";
-        break;
-    case (int)PRICE_DECREASING:
-        sColorText += "red' >";
-        break;
-    case (int)PRICE_NOCHANGE:
-        sColorText += "black' >";
-        break;
-    }
-    sTemp += "</font >";
-    sColorText += sTemp;
-
-    return sColorText;
 }
 
 //_____________________________________________________________________________
@@ -1043,25 +1004,6 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
                                                         .toString("mm:ss"));
                         }
                     }
-                    if (fMostlyUpToDate) {
-                        if (!pQLprice->isVisible()) {
-                            pQLpriceText->setVisible(true);
-                            pQLprice->setVisible(true);
-
-                            // pop_a_message_box(
-                            // pQLpriceText->text().toStdString() );    // test
-                        }
-                        fMostlyUpToDate = false;
-                        // add the price update here
-                        double dPrice = 0.0;
-                        dPrice = doGetYACprice();
-                        if (0.0 != dPrice) {
-                            std::string sP = doPrettyPrice(dLastPrice, dPrice);
-
-                            // finally put the price into a QLabel!
-                            pQLprice->setText(sP.c_str());
-                        }
-                    }
                 } else // we received a block we already have, so sit quiet.
                        // Maybe update Age times?
                        // Since blocks come ~1 minute apart, there seems to be
@@ -1074,10 +1016,6 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
         } else // in the catch up process, so stay quiet since blocks are too
                // old
         {
-            if (pQLprice->isVisible()) {
-                pQLprice->setVisible(false);
-            }
-            pQLpriceText->setVisible(false);
         }
         //_____________________________________________________________________________
         //_____________________________________________________________________________

@@ -104,8 +104,7 @@ TX_nm               = 4,
     QTableView *pQTVtransactions;
 
     QLineEdit *pTxIDLineEdit, *pBlockHashLineEdit, *pBlockNumberLineEdit;
-    QLabel *pQLpriceText, *pQLprice, *pQLaverage;
-    double dLastPrice;
+    QLabel *pQLaverage;
     char **ppcArrayOfBlockHeaders, **ppcArrayOfTransactionHeaders;
     bool fBlockEditConnected, fBlockHashEditConnected, fBlkConnected, fTxHashEditConnected,
         fTxConnected;
