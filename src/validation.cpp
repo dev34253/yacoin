@@ -60,7 +60,7 @@
 #include <boost/thread.hpp>
 
 #if defined(NDEBUG)
-# error "Bitcoin cannot be compiled without assertions."
+# error "Yacoin cannot be compiled without assertions."
 #endif
 
 /**
