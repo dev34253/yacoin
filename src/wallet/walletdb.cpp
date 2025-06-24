@@ -905,7 +905,7 @@ bool DumpWallet(CWallet* pwallet, const string& strDest)
           const auto& redeemScriptHash = elem.first;
           const auto& redeemScript = elem.second;
           CKeyingMaterial secret;
-          bool IsCompressed;
+          bool IsCompressed = true;
           txnouttype whichTypeRet;
           CScript tempScript;
           std::string strAddr = CBitcoinAddress(redeemScriptHash).ToString();
@@ -942,112 +942,121 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
 {
    while (!fShutdown)
    {
-      // open inputfile as stream
-      ifstream file;
-      file.open(strLocation.c_str());
-      if (!file.is_open())
-          return false;
+       // Open wallet file
+       std::ifstream file;
+       file.open(strLocation, std::ios::in | std::ios::ate);
+       if (!file.is_open())
+           return false;
 
-      ::int64_t nTimeBegin = chainActive.Tip()->nTime;
+       int64_t nTimeBegin = chainActive.Tip()->GetBlockTime();
 
-      bool fGood = true;
+       bool fGood = true;
 
-      // read through input file checking and importing keys into wallet.
-      enum ReadState {
-          begin = 0,
-          readP2PKH = 1,
-          readP2SH = 2,
-          finish = 3
-      };
-      ::uint32_t readState = begin;
+       // read through input file checking and importing keys into wallet.
+       enum ReadState {
+           begin = 0,
+           readP2PKH = 1,
+           readP2SH = 2,
+           finish = 3
+       };
+       ::uint32_t readState = begin;
 
-      while (file.good()) {
-          std::string line;
-          std::getline(file, line);
-          if (line.empty() || line[0] == '#')
-              continue;
+       int64_t nFilesize = std::max((int64_t)1, (int64_t)file.tellg());
+       file.seekg(0, file.beg);
 
-          if (line[0] == '@') {
-              readState++;
-              continue;
-          }
+       pwallet->ShowProgress(_("Importing..."), 0); // show progress dialog in GUI
 
-          std::vector<std::string> vstr;
-          boost::split(vstr, line, boost::is_any_of(" "));
-          if (vstr.size() < 2)
-              continue;
-          CBitcoinSecret vchSecret;
-          if (!vchSecret.SetString(vstr[0]))
-              continue;
+       while (file.good()) {
+           pwallet->ShowProgress("", std::max(1, std::min(99, (int)(((double)file.tellg() / (double)nFilesize) * 100))));
+           std::string line;
+           std::getline(file, line);
+           if (line.empty() || line[0] == '#')
+               continue;
 
-          CKey key = vchSecret.GetKey();
-          CPubKey pubkey = key.GetPubKey();
-          CKeyID keyid = pubkey.GetID();
-          CScript scriptP2SH;
-          std::string strLabel;
-          bool fLabel = true;
-          for (unsigned int nStr = 2; nStr < vstr.size(); nStr++) {
-              if (boost::algorithm::starts_with(vstr[nStr], "#"))
-                  break;
-              if (vstr[nStr] == "change=1")
-                  fLabel = false;
-              if (vstr[nStr] == "reserve=1")
-                  fLabel = false;
-              if (boost::algorithm::starts_with(vstr[nStr], "label=")) {
-                  strLabel = DecodeDumpString(vstr[nStr].substr(6));
-                  fLabel = true;
-              }
-              if (boost::algorithm::starts_with(vstr[nStr], "redeemscript=")) {
-                  vector<unsigned char> innerData = ParseHex(vstr[nStr].substr(13));
-                  scriptP2SH.assign(innerData.begin(), innerData.end());
-              }
-          }
+           if (line[0] == '@') {
+               readState++;
+               continue;
+           }
 
-          if (pwallet->HaveKey(keyid)) {
-              if (readState == readP2SH && !pwallet->GetCScript(CScriptID(scriptP2SH), scriptP2SH))
-              {
-                  pwallet->AddCScript(scriptP2SH);
-                  if (fLabel)
-                      pwallet->SetAddressBook(CScriptID(scriptP2SH), strLabel, "receive");
-              }
-              LogPrintf("Skipping import of %s (key already present)\n", CBitcoinAddress(keyid).ToString());
-             continue;
-          }
-          LogPrintf("Importing %s...\n", CBitcoinAddress(keyid).ToString());
-          if (!pwallet->AddKey(key)) {
-              fGood = false;
-              continue;
-          }
+           std::vector<std::string> vstr;
+           boost::split(vstr, line, boost::is_any_of(" "));
+           if (vstr.size() < 2)
+               continue;
+           CBitcoinSecret vchSecret;
+           if (!vchSecret.SetString(vstr[0]))
+               continue;
 
-          if (readState == readP2PKH)
-          {
-              ::int64_t nTime = DecodeDumpTime(vstr[1]);
-              pwallet->mapKeyMetadata[keyid].nCreateTime = nTime;
-              nTimeBegin = std::min(nTimeBegin, nTime);
-              if (fLabel)
-                  pwallet->SetAddressBook(keyid, strLabel, "receive");
-          }
-          else if (readState == readP2SH)
-          {
-              pwallet->AddCScript(scriptP2SH);
-              if (fLabel)
-                  pwallet->SetAddressBook(CScriptID(scriptP2SH), strLabel, "receive");
-          }
-      }
-      file.close();
+           CKey key = vchSecret.GetKey();
+           CPubKey pubkey = key.GetPubKey();
+           assert(key.VerifyPubKey(pubkey));
+           CKeyID keyid = pubkey.GetID();
+           int64_t nTime = DecodeDumpTime(vstr[1]);
+           CScript scriptP2SH; // for P2SH redeemscript
+           std::string strLabel;
+           bool fLabel = true;
+           for (unsigned int nStr = 2; nStr < vstr.size(); nStr++) {
+               if (boost::algorithm::starts_with(vstr[nStr], "#"))
+                   break;
+               if (vstr[nStr] == "change=1")
+                   fLabel = false;
+               if (vstr[nStr] == "reserve=1")
+                   fLabel = false;
+               if (boost::algorithm::starts_with(vstr[nStr], "label=")) {
+                   strLabel = DecodeDumpString(vstr[nStr].substr(6));
+                   fLabel = true;
+               }
+               if (boost::algorithm::starts_with(vstr[nStr], "redeemscript=")) {
+                   std::vector<unsigned char> innerData = ParseHex(vstr[nStr].substr(13));
+                   scriptP2SH.assign(innerData.begin(), innerData.end());
+               }
+           }
 
-      // rescan block chain looking for coins from new keys
-      CBlockIndex *pindex = chainActive.Tip();
-      while (pindex && pindex->pprev && pindex->nTime > nTimeBegin - 7200)
-          pindex = pindex->pprev;
+           if (pwallet->HaveKey(keyid)) {
+               if (readState == readP2SH && !pwallet->GetCScript(CScriptID(scriptP2SH), scriptP2SH))
+               {
+                   pwallet->AddCScript(scriptP2SH);
+                   if (fLabel)
+                       pwallet->SetAddressBook(CScriptID(scriptP2SH), strLabel, "receive");
+               }
+               LogPrintf("Skipping import of %s (key already present)\n", CBitcoinAddress(keyid).ToString());
+               continue;
+           }
 
-      LogPrintf("Rescanning last %i blocks\n", chainActive.Tip()->nHeight - pindex->nHeight + 1);
-      pwallet->UpdateTimeFirstKey(nTimeBegin);
-      pwallet->RescanFromTime(nTimeBegin, false /* update */);
-      pwallet->MarkDirty();
+           LogPrintf("Importing %s...\n", CBitcoinAddress(keyid).ToString());
+           if (!pwallet->AddKeyPubKey(key, pubkey)) {
+               fGood = false;
+               continue;
+           }
 
-      return fGood;
+           if (readState == readP2PKH)
+           {
+               ::int64_t nTime = DecodeDumpTime(vstr[1]);
+               pwallet->mapKeyMetadata[keyid].nCreateTime = nTime;
+               nTimeBegin = std::min(nTimeBegin, nTime);
+               if (fLabel)
+                   pwallet->SetAddressBook(keyid, strLabel, "receive");
+           }
+           else if (readState == readP2SH)
+           {
+               pwallet->AddCScript(scriptP2SH);
+               if (fLabel)
+                   pwallet->SetAddressBook(CScriptID(scriptP2SH), strLabel, "receive");
+           }
+       }
+       file.close();
 
+       pwallet->ShowProgress("", 100); // hide progress dialog in GUI
+       // rescan block chain looking for coins from new keys
+       CBlockIndex *pindex = chainActive.Tip();
+       while (pindex && pindex->pprev && pindex->nTime > nTimeBegin - 7200)
+           pindex = pindex->pprev;
+
+       LogPrintf("Rescanning last %i blocks\n", chainActive.Tip()->nHeight - pindex->nHeight + 1);
+       pwallet->UpdateTimeFirstKey(nTimeBegin);
+       pwallet->RescanFromTime(nTimeBegin, false /* update */);
+       pwallet->MarkDirty();
+
+       return fGood;
   }
 
   return false;

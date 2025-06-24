@@ -5075,6 +5075,16 @@ bool CWallet::BackupWallet(const std::string& strDest)
     return dbw->Backup(strDest);
 }
 
+bool CWallet::DumpWallet(const std::string& strDest)
+{
+    return ::DumpWallet(this, strDest);
+}
+
+bool CWallet::ImportWallet(const std::string& strDest)
+{
+    return ::ImportWallet(this, strDest);
+}
+
 CKeyPool::CKeyPool()
 {
     nTime = GetTime();

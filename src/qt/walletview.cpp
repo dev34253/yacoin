@@ -262,6 +262,46 @@ void WalletView::backupWallet()
     }
 }
 
+void WalletView::dumpWallet()
+{
+    QString filename = GUIUtil::getSaveFileName(this,
+        tr("Dump Wallet"), QString(),
+        tr("Wallet Dump (*.txt)"), nullptr);
+
+    if (filename.isEmpty())
+        return;
+
+    if (!walletModel->dumpWallet(filename)) {
+        Q_EMIT message(tr("Dump Failed"), tr("An error happened while trying to save the keys to %1.\n"
+                    "Keys were not saved.").arg(filename),
+            CClientUIInterface::MSG_ERROR);
+    }
+    else {
+        Q_EMIT message(tr("Dump Successful"), tr("Keys were saved to %1.").arg(filename),
+            CClientUIInterface::MSG_INFORMATION);
+    }
+}
+
+void WalletView::importWallet()
+{
+    QString filename = GUIUtil::getOpenFileName(this,
+        tr("Import Wallet"), QString(),
+        tr("Wallet Dump (*.txt)"), nullptr);
+
+    if (filename.isEmpty())
+        return;
+
+    if (!walletModel->importWallet(filename)) {
+        Q_EMIT message(tr("Import Failed"), tr("An error happened while trying to import the keys.\n"
+                "Some or all keys from:\n %1,\n were not imported into your wallet.").arg(filename),
+            CClientUIInterface::MSG_ERROR);
+    }
+    else {
+        Q_EMIT message(tr("Import Successful"), tr("All keys from:\n %1,\n were imported into your wallet.").arg(filename),
+            CClientUIInterface::MSG_INFORMATION);
+    }
+}
+
 void WalletView::changePassphrase()
 {
     AskPassphraseDialog dlg(AskPassphraseDialog::ChangePass, this);

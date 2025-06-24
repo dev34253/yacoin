@@ -1283,6 +1283,8 @@ public:
     static bool ParameterInteraction();
 
     bool BackupWallet(const std::string& strDest);
+    bool DumpWallet(const std::string& strDest);
+    bool ImportWallet(const std::string& strDest);
 
     /* Set the HD chain model (chain child index counters) */
     bool SetHDChain(const CHDChain& chain, bool memonly);
