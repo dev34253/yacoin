@@ -37,9 +37,7 @@
 #endif
 
 #include <QApplication>
-#if QT_VERSION < 0x050000
-    #include <QMainWindow>
-#endif
+#include <QMainWindow>
 #include <QMenuBar>
 #include <QMenu>
 #include <QIcon>

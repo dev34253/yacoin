@@ -1,9 +1,7 @@
 #ifndef BITCOINGUI_H
 #define BITCOINGUI_H
 
-#if QT_VERSION < 0x050000
-    #include <QMainWindow>
-#endif
+#include <QMainWindow>
 //#include "mainwindow.h"
 //#include "ui_mainwindow.h"
 
