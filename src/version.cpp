@@ -48,11 +48,7 @@ const std::string
 #endif
 
 // Client version suffix
-#ifdef USE_LEVELDB
 #define DB_SUFFIX "-leveldb"
-#else
-#define DB_SUFFIX   "-bdb"
-#endif
 
 #ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT
 #define LOW_DIFFICULTY_SUFFIX   "-low-difficulty"
