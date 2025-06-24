@@ -73,6 +73,8 @@ static unsigned int MAX_HEADERS_RESULTS = 2000;
 
 /** Maximum number of script-checking threads allowed */
 static const int MAX_SCRIPTCHECK_THREADS = 16;
+/** -par default (number of script-checking threads, 0 = auto) */
+static const int DEFAULT_SCRIPTCHECK_THREADS = 0;
 /** Number of blocks that can be requested at any given time from a single peer. */
 extern int MAX_BLOCKS_IN_TRANSIT_PER_PEER;
 /** Size of the "block download window": how far ahead of our current height do we fetch?

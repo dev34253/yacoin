@@ -711,7 +711,6 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
         LOCK(pool.cs);
 
     lastTxHash.storeLasthash( hash );
-    //uiInterface.NotifyBlocksChanged();
     }
 #endif
     return true;
@@ -2301,10 +2300,6 @@ void static UpdateTip(CBlockIndex *pindexNew) {
 
     if (!warningMessages.empty())
         LogPrintf(" warning='%s'", boost::algorithm::join(warningMessages, ", "));
-
-#ifdef QT_GUI
-    //uiInterface.NotifyBlocksChanged();
-#endif
 }
 
 /** Disconnect chainActive's tip.

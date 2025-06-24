@@ -1,16 +1,38 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#if defined(HAVE_CONFIG_H)
+#include "config/yacoin-config.h"
+#endif
+
 #include "optionsmodel.h"
+
 #include "bitcoinunits.h"
-#include <QSettings>
-
-#include "init.h"
-#include "wallet/walletdb.h"
 #include "guiutil.h"
-#include "validation.h"
 
-OptionsModel::OptionsModel(QObject *parent) :
+#include "amount.h"
+#include "init.h"
+#include "validation.h" // For DEFAULT_SCRIPTCHECK_THREADS
+#include "net.h"
+#include "netbase.h"
+#include "txdb.h" // for -dbcache defaults
+#include "intro.h"
+
+#ifdef ENABLE_WALLET
+#include "wallet/wallet.h"
+#include "wallet/walletdb.h"
+#endif
+
+#include <QNetworkProxy>
+#include <QSettings>
+#include <QStringList>
+
+OptionsModel::OptionsModel(QObject *parent, bool resetSettings) :
     QAbstractListModel(parent)
 {
-    Init();
+    Init(resetSettings);
 }
 
 void OptionsModel::addOverriddenOption(const std::string &option)
@@ -18,25 +40,77 @@ void OptionsModel::addOverriddenOption(const std::string &option)
     strOverriddenByCommandLine += QString::fromStdString(option) + "=" + QString::fromStdString(gArgs.GetArg(option, "")) + " ";
 }
 
-void OptionsModel::Init()
+// Writes all missing QSettings with their default values
+void OptionsModel::Init(bool resetSettings)
 {
+    if (resetSettings)
+        Reset();
+
+    checkAndMigrate();
+
     QSettings settings;
 
+    // Ensure restart flag is unset on client startup
+    setRestartRequired(false);
+
     // These are Qt-only settings:
-    nDisplayUnit = settings.value("nDisplayUnit", BitcoinUnits::BTC).toInt();
-    bDisplayAddresses = settings.value("bDisplayAddresses", false).toBool();
-    if (!settings.contains("strThirdPartyTxUrls")) {
-        if(fTestNet)
-            settings.setValue("strThirdPartyTxUrls", "");
-        else
-            settings.setValue("strThirdPartyTxUrls", "https://coinplorer.com/YAC/Transactions/%s");
-    }
-    strThirdPartyTxUrls = settings.value("strThirdPartyTxUrls", "https://coinplorer.com/YAC/Transactions/%s").toString();
-    fMinimizeToTray = settings.value("fMinimizeToTray", false).toBool();
-    fMinimizeOnClose = settings.value("fMinimizeOnClose", false).toBool();
+
+    // Window
+    if (!settings.contains("fHideTrayIcon"))
+        settings.setValue("fHideTrayIcon", false);
+    fHideTrayIcon = settings.value("fHideTrayIcon").toBool();
+    Q_EMIT hideTrayIconChanged(fHideTrayIcon);
+
+    if (!settings.contains("fMinimizeToTray"))
+        settings.setValue("fMinimizeToTray", false);
+    fMinimizeToTray = settings.value("fMinimizeToTray").toBool() && !fHideTrayIcon;
+
+    if (!settings.contains("fMinimizeOnClose"))
+        settings.setValue("fMinimizeOnClose", false);
+    fMinimizeOnClose = settings.value("fMinimizeOnClose").toBool();
+
+    // Display
+    if (!settings.contains("nDisplayUnit"))
+        settings.setValue("nDisplayUnit", BitcoinUnits::BTC);
+    nDisplayUnit = settings.value("nDisplayUnit").toInt();
+
+    if (!settings.contains("strThirdPartyTxUrls"))
+        settings.setValue("strThirdPartyTxUrls", "");
+    strThirdPartyTxUrls = settings.value("strThirdPartyTxUrls", "").toString();
+
+    if (!settings.contains("fCoinControlFeatures"))
+        settings.setValue("fCoinControlFeatures", false);
     fCoinControlFeatures = settings.value("fCoinControlFeatures", false).toBool();
-    nTransactionFee = settings.value("nTransactionFee").toLongLong();
-    language = settings.value("language", "").toString();
+
+    // These are shared with the core or have a command-line parameter
+    // and we want command-line parameters to overwrite the GUI settings.
+    //
+    // If setting doesn't exist create it with defaults.
+    //
+    // If gArgs.SoftSetArg() or gArgs.SoftSetBoolArg() return false we were overridden
+    // by command-line and show this in the UI.
+
+    // Main
+    if (!settings.contains("nDatabaseCache"))
+        settings.setValue("nDatabaseCache", (qint64)nDefaultDbCache);
+    if (!gArgs.SoftSetArg("-dbcache", settings.value("nDatabaseCache").toString().toStdString()))
+        addOverriddenOption("-dbcache");
+
+    if (!settings.contains("nThreadsScriptVerif"))
+        settings.setValue("nThreadsScriptVerif", DEFAULT_SCRIPTCHECK_THREADS);
+    if (!gArgs.SoftSetArg("-par", settings.value("nThreadsScriptVerif").toString().toStdString()))
+        addOverriddenOption("-par");
+
+    if (!settings.contains("strDataDir"))
+        settings.setValue("strDataDir", Intro::getDefaultDataDirectory());
+
+    // Wallet
+#ifdef ENABLE_WALLET
+    if (!settings.contains("bSpendZeroConfChange"))
+        settings.setValue("bSpendZeroConfChange", true);
+    if (!gArgs.SoftSetBoolArg("-spendzeroconfchange", settings.value("bSpendZeroConfChange").toBool()))
+        addOverriddenOption("-spendzeroconfchange");
+#endif
 
     // Network
     if (!settings.contains("fUseUPnP"))
@@ -69,10 +143,57 @@ void OptionsModel::Init()
     else if(!settings.value("fUseSeparateProxyTor").toBool() && !gArgs.GetArg("-onion", "").empty())
         addOverriddenOption("-onion");
 
-    if (settings.contains("detachDB"))
-        gArgs.SoftSetBoolArg("-detachdb", settings.value("detachDB").toBool());
-    if (!language.isEmpty())
-        gArgs.SoftSetArg("-lang", language.toStdString());
+    // Display
+    if (!settings.contains("language"))
+        settings.setValue("language", "");
+    if (!gArgs.SoftSetArg("-lang", settings.value("language").toString().toStdString()))
+        addOverriddenOption("-lang");
+
+    language = settings.value("language").toString();
+}
+
+/** Helper function to copy contents from one QSettings to another.
+ * By using allKeys this also covers nested settings in a hierarchy.
+ */
+static void CopySettings(QSettings& dst, const QSettings& src)
+{
+    for (const QString& key : src.allKeys()) {
+        dst.setValue(key, src.value(key));
+    }
+}
+
+/** Back up a QSettings to an ini-formatted file. */
+static void BackupSettings(const fs::path& filename, const QSettings& src)
+{
+    qWarning() << "Backing up GUI settings to" << GUIUtil::boostPathToQString(filename);
+    QSettings dst(GUIUtil::boostPathToQString(filename), QSettings::IniFormat);
+    dst.clear();
+    CopySettings(dst, src);
+}
+
+void OptionsModel::Reset()
+{
+    QSettings settings;
+
+    // Backup old settings to chain-specific datadir for troubleshooting
+    BackupSettings(GetDataDir(true) / "guisettings.ini.bak", settings);
+
+    // Save the strDataDir setting
+    QString dataDir = Intro::getDefaultDataDirectory();
+    dataDir = settings.value("strDataDir", dataDir).toString();
+
+    // Remove all entries from our QSettings object
+    settings.clear();
+
+    // Set strDataDir
+    settings.setValue("strDataDir", dataDir);
+
+    // Set that this was reset
+    settings.setValue("fReset", true);
+
+    // default setting for OptionsModel::StartAtStartup - disabled
+    if (GUIUtil::GetStartOnSystemStartup())
+        GUIUtil::SetStartOnSystemStartup(false);
 }
 
 int OptionsModel::rowCount(const QModelIndex & parent) const
@@ -80,6 +201,7 @@ int OptionsModel::rowCount(const QModelIndex & parent) const
     return OptionIDRowCount;
 }
 
+// read QSettings values and return them
 QVariant OptionsModel::data(const QModelIndex & index, int role) const
 {
     if(role == Qt::EditRole)
@@ -88,9 +210,11 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
         switch(index.row())
         {
         case StartAtStartup:
-            return QVariant(GUIUtil::GetStartOnSystemStartup());
+            return GUIUtil::GetStartOnSystemStartup();
+        case HideTrayIcon:
+            return fHideTrayIcon;
         case MinimizeToTray:
-            return QVariant(fMinimizeToTray);
+            return fMinimizeToTray;
         case MapPortUPnP:
 #ifdef USE_UPNP
             return settings.value("fUseUPnP");
@@ -98,7 +222,7 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             return false;
 #endif
         case MinimizeOnClose:
-            return QVariant(fMinimizeOnClose);
+            return fMinimizeOnClose;
 
         // default proxy
         case ProxyUse:
@@ -127,18 +251,25 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             QStringList strlIpPort = settings.value("addrSeparateProxyTor").toString().split(":", QString::SkipEmptyParts);
             return strlIpPort.at(1);
         }
-        case Fee:
-            return QVariant(static_cast<qlonglong>(nTransactionFee));
+
+#ifdef ENABLE_WALLET
+        case SpendZeroConfChange:
+            return settings.value("bSpendZeroConfChange");
+#endif
         case DisplayUnit:
-            return QVariant(nDisplayUnit);
-        case DisplayAddresses:
-            return QVariant(bDisplayAddresses);
+            return nDisplayUnit;
         case ThirdPartyTxUrls:
-            return QVariant(strThirdPartyTxUrls);
+            return strThirdPartyTxUrls;
         case Language:
-            return settings.value("language", "");
+            return settings.value("language");
         case CoinControlFeatures:
-            return QVariant(fCoinControlFeatures);
+            return fCoinControlFeatures;
+        case DatabaseCache:
+            return settings.value("nDatabaseCache");
+        case ThreadsScriptVerif:
+            return settings.value("nThreadsScriptVerif");
+        case Listen:
+            return settings.value("fListen");
         default:
             return QVariant();
         }
@@ -146,6 +277,7 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
     return QVariant();
 }
 
+// write QSettings values
 bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, int role)
 {
     bool successful = true; /* set to false on parse error */
@@ -156,6 +288,11 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
         {
         case StartAtStartup:
             successful = GUIUtil::SetStartOnSystemStartup(value.toBool());
+            break;
+        case HideTrayIcon:
+            fHideTrayIcon = value.toBool();
+            settings.setValue("fHideTrayIcon", fHideTrayIcon);
+            Q_EMIT hideTrayIconChanged(fHideTrayIcon);
             break;
         case MinimizeToTray:
             fMinimizeToTray = value.toBool();
@@ -169,6 +306,7 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             fMinimizeOnClose = value.toBool();
             settings.setValue("fMinimizeOnClose", fMinimizeOnClose);
             break;
+
         // default proxy
         case ProxyUse:
             if (settings.value("fUseProxy") != value) {
@@ -232,44 +370,92 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             }
         }
         break;
-        case Fee:
-            nTransactionFee = value.toLongLong();
-            settings.setValue("nTransactionFee", static_cast<qlonglong>(nTransactionFee));
-            emit transactionFeeChanged(nTransactionFee);
+
+#ifdef ENABLE_WALLET
+        case SpendZeroConfChange:
+            if (settings.value("bSpendZeroConfChange") != value) {
+                settings.setValue("bSpendZeroConfChange", value);
+                setRestartRequired(true);
+            }
             break;
+#endif
         case DisplayUnit:
-            nDisplayUnit = value.toInt();
-            settings.setValue("nDisplayUnit", nDisplayUnit);
-            emit displayUnitChanged(nDisplayUnit);
-            break;
-        case DisplayAddresses:
-            bDisplayAddresses = value.toBool();
-            settings.setValue("bDisplayAddresses", bDisplayAddresses);
-            break;
-        case DetachDatabases:
+            setDisplayUnit(value);
             break;
         case ThirdPartyTxUrls:
             if (strThirdPartyTxUrls != value.toString()) {
                 strThirdPartyTxUrls = value.toString();
                 settings.setValue("strThirdPartyTxUrls", strThirdPartyTxUrls);
+                setRestartRequired(true);
             }
             break;
         case Language:
-            settings.setValue("language", value);
+            if (settings.value("language") != value) {
+                settings.setValue("language", value);
+                setRestartRequired(true);
+            }
             break;
-        case CoinControlFeatures: {
+        case CoinControlFeatures:
             fCoinControlFeatures = value.toBool();
             settings.setValue("fCoinControlFeatures", fCoinControlFeatures);
-            emit coinControlFeaturesChanged(fCoinControlFeatures);
+            Q_EMIT coinControlFeaturesChanged(fCoinControlFeatures);
+            break;
+        case DatabaseCache:
+            if (settings.value("nDatabaseCache") != value) {
+                settings.setValue("nDatabaseCache", value);
+                setRestartRequired(true);
+            }
+            break;
+        case ThreadsScriptVerif:
+            if (settings.value("nThreadsScriptVerif") != value) {
+                settings.setValue("nThreadsScriptVerif", value);
+                setRestartRequired(true);
+            }
+            break;
+        case Listen:
+            if (settings.value("fListen") != value) {
+                settings.setValue("fListen", value);
+                setRestartRequired(true);
             }
             break;
         default:
             break;
         }
     }
-    emit dataChanged(index, index);
+
+    Q_EMIT dataChanged(index, index);
 
     return successful;
+}
+
+/** Updates current unit in memory, settings and emits displayUnitChanged(newUnit) signal */
+void OptionsModel::setDisplayUnit(const QVariant &value)
+{
+    if (!value.isNull())
+    {
+        QSettings settings;
+        nDisplayUnit = value.toInt();
+        settings.setValue("nDisplayUnit", nDisplayUnit);
+        Q_EMIT displayUnitChanged(nDisplayUnit);
+    }
+}
+
+bool OptionsModel::getProxySettings(QNetworkProxy& proxy) const
+{
+    // Directly query current base proxy, because
+    // GUI settings can be overridden with -proxy.
+    proxyType curProxy;
+    if (GetProxy(NET_IPV4, curProxy)) {
+        proxy.setType(QNetworkProxy::Socks5Proxy);
+        proxy.setHostName(QString::fromStdString(curProxy.proxy.ToStringIP()));
+        proxy.setPort(curProxy.proxy.GetPort());
+
+        return true;
+    }
+    else
+        proxy.setType(QNetworkProxy::NoProxy);
+
+    return false;
 }
 
 void OptionsModel::setRestartRequired(bool fRequired)
@@ -284,32 +470,21 @@ bool OptionsModel::isRestartRequired()
     return settings.value("fRestartRequired", false).toBool();
 }
 
-qint64 OptionsModel::getTransactionFee()
+void OptionsModel::checkAndMigrate()
 {
-    return nTransactionFee;
-}
+    // Migration of default values
+    // Check if the QSettings container was already loaded with this client version
+    QSettings settings;
+    static const char strSettingsVersionKey[] = "nSettingsVersion";
+    int settingsVersion = settings.contains(strSettingsVersionKey) ? settings.value(strSettingsVersionKey).toInt() : 0;
+    if (settingsVersion < CLIENT_VERSION)
+    {
+        // -dbcache was bumped from 100 to 300 in 0.13
+        // see https://github.com/bitcoin/bitcoin/pull/8273
+        // force people to upgrade to the new value if they are using 100MB
+        if (settingsVersion < 130000 && settings.contains("nDatabaseCache") && settings.value("nDatabaseCache").toLongLong() == 100)
+            settings.setValue("nDatabaseCache", (qint64)nDefaultDbCache);
 
-bool OptionsModel::getCoinControlFeatures()
-{
-    return fCoinControlFeatures;
-}
-
-bool OptionsModel::getMinimizeToTray()
-{
-    return fMinimizeToTray;
-}
-
-bool OptionsModel::getMinimizeOnClose()
-{
-    return fMinimizeOnClose;
-}
-
-int OptionsModel::getDisplayUnit()
-{
-    return nDisplayUnit;
-}
-
-bool OptionsModel::getDisplayAddresses()
-{
-    return bDisplayAddresses;
+        settings.setValue(strSettingsVersionKey, CLIENT_VERSION);
+    }
 }
