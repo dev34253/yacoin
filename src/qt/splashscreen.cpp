@@ -33,8 +33,9 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle *networkStyle) 
     // set reference point, paddings
     int paddingRight            = 50;
     int paddingTop              = 50;
-    int titleVersionVSpace      = 17;
-    int titleCopyrightVSpace    = 40;
+    int titleVersionVSpace      = 25;
+    int titleCopyrightVSpace    = 50;
+    int logoVSpace              = 100;
 
     float fontFactor            = 1.0;
     float devicePixelRatio      = 1.0;
@@ -45,13 +46,13 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle *networkStyle) 
     // define text to place
     QString titleText       = tr(PACKAGE_NAME);
     QString versionText     = QString("Version %1").arg(QString::fromStdString(FormatFullVersion()));
-    QString copyrightText   = QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str());
+    QString copyrightText   = QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2013, COPYRIGHT_YEAR)).c_str());
     QString titleAddText    = networkStyle->getTitleAddText();
 
     QString font            = QApplication::font().toString();
 
     // create a bitmap according to device pixelratio
-    QSize splashSize(480*devicePixelRatio,320*devicePixelRatio);
+    QSize splashSize(800*devicePixelRatio,500*devicePixelRatio);
     pixmap = QPixmap(splashSize);
 
 #if QT_VERSION > 0x050100
@@ -69,15 +70,28 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle *networkStyle) 
     QRect rGradient(QPoint(0,0), splashSize);
     pixPaint.fillRect(rGradient, gradient);
 
-    // draw the bitcoin icon, expected size of PNG: 1024x1024
-    QRect rectIcon(QPoint(-150,-122), QSize(430,430));
+    // draw the yacoin logo, expected size of PNG: 750x275
+    QPixmap fullLogo(":/images/splash");
+    // Remove the border of the logo
+    int borderSize = 1;
+    QPixmap clippedLogo = fullLogo.copy(borderSize, borderSize,
+                                         fullLogo.width() - 2*borderSize,
+                                         fullLogo.height() - 2*borderSize);
+    // Optional: scale logo to fit splash screen
+    QSize scaledSize = clippedLogo.size().scaled(pixmap.size() / devicePixelRatio, Qt::KeepAspectRatio);
+    QPixmap scaledLogo = clippedLogo.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
-    const QSize requiredSize(1024,1024);
-    QPixmap icon(networkStyle->getAppIcon().pixmap(requiredSize));
+    int centerX = pixmap.width() / devicePixelRatio / 2;
 
-    pixPaint.drawPixmap(rectIcon, icon);
+    // Center the logo on the splash screen
+    QPoint centerPoint(
+        (pixmap.width() / devicePixelRatio - scaledLogo.width()) / 2,
+        logoVSpace  // Adjust vertical offset
+    );
 
-    // check font size and drawing with
+    pixPaint.drawPixmap(centerPoint, scaledLogo);
+
+    // Title text
     pixPaint.setFont(QFont(font, 33*fontFactor));
     QFontMetrics fm = pixPaint.fontMetrics();
     int titleTextWidth = fm.width(titleText);
@@ -88,27 +102,24 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle *networkStyle) 
     pixPaint.setFont(QFont(font, 33*fontFactor));
     fm = pixPaint.fontMetrics();
     titleTextWidth  = fm.width(titleText);
-    pixPaint.drawText(pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight,paddingTop,titleText);
+    pixPaint.drawText(centerX - titleTextWidth / 2, paddingTop, titleText);
 
     pixPaint.setFont(QFont(font, 15*fontFactor));
 
+    // Version text
     // if the version string is to long, reduce size
     fm = pixPaint.fontMetrics();
     int versionTextWidth  = fm.width(versionText);
     if(versionTextWidth > titleTextWidth+paddingRight-10) {
-        pixPaint.setFont(QFont(font, 10*fontFactor));
+        pixPaint.setFont(QFont(font, 15*fontFactor));
         titleVersionVSpace -= 5;
     }
-    pixPaint.drawText(pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight+2,paddingTop+titleVersionVSpace,versionText);
+    pixPaint.drawText(centerX - versionTextWidth / 2, paddingTop + titleVersionVSpace, versionText);
 
-    // draw copyright stuff
-    {
-        pixPaint.setFont(QFont(font, 10*fontFactor));
-        const int x = pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight;
-        const int y = paddingTop+titleCopyrightVSpace;
-        QRect copyrightRect(x, y, pixmap.width() - x - paddingRight, pixmap.height() - y);
-        pixPaint.drawText(copyrightRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, copyrightText);
-    }
+    // Copyright text
+    pixPaint.setFont(QFont(font, 15*fontFactor));
+    int copyrightWidth = fm.width(copyrightText);
+    pixPaint.drawText(centerX - copyrightWidth / 2, paddingTop + titleCopyrightVSpace, copyrightText);
 
     // draw additional text if special network
     if(!titleAddText.isEmpty()) {
@@ -117,7 +128,7 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle *networkStyle) 
         pixPaint.setFont(boldFont);
         fm = pixPaint.fontMetrics();
         int titleAddTextWidth  = fm.width(titleAddText);
-        pixPaint.drawText(pixmap.width()/devicePixelRatio-titleAddTextWidth-10,15,titleAddText);
+        pixPaint.drawText(centerX - titleAddTextWidth / 2, 15, titleAddText);
     }
 
     pixPaint.end();

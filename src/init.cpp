@@ -1118,8 +1118,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
         bool fReset = fReindex;
         std::string strLoadError;
 
-        // YACOIN TODO ADD SPINNER OR PROGRESS BAR
-        uiInterface.InitMessage(_("<b>Loading block index, this may take several minutes...</b>"));
+        uiInterface.InitMessage(_("Loading block index..."));
 
         nStart = GetTimeMillis();
         do
@@ -1491,7 +1490,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // ********************************************************* Step 12: finished
 
-    uiInterface.InitMessage(_("<b>Done loading</b>"));
+    uiInterface.InitMessage(_("Done loading"));
     LogPrintf("Done loading\n");
 
     if (!strErrors.str().empty())
