@@ -45,8 +45,8 @@ autom4te.cache
 .deps
 .dirstamp
 Makefile.in
-src/config/bitcoin-config.h
-src/config/bitcoin-config.h.in
+src/config/yacoin-config.h
+src/config/yacoin-config.h.in
 src/config/stamp-h1
 src/qt/forms/ui*.h
 src/yacoin_test

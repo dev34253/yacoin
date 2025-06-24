@@ -1,11 +1,15 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2016 The Bitcoin Core developers
-// Copyright (c) 2024 The Yacoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef YACOIN_VALIDATION_H
 #define YACOIN_VALIDATION_H
+
+#if defined(HAVE_CONFIG_H)
+#include "config/yacoin-config.h"
+#endif
 
 #include "amount.h"
 #include "chain.h"

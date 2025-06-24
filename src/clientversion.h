@@ -1,5 +1,13 @@
-#ifndef CLIENTVERSION_H
-#define CLIENTVERSION_H
+// Copyright (c) 2009-2016 The Bitcoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef BITCOIN_CLIENTVERSION_H
+#define BITCOIN_CLIENTVERSION_H
+
+#if defined(HAVE_CONFIG_H)
+#include "config/yacoin-config.h"
+#endif //HAVE_CONFIG_H
 
 //
 // client versioning
@@ -16,4 +24,4 @@
 #define STRINGIZE(X) DO_STRINGIZE(X)
 #define DO_STRINGIZE(X) #X
 
-#endif // CLIENTVERSION_H
+#endif // BITCOIN_CLIENTVERSION_H
