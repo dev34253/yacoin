@@ -446,8 +446,8 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-rpcsslciphers=<ciphers>", _("Acceptable ciphers (default: TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!AH:!3DES:@STRENGTH)"));
 
     strUsage += HelpMessageGroup(_("Other options:"));
-    strUsage += HelpMessageOpt("-tokenindex", _("Keep an index of tokens. Requires a -reindex-token."));
-    strUsage += HelpMessageOpt("-addressindex", _("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses. Require a -reindex-token or -reindex-blockindex"));
+    strUsage += HelpMessageOpt("-tokenindex", _("Keep an index of tokens. Requires a -reindex-fast or -reindex."));
+    strUsage += HelpMessageOpt("-addressindex", _("Maintain a full address index, used to query for the balance, txids and unspent outputs for addresses. Require a -reindex-fast or -reindex"));
     strUsage += HelpMessageOpt("-initSyncDownloadTimeout=<n>", _("Headers/block download timeout in seconds (default: 600)"));
     strUsage += HelpMessageOpt("-initSyncMaximumBlocksInDownloadPerPeer=<n>", _("Maximum number of blocks being downloaded at a time from one peer (default: 500)"));
     strUsage += HelpMessageOpt("-initSyncBlockDownloadWindow=<n>", _("Block download windows (default: initSyncMaximumBlocksInDownloadPerPeer * 64)"));
@@ -1308,7 +1308,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
             if (!fReset) {
                 bool fRet = uiInterface.ThreadSafeQuestion(
                     strLoadError + ".\n\n" + _("Do you want to rebuild the block database now?"),
-                    strLoadError + ".\nPlease restart with -reindex-onlyheadersync (takes a few minutes) or -reindex-token (takes around 6->9 hours) or -reindex-blockindex (takes very long time, around 24->48 hours) to recover.",
+                    strLoadError + ".\nPlease restart with -reindex-fast (takes around 30->60 minutes) or -reindex (takes very long time, around 24->48 hours) to recover.",
                     "", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
                 if (fRet) {
                     fReindex = true;
@@ -1355,6 +1355,9 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     // -reindex
     if (fReindex) {
         int nFile = 0;
+        std::string reindexMessage = fReindexFast ? "Reindexing block index and chainstate in fast mode ..." : fReindex ? "Reindexing block index and chainstate in slow mode ..." : "";
+        uiInterface.InitMessage(reindexMessage);
+        LogPrintf("%s\n", reindexMessage);
         while (true) {
             CDiskBlockPos pos(nFile, 0);
             if (!fs::exists(GetBlockPosFilename(pos, "blk")))
