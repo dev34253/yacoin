@@ -188,12 +188,16 @@ Value gettimechaininfo(const Array& params, bool fHelp)
             "}\n"
         );
 
+    CBlockIndex* pindexTip = chainActive.Tip();
     Object obj;
     obj.push_back(Pair("blocks",                (int)chainActive.Height()));
     obj.push_back(Pair("headers",               pindexBestHeader ? pindexBestHeader->nHeight : -1));
-    obj.push_back(Pair("bestblockhash",         chainActive.Tip()->GetBlockHash().GetHex()));
+    obj.push_back(Pair("bestblockhash",         pindexTip->GetBlockHash().GetHex()));
     obj.push_back(Pair("difficulty",            (double)GetDifficulty()));
-    obj.push_back(Pair("bnChainTrust",             chainActive.Tip()->bnChainTrust.getuint64()));
+    obj.push_back(Pair("bnChainTrust",            pindexTip->bnChainTrust.getuint64()));
+    obj.push_back(Pair("Latest block time", (int64_t)pindexTip->nTime));
+    obj.push_back(Pair("txcount", (int64_t)pindexTip->nChainTx));
+
     return obj;
 }
 
