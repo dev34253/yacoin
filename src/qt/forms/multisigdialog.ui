@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MultisigDialog</class>
- <widget class="QWidget" name="MultisigDialog">
+ <widget class="QDialog" name="MultisigDialog">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -35,7 +35,7 @@
             <x>0</x>
             <y>0</y>
             <width>1283</width>
-            <height>345</height>
+            <height>310</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -339,8 +339,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>616</width>
-                   <height>271</height>
+                   <width>613</width>
+                   <height>221</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_4">
@@ -458,8 +458,8 @@
                   <rect>
                    <x>0</x>
                    <y>0</y>
-                   <width>615</width>
-                   <height>243</height>
+                   <width>612</width>
+                   <height>193</height>
                   </rect>
                  </property>
                  <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -658,7 +658,7 @@
            <item>
             <widget class="QPushButton" name="pasteTransactionButton">
              <property name="toolTip">
-              <string>Paste transaction from clipboard</string>
+              <string>Paste address from clipboard</string>
              </property>
              <property name="text">
               <string/>

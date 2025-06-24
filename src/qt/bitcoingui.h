@@ -94,6 +94,7 @@ private:
     QAction *overviewAction;
     QAction *historyAction;
     QAction *quitAction;
+    QAction *multisigAction;
     QAction *explorerAction;
     QAction *sendCoinsAction;
     QAction *sendCoinsMenuAction;
@@ -205,6 +206,8 @@ private Q_SLOTS:
     void gotoSendCoinsPage(QString addr = "");
     /** Switch to explorer page */
     void gotoExplorerPage();
+    /** Switch to multisig page */
+    void gotoMultisigPage();
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");

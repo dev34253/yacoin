@@ -1,36 +1,27 @@
+#include <qt/multisigdialog.h>
+#include <qt/forms/ui_multisigdialog.h>
+
+#include <qt/multisigaddressentry.h>
+#include <qt/multisiginputentry.h>
+#include <qt/sendcoinsentry.h>
+
+#include <wallet/wallet.h>
+#include <policy/policy.h>
+#include <validation.h>
+#include <txmempool.h>
+#include <consensus/validation.h>
+#include <net.h>
+#include <net_processing.h>
+
 #include <QClipboard>
-#include <QDialog>
-#include <QMessageBox>
 #include <QScrollBar>
-#include <QKeyEvent>
-#include <vector>
+#include <QMessageBox>
 
-#include "addresstablemodel.h"
-#include "base58.h"
-#include "key.h"
-#include "main.h"
-#include "multisigaddressentry.h"
-#include "multisiginputentry.h"
-#include "multisigdialog.h"
-#include "policy/policy.h"
-#include "policy/fees.h"
-#include "ui_multisigdialog.h"
-#include "script/script.h"
-#include "script/standard.h"
-#include "script/sign.h"
-#include "sendcoinsentry.h"
-#include "util.h"
-#include "wallet/wallet.h"
-#include "walletmodel.h"
-#include "streams.h"
-#include "txdb.h"
-#include "net_processing.h"
-#include "validation.h"
-#include "consensus/validation.h"
 
-MultisigDialog::MultisigDialog(QWidget *parent) : QWidget(parent), ui(new Ui::MultisigDialog), model(0)
+MultisigDialog::MultisigDialog(const PlatformStyle *_platformStyle, QWidget *parent) : QDialog(parent), ui(new Ui::MultisigDialog), model(0)
 {
     ui->setupUi(this);
+    platformStyle = _platformStyle;
 
 #ifdef Q_WS_MAC // Icons on push buttons are very uncommon on Mac
     ui->addPubKeyButton->setIcon(QIcon());
@@ -55,26 +46,6 @@ MultisigDialog::MultisigDialog(QWidget *parent) : QWidget(parent), ui(new Ui::Mu
 
     ui->signTransactionButton->setEnabled(false);
     ui->sendTransactionButton->setEnabled(false);
-}
-
-void MultisigDialog::showEvent(QShowEvent *event)
-{
-    QWidget::showEvent(event);
-
-    if (!model)
-        return;
-
-    updateAmounts();
-}
-
-void MultisigDialog::hideEvent(QHideEvent *event)
-{
-    QWidget::hideEvent(event);
-
-    if (!model)
-        return;
-
-    clear();
 }
 
 MultisigDialog::~MultisigDialog()
@@ -108,6 +79,8 @@ void MultisigDialog::setModel(WalletModel *model)
         if(entry)
             entry->setModel(model);
     }
+
+    updateAmounts();
 }
 
 void MultisigDialog::updateRemoveEnabled()
@@ -142,6 +115,8 @@ void MultisigDialog::updateRemoveEnabled()
         if(entry)
             entry->setRemoveEnabled(enabled);
     }
+
+    updateAmounts();
 }
 
 void MultisigDialog::on_createAddressButton_clicked()
@@ -185,7 +160,7 @@ void MultisigDialog::on_createAddressButton_clicked()
         QMessageBox::warning(this, tr("Error"), tr("Number of required signatures > Number of keys involved in the creation of address."), QMessageBox::Ok);
         return;
     }
-    
+
     CScript script = GetScriptForMultisig(required, pubkeys);
     if (script.size() > MAX_SCRIPT_ELEMENT_SIZE)
     {
@@ -211,26 +186,26 @@ void MultisigDialog::on_copyRedeemScriptButton_clicked()
 
 void MultisigDialog::on_saveRedeemScriptButton_clicked()
 {
-    if(!model)
+    if(!model || vpwallets.empty())
         return;
 
-    CWallet *wallet = model->getWallet();
+    CWallet *wallet = vpwallets[0];
     std::string redeemScript = ui->redeemScript->text().toStdString();
     std::vector<unsigned char> scriptData(ParseHex(redeemScript));
     CScript script(scriptData.begin(), scriptData.end());
-    CScriptID scriptID(script);
+
 
     LOCK(wallet->cs_wallet);
-    if(!wallet->HaveCScript(scriptID))
+    if(!wallet->HaveCScript(CScriptID(script)))
         wallet->AddCScript(script);
 }
 
 void MultisigDialog::on_saveMultisigAddressButton_clicked()
 {
-    if(!model)
+    if(!model || vpwallets.empty())
         return;
 
-    CWallet *wallet = model->getWallet();
+    CWallet *wallet = vpwallets[0];
     std::string redeemScript = ui->redeemScript->text().toStdString();
     std::string address = ui->multisigAddress->text().toStdString();
     std::string label("multisig");
@@ -261,7 +236,7 @@ void MultisigDialog::clear()
 
 MultisigAddressEntry * MultisigDialog::addPubKey()
 {
-    MultisigAddressEntry *entry = new MultisigAddressEntry(this);
+    MultisigAddressEntry *entry = new MultisigAddressEntry(platformStyle, this);
 
     entry->setModel(model);
     ui->pubkeyEntries->addWidget(entry);
@@ -357,7 +332,7 @@ void MultisigDialog::on_transaction_textChanged()
 
     // Fill input list
     int index = -1;
-    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+    for(const CTxIn& txin : tx.vin)
     {
         uint256 prevoutHash = txin.prevout.COutPointGetHash();
         addInput();
@@ -372,7 +347,7 @@ void MultisigDialog::on_transaction_textChanged()
 
     // Fill output list
     index = -1;
-    BOOST_FOREACH(const CTxOut& txout, tx.vout)
+    for(const CTxOut& txout : tx.vout)
     {
         CScript scriptPubKey = txout.scriptPubKey;
         CTxDestination addr;
@@ -407,10 +382,10 @@ void MultisigDialog::on_signTransactionButton_clicked()
 {
     ui->signedTransaction->clear();
 
-    if(!model)
+    if(!model || vpwallets.empty())
         return;
 
-    CWallet *wallet = model->getWallet();
+    CWallet *wallet = vpwallets[0];
 
     // Decode the raw transaction
     std::vector<unsigned char> txData(ParseHex(ui->transaction->text().toStdString()));
@@ -561,8 +536,10 @@ void MultisigDialog::on_sendTransactionButton_clicked()
 	CValidationState state;
     if (!AcceptToMemoryPool(mempool, state, tx, &fMissingInputs))
         return;
-    //(CInv(MSG_TX, txHash), tx);
+
     RelayTransaction(*tx, g_connman.get());
+
+    ui->statusLabel->setText(tr("The transaction is sent to yacoin network."));
 }
 
 MultisigInputEntry * MultisigDialog::addInput()
@@ -591,7 +568,7 @@ void MultisigDialog::removeEntry(MultisigInputEntry *entry)
 
 SendCoinsEntry * MultisigDialog::addOutput()
 {
-    SendCoinsEntry *entry = new SendCoinsEntry(this);
+    SendCoinsEntry *entry = new SendCoinsEntry(platformStyle, this);
 
     entry->setModel(model);
     ui->outputs->addWidget(entry);
@@ -644,19 +621,4 @@ void MultisigDialog::updateAmounts()
     QString feeStr;
     feeStr.sprintf("%.6f", (double) fee / COIN);
     ui->fee->setText(feeStr);
-}
-
-void MultisigDialog::keyPressEvent(QKeyEvent *event)
-{
-#ifdef ANDROID
-    if(windowType() != Qt::Widget && event->key() == Qt::Key_Back)
-    {
-        close();
-    }
-#else
-    if(windowType() != Qt::Widget && event->key() == Qt::Key_Escape)
-    {
-        close();
-    }
-#endif
 }

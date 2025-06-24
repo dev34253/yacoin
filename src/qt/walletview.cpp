@@ -16,6 +16,7 @@
 #include "receivecoinsdialog.h"
 #include "sendcoinsdialog.h"
 #include "explorer.h"
+#include "multisigdialog.h"
 #include "signverifymessagedialog.h"
 #include "transactiontablemodel.h"
 #include "transactionview.h"
@@ -222,6 +223,15 @@ void WalletView::gotoSendCoinsPage(QString addr)
 void WalletView::gotoExplorerPage()
 {
     setCurrentWidget(explorerPage);
+}
+
+void WalletView::gotoMultisigPage()
+{
+    MultisigDialog *multisigDialog = new MultisigDialog(platformStyle, this);
+    multisigDialog->setAttribute(Qt::WA_DeleteOnClose);
+    multisigDialog->setModel(walletModel);
+    multisigDialog->show();
+    multisigDialog->setFocus();
 }
 
 void WalletView::gotoSignMessageTab(QString addr)

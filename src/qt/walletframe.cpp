@@ -144,6 +144,13 @@ void WalletFrame::gotoExplorerPage()
         i.value()->gotoExplorerPage();
 }
 
+void WalletFrame::gotoMultisigPage()
+{
+    WalletView *walletView = currentWalletView();
+    if (walletView)
+        walletView->gotoMultisigPage();
+}
+
 void WalletFrame::gotoSignMessageTab(QString addr)
 {
     WalletView *walletView = currentWalletView();

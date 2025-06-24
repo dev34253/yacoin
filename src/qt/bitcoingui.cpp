@@ -98,6 +98,7 @@ BitcoinGUI::BitcoinGUI(const PlatformStyle *_platformStyle, const NetworkStyle *
     overviewAction(0),
     historyAction(0),
     quitAction(0),
+    multisigAction(0),
     explorerAction(0),
     sendCoinsAction(0),
     sendCoinsMenuAction(0),
@@ -382,6 +383,8 @@ void BitcoinGUI::createActions()
     signMessageAction->setStatusTip(tr("Sign messages with your Yacoin addresses to prove you own them"));
     verifyMessageAction = new QAction(platformStyle->TextColorIcon(":/icons/verify"), tr("&Verify message..."), this);
     verifyMessageAction->setStatusTip(tr("Verify messages to ensure they were signed with specified Yacoin addresses"));
+    multisigAction = new QAction(platformStyle->TextColorIcon(":/icons/send"), tr("Multisig"), this);
+    multisigAction->setStatusTip(tr("Open window for working with multisig addresses"));
 
     openRPCConsoleAction = new QAction(platformStyle->TextColorIcon(":/icons/debugwindow"), tr("&Debug window"), this);
     openRPCConsoleAction->setStatusTip(tr("Open debugging and diagnostic console"));
@@ -423,6 +426,7 @@ void BitcoinGUI::createActions()
         connect(usedSendingAddressesAction, SIGNAL(triggered()), walletFrame, SLOT(usedSendingAddresses()));
         connect(usedReceivingAddressesAction, SIGNAL(triggered()), walletFrame, SLOT(usedReceivingAddresses()));
         connect(openAction, SIGNAL(triggered()), this, SLOT(openClicked()));
+        connect(multisigAction, SIGNAL(triggered()), this, SLOT(gotoMultisigPage()));
     }
 #endif // ENABLE_WALLET
 
@@ -450,6 +454,7 @@ void BitcoinGUI::createMenuBar()
         file->addAction(importWalletAction);
         file->addAction(signMessageAction);
         file->addAction(verifyMessageAction);
+        file->addAction(multisigAction);
         file->addSeparator();
         file->addAction(usedSendingAddressesAction);
         file->addAction(usedReceivingAddressesAction);
@@ -588,6 +593,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     receiveCoinsAction->setEnabled(enabled);
     receiveCoinsMenuAction->setEnabled(enabled);
     explorerAction->setEnabled(enabled);
+    multisigAction->setEnabled(enabled);
     historyAction->setEnabled(enabled);
     encryptWalletAction->setEnabled(enabled);
     backupWalletAction->setEnabled(enabled);
@@ -641,6 +647,7 @@ void BitcoinGUI::createTrayIconMenu()
     trayIconMenu->addSeparator();
     trayIconMenu->addAction(signMessageAction);
     trayIconMenu->addAction(verifyMessageAction);
+    trayIconMenu->addAction(multisigAction);
     trayIconMenu->addSeparator();
     trayIconMenu->addAction(optionsAction);
     trayIconMenu->addAction(openRPCConsoleAction);
@@ -737,6 +744,11 @@ void BitcoinGUI::gotoExplorerPage()
 {
     explorerAction->setChecked(true);
     if (walletFrame) walletFrame->gotoExplorerPage();
+}
+
+void BitcoinGUI::gotoMultisigPage()
+{
+    if (walletFrame) walletFrame->gotoMultisigPage();
 }
 
 void BitcoinGUI::gotoSignMessageTab(QString addr)
