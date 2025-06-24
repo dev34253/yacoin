@@ -8,7 +8,7 @@
 #define YACOIN_CONSENSUS_VALIDATION_H
 
 #include <string>
-#include "version.h"
+#include "clientversion.h"
 #include "consensus/consensus.h"
 #include "primitives/transaction.h"
 #include "primitives/block.h"

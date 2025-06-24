@@ -4,7 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "regex"
-#include "version.h"
+#include "clientversion.h"
 #include "streams.h"
 #include "serialize.h"
 #include "primitives/transaction.h"

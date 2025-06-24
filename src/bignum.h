@@ -10,7 +10,7 @@
 #include <openssl/bn.h>
 
 #include "util.h"
-#include "version.h"
+#include "clientversion.h"
 #include "serialize.h"
 
 /** Errors thrown by the bignum class */

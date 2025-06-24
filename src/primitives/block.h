@@ -43,7 +43,7 @@ typedef struct
 
 } old_block_header;
 
-// block version header
+// block clientversion.header
 static const int
     VERSION_of_block_for_yac_05x_new = 7,
     VERSION_of_block_for_yac_049     = 6,

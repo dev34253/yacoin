@@ -399,7 +399,7 @@ BITCOIN_QT_BASE_CPP = \
   txdb.cpp \
   hash.cpp \
   base58.cpp \
-  version.cpp \
+  clientversion.cpp \
   checkpoints.cpp \
   netbase.cpp \
   addrman.cpp \

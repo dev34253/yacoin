@@ -12,7 +12,7 @@
 #include "prevector.h"
 #include "serialize.h"
 #include "uint256.h"
-#include "version.h"
+#include "clientversion.h"
 
 #include <vector>
 

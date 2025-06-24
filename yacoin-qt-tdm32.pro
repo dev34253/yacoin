@@ -240,7 +240,7 @@ HEADERS += \
     src/allocators.h \
     src/ui_interface.h \
     src/qt/rpcconsole.h \
-    src/version.h \
+    src/clientversion.h \
     src/netbase.h \
     src/clientversion.h \
     src/scrypt-jane/scrypt-jane.h \
@@ -269,7 +269,7 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/kernelrecord.cpp \
     src/hash.cpp \
     src/base58.cpp \
-    src/version.cpp \
+    src/clientversion.cpp \
     src/sync.cpp \
     src/util.cpp \
     src/utilstrencodings.cpp \

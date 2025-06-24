@@ -420,7 +420,7 @@ def connect_nodes(from_connection, node_num):
     ip_port = "127.0.0.1:" + str(p2p_port(node_num))
     from_connection.addnode(ip_port, "onetry")
     time.sleep(10)
-    # poll until version handshake complete to avoid race conditions
+    # poll until clientversion.handshake complete to avoid race conditions
     # with transaction relaying
     wait_until(lambda:  all(peer['version'] != 0 for peer in from_connection.getpeerinfo()[:-1]))
 

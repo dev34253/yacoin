@@ -50,7 +50,7 @@
 #include "support/allocators/secure.h"
 
 #ifndef BITCOIN_VERSION_H
- #include "version.h"
+ #include "clientversion.h"
 #endif
 
 static const unsigned int MAX_SIZE = 0x02000000;

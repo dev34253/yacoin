@@ -3315,7 +3315,7 @@ public:
 bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
 {
     {
-        // Don't send anything until the version handshake is complete
+        // Don't send anything until the clientversion.handshake is complete
         if (!pto->fSuccessfullyConnected || pto->fDisconnect)
             return true;
 
