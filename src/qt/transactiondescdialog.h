@@ -1,22 +1,25 @@
-#ifndef TRANSACTIONDESCDIALOG_H
-#define TRANSACTIONDESCDIALOG_H
+// Copyright (c) 2011-2014 The Bitcoin Core developers
+// Copyright (c) 2015-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <QWidget>
+#ifndef BITCOIN_QT_TRANSACTIONDESCDIALOG_H
+#define BITCOIN_QT_TRANSACTIONDESCDIALOG_H
+
+#include <QDialog>
 
 namespace Ui {
     class TransactionDescDialog;
 }
+
 QT_BEGIN_NAMESPACE
 class QModelIndex;
 QT_END_NAMESPACE
 
 /** Dialog showing transaction details. */
-class TransactionDescDialog : public QWidget
+class TransactionDescDialog : public QDialog
 {
     Q_OBJECT
-protected:
-    void keyPressEvent(QKeyEvent *);
-    void closeEvent(QCloseEvent *e);
 
 public:
     explicit TransactionDescDialog(const QModelIndex &idx, QWidget *parent = 0);
@@ -24,9 +27,6 @@ public:
 
 private:
     Ui::TransactionDescDialog *ui;
-
-signals:
-    void stopExec();
 };
 
-#endif // TRANSACTIONDESCDIALOG_H
+#endif // BITCOIN_QT_TRANSACTIONDESCDIALOG_H
