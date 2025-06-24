@@ -45,6 +45,8 @@ static const unsigned int STANDARD_NOT_MANDATORY_VERIFY_FLAGS = STANDARD_SCRIPT_
 // TODO: Support LOCKTIME_MEDIAN_TIME_PAST in future (affect consensus rule)
 static const unsigned int STANDARD_LOCKTIME_VERIFY_FLAGS = LOCKTIME_VERIFY_SEQUENCE;
 
+bool IsDust(const CTxOut& txout);
+
 bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType);
 /**
  * Check for standard transaction types

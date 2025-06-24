@@ -1,21 +1,29 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "qvalidatedlineedit.h"
 
+#include "bitcoinaddressvalidator.h"
 #include "guiconstants.h"
 
 QValidatedLineEdit::QValidatedLineEdit(QWidget *parent) :
-    QLineEdit(parent), valid(true)
+    QLineEdit(parent),
+    valid(true),
+    checkValidator(0)
 {
     connect(this, SIGNAL(textChanged(QString)), this, SLOT(markValid()));
 }
 
-void QValidatedLineEdit::setValid(bool valid)
+void QValidatedLineEdit::setValid(bool _valid)
 {
-    if(valid == this->valid)
+    if(_valid == this->valid)
     {
         return;
     }
 
-    if(valid)
+    if(_valid)
     {
         setStyleSheet("");
     }
@@ -23,13 +31,14 @@ void QValidatedLineEdit::setValid(bool valid)
     {
         setStyleSheet(STYLE_INVALID);
     }
-    this->valid = valid;
+    this->valid = _valid;
 }
 
 void QValidatedLineEdit::focusInEvent(QFocusEvent *evt)
 {
     // Clear invalid flag on focus
     setValid(true);
+
     QLineEdit::focusInEvent(evt);
 }
 
@@ -42,6 +51,7 @@ void QValidatedLineEdit::focusOutEvent(QFocusEvent *evt)
 
 void QValidatedLineEdit::markValid()
 {
+    // As long as a user is typing ensure we display state as valid
     setValid(true);
 }
 
@@ -50,7 +60,6 @@ void QValidatedLineEdit::clear()
     setValid(true);
     QLineEdit::clear();
 }
-
 
 void QValidatedLineEdit::setEnabled(bool enabled)
 {

@@ -7,6 +7,7 @@
 // NOTE: This file is intended to be customised by the end user, and includes only local node policy logic
 
 #include "policy/policy.h"
+#include "policy/fees.h"
 
 #include "consensus/validation.h"
 #include "validation.h"
@@ -14,6 +15,11 @@
 #include "tinyformat.h"
 #include "util.h"
 #include "utilstrencodings.h"
+
+bool IsDust(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
+{
+    return (txout.nValue < MIN_TX_FEE);
+}
 
 /**
  * Check transaction inputs to mitigate two

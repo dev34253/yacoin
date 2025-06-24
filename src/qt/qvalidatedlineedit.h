@@ -1,8 +1,12 @@
-#ifndef QVALIDATEDLINEEDIT_H
-#define QVALIDATEDLINEEDIT_H
+// Copyright (c) 2011-2015 The Bitcoin Core developers
+// Copyright (c) 2016-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#ifndef BITCOIN_QT_QVALIDATEDLINEEDIT_H
+#define BITCOIN_QT_QVALIDATEDLINEEDIT_H
 
 #include <QLineEdit>
-#include <QValidator>
 
 /** Line edit that can be marked as "invalid" to show input validation feedback. When marked as invalid,
    it will get a red background until it is focused.
@@ -10,8 +14,9 @@
 class QValidatedLineEdit : public QLineEdit
 {
     Q_OBJECT
+
 public:
-    explicit QValidatedLineEdit(QWidget *parent = 0);
+    explicit QValidatedLineEdit(QWidget *parent);
     void clear();
     void setCheckValidator(const QValidator *v);
     bool isValid();
@@ -24,16 +29,16 @@ private:
     bool valid;
     const QValidator *checkValidator;
 
-public slots:
+public Q_SLOTS:
     void setValid(bool valid);
     void setEnabled(bool enabled);
 
 Q_SIGNALS:
     void validationDidChange(QValidatedLineEdit *validatedLineEdit);
 
-private slots:
+private Q_SLOTS:
     void markValid();
     void checkValidity();
 };
 
-#endif // QVALIDATEDLINEEDIT_H
+#endif // BITCOIN_QT_QVALIDATEDLINEEDIT_H
