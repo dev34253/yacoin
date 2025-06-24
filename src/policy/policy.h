@@ -9,6 +9,7 @@
 
 #include "consensus/consensus.h"
 #include "feerate.h"
+#include "fees.h"
 #include "script/interpreter.h"
 #include "script/standard.h"
 
@@ -21,6 +22,12 @@ class CTxOut;
 static const unsigned int DEFAULT_MAX_MEMPOOL_SIZE = 300;
 /** Maximum number of signature check operations in an IsStandard() P2SH script */
 static const unsigned int MAX_P2SH_SIGOPS = 21;
+/** Min feerate for defining dust. Historically this has been based on the
+ * minRelayTxFee, however changing the dust limit changes which transactions are
+ * standard and should be done with care and ideally rarely. It makes sense to
+ * only increase the dust limit after prior releases were already not creating
+ * outputs below the new threshold */
+static const unsigned int DUST_RELAY_TX_FEE = MIN_TX_FEE;
 
 /**
  * Standard script verification flags that standard transactions will comply
@@ -59,4 +66,7 @@ bool IsStandardTx(const CTransaction& tx, std::string& reason);
  * @return True if all inputs (scriptSigs) use only standard transaction forms
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs);
+
+extern CFeeRate dustRelayFee;
+
 #endif // YACOIN_POLICY_POLICY_H

@@ -16,7 +16,7 @@
 #include "util.h"
 #include "utilstrencodings.h"
 
-bool IsDust(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
+bool IsDust(const CTxOut& txout)
 {
     return (txout.nValue < MIN_TX_FEE);
 }
@@ -189,3 +189,5 @@ bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 
     return true;
 }
+
+CFeeRate dustRelayFee = CFeeRate(DUST_RELAY_TX_FEE);

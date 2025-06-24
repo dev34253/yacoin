@@ -35,7 +35,7 @@ CWalletTx *WalletModelTransaction::getTransaction()
 
 unsigned int WalletModelTransaction::getTransactionSize()
 {
-    return (!walletTransaction ? 0 : ::GetVirtualTransactionSize(*walletTransaction));
+    return (!walletTransaction ? 0 : ::GetSerializeSize(*walletTransaction, SER_NETWORK, PROTOCOL_VERSION));
 }
 
 CAmount WalletModelTransaction::getTransactionFee()

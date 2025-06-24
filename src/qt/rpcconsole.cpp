@@ -4,7 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include "config/yacoin-config.h"
 #endif
 
 #include "rpcconsole.h"
@@ -22,8 +22,6 @@
 #include "util.h"
 
 #include <openssl/crypto.h>
-
-#include <univalue.h>
 
 #ifdef ENABLE_WALLET
 #include <db_cxx.h>
@@ -121,7 +119,7 @@ bool parseCommandLine(std::vector<std::string> &args, const std::string &strComm
         STATE_ESCAPE_DOUBLEQUOTED
     } state = STATE_EATING_SPACES;
     std::string curarg;
-    foreach(char ch, strCommand)
+    for (char ch : strCommand)
     {
         switch(state)
         {
@@ -184,7 +182,7 @@ void RPCExecutor::request(const QString &command)
     std::vector<std::string> args;
     if(!parseCommandLine(args, command.toStdString()))
     {
-        emit reply(RPCConsole::CMD_ERROR, QString("Parse error: unbalanced ' or \""));
+        Q_EMIT reply(RPCConsole::CMD_ERROR, QString("Parse error: unbalanced ' or \""));
         return;
     }
     if(args.empty())
@@ -206,7 +204,7 @@ void RPCExecutor::request(const QString &command)
         else
             strPrint = write_string(result, true);
 
-        emit reply(RPCConsole::CMD_REPLY, QString::fromStdString(strPrint));
+        Q_EMIT reply(RPCConsole::CMD_REPLY, QString::fromStdString(strPrint));
         return; //!!! test
     }
     catch (json_spirit::Object& objError)
@@ -215,24 +213,24 @@ void RPCExecutor::request(const QString &command)
         {
             int code = find_value(objError, "code").get_int();
             std::string message = find_value(objError, "message").get_str();
-            emit reply(RPCConsole::CMD_ERROR, QString::fromStdString(message) + " (code " + QString::number(code) + ")");
+            Q_EMIT reply(RPCConsole::CMD_ERROR, QString::fromStdString(message) + " (code " + QString::number(code) + ")");
         }
         catch (std::exception &e)
         {
-            emit reply(RPCConsole::CMD_ERROR, QString("Exception error!?"));
+            Q_EMIT reply(RPCConsole::CMD_ERROR, QString("Exception error!?"));
         }
         catch (...)
         {
-            emit reply(RPCConsole::CMD_ERROR, QString("Unknown error!?"));
+            Q_EMIT reply(RPCConsole::CMD_ERROR, QString("Unknown error!?"));
         }
     }
     catch (std::exception& e)
     {
-        emit reply(RPCConsole::CMD_ERROR, QString("Exception Error1: ") + QString::fromStdString(e.what()));
+        Q_EMIT reply(RPCConsole::CMD_ERROR, QString("Exception Error1: ") + QString::fromStdString(e.what()));
     }
     catch (...)
     {
-        emit reply(RPCConsole::CMD_ERROR, QString("Unknown Error!?1"));
+        Q_EMIT reply(RPCConsole::CMD_ERROR, QString("Unknown Error!?1"));
     }
     return;
 }
@@ -659,17 +657,19 @@ void RPCConsole::on_lineEdit_returnPressed()
 
     if(!cmd.isEmpty())
     {
-        std::string strFilteredCmd;
-        try {
-            std::string dummy;
-            if (!RPCParseCommandLine(dummy, cmd.toStdString(), false, &strFilteredCmd)) {
-                // Failed to parse command, so we cannot even filter it for the history
-                throw std::runtime_error("Invalid command line");
-            }
-        } catch (const std::exception& e) {
-            QMessageBox::critical(this, "Error", QString("Error: ") + QString::fromStdString(e.what()));
-            return;
-        }
+        // TODO: TACA Support new RPC Command-Line Interface
+        std::string strFilteredCmd = cmd.toStdString();
+//        std::string strFilteredCmd;
+//        try {
+//            std::string dummy;
+//            if (!RPCParseCommandLine(dummy, cmd.toStdString(), false, &strFilteredCmd)) {
+//                // Failed to parse command, so we cannot even filter it for the history
+//                throw std::runtime_error("Invalid command line");
+//            }
+//        } catch (const std::exception& e) {
+//            QMessageBox::critical(this, "Error", QString("Error: ") + QString::fromStdString(e.what()));
+//            return;
+//        }
 
         ui->lineEdit->clear();
 

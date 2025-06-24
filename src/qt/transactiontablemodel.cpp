@@ -14,7 +14,7 @@
 #include "transactionrecord.h"
 #include "walletmodel.h"
 
-#include "core_io.h"
+//#include "core_io.h"
 #include "validation.h"
 #include "sync.h"
 #include "uint256.h"
@@ -26,6 +26,14 @@
 #include <QDebug>
 #include <QIcon>
 #include <QList>
+
+// TODO: TACA remove this after adding core_io.h (core_write, core_read)
+static std::string EncodeHexTx(const CTransaction& tx, const int serializeFlags = 0)
+{
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION | serializeFlags);
+    ssTx << tx;
+    return HexStr(ssTx.begin(), ssTx.end());
+}
 
 // Amount column is right-aligned it contains numbers
 static int column_alignments[] = {

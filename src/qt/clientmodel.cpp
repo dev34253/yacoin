@@ -21,6 +21,8 @@
 #include "util.h"
 #include "warnings.h"
 
+#include "main.h"
+
 #include <stdint.h>
 
 #include <QDebug>
@@ -179,8 +181,8 @@ enum BlockSource ClientModel::getBlockSource() const
 {
     if (fReindex)
         return BLOCK_SOURCE_REINDEX;
-    else if (fImporting)
-        return BLOCK_SOURCE_DISK;
+//    else if (fImporting)
+//        return BLOCK_SOURCE_DISK;
     else if (getNumConnections() > 0)
         return BLOCK_SOURCE_NETWORK;
 
@@ -200,6 +202,11 @@ bool ClientModel::getNetworkActive() const
         return g_connman->GetNetworkActive();
     }
     return false;
+}
+
+int ClientModel::getNFactor() const
+{
+    return GetNfactor(chainActive.Tip()->GetBlockTime(), chainActive.Height() >= nMainnetNewLogicBlockNumber? true : false);
 }
 
 QString ClientModel::getStatusBarWarnings() const

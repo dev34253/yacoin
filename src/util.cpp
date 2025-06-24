@@ -1110,6 +1110,17 @@ int GetNumCores()
 //#endif
 }
 
+std::string CopyrightHolders(const std::string& strPrefix)
+{
+    std::string strCopyrightHolders = strPrefix + strprintf(_(COPYRIGHT_HOLDERS), _(COPYRIGHT_HOLDERS_SUBSTITUTION));
+
+    // Check for untranslated substitution to make sure Bitcoin Core copyright is not removed by accident
+    if (strprintf(COPYRIGHT_HOLDERS, COPYRIGHT_HOLDERS_SUBSTITUTION).find("Yacoin Core") == std::string::npos) {
+        strCopyrightHolders += "\n" + strPrefix + "The Yacoin Core developers";
+    }
+    return strCopyrightHolders;
+}
+
 // Obtain the application startup time (used for uptime calculation)
 int64_t GetStartupTime()
 {

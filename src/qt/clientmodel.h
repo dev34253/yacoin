@@ -74,6 +74,8 @@ public:
     void setNetworkActive(bool active);
     //! Return warnings to be displayed in status bar
     QString getStatusBarWarnings() const;
+    //! Return NFactor
+    int getNFactor() const;
 
     QString formatFullVersion() const;
     QString formatSubVersion() const;
