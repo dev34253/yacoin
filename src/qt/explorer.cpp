@@ -737,6 +737,7 @@ void ExplorerPage::setTransactions(uint256 txhash) {
 }
 
 void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, bool header) {
+    LogPrintf("TACA ===> ExplorerPage::setNumBlocks, count = %d, header = %d\n", count, header);
     if (true == fDontReenterMe) {
         return; // in case we were interrupted by ourself!
     }
@@ -764,7 +765,8 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
 
         // now pblockindex points to nHeight, or at least pblockindex->nHeight
         // <= nHeight
-        uint256 theDefiningBlockHash = pblockindex->GetBlockHeader().GetHash();
+        LogPrintf("TACA ===> ExplorerPage::setNumBlocks, calling GetHash 1\n");
+        uint256 theDefiningBlockHash = pblockindex->GetBlockHash();
         // this hash should define the block
         // so the time should be this blocks time
         // the height this blocks, etc.
@@ -904,7 +906,8 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
                                     // now pblockindex is at the older block, or
                                     // should be! i.e. pblockindex->nHeight
                                     // should be == nBn
-                                    uint256 hash = pblockindex->GetBlockHeader().GetHash();
+                                    LogPrintf("TACA ===> ExplorerPage::setNumBlocks, calling GetHash 2\n");
+                                    uint256 hash = pblockindex->GetBlockHash();
 
                                     pblockindex = mapBlockIndex[hash];
                                     const Consensus::Params &consensusParams =
@@ -1721,9 +1724,7 @@ void BlockExplorerPage::fillBlockInfoPage(int currentHeight) {
     while (pblockindex->nHeight > currentHeight)
         pblockindex = pblockindex->pprev;
 
-    uint256
-        // hash = pblockindex->GetHash();
-        hash = pblockindex->GetBlockHeader().GetHash();
+    uint256 hash = pblockindex->GetBlockHash();
 
     pblockindex = mapBlockIndex[hash]; // isn't this for Tx's and not blocks?
 
