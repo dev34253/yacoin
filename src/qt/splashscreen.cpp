@@ -78,8 +78,7 @@ SplashScreen::SplashScreen(Qt::WindowFlags f, const NetworkStyle *networkStyle) 
                                          fullLogo.width() - 2*borderSize,
                                          fullLogo.height() - 2*borderSize);
     // Optional: scale logo to fit splash screen
-    QSize scaledSize = clippedLogo.size().scaled(pixmap.size() / devicePixelRatio, Qt::KeepAspectRatio);
-    QPixmap scaledLogo = clippedLogo.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QPixmap scaledLogo = clippedLogo.scaled(pixmap.size() / devicePixelRatio, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
     int centerX = pixmap.width() / devicePixelRatio / 2;
 
