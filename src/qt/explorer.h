@@ -129,12 +129,12 @@ public:
     void setClientModel(ClientModel *model);
     void setModel(ClientModel *model);
 
-public slots:
+public Q_SLOTS:
     /** Set number of blocks shown in the UI */
     void setNumBlocks( int count );
     void setTransactions( uint256 txhash );
 
-signals:
+Q_SIGNALS:
     //void transactionClicked(const QModelIndex &index);
     //void blockClicked(const QModelIndex &index);
 
@@ -185,7 +185,7 @@ private:
         fResizeTxsFields,
         fResizeBlocksFields;
 
-private slots:
+private Q_SLOTS:
     void on_closeButton_clicked();
     void showBkDetails( QModelIndex );  // clicked on a block #
     void showTxDetails( QModelIndex );  // clicked on a Tx ID
@@ -235,11 +235,6 @@ public:
     QStandardItemModel                              
         *pQSIMblockinfo;       
 
-public slots:
-//    void showBkHashDetails( QModelIndex );
-
-signals:
-
 private:
     Ui::BlockExplorerPage *ui;
 
@@ -252,7 +247,7 @@ private:
     QList< QVector< QString > > 
         qlistOfBlockinfoRows;
 
-private slots:
+private Q_SLOTS:
     void on_closeButton_clicked();
 };
 //_____________________________________________________________________________
@@ -291,10 +286,6 @@ public:
     //void showTxItem();
     //void followLink( const QUrl & link );
 
-public slots:
-
-signals:
-
 private:
     Ui::TransactionExplorerPage *ui;
 
@@ -307,7 +298,7 @@ private:
     QList< QVector< QString > > 
         qlistOfTxinfoRows;
 
-private slots:
+private Q_SLOTS:
     void on_closeButton_clicked();
 };
 //_____________________________________________________________________________

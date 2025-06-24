@@ -709,13 +709,13 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
     LogPrintf("AcceptToMemoryPoolWorker() : accepted %s (poolsz %zu)\n", hash.ToString().substr(0,10), pool.mapTx.size());
     GetMainSignals().TransactionAddedToMempool(ptx);
 
-#ifdef QT_GUI
-    {
-        LOCK(pool.cs);
-
-    lastTxHash.storeLasthash( hash );
-    }
-#endif
+//#ifdef QT_GUI
+//    {
+//        LOCK(pool.cs);
+//
+//    lastTxHash.storeLasthash( hash );
+//    }
+//#endif
     return true;
 }
 
