@@ -15,6 +15,10 @@ public:
     bool fAllowOtherInputs;
     //! Includes watch only addresses which match the ISMINE_WATCH_SOLVABLE criteria
     bool fAllowWatchOnly;
+    //! Override automatic min/max checks on fee, m_feerate must be set if true
+    bool fOverrideFeeRate;
+    //! Override the default payTxFee if set
+    boost::optional<CFeeRate> m_feerate;
 
     /** YAC_TOKEN START */
     //! Name of the token that is selected, used when sending tokens with coincontrol

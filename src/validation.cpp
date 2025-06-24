@@ -84,6 +84,9 @@ bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
 bool fBlockHashIndex = true;
 
+CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
+CAmount maxTxFee = DEFAULT_TRANSACTION_MAXFEE;
+
 //
 // GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
 //

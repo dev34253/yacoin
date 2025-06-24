@@ -19,6 +19,7 @@
 #include "fs.h"
 #include "protocol.h" // For CMessageHeader::MessageStartChars
 #include "policy/feerate.h"
+#include "policy/fees.h"
 #include "script/script_error.h"
 #include "script/interpreter.h"
 #include "sync.h"
@@ -57,6 +58,11 @@ class CValidationState;
 struct LockPoints;
 struct CDiskBlockPos;
 
+/** Default for -minrelaytxfee, minimum relay fee for transactions */
+static const unsigned int DEFAULT_MIN_RELAY_TX_FEE = MIN_TX_FEE; // 0.01 YAC
+//! -maxtxfee default
+static const CAmount DEFAULT_TRANSACTION_MAXFEE = 0.1 * COIN; // 0.1 YAC
+
 /** Headers download timeout expressed in microseconds
  *  Timeout = base + per_header * (expected number of headers) */
 extern int64_t HEADERS_DOWNLOAD_TIMEOUT_BASE; // 15 minutes
@@ -85,7 +91,6 @@ extern unsigned int BLOCK_DOWNLOAD_WINDOW; //32000
 extern unsigned int FETCH_BLOCK_DOWNLOAD; //4000
 // Trigger sending getblocks from other peers when header > block + HEADER_BLOCK_DIFFERENCES_TRIGGER_GETDATA
 extern unsigned int HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS; //default = 10000
-extern int64_t nMaxTipAge;
 
 /** Maximum depth of blocks we're willing to serve as compact blocks to peers
  *  when requested. For older blocks, a regular BLOCK response will be sent. */
@@ -176,6 +181,12 @@ extern bool fRequireStandard;
 extern bool fCheckBlockIndex;
 extern bool fCheckpointsEnabled;
 extern bool fBlockHashIndex;
+/** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
+extern CFeeRate minRelayTxFee;
+/** Absolute maximum transaction fee (in satoshis) used by wallet and mempool (rejects high fee in sendrawtransaction) */
+extern CAmount maxTxFee;
+/** If the tip is older than this (in seconds), the node is considered to be in initial block download. */
+extern int64_t nMaxTipAge;
 
 // Mempool
 extern CTxMemPool mempool;
