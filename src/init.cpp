@@ -1306,24 +1306,21 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 
         if (!fLoaded && !fRequestShutdown) {
             // first suggest a reindex
-//            if (!fReset) {
-//                bool fRet = uiInterface.ThreadSafeQuestion(
-//                    strLoadError + ".\n\n" + _("Do you want to rebuild the block database now?"),
-//                    strLoadError + ".\nPlease restart with -reindex-fast or -reindex to recover.",
-//                    "", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
-//                if (fRet) {
-//                    fReindex = true;
-//                    fRequestShutdown = false;
-//                } else {
-//                    LogPrintf("Aborted block database rebuild. Exiting.\n");
-//                    return false;
-//                }
-//            } else {
-//                return InitError(strLoadError);
-//            }
-            // TODO: Support UI interface for user prompt
-            strLoadError += ".\nPlease restart with -reindex-onlyheadersync (takes a few minutes) or -reindex-token (takes around 6->9 hours) or -reindex-blockindex (takes very long time, around 24->48 hours) to recover.";
-            return InitError(strLoadError);
+            if (!fReset) {
+                bool fRet = uiInterface.ThreadSafeQuestion(
+                    strLoadError + ".\n\n" + _("Do you want to rebuild the block database now?"),
+                    strLoadError + ".\nPlease restart with -reindex-onlyheadersync (takes a few minutes) or -reindex-token (takes around 6->9 hours) or -reindex-blockindex (takes very long time, around 24->48 hours) to recover.",
+                    "", CClientUIInterface::MSG_ERROR | CClientUIInterface::BTN_ABORT);
+                if (fRet) {
+                    fReindex = true;
+                    fRequestShutdown = false;
+                } else {
+                    LogPrintf("Aborted block database rebuild. Exiting.\n");
+                    return false;
+                }
+            } else {
+                return InitError(strLoadError);
+            }
         }
     }
 

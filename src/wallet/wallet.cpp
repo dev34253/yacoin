@@ -3998,8 +3998,7 @@ DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
         return nLoadWalletRet;
     fFirstRunRet = !vchDefaultKey.IsValid();
 
-    // TODO: Add UI interface notification later
-//    uiInterface.LoadWallet(this);
+    uiInterface.LoadWallet(this);
 
     return DB_LOAD_OK;
 }

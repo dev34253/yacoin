@@ -2729,10 +2729,11 @@ static void NotifyHeaderTip() {
             pindexHeaderOld = pindexHeader;
         }
     }
-    // TODO: Add UI interface notification later
-//    if (fNotify) {
-//        uiInterface.NotifyHeaderTip(fInitialBlockDownload, pindexHeader);
-//    }
+
+    // Send block tip changed notifications without cs_main
+    if (fNotify) {
+        uiInterface.NotifyHeaderTip(fInitialBlockDownload, pindexHeader);
+    }
 }
 
 /**
@@ -2795,10 +2796,9 @@ bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams,
         GetMainSignals().UpdatedBlockTip(pindexNewTip, pindexFork, fInitialDownload);
 
         // Always notify the UI if a new block tip was connected
-        // TODO: Add UI interface notification later
-//        if (pindexFork != pindexNewTip) {
-//            uiInterface.NotifyBlockTip(fInitialDownload, pindexNewTip);
-//        }
+        if (pindexFork != pindexNewTip) {
+            uiInterface.NotifyBlockTip(fInitialDownload, pindexNewTip);
+        }
 
         if (nStopAtHeight && pindexNewTip && pindexNewTip->nHeight >= nStopAtHeight) StartShutdown();
     } while (pindexNewTip != pindexMostWork);
@@ -3764,14 +3764,12 @@ bool LoadChainTip(const CChainParams& chainparams)
 
 CVerifyDB::CVerifyDB()
 {
-    // TODO: Support UI interface
-//    uiInterface.ShowProgress(_("Verifying blocks..."), 0);
+    uiInterface.ShowProgress(_("Verifying blocks..."), 0);
 }
 
 CVerifyDB::~CVerifyDB()
 {
-    // TODO: Support UI interface
-//    uiInterface.ShowProgress("", 100);
+    uiInterface.ShowProgress("", 100);
 }
 
 bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview, int nCheckLevel, int nCheckDepth)
@@ -3804,8 +3802,7 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
             LogPrintf("[%d%%]...", percentageDone);
             reportDone = percentageDone/10;
         }
-        // TODO: Support UI interface
-//        uiInterface.ShowProgress(_("Verifying blocks..."), percentageDone);
+        uiInterface.ShowProgress(_("Verifying blocks..."), percentageDone);
         if (pindex->nHeight < chainActive.Height()-nCheckDepth)
             break;
         // TODO: Implement prune later
@@ -3857,8 +3854,7 @@ bool CVerifyDB::VerifyDB(const CChainParams& chainparams, CCoinsView *coinsview,
         CBlockIndex *pindex = pindexState;
         while (pindex != chainActive.Tip()) {
             boost::this_thread::interruption_point();
-            // TODO: Support UI interface
-//            uiInterface.ShowProgress(_("Verifying blocks..."), std::max(1, std::min(99, 100 - (int)(((double)(chainActive.Height() - pindex->nHeight)) / (double)nCheckDepth * 50))));
+            uiInterface.ShowProgress(_("Verifying blocks..."), std::max(1, std::min(99, 100 - (int)(((double)(chainActive.Height() - pindex->nHeight)) / (double)nCheckDepth * 50))));
             pindex = chainActive.Next(pindex);
             CBlock block;
             if (!ReadBlockFromDisk(block, pindex, chainparams.GetConsensus()))
@@ -3907,8 +3903,7 @@ bool ReplayBlocks(const CChainParams& params, CCoinsView* view)
     if (hashHeads.empty()) return true; // We're already in a consistent state.
     if (hashHeads.size() != 2) return error("ReplayBlocks(): unknown inconsistent state");
 
-    // TODO: Support UI interface
-//    uiInterface.ShowProgress(_("Replaying blocks..."), 0);
+    uiInterface.ShowProgress(_("Replaying blocks..."), 0);
     LogPrintf("Replaying blocks\n");
 
     const CBlockIndex* pindexOld = nullptr;  // Old tip during the interrupted flush.
@@ -3960,8 +3955,7 @@ bool ReplayBlocks(const CChainParams& params, CCoinsView* view)
     cache.SetBestBlock(pindexNew->GetBlockHash());
     cache.Flush();
     tokensCache.Flush();
-    // TODO: Support UI interface
-//    uiInterface.ShowProgress("", 100);
+    uiInterface.ShowProgress("", 100);
     return true;
 }
 
