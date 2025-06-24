@@ -64,7 +64,7 @@ void pop_a_message_box(std::string s);
 // explorer area constructor
 // initializes the headers for the blocks and transactions table views
 //_____________________________________________________________________________
-ExplorerPage::ExplorerPage(QDialog *parent, bool fNoCloseButton)
+ExplorerPage::ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent, bool fNoCloseButton)
     : // ExplorerPage::ExplorerPage(QDialog * const parent) :
       QDialog(parent)
       // QWidget(parent)
@@ -754,13 +754,12 @@ std::string BuildTxDetailsFrom(uint256 &hashOfSelectedTransaction, CTransaction 
 void ExplorerPage::setClientModel(ClientModel *model) {
     this->pclientModel = model;
     if (model) {
+        connect(model, SIGNAL(numBlocksChanged(int,QDateTime,double,bool)), this, SLOT(setNumBlocks(int,QDateTime,double,bool)));
     }
 }
 
-void ExplorerPage::setModel(ClientModel *model) {
-    if (model) {
-        ExplorerPage::setClientModel(model);
-    }
+void ExplorerPage::setWalletModel(WalletModel *model) {
+    this->pWalletModel = model;
 }
 
 // this is the Using a Pointer Member Variable approach
@@ -776,7 +775,7 @@ void ExplorerPage::setTransactions(uint256 txhash) {
     }
 }
 
-void ExplorerPage::setNumBlocks(int currentHeight) {
+void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, bool header) {
     if (true == fDontReenterMe) {
         return; // in case we were interrupted by ourself!
     }
@@ -791,10 +790,10 @@ void ExplorerPage::setNumBlocks(int currentHeight) {
                          nSECONDsPerHOUR = nSECONDsPerMINUTE * nMINUTEsPerHOUR;
 
         // really should get the block determined from height parameter
-        // currentHeight but chainActive.Height() & chainActive.Tip()->blockHash
+        // count but chainActive.Height() & chainActive.Tip()->blockHash
         // refer to the best block, I think!?
 
-        int nHeight = currentHeight;
+        int nHeight = count;
 
         CBlockIndex *pblockindex =
             mapBlockIndex[chainActive.Tip()->blockHash]; // hash of best block

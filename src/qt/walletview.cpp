@@ -15,6 +15,7 @@
 #include "platformstyle.h"
 #include "receivecoinsdialog.h"
 #include "sendcoinsdialog.h"
+#include "explorer.h"
 #include "signverifymessagedialog.h"
 #include "transactiontablemodel.h"
 #include "transactionview.h"
@@ -29,6 +30,7 @@
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QLineEdit>
 
 WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     QStackedWidget(parent),
@@ -56,6 +58,7 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
 
     receiveCoinsPage = new ReceiveCoinsDialog(platformStyle);
     sendCoinsPage = new SendCoinsDialog(platformStyle);
+    explorerPage = new ExplorerPage(platformStyle);
 
     usedSendingAddressesPage = new AddressBookPage(platformStyle, AddressBookPage::ForEditing, AddressBookPage::SendingTab, this);
     usedReceivingAddressesPage = new AddressBookPage(platformStyle, AddressBookPage::ForEditing, AddressBookPage::ReceivingTab, this);
@@ -64,6 +67,7 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     addWidget(transactionsPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
+    addWidget(explorerPage);
 
     // Clicking on a transaction on the overview pre-selects the transaction on the transaction history page
     connect(overviewPage, SIGNAL(transactionClicked(QModelIndex)), transactionView, SLOT(focusTransaction(QModelIndex)));
@@ -79,6 +83,27 @@ WalletView::WalletView(const PlatformStyle *_platformStyle, QWidget *parent):
     connect(sendCoinsPage, SIGNAL(message(QString,QString,unsigned int)), this, SIGNAL(message(QString,QString,unsigned int)));
     // Pass through messages from transactionView
     connect(transactionView, SIGNAL(message(QString,QString,unsigned int)), this, SIGNAL(message(QString,QString,unsigned int)));
+
+    // Connect explorer page action
+    bool fOK = connect(explorerPage->pQTVblocks, SIGNAL(clicked( QModelIndex )), explorerPage, SLOT(showBkDetails( QModelIndex )));
+    if (fOK)
+        explorerPage->fBlkConnected = true;
+
+    fOK = connect(explorerPage->pQTVtransactions, SIGNAL(clicked(QModelIndex)), explorerPage, SLOT(showTxDetails(QModelIndex)));
+    if (fOK)
+        explorerPage->fTxConnected = true;
+
+    fOK = connect(explorerPage->pBlockNumberLineEdit, SIGNAL(returnPressed()), explorerPage, SLOT(showBlockLineDetails()));
+    if (fOK)
+        explorerPage->fBlockEditConnected = true;
+
+    fOK = connect(explorerPage->pBlockHashLineEdit, SIGNAL(returnPressed()), explorerPage, SLOT(showBlockHashLineDetails()));
+    if (fOK)
+        explorerPage->fBlockHashEditConnected = true;
+
+    fOK = connect(explorerPage->pTxIDLineEdit, SIGNAL(returnPressed()), explorerPage, SLOT(showTxIdLineDetails()));
+    if (fOK)
+        explorerPage->fTxHashEditConnected = true;
 }
 
 WalletView::~WalletView()
@@ -112,6 +137,7 @@ void WalletView::setClientModel(ClientModel *_clientModel)
 
     overviewPage->setClientModel(_clientModel);
     sendCoinsPage->setClientModel(_clientModel);
+    explorerPage->setClientModel(_clientModel);
 }
 
 void WalletView::setWalletModel(WalletModel *_walletModel)
@@ -191,6 +217,11 @@ void WalletView::gotoSendCoinsPage(QString addr)
 
     if (!addr.isEmpty())
         sendCoinsPage->setAddress(addr);
+}
+
+void WalletView::gotoExplorerPage()
+{
+    setCurrentWidget(explorerPage);
 }
 
 void WalletView::gotoSignMessageTab(QString addr)

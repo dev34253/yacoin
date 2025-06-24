@@ -115,6 +115,9 @@ QT_FORMS_UI = \
   qt/forms/coincontroldialog.ui \
   qt/forms/debugwindow.ui \
   qt/forms/editaddressdialog.ui \
+  qt/forms/explorerBlockPage.ui \
+  qt/forms/explorerTransactionPage.ui \
+  qt/forms/explorer.ui \
   qt/forms/helpmessagedialog.ui \
   qt/forms/intro.ui \
   qt/forms/modaloverlay.ui \
@@ -143,6 +146,7 @@ QT_MOC_CPP = \
   qt/moc_coincontroltreewidget.cpp \
   qt/moc_csvmodelwriter.cpp \
   qt/moc_editaddressdialog.cpp \
+  qt/moc_explorer.cpp \
   qt/moc_guiutil.cpp \
   qt/moc_intro.cpp \
   qt/moc_macdockiconhandler.cpp \
@@ -212,6 +216,7 @@ BITCOIN_QT_H = \
   qt/coincontroltreewidget.h \
   qt/csvmodelwriter.h \
   qt/editaddressdialog.h \
+  qt/explorer.h \
   qt/guiconstants.h \
   qt/guiutil.h \
   qt/intro.h \
@@ -334,6 +339,7 @@ BITCOIN_QT_BASE_CPP = \
   qt/bitcoinunits.cpp \
   qt/clientmodel.cpp \
   qt/csvmodelwriter.cpp \
+  qt/explorer.cpp \
   qt/guiutil.cpp \
   qt/intro.cpp \
   qt/modaloverlay.cpp \

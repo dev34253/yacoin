@@ -2,7 +2,9 @@
 #define EXPLORER_H
 // this insures that explorer.h is included only once
 #include "uint256.h"
-
+#include "platformstyle.h"
+#include "walletmodel.h"
+#include "guiutil.h"
 // extern Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool
 // fPrintTransactionDetail)
 
@@ -90,7 +92,7 @@ TX_nm               = 4,
 
   public:
     // ExplorerPage(BitcoinGUI* parent = 0);
-    ExplorerPage(QDialog *parent = 0, bool fNoCloseButton = false);
+    ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent = 0, bool fNoCloseButton = false);
     // explicit ExplorerPage(QDialog * const parent = 0);
     // ExplorerPage(QWidget *parent = 0);
     // virtual ~ExplorerPage();
@@ -107,14 +109,16 @@ TX_nm               = 4,
     char **ppcArrayOfBlockHeaders, **ppcArrayOfTransactionHeaders;
     bool fBlockEditConnected, fBlockHashEditConnected, fBlkConnected, fTxHashEditConnected,
         fTxConnected;
-    // for modal-less?
     void setClientModel(ClientModel *model);
-    void setModel(ClientModel *model);
+    void setWalletModel(WalletModel *model);
 
   public Q_SLOTS:
     /** Set number of blocks shown in the UI */
-    void setNumBlocks(int count);
+    void setNumBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, bool headers);
     void setTransactions(uint256 txhash);
+    void showBlockLineDetails();
+    void showBlockHashLineDetails();
+    void showTxIdLineDetails();
 
   Q_SIGNALS:
     // void transactionClicked(const QModelIndex &index);
@@ -132,6 +136,7 @@ TX_nm               = 4,
 
     // for non modal (modaless?) window do this?
     ClientModel *pclientModel;
+    WalletModel *pWalletModel;
     // for modal popup dialog box
 
     BlockExplorerPage *pExplorerBlockDialog;
@@ -161,9 +166,6 @@ TX_nm               = 4,
     void showTxDetails(QModelIndex); // clicked on a Tx ID
 
     void showTxInfoDetails(QModelIndex); // clicked on a Tx ID
-    void showBlockLineDetails();
-    void showBlockHashLineDetails();
-    void showTxIdLineDetails();
     void showBkInfoDetails(QModelIndex QMI);
 };
 //_____________________________________________________________________________
