@@ -414,7 +414,7 @@
         <translation>Barra de ferramentas dos separadores</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Solicitar pagamentos (gera códigos QR e bitcoin: URIs)</translation>
     </message>
     <message>

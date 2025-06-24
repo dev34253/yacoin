@@ -398,7 +398,7 @@
         <translation>Orebalk</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Versoek betalings (genereer QR-kodes en bitcoin: URI's)</translation>
     </message>
     <message>

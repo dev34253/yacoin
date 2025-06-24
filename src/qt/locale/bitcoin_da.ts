@@ -414,7 +414,7 @@
         <translation>Faneværktøjslinje</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Anmod om betalinger (genererer QR-koder og “bitcoin:”-URI'er)</translation>
     </message>
     <message>

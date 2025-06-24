@@ -374,7 +374,7 @@
         <translation>نوارابزار برگه‌ها</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>درخواست پرداخت ( تولید کد کیوار و ادرس بیت کوین)</translation>
     </message>
     <message>

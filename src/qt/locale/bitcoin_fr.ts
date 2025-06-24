@@ -414,7 +414,7 @@
         <translation>Barre d'outils des onglets</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Demander des paiements (génère des codes QR et des URI bitcoin:)</translation>
     </message>
     <message>

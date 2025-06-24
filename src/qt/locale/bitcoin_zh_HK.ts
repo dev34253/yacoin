@@ -370,7 +370,7 @@
         <translation>說明 &amp;H</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>要求付款 (產生QR碼 bitcoin: URIs)</translation>
     </message>
     <message>

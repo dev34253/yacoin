@@ -414,7 +414,7 @@
         <translation>Панель вкладок</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Створити запит платежу (генерує QR-код та bitcoin: URI)</translation>
     </message>
     <message>

@@ -310,7 +310,7 @@
         <translation>Barre d'outils des onglets</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Demander des paiements (générer QR codes et bitcoin: URIs)</translation>
     </message>
     <message>

@@ -414,7 +414,7 @@
         <translation>ツールバータブ</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>支払の要求 (QRコードとビットコインのURIを作成)</translation>
     </message>
     <message>

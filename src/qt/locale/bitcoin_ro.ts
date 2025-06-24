@@ -214,7 +214,7 @@
         <translation>&amp;Ajutor</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Cerere plată (generează coduri QR și bitcoin: URIs)</translation>
     </message>
     <message>

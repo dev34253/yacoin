@@ -410,7 +410,7 @@
         <translation>Barra de ferramentas</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Solicitações de pagamentos (gera códigos QR e bitcoin: URIs)</translation>
     </message>
     <message>

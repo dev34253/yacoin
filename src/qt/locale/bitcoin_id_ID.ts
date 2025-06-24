@@ -410,7 +410,7 @@
         <translation>Baris tab</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and bitcoin: URIs)</source>
+        <source>Request payments (generates QR codes and yacoin: URIs)</source>
         <translation>Permintaan pembayaran (membuat kode QR dan bitcoin: URIs)</translation>
     </message>
     <message>
