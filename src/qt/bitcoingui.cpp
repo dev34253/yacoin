@@ -79,6 +79,7 @@ const std::string BitcoinGUI::DEFAULT_UIPLATFORM =
 /** Display name for default wallet name. Uses tilde to avoid name
  * collisions in the future with additional wallets */
 const QString BitcoinGUI::DEFAULT_WALLET = "~Default";
+bool isConnectingPeers = false;
 
 BitcoinGUI::BitcoinGUI(const PlatformStyle *_platformStyle, const NetworkStyle *networkStyle, QWidget *parent) :
     QMainWindow(parent),
@@ -741,6 +742,12 @@ void BitcoinGUI::updateNetworkState()
         icon = ":/icons/network_disabled";
     }
 
+    if (isConnectingPeers && count > 0) {
+        progressBarLabel->setText(tr("Synchronizing with network..."));
+        updateHeadersSyncProgressLabel();
+        isConnectingPeers = false;
+    }
+
     // Don't word-wrap this (fixed-width) tooltip
     tooltip = QString("<nobr>") + tooltip + QString("</nobr>");
     connectionsControl->setToolTip(tooltip);
@@ -811,6 +818,7 @@ void BitcoinGUI::setNumBlocks(int count, const QDateTime& blockDate, double nVer
                 return;
             }
             progressBarLabel->setText(tr("Connecting to peers..."));
+            isConnectingPeers = true;
             break;
     }
 
