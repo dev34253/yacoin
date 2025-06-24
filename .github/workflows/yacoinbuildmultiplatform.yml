@@ -63,7 +63,7 @@ jobs:
       - name: build
         run: |
           docker pull chaunguyen4392/yacoin-build:ubuntu.18.04-qt5
-          docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER chaunguyen4392/yacoin-build:ubuntu.18.04-qt5
+          docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /bin/bash chaunguyen4392/yacoin-build:ubuntu.18.04-qt5 -c "cd /src && git config --global --add safe.directory /src && ./autogen.sh && ./configure && make -j 4 && make release"
       - uses: actions/upload-artifact@v4
         with:
           name: yacoin-qt-ubuntu-18.04-qt5
