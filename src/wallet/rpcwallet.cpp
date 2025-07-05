@@ -55,7 +55,6 @@ using std::min;
 int64_t nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
 static const ::int64_t MIN_TXOUT_AMOUNT = CENT/100;
-extern ::int64_t nUpTimeStart;
 
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, json_spirit::Object& entry);
 // TACA: OLD LOGIC END
@@ -199,90 +198,6 @@ string AccountFromValue(const Value& value)
     if (strAccount == "*")
         throw JSONRPCError(RPC_WALLET_INVALID_ACCOUNT_NAME, "Invalid account name");
     return strAccount;
-}
-
-static void ConvertUpTimeToNiceString(::int64_t nUpTimeSeconds,
-                                      string& sUpTime)
-{
-  ::int64_t nUpCopy = nUpTimeSeconds;
-
-  if (nUpTimeSeconds >= nSecondsPerDay) {
-    int nDaysUp = nUpTimeSeconds / nSecondsPerDay;
-    nUpTimeSeconds -= (nDaysUp * nSecondsPerDay);
-    sUpTime += strprintf("%d day%s ", nDaysUp, 1 == nDaysUp ? "" : "s");
-  }
-
-  if (nUpTimeSeconds >= nSecondsPerHour)  // & less than 1 day
-  {
-    sUpTime += strprintf(
-        "%s (%" PRId64 " sec)",
-        DateTimeStrFormat("%H hrs %M mins %S sec", nUpTimeSeconds).c_str(),
-        nUpCopy);
-  }
-  else if (nUpTimeSeconds >= nSecondsperMinute)  // & less than 1 hour
-  {
-    sUpTime += strprintf(
-        "%s (%" PRId64 " sec)",
-        DateTimeStrFormat("%M mins %S sec", nUpTimeSeconds).c_str(), nUpCopy);
-  }
-  else  // < one minute
-  {
-    sUpTime = strprintf("%" PRId64 " sec", nUpCopy);
-  }
-}
-
-Value getinfo(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
-            "getinfo\n"
-            "Returns an object containing various state info.");
-
-    CWallet * const pwallet = GetWalletForJSONRPCRequest();
-    LOCK2(cs_main, pwallet ? &pwallet->cs_wallet : nullptr);
-
-    proxyType proxy;
-    GetProxy(NET_IPV4, proxy);
-
-    Object obj, diff;
-    obj.push_back(Pair("version",       FormatFullVersion()));
-    obj.push_back(Pair("protocolversion",(int)PROTOCOL_VERSION));
-    obj.push_back(Pair("walletversion", pwallet->GetVersion()));
-    obj.push_back(Pair("balance",       ValueFromAmount(pwallet->GetBalance())));
-    obj.push_back(Pair("unspendable",   ValueFromAmount(pwallet->GetWatchOnlyBalance())));
-    obj.push_back(Pair("stake",         ValueFromAmount(pwallet->GetStake())));
-    obj.push_back(Pair("blocks",        (int)chainActive.Height()));
-    obj.push_back(Pair("timeoffset",    (boost::int64_t)GetTimeOffset()));
-
-    ::int64_t nUpTimeSeconds = GetTime() - nUpTimeStart;
-    string sUpTime = "";
-    ConvertUpTimeToNiceString( nUpTimeSeconds, sUpTime );
-
-    obj.push_back(Pair("up-time",       sUpTime));
-
-    obj.push_back(Pair("moneysupply",   ValueFromAmount(chainActive.Tip()->nMoneySupply)));
-    if(g_connman)
-        obj.push_back(Pair("connections",   (int)g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL)));
-    obj.push_back(Pair("proxy",         (proxy.IsValid() ? proxy.proxy.ToStringIPPort() : std::string())));
-    for (const std::pair<CNetAddr, LocalServiceInfo> &item : mapLocalHost)
-    {
-        obj.push_back(Pair("ip", item.first.ToString()));
-        obj.push_back(Pair("port", item.second.nPort));
-        obj.push_back(Pair("score", item.second.nScore));
-    }
-
-    diff.push_back(Pair("proof-of-work",  GetDifficulty()));
-    diff.push_back(Pair("proof-of-stake", GetDifficulty(GetLastBlockIndex(chainActive.Tip(), true))));
-    obj.push_back(Pair("difficulty",    diff));
-
-    obj.push_back(Pair("testnet",       fTestNet));
-    obj.push_back(Pair("keypoololdest", (boost::int64_t)pwallet->GetOldestKeyPoolTime()));
-    obj.push_back(Pair("keypoolsize",   (int)pwallet->GetKeyPoolSize()));
-    obj.push_back(Pair("paytxfee",      ValueFromAmount(nTransactionFee)));
-    if (pwallet->IsCrypted())
-        obj.push_back(Pair("unlocked_until", (boost::int64_t)nWalletUnlockTime / 1000));
-    obj.push_back(Pair("errors",        GetWarnings("statusbar")));
-    return obj;
 }
 
 Value getnewaddress(const Array& params, bool fHelp)
@@ -705,42 +620,6 @@ Value signmessage(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sign failed");
 
     return EncodeBase64(&vchSig[0], vchSig.size());
-}
-
-Value verifymessage(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 3)
-        throw runtime_error(
-            "verifymessage <yacoinaddress> <signature> <message>\n"
-            "Verify a signed message");
-
-    string strAddress  = params[0].get_str();
-    string strSign     = params[1].get_str();
-    string strMessage  = params[2].get_str();
-
-    CBitcoinAddress addr(strAddress);
-    if (!addr.IsValid())
-        throw JSONRPCError(RPC_TYPE_ERROR, "Invalid address");
-
-    CKeyID keyID;
-    if (!addr.GetKeyID(keyID))
-        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
-
-    bool fInvalid = false;
-    std::vector<unsigned char> vchSig = DecodeBase64(strSign.c_str(), &fInvalid);
-
-    if (fInvalid)
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Malformed base64 encoding");
-
-    CHashWriter ss(SER_GETHASH, 0);
-    ss << strMessageMagic;
-    ss << strMessage;
-
-    CPubKey pubkey;
-    if (!pubkey.RecoverCompact(ss.GetHash(), vchSig))
-        return false;
-
-    return (pubkey.GetID() == keyID);
 }
 
 Value getreceivedbyaddress(const Array& params, bool fHelp)
@@ -2981,59 +2860,6 @@ public:
         return obj;
     }
 };
-
-Value validateaddress(const Array& params, bool fHelp)
-{
-    CWallet* const pwallet = GetWalletForJSONRPCRequest();
-
-    if (fHelp || params.size() != 1)
-        throw runtime_error(
-            "validateaddress <yacoinaddress>\n"
-            "Return information about <yacoinaddress>.");
-
-    LOCK2(cs_main, pwallet ? &pwallet->cs_wallet : nullptr);
-
-    CBitcoinAddress address(params[0].get_str());
-    bool isValid = address.IsValid();
-
-    Object ret;
-    ret.push_back(Pair("isvalid", isValid));
-    if (isValid)
-    {
-        CTxDestination dest = address.Get();
-        std::string currentAddress = address.ToString();
-        ret.push_back(Pair("address", currentAddress));
-
-        CScript scriptPubKey = GetScriptForDestination(dest);
-        ret.push_back(Pair("scriptPubKey", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
-
-        isminetype mine = pwallet ? IsMine(*pwallet, dest) : ISMINE_NO;
-        ret.push_back(Pair("ismine", bool(mine & ISMINE_SPENDABLE)));
-        ret.push_back(Pair("iswatchonly", bool(mine & ISMINE_WATCH_ONLY)));
-        Object detail = boost::apply_visitor(DescribeAddressVisitor(pwallet), dest);
-        ret.insert(ret.end(), detail.begin(), detail.end());
-
-        if (pwallet && pwallet->mapAddressBook.count(dest)) {
-            ret.push_back(Pair("account", pwallet->mapAddressBook[dest].name));
-        }
-        CKeyID keyID;
-        if (pwallet) {
-            const auto& meta = pwallet->mapKeyMetadata;
-            auto it = address.GetKeyID(keyID) ? meta.find(keyID) : meta.end();
-            if (it == meta.end()) {
-                it = meta.find(CScriptID(scriptPubKey));
-            }
-            if (it != meta.end()) {
-                ret.push_back(Pair("timestamp", it->second.nCreateTime));
-                if (!it->second.hdKeypath.empty()) {
-                    ret.push_back(Pair("hdkeypath", it->second.hdKeypath));
-                    ret.push_back(Pair("hdmasterkeyid", it->second.hdMasterKeyID.GetHex()));
-                }
-            }
-        }
-    }
-    return ret;
-}
 
 Value getwalletinfo(const Array& params, bool fHelp)
 {
