@@ -19,4 +19,7 @@ UniValue RPCConvertNamedValues(const std::string& strMethod, const std::vector<s
  */
 UniValue ParseNonRFCJSONValue(const std::string& strVal);
 
+int AppInitRPC(int argc, char* argv[]);
+int CommandLineRPC(int argc, char *argv[]);
+
 #endif // BITCOIN_RPCCLIENT_H

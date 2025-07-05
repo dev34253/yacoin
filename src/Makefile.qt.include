@@ -439,7 +439,6 @@ BITCOIN_QT_BASE_CPP = \
   rpc/server.cpp \
   rpc/protocol.cpp \
   rpc/client.cpp \
-  bitcoin-cli.cpp \
   script/interpreter.cpp \
   script/ismine.cpp \
   script/script.cpp \

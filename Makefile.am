@@ -5,6 +5,7 @@ SUBDIRS = src
 # GZIP_ENV="-9n"
 
 BITCOIND_BIN=$(top_builddir)/src/yacoind$(EXEEXT)
+BITCOIN_CLI_BIN=$(top_builddir)/src/yacoin-cli$(EXEEXT)
 BITCOIN_QT_BIN=$(top_builddir)/src/qt/yacoin-qt$(EXEEXT)
 BITCOIN_TEST_BIN=$(top_builddir)/src/test/yacoin_test$(EXEEXT)
 # BITCOIN_CLI_BIN=$(top_builddir)/src/yacoin-cli$(EXEEXT)
@@ -128,6 +129,9 @@ $(BITCOIN_QT_BIN): FORCE
 $(BITCOIND_BIN): FORCE
 	$(MAKE) -C src $(@F)
 
+$(BITCOIN_CLI_BIN): FORCE
+	$(MAKE) -C src $(@F)
+
 $(BITCOIN_TEST_BIN): FORCE
 	$(MAKE) -C src $(@F)
 
@@ -135,8 +139,10 @@ release: all-recursive
 	$(MKDIR_P) $(top_builddir)/release
 	$(MKDIR_P) $(top_builddir)/debug
 	cp $(BITCOIND_BIN) $(top_builddir)/debug/yacoind
+	cp $(BITCOIN_CLI_BIN) $(top_builddir)/debug/yacoin-cli
 	cp $(BITCOIN_QT_BIN) $(top_builddir)/debug/yacoin-qt
 	$(STRIP) $(BITCOIND_BIN) -o $(top_builddir)/release/yacoind
+	$(STRIP) $(BITCOIN_CLI_BIN) -o $(top_builddir)/release/yacoin-cli
 	$(STRIP) $(BITCOIN_QT_BIN) -o $(top_builddir)/release/yacoin-qt
 
 # $(BITCOIN_CLI_BIN): FORCE

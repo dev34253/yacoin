@@ -12,7 +12,6 @@
 
 #include "addrman.h"
 #include "amount.h"
-#include "bitcoin-cli.h"
 #include "chain.h"
 #include "chainparams.h"
 //#include "compat/sanity.h"
@@ -30,6 +29,7 @@
 #include "policy/fees.h"
 #include "policy/policy.h"
 #include "random.h"
+#include "rpc/client.h"
 #include "rpc/server.h"
 #include "rpc/register.h"
 #include "rpc/blockchain.h"

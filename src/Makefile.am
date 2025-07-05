@@ -1,3 +1,4 @@
+EXTRA_LIBRARIES =
 DIST_SUBDIRS = secp256k1 univalue
 AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS)
 
@@ -16,13 +17,17 @@ BITCOIN_INCLUDES += -I$(srcdir)/secp256k1/include
 BITCOIN_INCLUDES += $(UNIVALUE_CFLAGS)
 
 LIBYACOIN_COMMON=libyacoin_common.a
+LIBYACOIN_CLI=libyacoin_cli.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 
 $(LIBSECP256K1): $(wildcard secp256k1/src/*) $(wildcard secp256k1/include/*)
 	$(AM_V_at)$(MAKE) $(AM_MAKEFLAGS) -C $(@D) $(@F)
 
-EXTRA_LIBRARIES = \
-  libyacoin_common.a
+# Make is not made aware of per-object dependencies to avoid limiting building parallelization
+# But to build the less dependent modules first, we manually select their order here:
+EXTRA_LIBRARIES += \
+  $(LIBYACOIN_COMMON) \
+  $(LIBYACOIN_CLI)
 
 LIBBITCOIN_CONSENSUS=
 bin_PROGRAMS =
@@ -30,6 +35,10 @@ TESTS =
  
 if BUILD_BITCOIND
   bin_PROGRAMS += yacoind
+endif
+
+if BUILD_BITCOIN_UTILS
+  bin_PROGRAMS += yacoin-cli
 endif
 
 BUILT_SOURCES = obj/build.h
@@ -134,7 +143,6 @@ libyacoin_common_a_SOURCES= \
     rpc/server.cpp \
     rpc/protocol.cpp \
     rpc/client.cpp \
-    bitcoin-cli.cpp \
     script/interpreter.cpp \
     script/ismine.cpp \
     script/script.cpp \
@@ -170,12 +178,29 @@ libyacoin_common_a_SOURCES= \
 libyacoin_common_a_CPPFLAGS = $(BITCOIN_INCLUDES)
 libyacoin_common_a_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt -L$(srcdir)/src/secp256k1/.libs
 
+# cli: shared between yacoin-cli and yacoin-qt
+libyacoin_cli_a_CPPFLAGS = $(BITCOIN_INCLUDES)
+libyacoin_cli_a_SOURCES = \
+  rpc/client.cpp
+
 yacoind_SOURCES = init.cpp
 
 yacoind_LDADD = $(LIBYACOIN_COMMON)
 yacoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(LIBSECP256K1) $(LIBUNIVALUE)
 yacoind_CPPFLAGS = $(BITCOIN_INCLUDES)
 yacoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt
+
+# yacoin-cli binary #
+yacoin_cli_SOURCES = bitcoin-cli.cpp
+yacoin_cli_CPPFLAGS = $(BITCOIN_INCLUDES)
+yacoin_cli_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
+
+if TARGET_WINDOWS
+yacoin_cli_SOURCES += bitcoin-cli-res.rc
+endif
+
+yacoin_cli_LDADD = $(LIBYACOIN_COMMON)
+yacoin_cli_LDADD += $(LIBUNIVALUE) $(BOOST_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(EVENT_LIBS)
 
 CTAES_DIST =  crypto/ctaes/bench.c
 CTAES_DIST += crypto/ctaes/ctaes.c
