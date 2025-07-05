@@ -3322,20 +3322,33 @@ UniValue listunspent(const JSONRPCRequest& request)
     return results;
 }
 
+extern UniValue abortrescan(const JSONRPCRequest& request); // in rpcdump.cpp
+extern UniValue dumpprivkey(const JSONRPCRequest& request); // in rpcdump.cpp
+extern UniValue importprivkey(const JSONRPCRequest& request);
+extern UniValue importaddress(const JSONRPCRequest& request);
+extern UniValue removeaddress(const JSONRPCRequest& request);
+extern UniValue importpubkey(const JSONRPCRequest& request);
+extern UniValue dumpwallet(const JSONRPCRequest& request);
+extern UniValue importwallet(const JSONRPCRequest& request);
+
 static const CRPCCommand commands[] =
 { //  category              name                        actor (function)           okSafeMode
     //  --------------------- ------------------------    -----------------------    ----------
-    { "hidden",             "resendwallettransactions", &resendwallettransactions, true,   {} },
     { "wallet",             "abandontransaction",       &abandontransaction,       false,  {"txid"} },
     { "wallet",             "abortrescan",              &abortrescan,              false,  {} },
     { "wallet",             "addmultisigaddress",       &addmultisigaddress,       true,   {"nrequired","keys","account"} },
+    { "wallet",             "addredeemscript",          &addredeemscript,          true,   {"redeemscript","account"} },
     { "wallet",             "backupwallet",             &backupwallet,             true,   {"destination"} },
+    { "wallet",             "createcltvaddress",        &createcltvaddress,        true,   {"locktime","account"} },
+    { "wallet",             "createcsvaddress",         &createcsvaddress,         true,   {"locktime","isblockheightlock","account"} },
+    { "wallet",             "describeredeemscript",     &describeredeemscript,     true,   {"redeemscript"} },
     { "wallet",             "dumpprivkey",              &dumpprivkey,              true,   {"address"}  },
     { "wallet",             "dumpwallet",               &dumpwallet,               true,   {"filename"} },
     { "wallet",             "encryptwallet",            &encryptwallet,            true,   {"passphrase"} },
-    { "wallet",             "getaccountaddress",        &getaccountaddress,        true,   {"account"} },
     { "wallet",             "getaccount",               &getaccount,               true,   {"address"} },
+    { "wallet",             "getaccountaddress",        &getaccountaddress,        true,   {"account"} },
     { "wallet",             "getaddressesbyaccount",    &getaddressesbyaccount,    true,   {"account"} },
+    { "wallet",             "getavailablebalance",      &getavailablebalance,      false,  {"account","minconf","include_watchonly"} },
     { "wallet",             "getbalance",               &getbalance,               false,  {"account","minconf","include_watchonly"} },
     { "wallet",             "getnewaddress",            &getnewaddress,            true,   {"account"} },
     { "wallet",             "getrawchangeaddress",      &getrawchangeaddress,      true,   {} },
@@ -3344,11 +3357,10 @@ static const CRPCCommand commands[] =
     { "wallet",             "gettransaction",           &gettransaction,           false,  {"txid","include_watchonly"} },
     { "wallet",             "getunconfirmedbalance",    &getunconfirmedbalance,    false,  {} },
     { "wallet",             "getwalletinfo",            &getwalletinfo,            false,  {} },
-    { "wallet",             "importmulti",              &importmulti,              true,   {"requests","options"} },
     { "wallet",             "importprivkey",            &importprivkey,            true,   {"privkey","label","rescan"} },
+    { "wallet",             "importpubkey",             &importpubkey,             true,   {"pubkey","label","rescan"} },
     { "wallet",             "importwallet",             &importwallet,             true,   {"filename"} },
     { "wallet",             "importaddress",            &importaddress,            true,   {"address","label","rescan","p2sh"} },
-    { "wallet",             "importpubkey",             &importpubkey,             true,   {"pubkey","label","rescan"} },
     { "wallet",             "keypoolrefill",            &keypoolrefill,            true,   {"newsize"} },
     { "wallet",             "listaccounts",             &listaccounts,             false,  {"minconf","include_watchonly"} },
     { "wallet",             "listaddressgroupings",     &listaddressgroupings,     false,  {} },
@@ -3361,15 +3373,21 @@ static const CRPCCommand commands[] =
     { "wallet",             "listwallets",              &listwallets,              true,   {} },
     { "wallet",             "lockunspent",              &lockunspent,              true,   {"unlock","transactions"} },
     { "wallet",             "move",                     &movecmd,                  false,  {"fromaccount","toaccount","amount","minconf","comment"} },
-    { "wallet",             "sendfrom",                 &sendfrom,                 false,  {"fromaccount","toaddress","amount","minconf","comment","comment_to"} },
-    { "wallet",             "sendmany",                 &sendmany,                 false,  {"fromaccount","amounts","minconf","comment","subtractfeefrom","replaceable","conf_target","estimate_mode"} },
-    { "wallet",             "sendtoaddress",            &sendtoaddress,            false,  {"address","amount","comment","comment_to","subtractfeefromamount","replaceable","conf_target","estimate_mode"} },
+    { "wallet",             "removeaddress",            &removeaddress,            true,   {"address"} },
+    { "wallet",             "sendfrom",                 &sendfrom,                 false,  {"fromaccount","toaddress","amount","useexpiredtimelockutxo","minconf","comment","comment_to"} },
+    { "wallet",             "sendmany",                 &sendmany,                 false,  {"fromaccount","amounts","useexpiredtimelockutxo","minconf","comment","subtractfeefrom"} },
+    { "wallet",             "sendtoaddress",            &sendtoaddress,            false,  {"address","amount","useexpiredtimelockutxo","comment","comment_to","subtractfeefromamount"} },
     { "wallet",             "setaccount",               &setaccount,               true,   {"address","account"} },
     { "wallet",             "settxfee",                 &settxfee,                 true,   {"amount"} },
     { "wallet",             "signmessage",              &signmessage,              true,   {"address","message"} },
+    { "wallet",             "spendcltv",                &spendcltv,                false,  {"cltvaddress","destinationaddress","amount","comment","comment_to"} },
+    { "wallet",             "spendcsv",                 &spendcsv,                 false,  {"csvaddress","destinationaddress","amount","comment","comment_to"} },
+    { "wallet",             "timelockcoins",            &timelockcoins,            false,  {"amount","locktime","isrealtivetimelock","isblockheightlock","toaddress"} },
     { "wallet",             "walletlock",               &walletlock,               true,   {} },
-    { "wallet",             "walletpassphrasechange",   &walletpassphrasechange,   true,   {"oldpassphrase","newpassphrase"} },
     { "wallet",             "walletpassphrase",         &walletpassphrase,         true,   {"passphrase","timeout"} },
+    { "wallet",             "walletpassphrasechange",   &walletpassphrasechange,   true,   {"oldpassphrase","newpassphrase"} },
+
+    { "hidden",             "resendwallettransactions", &resendwallettransactions, true,   {} },
 };
 
 void RegisterWalletRPCCommands(CRPCTable &t)
