@@ -30,6 +30,42 @@ using std::pair;
 using std::max;
 using std::min;
 
+std::string TokenValueFromAmount(const CAmount& amount, const std::string token_name)
+{
+
+    auto currentActiveTokenCache = GetCurrentTokenCache();
+    if (!currentActiveTokenCache)
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Token cache isn't available.");
+
+    uint8_t units = OWNER_UNITS;
+    if (!IsTokenNameAnOwner(token_name)) {
+        CNewToken tokenData;
+        if (!currentActiveTokenCache->GetTokenMetaDataIfExists(token_name, tokenData))
+            units = MAX_UNIT;
+            //throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't load token from cache: " + token_name);
+        else
+            units = tokenData.units;
+    }
+
+    return TokenValueFromAmountString(amount, units);
+}
+
+std::string TokenValueFromAmountString(const CAmount& amount, const int8_t units)
+{
+    bool sign = amount < 0;
+    int64_t n_abs = (sign ? -amount : amount);
+    int64_t quotient = n_abs / COIN;
+    int64_t remainder = n_abs % COIN;
+    remainder = remainder / pow(10, MAX_UNIT - units);
+
+    if (units == 0 && remainder == 0) {
+        return strprintf("%s%d", sign ? "-" : "", quotient);
+    }
+    else {
+        return strprintf("%s%d.%0" + std::to_string(units) + "d", sign ? "-" : "", quotient, remainder);
+    }
+}
+
 std::string TokenActivationWarning()
 {
     return AreTokensDeployed() ? "" : "\nTHIS COMMAND IS NOT YET ACTIVE!\n";

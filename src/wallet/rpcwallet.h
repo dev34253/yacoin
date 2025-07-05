@@ -6,14 +6,10 @@
 #ifndef YACOIN_WALLET_RPCWALLET_H
 #define YACOIN_WALLET_RPCWALLET_H
 
-#include <string>
-
 class CRPCTable;
 class JSONRPCRequest;
-class CWallet;
 
-// TODO: Support new RPC Command-Line Interface
-//void RegisterWalletRPCCommands(CRPCTable &t);
+void RegisterWalletRPCCommands(CRPCTable &t);
 
 /**
  * Figures out what wallet, if any, to use for a JSONRPCRequest.
@@ -21,8 +17,7 @@ class CWallet;
  * @param[in] request JSONRPCRequest that wishes to access a wallet
  * @return nullptr if no wallet should be used, or a pointer to the CWallet
  */
-//CWallet *GetWalletForJSONRPCRequest(const JSONRPCRequest& request);
-CWallet *GetWalletForJSONRPCRequest();
+CWallet *GetWalletForJSONRPCRequest(const JSONRPCRequest& request);
 
 std::string HelpRequiringPassphrase(CWallet *);
 void EnsureWalletIsUnlocked(CWallet *);
