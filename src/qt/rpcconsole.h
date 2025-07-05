@@ -17,6 +17,7 @@
 
 class ClientModel;
 class PlatformStyle;
+class RPCTimerInterface;
 
 namespace Ui {
     class RPCConsole;
@@ -36,10 +37,10 @@ public:
     explicit RPCConsole(const PlatformStyle *platformStyle, QWidget *parent);
     ~RPCConsole();
 
-//    static bool RPCParseCommandLine(std::string &strResult, const std::string &strCommand, bool fExecute, std::string * const pstrFilteredOut = nullptr);
-//    static bool RPCExecuteCommandLine(std::string &strResult, const std::string &strCommand, std::string * const pstrFilteredOut = nullptr) {
-//        return RPCParseCommandLine(strResult, strCommand, true, pstrFilteredOut);
-//    }
+    static bool RPCParseCommandLine(std::string &strResult, const std::string &strCommand, bool fExecute, std::string * const pstrFilteredOut = nullptr);
+    static bool RPCExecuteCommandLine(std::string &strResult, const std::string &strCommand, std::string * const pstrFilteredOut = nullptr) {
+        return RPCParseCommandLine(strResult, strCommand, true, pstrFilteredOut);
+    }
 
     void setClientModel(ClientModel *model);
 
@@ -148,10 +149,11 @@ private:
     QString cmdBeforeBrowsing;
     QList<NodeId> cachedNodeids;
     const PlatformStyle *platformStyle;
+    RPCTimerInterface *rpcTimerInterface;
     QMenu *peersTableContextMenu;
     QMenu *banTableContextMenu;
     int consoleFontSize;
-//    QCompleter *autoCompleter; // TODO: TACA Support this after supporting new RPC Command-Line Interface
+    QCompleter *autoCompleter;
     QThread thread;
 
     /** Update UI with latest network info from model. */

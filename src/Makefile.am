@@ -121,7 +121,6 @@ libyacoin_common_a_SOURCES= \
     net_processing.cpp \
     protocol.cpp \
     pubkey.cpp \
-    rpc/bitcoinrpc.cpp \
     price.cpp \
     random_nonce.cpp \
     rpc/tokens.cpp \

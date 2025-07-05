@@ -425,7 +425,6 @@ BITCOIN_QT_BASE_CPP = \
   net_processing.cpp \
   protocol.cpp \
   pubkey.cpp \
-  rpc/bitcoinrpc.cpp \
   price.cpp \
   random_nonce.cpp \
   rpc/tokens.cpp \
