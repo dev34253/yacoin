@@ -67,3 +67,4 @@ object_script.yacoin-qt.Release
 .cproject
 .project
 .settings/
+src/univalue/gen
