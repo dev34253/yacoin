@@ -29,10 +29,6 @@ CLastTxHash lastTxHash;
 
 const QSize ICON_SIZE(24, 24);
 
-using namespace json_spirit;
-extern Object blockToJSON(const CBlock &block, const CBlockIndex *blockindex,
-                          bool fPrintTransactionDetail);
-
 std::string BuildBlockinfoDetailsFrom(CBlock &block // in
                                       ,
                                       CBlockIndex *pblockindex // in

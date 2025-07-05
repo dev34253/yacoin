@@ -467,7 +467,7 @@ extern unsigned long long getTotalSystemMemory( void );
 void PrintException(std::exception* pex, const char* pszThread);
 void ParseString(const std::string& str, char c, std::vector<std::string>& v);
 std::string EncodeDumpTime(::int64_t nTime);
-::int64_t DecodeDumpTime(const std::string& s);
+::int64_t DecodeDumpTime(const std::string &str);
 std::string EncodeDumpString(const std::string &str);
 std::string DecodeDumpString(const std::string &str);
 bool WildcardMatch(const char* psz, const char* mask);

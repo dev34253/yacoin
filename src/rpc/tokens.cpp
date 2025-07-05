@@ -335,7 +335,7 @@ UniValue transfer(const JSONRPCRequest& request)
 UniValue transferfromaddress(const JSONRPCRequest& request)
 {
     if (request.fHelp || !AreTokensDeployed() || request.params.size() < 4 || request.params.size() > 6)
-        throw runtime_error(
+        throw std::runtime_error(
                 "transferfromaddress <token_name> <from_address> <qty> <to_address> [yac_change_address] [token_change_address]\n"
                 + TokenActivationWarning() +
                 "\nTransfer a quantity of an owned token in a specific address to a given address"
@@ -452,7 +452,7 @@ UniValue transferfromaddress(const JSONRPCRequest& request)
 UniValue reissue(const JSONRPCRequest& request)
 {
     if (request.fHelp || !AreTokensDeployed() || request.params.size() > 7 || request.params.size() < 2)
-        throw runtime_error(
+        throw std::runtime_error(
                 "reissue <token_name> <qty> [reissuable] [to_address] [change_address] [new_unit] [new_ipfs]\n"
                 + TokenActivationWarning() +
                 "\nReissues a quantity of an token to an owned address if you own the Owner Token"
@@ -582,7 +582,7 @@ UniValue reissue(const JSONRPCRequest& request)
 UniValue listmytokens(const JSONRPCRequest &request)
 {
     if (request.fHelp || !AreTokensDeployed() || request.params.size() > 5)
-        throw runtime_error(
+        throw std::runtime_error(
                 "listmytokens [token] [verbose] [count] [start] (confs) \n"
                 + TokenActivationWarning() +
                 "\nReturns a list of all token that are owned by this wallet\n"
@@ -778,7 +778,7 @@ UniValue listmytokens(const JSONRPCRequest &request)
 UniValue listtokens(const JSONRPCRequest& request)
 {
     if (request.fHelp || !AreTokensDeployed() || request.params.size() > 4)
-        throw runtime_error(
+        throw std::runtime_error(
                 "listtokens [token] [verbose] [count] [start]\n"
                 + TokenActivationWarning() +
                 "\nReturns a list of all tokens in the blockchain\n"
@@ -894,7 +894,7 @@ UniValue listaddressesbytoken(const JSONRPCRequest &request)
     }
 
     if (request.fHelp || !AreTokensDeployed() || request.params.size() > 4 || request.params.size() < 1)
-        throw runtime_error(
+        throw std::runtime_error(
                 "listaddressesbytoken <token_name> [onlytotal] [count] [start]\n"
                 + TokenActivationWarning() +
                 "\nReturns a list of all address that own the given token (with balances)"
@@ -968,7 +968,7 @@ UniValue listtokenbalancesbyaddress(const JSONRPCRequest& request)
     }
 
     if (request.fHelp || !AreTokensDeployed() || request.params.size() > 4 || request.params.size() < 1)
-        throw runtime_error(
+        throw std::runtime_error(
             "listtokenbalancesbyaddress <address> [onlytotal] [count] [start]\n"
             + TokenActivationWarning() +
             "\nReturns a list of all token balances for an address.\n"
@@ -1096,21 +1096,21 @@ UniValue gettokendata(const JSONRPCRequest& request)
 }
 
 static const CRPCCommand commands[] =
-{ //  category    name                          actor (function)             argNames
-  //  ----------- ------------------------      -----------------------      ----------
+{ //  category    name                          actor (function)              okSafeMode    argNames
+  //  ----------- ------------------------      -----------------------      -----------    ----------
 #ifdef ENABLE_WALLET
-    { "tokens",   "issue",                      &issue,                      {"token_name","qty","units","reissuable","has_ipfs","ipfs_hash","to_address","change_address"} },
-    { "tokens",   "listmytokens",               &listmytokens,               {"token", "verbose", "count", "start", "confs"}},
+    { "tokens",   "issue",                      &issue,                      false,         {"token_name","qty","units","reissuable","has_ipfs","ipfs_hash","to_address","change_address"} },
+    { "tokens",   "listmytokens",               &listmytokens,               false,         {"token", "verbose", "count", "start", "confs"}},
 #endif
-    { "tokens",   "listtokenbalancesbyaddress", &listtokenbalancesbyaddress, {"address", "onlytotal", "count", "start"} },
-    { "tokens",   "gettokendata",               &gettokendata,               {"token_name"}},
-    { "tokens",   "listaddressesbytoken",       &listaddressesbytoken,       {"token_name", "onlytotal", "count", "start"}},
+    { "tokens",   "listtokenbalancesbyaddress", &listtokenbalancesbyaddress, false,         {"address", "onlytotal", "count", "start"} },
+    { "tokens",   "gettokendata",               &gettokendata,               true,          {"token_name"}},
+    { "tokens",   "listaddressesbytoken",       &listaddressesbytoken,       false,         {"token_name", "onlytotal", "count", "start"}},
 #ifdef ENABLE_WALLET
-    { "tokens",   "transferfromaddress",        &transferfromaddress,        {"token_name", "from_address", "qty", "to_address","yac_change_address", "token_change_address"}},
-    { "tokens",   "transfer",                   &transfer,                   {"token_name", "qty", "to_address", "change_address", "token_change_address"}},
-    { "tokens",   "reissue",                    &reissue,                    {"token_name", "qty", "reissuable", "to_address", "change_address",  "new_units", "new_ipfs"}},
+    { "tokens",   "transferfromaddress",        &transferfromaddress,        false,         {"token_name", "from_address", "qty", "to_address","yac_change_address", "token_change_address"}},
+    { "tokens",   "transfer",                   &transfer,                   false,         {"token_name", "qty", "to_address", "change_address", "token_change_address"}},
+    { "tokens",   "reissue",                    &reissue,                    false,         {"token_name", "qty", "reissuable", "to_address", "change_address",  "new_units", "new_ipfs"}},
 #endif
-    { "tokens",   "listtokens",                 &listtokens,                 {"token", "verbose", "count", "start"}},
+    { "tokens",   "listtokens",                 &listtokens,                 true,          {"token", "verbose", "count", "start"}},
 };
 
 void RegisterTokenRPCCommands(CRPCTable &t)

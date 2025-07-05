@@ -5,8 +5,6 @@
 #include "platformstyle.h"
 #include "walletmodel.h"
 #include "guiutil.h"
-// extern Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool
-// fPrintTransactionDetail)
 
 #include <QDialog>
 #include <QTableView>

@@ -1446,7 +1446,7 @@ UniValue createcltvaddress(const JSONRPCRequest& request)
     CScript inner = GetScriptForCltvP2SH(nLockTime, pubkey);
 
     if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
-    throw runtime_error(
+    throw std::runtime_error(
         strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
 
     CScriptID innerID(inner);
@@ -1518,7 +1518,7 @@ UniValue createcsvaddress(const JSONRPCRequest& request)
     CScript inner = GetScriptForCsvP2SH(nSequence, pubkey);
 
     if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
-    throw runtime_error(
+    throw std::runtime_error(
         strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
 
     CScriptID innerID(inner);
@@ -1656,7 +1656,7 @@ UniValue timelockcoins(const JSONRPCRequest& request)
     }
 
     if (timeLockScriptPubKey.size() > MAX_SCRIPT_ELEMENT_SIZE)
-        throw runtime_error(
+        throw std::runtime_error(
             strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", timeLockScriptPubKey.size(), MAX_SCRIPT_ELEMENT_SIZE));
 
     UniValue result(UniValue::VOBJ);

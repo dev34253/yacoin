@@ -94,6 +94,8 @@ libyacoin_common_a_SOURCES= \
     dbwrapper.cpp \
     txdb.cpp \
     hash.cpp \
+    httprpc.cpp \
+    httpserver.cpp \
     base58.cpp \
     clientversion.cpp \
     checkpoints.cpp \
@@ -129,6 +131,10 @@ libyacoin_common_a_SOURCES= \
     rpc/misc.cpp \
     rpc/blockchain.cpp \
     rpc/rawtransaction.cpp \
+    rpc/server.cpp \
+    rpc/protocol.cpp \
+    rpc/client.cpp \
+    bitcoin-cli.cpp \
     script/interpreter.cpp \
     script/ismine.cpp \
     script/script.cpp \

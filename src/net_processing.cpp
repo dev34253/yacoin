@@ -35,6 +35,7 @@
 #include "txdb.h"
 #include "checkpoints.h"
 #include "miner.h"
+#include "rpc/mining.h"
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -95,7 +96,7 @@ void StartNode(void *parg)
     // Start threads
     //
     // Generate coins in the background
-    GenerateYacoins(gArgs.GetBoolArg("-gen", DEFAULT_GENERATE));
+    GenerateYacoins(gArgs.GetBoolArg("-gen", DEFAULT_GENERATE), gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS));
 }
 
 void StopNode()

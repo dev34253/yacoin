@@ -153,6 +153,7 @@ AC_ARG_WITH([system-univalue],
   [Build with system UniValue (default is no)])],
   [system_univalue=$withval],
   [system_univalue=no]
+)
 
 AC_ARG_WITH([protoc-bindir],[AS_HELP_STRING([--with-protoc-bindir=BIN_DIR],[specify protoc bin path])], [protoc_bin_path=$withval], [])
 

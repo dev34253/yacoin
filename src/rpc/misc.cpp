@@ -130,7 +130,7 @@ UniValue getaddressbalance(const JSONRPCRequest& request)
     }
 
     if (request.fHelp || request.params.size() > 2 || !request.params[0].isObject())
-        throw runtime_error(
+        throw std::runtime_error(
             "getaddressbalance\n"
             "\nReturns the balance for an address(es) (requires -addressindex to be enabled).\n"
             "\nArguments:\n"
@@ -298,7 +298,7 @@ UniValue getaddressdeltas(const JSONRPCRequest& request)
     }
 
     std::string tokenName = YAC;
-    UniValue tokenNameParam = find_value(params[0].get_obj(), "tokenName");
+    UniValue tokenNameParam = find_value(request.params[0].get_obj(), "tokenName");
     if (tokenNameParam.isStr()) {
         if (!AreTokensDeployed())
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Tokens aren't active.  tokenName can't be specified.");
@@ -1022,7 +1022,7 @@ UniValue createmultisig(const JSONRPCRequest& request)
     CScript inner = _createmultisig_redeemScript(pwallet, request.params);
 
     if (inner.size() > MAX_SCRIPT_ELEMENT_SIZE)
-        throw runtime_error(
+        throw std::runtime_error(
             strprintf("redeemScript exceeds size limit: %" PRIszu " > %d", inner.size(), MAX_SCRIPT_ELEMENT_SIZE));
 
     CScriptID innerID(inner);
