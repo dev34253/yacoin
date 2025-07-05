@@ -834,6 +834,11 @@ bool AppInitParameterInteraction()
 //        fPruneMode = true;
 //    }
 
+    RegisterAllCoreRPCCommands(tableRPC);
+#ifdef ENABLE_WALLET
+    RegisterWalletRPCCommands(tableRPC);
+#endif
+
     nConnectTimeout = gArgs.GetArg("-timeout", DEFAULT_CONNECT_TIMEOUT);
     if (nConnectTimeout <= 0)
         nConnectTimeout = DEFAULT_CONNECT_TIMEOUT;

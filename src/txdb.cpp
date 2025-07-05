@@ -700,6 +700,7 @@ bool CBlockTreeDB::BuildBlockHashIndex()
         blockHashPos.clear();
         blockHashPos.shrink_to_fit();  // Reduces the capacity
     }
+    return true;
 }
 
 #ifdef _MSC_VER

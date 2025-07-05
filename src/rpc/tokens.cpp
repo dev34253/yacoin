@@ -888,7 +888,7 @@ UniValue listaddressesbytoken(const JSONRPCRequest &request)
     if (!fTokenIndex) {
       return "_This rpc call is not functional unless -tokenindex is enabled "
              "in yacoin.conf. If you haven't enabled it before, in the first "
-             "time you enable it, you need to enable -reindex-token option as "
+             "time you enable it, you need to enable -reindex-fast option as "
              "well because yacoind need to build token index from the blk*.dat "
              "files on disk";
     }
@@ -962,7 +962,7 @@ UniValue listtokenbalancesbyaddress(const JSONRPCRequest& request)
     if (!fTokenIndex) {
         return "_This rpc call is not functional unless -tokenindex is enabled "
                "in yacoin.conf. If you haven't enabled it before, in the first "
-               "time you enable it, you need to enable -reindex-token option as "
+               "time you enable it, you need to enable -reindex-fast option as "
                "well because yacoind need to build token index from the blk*.dat "
                "files on disk";
     }

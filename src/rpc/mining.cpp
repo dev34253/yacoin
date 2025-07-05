@@ -135,7 +135,7 @@ UniValue getsubsidy(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() > 1)
         throw std::runtime_error(
-            "getsubsidy [nTarget]\n"
+            "getsubsidy [ntarget]\n"
             "Returns proof-of-work subsidy value for the specified value of target.");
 
     unsigned int nBits = 0;
@@ -496,7 +496,7 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 
     if (request.fHelp || request.params.size() > 1)
         throw std::runtime_error(
-            "getblocktemplate [params]\n"
+            "getblocktemplate [template_request]\n"
             "Returns data needed to construct a block to work on:\n"
             "  \"version\" : block version\n"
             "  \"previousblockhash\" : hash of current highest block\n"
@@ -679,8 +679,8 @@ static const CRPCCommand commands[] =
   //  --------------------- ------------------------  -----------------------  ----------
     { "mining",             "gethashespersec",        &gethashespersec,        true,   {} },
     { "mining",             "getmininginfo",          &getmininginfo,          true,  {} },
-    { "mining",             "getblocktemplate",       &getsubsidy,             true,  {"nTarget"} },
-    { "mining",             "submitblock",            &getwork,                true,  {"data"} },
+    { "mining",             "getsubsidy",             &getsubsidy,             true,  {"ntarget"} },
+    { "mining",             "getwork",                &getwork,                true,  {"data"} },
     { "mining",             "getblocktemplate",       &getblocktemplate,       true,  {"template_request"} },
     { "mining",             "submitblock",            &submitblock,            true,  {"hexdata","dummy"} },
 

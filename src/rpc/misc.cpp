@@ -124,7 +124,7 @@ UniValue getaddressbalance(const JSONRPCRequest& request)
     if (!fAddressIndex) {
       return "_This rpc call is not functional unless -addressindex is enabled "
              "in yacoin.conf. If you haven't enabled it before, in the first "
-             "time you enable it, you need to enable -reindex-token option as "
+             "time you enable it, you need to enable -reindex-fast option as "
              "well because yacoind need to build token index from the blk*.dat "
              "files on disk";
     }
@@ -248,7 +248,7 @@ UniValue getaddressdeltas(const JSONRPCRequest& request)
     if (!fAddressIndex) {
       return "_This rpc call is not functional unless -addressindex is enabled "
              "in yacoin.conf. If you haven't enabled it before, in the first "
-             "time you enable it, you need to enable -reindex-token option as "
+             "time you enable it, you need to enable -reindex-fast option as "
              "well because yacoind need to build token index from the blk*.dat "
              "files on disk";
     }
@@ -395,7 +395,7 @@ UniValue getaddressutxos(const JSONRPCRequest& request)
     if (!fAddressIndex) {
       return "_This rpc call is not functional unless -addressindex is enabled "
              "in yacoin.conf. If you haven't enabled it before, in the first "
-             "time you enable it, you need to enable -reindex-token option as "
+             "time you enable it, you need to enable -reindex-fast option as "
              "well because yacoind need to build token index from the blk*.dat "
              "files on disk";
     }
@@ -517,7 +517,7 @@ UniValue getaddresstxids(const JSONRPCRequest& request)
     if (!fAddressIndex) {
       return "_This rpc call is not functional unless -addressindex is enabled "
              "in yacoin.conf. If you haven't enabled it before, in the first "
-             "time you enable it, you need to enable -reindex-token option as "
+             "time you enable it, you need to enable -reindex-fast option as "
              "well because yacoind need to build token index from the blk*.dat "
              "files on disk";
     }

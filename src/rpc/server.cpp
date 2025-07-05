@@ -34,6 +34,37 @@ static RPCTimerInterface* timerInterface = nullptr;
 /* Map of name to timer. */
 static std::map<std::string, std::unique_ptr<RPCTimerBase> > deadlineTimers;
 
+struct RPCCommandExecutionInfo
+{
+    std::string method;
+    int64_t start;
+};
+
+struct RPCServerInfo
+{
+    std::mutex mtx;
+    std::list<RPCCommandExecutionInfo> active_commands GUARDED_BY(mtx);
+};
+
+static RPCServerInfo g_rpc_server_info;
+
+struct RPCCommandExecution
+{
+    std::list<RPCCommandExecutionInfo>::iterator it;
+    explicit RPCCommandExecution(const std::string& method)
+    {
+        g_rpc_server_info.mtx.lock();
+        it = g_rpc_server_info.active_commands.insert(g_rpc_server_info.active_commands.end(), {method, GetTimeMicros()});
+        g_rpc_server_info.mtx.unlock();
+    }
+    ~RPCCommandExecution()
+    {
+        g_rpc_server_info.mtx.lock();
+        g_rpc_server_info.active_commands.erase(it);
+        g_rpc_server_info.mtx.unlock();
+    }
+};
+
 static struct CRPCSignals
 {
     boost::signals2::signal<void ()> Started;
@@ -116,7 +147,7 @@ CAmount AmountFromValue(const UniValue& value)
     if (!value.isNum() && !value.isStr())
         throw JSONRPCError(RPC_TYPE_ERROR, "Amount is not a number or string");
     CAmount amount;
-    if (!ParseFixedPoint(value.getValStr(), 8, &amount))
+    if (!ParseFixedPoint(value.getValStr(), 6, &amount))
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid amount");
     if (!MoneyRange(amount))
         throw JSONRPCError(RPC_TYPE_ERROR, "Amount out of range");
@@ -240,11 +271,11 @@ UniValue stop(const JSONRPCRequest& jsonRequest)
     if (jsonRequest.fHelp || jsonRequest.params.size() > 1)
         throw std::runtime_error(
             "stop\n"
-            "\nStop Bitcoin server.");
+            "\nStop Yacoin server.");
     // Event loop will exit after current HTTP requests have been handled, so
     // this reply will get back to the client.
     StartShutdown();
-    return "Bitcoin server stopping";
+    return "Yacoin server stopping";
 }
 
 UniValue uptime(const JSONRPCRequest& jsonRequest)
@@ -263,6 +294,45 @@ UniValue uptime(const JSONRPCRequest& jsonRequest)
     return GetTime() - GetStartupTime();
 }
 
+UniValue getrpcinfo(const JSONRPCRequest& jsonRequest)
+{
+
+    if (jsonRequest.fHelp || jsonRequest.params.size() > 0)
+        throw std::runtime_error(
+                "getrpcinfo\n"
+                "Returns details of the RPC server.\n"
+                "\nResult:\n"
+                "{\n"
+                " \"active_commands\" (array) All active commands\n"
+                "  [\n"
+                "   {               (object) Information about an active command\n"
+                "    \"method\"       (string)  The name of the RPC command \n"
+                "    \"duration\"     (numeric)  The running time in microseconds\n"
+                "   },...\n"
+                "  ],\n"
+                "}\n"
+                + HelpExampleCli("getrpcinfo", "")
+                + HelpExampleRpc("getrpcinfo", "")
+        );
+
+    g_rpc_server_info.mtx.lock();
+    UniValue active_commands(UniValue::VARR);
+    for (const RPCCommandExecutionInfo& info : g_rpc_server_info.active_commands) {
+        UniValue entry(UniValue::VOBJ);
+        entry.pushKV("method", info.method);
+        entry.pushKV("duration", GetTimeMicros() - info.start);
+        active_commands.push_back(entry);
+    }
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("active_commands", active_commands);
+    result.pushKV("logpath",GetDebugLogPathName());
+    result.pushKV("RPCport", gArgs.GetArg("-rpcport", BaseParams().RPCPort()));
+    g_rpc_server_info.mtx.unlock();
+
+    return result;
+}
+
 /**
  * Call Table
  */
@@ -270,8 +340,9 @@ static const CRPCCommand vRPCCommands[] =
 { //  category              name                      actor (function)         okSafe argNames
   //  --------------------- ------------------------  -----------------------  ------ ----------
     /* Overall control/query calls */
+    { "control",            "getrpcinfo",             &getrpcinfo,             true,  {}  },
     { "control",            "help",                   &help,                   true,  {"command"}  },
-    { "control",            "stop",                   &stop,                   true,  {}  },
+    { "control",            "stop",                   &stop,                   true,  {"wait"}  },
     { "control",            "uptime",                 &uptime,                 true,  {}  },
 };
 
@@ -487,6 +558,7 @@ UniValue CRPCTable::execute(const JSONRPCRequest &request) const
 
     try
     {
+        RPCCommandExecution execution(request.strMethod);
         // Execute, convert arguments to array if necessary
         if (request.params.isObject()) {
             return pcmd->actor(transformNamedArguments(request, pcmd->argNames));
@@ -513,13 +585,13 @@ std::vector<std::string> CRPCTable::listCommands() const
 
 std::string HelpExampleCli(const std::string& methodname, const std::string& args)
 {
-    return "> bitcoin-cli " + methodname + " " + args + "\n";
+    return "> yacoin-cli " + methodname + " " + args + "\n";
 }
 
 std::string HelpExampleRpc(const std::string& methodname, const std::string& args)
 {
     return "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\":\"curltest\", "
-        "\"method\": \"" + methodname + "\", \"params\": [" + args + "] }' -H 'content-type: text/plain;' http://127.0.0.1:8332/\n";
+        "\"method\": \"" + methodname + "\", \"params\": [" + args + "] }' -H 'content-type: text/plain;' http://127.0.0.1:7687/\n";
 }
 
 void RPCSetTimerInterfaceIfUnset(RPCTimerInterface *iface)

@@ -1549,7 +1549,7 @@ bool CTokensCache::DumpCacheToDatabase()
             // Save the new transfers by updating the quantity in the database
             for (auto newTransfer : setNewTransferTokensToAdd) {
                 auto pair = std::make_pair(newTransfer.transfer.strName, newTransfer.address);
-                // During init and reindex-token it disconnects and verifies blocks, can create a state where vNewTransfer will contain transfers that have already been spent. So if they aren't in the map, we can skip them.
+                // During init and reindex-fast it disconnects and verifies blocks, can create a state where vNewTransfer will contain transfers that have already been spent. So if they aren't in the map, we can skip them.
                 if (mapTokensAddressAmount.count(pair)) {
                     if (!ptokensdb->WriteTokenAddressQuantity(newTransfer.transfer.strName, newTransfer.address,
                                                               mapTokensAddressAmount.at(pair))) {

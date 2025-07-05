@@ -971,6 +971,8 @@ int GenerateYacoins(bool fGenerate, int nThreads, int nblocks)
 
     minerThreads = new boost::thread_group();
     nBlocksToGenerate = nblocks;
+    fGenerateBitcoins = fGenerate;
+    nLimitProcessors = gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS);
 
     //Reset metrics
     nHPSTimerStart = 0;

@@ -19,7 +19,7 @@
 #include "script/sign.h"
 #include "wallet/crypter.h"
 #include "wallet/walletdb.h"
-//#include "wallet/rpcwallet.h"
+#include "wallet/rpcwallet.h"
 
 #include <algorithm>
 #include <atomic>
