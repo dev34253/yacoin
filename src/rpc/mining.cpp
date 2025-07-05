@@ -1,91 +1,148 @@
 // Copyright (c) 2010 Satoshi Nakamoto
-// Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
+// Copyright (c) 2009-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#ifdef _MSC_VER
-    #include <stdint.h>
 
-    #include "msvc_warnings.push.h"
-#endif
-#include "rpc/bitcoinrpc.h"
-
+#include "base58.h"
+#include "amount.h"
+#include "chain.h"
 #include "chainparams.h"
+#include "consensus/consensus.h"
+#include "consensus/params.h"
 #include "consensus/validation.h"
+#include "core_io.h"
 #include "init.h"
+#include "validation.h"
 #include "miner.h"
-#include "txdb.h"
-#include "streams.h"
+#include "net.h"
+#include "policy/fees.h"
+#include "pow.h"
+#include "rpc/blockchain.h"
+#include "rpc/mining.h"
+#include "rpc/server.h"
+#include "txmempool.h"
+#include "util.h"
+#include "utilstrencodings.h"
+#include "validationinterface.h"
 #include "warnings.h"
 #include "wallet/rpcwallet.h"
-#include "pow.h"
 
-using namespace json_spirit;
+#include <memory>
+#include <stdint.h>
 
-using std::vector;
-using std::runtime_error;
-using std::map;
-using std::pair;
-using std::max;
+#include <univalue.h>
 
-Value gethashespersec(const Array& params, bool fHelp)
+double GetPoWMHashPS()
 {
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
+    int nPoWInterval = 72;
+    int64_t nTargetSpacingWorkMin = 30, nTargetSpacingWork = 30;
+
+    CBlockIndex* pindex = chainActive.Genesis();
+    CBlockIndex* pindexPrevWork = chainActive.Genesis();
+
+    while (pindex)
+    {
+        if (pindex->IsProofOfWork())
+        {
+            int64_t nActualSpacingWork = pindex->GetBlockTime() - pindexPrevWork->GetBlockTime();
+            nTargetSpacingWork = ((nPoWInterval - 1) * nTargetSpacingWork + nActualSpacingWork + nActualSpacingWork) / (nPoWInterval + 1);
+            nTargetSpacingWork = std::max(nTargetSpacingWork, nTargetSpacingWorkMin);
+            pindexPrevWork = pindex;
+        }
+
+        pindex = chainActive.Next(pindex);
+    }
+
+    return GetDifficulty() * 4294.967296 / nTargetSpacingWork;
+}
+
+UniValue gethashespersec(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
             "gethashespersec\n"
             "Returns a recent hashes per second performance measurement averaged over 30 seconds while generating.");
 
     if (GetTimeMillis() - nHPSTimerStart > 30000)
-       return (boost::int64_t)dHashesPerSec;
-    return (boost::int64_t)0;
+       return (int64_t)dHashesPerSec;
+    return (int64_t)0;
 }
 
-Value getgenerate(const Array& params, bool fHelp)
+UniValue getgenerate(const JSONRPCRequest& request)
 {
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
             "getgenerate\n"
-            "Returns true or false.");
+            "\nReturn if the server is set to generate coins or not. The default is false.\n"
+            "It is set with the command line argument -gen (or " + std::string(YACOIN_CONF_FILENAME) + " setting gen)\n"
+            "It can also be set with the setgenerate call.\n"
+            "\nResult\n"
+            "true|false      (boolean) If the server is set to generate coins or not\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getgenerate", "")
+            + HelpExampleRpc("getgenerate", "")
+        );
 
-    return gArgs.GetBoolArg("-gen");
+    LOCK(cs_main);
+    return gArgs.GetBoolArg("-gen", DEFAULT_GENERATE);
 }
 
-Value setgenerate(const Array& params, bool fHelp)
+UniValue setgenerate(const JSONRPCRequest& request)
 {
-    if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
-            "setgenerate <generate> [genproclimit]\n"
-            "<generate> is true or false to turn generation on or off.\n"
-            "Generation is limited to [genproclimit] processors, -1 is unlimited.");
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 2)
+        throw std::runtime_error(
+            "setgenerate generate ( genproclimit )\n"
+            "\nSet 'generate' true or false to turn generation on or off.\n"
+            "Generation is limited to 'genproclimit' processors, -1 is unlimited.\n"
+            "See the getgenerate call for the current setting.\n"
+            "\nArguments:\n"
+            "1. generate         (boolean, required) Set to true to turn on generation, false to turn off.\n"
+            "2. genproclimit     (numeric, optional) Set the processor limit for when generation is on. Can be -1 for unlimited.\n"
+            "\nExamples:\n"
+            "\nSet the generation on with a limit of one processor\n"
+            + HelpExampleCli("setgenerate", "true 1") +
+            "\nCheck the setting\n"
+            + HelpExampleCli("getgenerate", "") +
+            "\nTurn off generation\n"
+            + HelpExampleCli("setgenerate", "false") +
+            "\nUsing json rpc\n"
+            + HelpExampleRpc("setgenerate", "true, 1")
+        );
 
     bool fGenerate = true;
-    if (params.size() > 0)
-        fGenerate = params[0].get_bool();
+    if (request.params.size() > 0)
+        fGenerate = request.params[0].get_bool();
 
-    if (params.size() > 1)
+    int nGenProcLimit = gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS);
+    if (request.params.size() > 1)
     {
-        int nGenProcLimit = params[1].get_int();
-        gArgs.ForceSetArg("-genproclimit", itostr(nGenProcLimit));
+        nGenProcLimit = request.params[1].get_int();
         if (nGenProcLimit == 0)
             fGenerate = false;
     }
-    gArgs.ForceSetArg("-gen", (fGenerate ? "1" : "0"));
 
-    GenerateYacoins(fGenerate);
-    return Value::null;
+    gArgs.ForceSetArg("-gen", (fGenerate ? "1" : "0"));
+    gArgs.ForceSetArg("-genproclimit", itostr(nGenProcLimit));
+    int numCores = GenerateYacoins(fGenerate, nGenProcLimit);
+
+    nGenProcLimit = nGenProcLimit >= 0 ? nGenProcLimit : numCores;
+    std::string msg = std::to_string(nGenProcLimit) + " of " + std::to_string(numCores);
+    return msg;
 }
 
-Value getsubsidy(const Array& params, bool fHelp)
+UniValue getsubsidy(const JSONRPCRequest& request)
 {
-    if (fHelp || params.size() > 1)
-        throw runtime_error(
+    if (request.fHelp || request.params.size() > 1)
+        throw std::runtime_error(
             "getsubsidy [nTarget]\n"
             "Returns proof-of-work subsidy value for the specified value of target.");
 
     unsigned int nBits = 0;
 
-    if (params.size() != 0)
+    if (request.params.size() != 0)
     {
-        CBigNum bnTarget(uint256(params[0].get_str()));
+        CBigNum bnTarget(uint256(request.params[0].get_str()));
         nBits = bnTarget.GetCompact();
     }
     else
@@ -93,236 +150,179 @@ Value getsubsidy(const Array& params, bool fHelp)
         nBits = GetNextTargetRequired(chainActive.Tip(), false);
     }
 
-    return (Value_type)GetProofOfWorkReward(nBits, 0, chainActive.Height() + 1);
+    return GetProofOfWorkReward(nBits, 0, chainActive.Height() + 1);
 }
 
-Value generatetoaddress(const Array& params, bool fHelp){
-    if (fHelp || params.size() == 0 || params.size() > 3)
-            throw runtime_error(
+UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGenerate, uint64_t nMaxTries, bool keepScript)
+{
+    static const int nInnerLoopCount = 0x10000;
+    int nHeightEnd = 0;
+    int nHeight = 0;
+
+    {   // Don't keep cs_main locked
+        LOCK(cs_main);
+        nHeight = chainActive.Height();
+        nHeightEnd = nHeight+nGenerate;
+    }
+    unsigned int nExtraNonce = 0;
+    UniValue blockHashes(UniValue::VARR);
+    while (nHeight < nHeightEnd)
+    {
+        std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler().CreateNewBlock(coinbaseScript->reserveScript));
+        if (!pblocktemplate.get())
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
+        CBlock *pblock = &pblocktemplate->block;
+        {
+            LOCK(cs_main);
+            IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce);
+        }
+        while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) {
+            ++pblock->nNonce;
+            --nMaxTries;
+        }
+        if (nMaxTries == 0) {
+            break;
+        }
+        if (pblock->nNonce == nInnerLoopCount) {
+            continue;
+        }
+        std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock);
+        if (!ProcessNewBlock(Params(), shared_pblock, true, nullptr))
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
+        ++nHeight;
+        blockHashes.push_back(pblock->GetHash().GetHex());
+
+        //mark script as important because it was used at least for one coinbase output if the script came from the wallet
+        if (keepScript)
+        {
+            coinbaseScript->KeepScript();
+        }
+    }
+    return blockHashes;
+}
+
+//UniValue generatetoaddress(const JSONRPCRequest& request)
+//{
+//    if (request.fHelp || request.params.size() < 2 || request.params.size() > 3)
+//        throw std::runtime_error(
+//            "generatetoaddress nblocks address (maxtries)\n"
+//            "\nMine blocks immediately to a specified address (before the RPC call returns)\n"
+//            "\nArguments:\n"
+//            "1. nblocks      (numeric, required) How many blocks are generated immediately.\n"
+//            "2. address      (string, required) The address to send the newly generated bitcoin to.\n"
+//            "3. maxtries     (numeric, optional) How many iterations to try (default = 1000000).\n"
+//            "\nResult:\n"
+//            "[ blockhashes ]     (array) hashes of blocks generated\n"
+//            "\nExamples:\n"
+//            "\nGenerate 11 blocks to myaddress\n"
+//            + HelpExampleCli("generatetoaddress", "11 \"myaddress\"")
+//        );
+//
+//    int nGenerate = request.params[0].get_int();
+//    uint64_t nMaxTries = 1000000;
+//    if (!request.params[2].isNull()) {
+//        nMaxTries = request.params[2].get_int();
+//    }
+//
+//    CBitcoinAddress address(request.params[1].get_str());
+//    if (!address.IsValid())
+//        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address");
+//
+//    std::shared_ptr<CReserveScript> coinbaseScript = std::make_shared<CReserveScript>();
+//    coinbaseScript->reserveScript = GetScriptForDestination(address.Get());
+//
+//    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, false);
+//}
+
+UniValue generatetoaddress(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() == 0 || request.params.size() > 3)
+            throw std::runtime_error(
                 "generatetoaddress\n"
                 "nblocks - How many blocks are generated immediately.\n"
                 "address - The address to send the newly generated bitcoin to.\n"
                 "maxtries - How many iterations to try.");
-    int nblocks = -1;
-    try {
-        nblocks = params[0].get_int();
-    } catch(...) {
-        nblocks = atoi(params[0].get_str().c_str());
+
+    int nblocks = request.params[0].get_int();
+    uint64_t nMaxTries = 1000000;
+    if (!request.params[2].isNull()) {
+        nMaxTries = request.params[2].get_int();
     }
-    std::string address = "";
-    int maxtries = -1;
-    if(params.size()>1) {
-        address = params[1].get_str();
-    }
-    if(params.size()>2) {
-        maxtries = params[2].get_int();
-    }
+
+    CBitcoinAddress address(request.params[1].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Error: Invalid address");
     
-    Array res;
-    // for(int i=0;i<nblocks;i++){
-    //     std::string hash = mineSingleBlock(address, maxtries);
-    //     res.push_back(hash);
-    // }
+    UniValue res(UniValue::VARR);
+
     gArgs.ForceSetArg("-gen", "1");
     gArgs.ForceSetArg("-genproclimit", "1");
-    GenerateYacoins(true, nblocks);
+    GenerateYacoins(true, 1, nblocks);
     gArgs.ForceSetArg("-gen", "0");
     return res;
 }
 
-Value getmininginfo(const Array& params, bool fHelp)
+UniValue getmininginfo(const JSONRPCRequest& request)
 {
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
             "getmininginfo\n"
-            "Returns an object containing mining-related information.");
+            "\nReturns a json object containing mining-related information."
+            "\nResult:\n"
+            "{\n"
+            "  \"blocks\": nnn,             (numeric) The current block\n"
+            "  \"currentblockweight\": nnn, (numeric) The last block weight\n"
+            "  \"currentblocktx\": nnn,     (numeric) The last block transaction\n"
+            "  \"difficulty\": xxx.xxxxx    (numeric) The current difficulty\n"
+            "  \"errors\": \"...\"            (string) Current errors\n"
+            "  \"networkhashps\": nnn,      (numeric) The network hashes per second\n"
+            "  \"pooledtx\": n              (numeric) The size of the mempool\n"
+            "  \"chain\": \"xxxx\",           (string) current network name as defined in BIP70 (main, test, regtest)\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getmininginfo", "")
+            + HelpExampleRpc("getmininginfo", "")
+        );
 
-    Object obj, diff;
-    obj.push_back(Pair("blocks",        (int)chainActive.Height()));
-    obj.push_back(Pair("currentblocksize",(Value_type)nLastBlockSize));
-    obj.push_back(Pair("currentblocktx",(Value_type)nLastBlockTx));
 
-    diff.push_back(Pair("proof-of-work",        GetDifficulty()));
-    diff.push_back(Pair("proof-of-stake",       GetDifficulty(GetLastBlockIndex(chainActive.Tip(), true))));
-    diff.push_back(Pair("search-interval",      (Value_type)nLastCoinStakeSearchInterval));
-    obj.push_back(Pair("difficulty",    diff));
+    LOCK(cs_main);
+
+    UniValue obj(UniValue::VOBJ);
+    obj.push_back(Pair("blocks",           (int)chainActive.Height()));
+    obj.push_back(Pair("currentblocksize",(uint64_t)nLastBlockSize));
+    obj.push_back(Pair("currentblocktx",   (uint64_t)nLastBlockTx));
+    obj.push_back(Pair("difficulty",       (double)GetDifficulty()));
 
     uint64_t blockvalue=(uint64_t)GetProofOfWorkReward(GetLastBlockIndex(chainActive.Tip(), false)->nBits, 0, chainActive.Height());
     obj.push_back(Pair("blockvalue", blockvalue)); // for testing purposes, easier to compare than float
-    obj.push_back(Pair("powreward", (Value_type)blockvalue / 1000000.0));
+    obj.push_back(Pair("powreward", (double)blockvalue / 1000000.0));
     obj.push_back(Pair("netmhashps",     GetPoWMHashPS()));
-    obj.push_back(Pair("netstakeweight", GetPoSKernelPS()));
-    obj.push_back(Pair("errors",        GetWarnings("statusbar")));
+    obj.push_back(Pair("errors",           GetWarnings("statusbar")));
     obj.push_back(Pair("generate",      gArgs.GetBoolArg("-gen")));
     obj.push_back(Pair("genproclimit",  (int)gArgs.GetArg("-genproclimit", -1)));
-    obj.push_back(Pair("hashespersec",  gethashespersec(params, false)));
-    obj.push_back(Pair("pooledtx",      (Value_type)mempool.size()));
-    obj.push_back(Pair("testnet",       fTestNet));
+    obj.push_back(Pair("hashespersec",  gethashespersec(request)));
+    obj.push_back(Pair("pooledtx",         (uint64_t)mempool.size()));
+    obj.push_back(Pair("chain",            Params().NetworkIDString()));
 
     // WM - Tweaks to report current Nfactor and N.
-    unsigned char 
-        Nfactor = GetNfactor(chainActive.Tip()->GetBlockTime(), chainActive.Height() >= nMainnetNewLogicBlockNumber? true : false);
-
-    uint64_t 
-        N;
-#ifdef _MSC_VER
-    N = uint64_t( 1 ) << ( Nfactor + 1 );    
-#else    
-    N = 1 << ( Nfactor + 1 );
-#endif    
+    unsigned char Nfactor = GetNfactor(chainActive.Tip()->GetBlockTime(), chainActive.Height() >= nMainnetNewLogicBlockNumber? true : false);
+    uint64_t N = 1 << ( Nfactor + 1 );
     obj.push_back( Pair( "Nfactor", Nfactor ) );
-    obj.push_back( Pair( "N", (Value_type)N ) );
-    obj.push_back( Pair( "Epoch Interval", (Value_type)nEpochInterval ) );
-    obj.push_back( Pair( "Difficulty Interval", (Value_type)nDifficultyInterval ) );
-
+    obj.push_back( Pair( "N", (uint64_t)N ) );
+    obj.push_back( Pair( "Epoch Interval", (uint64_t)nEpochInterval ) );
+    obj.push_back( Pair( "Difficulty Interval", (uint64_t)nDifficultyInterval ) );
     return obj;
 }
 
-Value getworkex(const Array& params, bool fHelp)
+UniValue getwork(const JSONRPCRequest& request)
 {
     CWallet* const pwallet = GetWalletForJSONRPCRequest();
-    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
-        return Value::null;
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
     }
 
-    if (fHelp || params.size() > 2)
-        throw runtime_error(
-            "getworkex [data, coinbase]\n"
-            "If [data, coinbase] is not specified, returns extended work data.\n"
-        );
-
-    if (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0)
-        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "Yacoin is not connected!");
-
-    if (IsInitialBlockDownload())
-        throw JSONRPCError(-10, "Yacoin is downloading blocks...");
-
-    typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
-    static mapNewBlock_t mapNewBlock;
-    static CReserveKey reservekey(pwallet);
-    std::shared_ptr<CReserveScript> coinbase_script;
-    pwallet->GetScriptForMining(coinbase_script);
-
-    if (params.size() == 0)
-    {
-        // Update block
-        static unsigned int nTransactionsUpdatedLast;
-        static CBlockIndex* pindexPrev;
-        static int64_t nStart;
-        static std::unique_ptr<CBlockTemplate> pblocktemplate;
-        unsigned int nTransactionsUpdated = mempool.GetTransactionsUpdated();
-        if (pindexPrev != chainActive.Tip() ||
-            (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60)
-            || (GetTime() - nStart > nMaxClockDrift*0.75))
-        {
-            if (pindexPrev != chainActive.Tip())
-            {
-                // Deallocate old blocks since they're obsolete now
-                mapNewBlock.clear();
-            }
-            nTransactionsUpdatedLast = nTransactionsUpdated;
-            pindexPrev = chainActive.Tip();
-            nStart = GetTime();
-
-            // Create new block
-            pblocktemplate = BlockAssembler().CreateNewBlock(coinbase_script->reserveScript);
-            if (!pblocktemplate.get())
-                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
-        }
-
-        CBlock* pblock = &pblocktemplate->block; // pointer for convenience
-        // Update nTime
-        pblock->nTime = max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
-        pblock->nNonce = 0;
-
-        // Update nExtraNonce
-        static unsigned int nExtraNonce = 0;
-        IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
-
-        // Save
-        mapNewBlock[pblock->hashMerkleRoot] = std::make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
-
-        // Prebuild hash buffers
-        char pmidstate[32];
-        char pdata[128];
-        char phash1[64];
-        FormatHashBuffers(pblock, pmidstate, pdata, phash1);
-
-        uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
-
-        CTransaction coinbaseTx = pblock->vtx[0];
-        std::vector<uint256> merkle = pblock->GetMerkleBranch(0);
-
-        Object result;
-        result.push_back(Pair("data",     HexStr(BEGIN(pdata), END(pdata))));
-        result.push_back(Pair("target",   HexStr(BEGIN(hashTarget), END(hashTarget))));
-
-        CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
-        ssTx << coinbaseTx;
-        result.push_back(Pair("coinbase", HexStr(ssTx.begin(), ssTx.end())));
-
-        Array merkle_arr;
-
-        BOOST_FOREACH(uint256 merkleh, merkle) {
-            merkle_arr.push_back(HexStr(BEGIN(merkleh), END(merkleh)));
-        }
-
-        result.push_back(Pair("merkle", merkle_arr));
-
-
-        return result;
-    }
-    else
-    {
-        // Parse parameters
-        vector<unsigned char> vchData = ParseHex(params[0].get_str());
-        vector<unsigned char> coinbase;
-
-        if(params.size() == 2)
-            coinbase = ParseHex(params[1].get_str());
-
-        if (vchData.size() != 128)
-            throw JSONRPCError(-8, "Invalid parameter");
-
-        CBlock* pdata = (CBlock*)&vchData[0];
-
-        // Byte reverse
-        for (unsigned int i = 0; i < 128/sizeof( uint32_t ); ++i)     // fix this awful magic# code
-      //for (int i = 0; i < 128/4; ++i)     // fix this awful magic# code
-            ((uint32_t *)pdata)[i] = ByteReverse(((uint32_t *)pdata)[i]);
-
-        // Get saved block
-        if (!mapNewBlock.count(pdata->hashMerkleRoot))
-            return false;
-        CBlock* pblock = mapNewBlock[pdata->hashMerkleRoot].first;
-
-        pblock->nTime = pdata->nTime;
-        pblock->nNonce = pdata->nNonce;
-
-        if(coinbase.size() == 0)
-            pblock->vtx[0].vin[0].scriptSig = mapNewBlock[pdata->hashMerkleRoot].second;
-        else
-            CDataStream(coinbase, SER_NETWORK, PROTOCOL_VERSION) >> pblock->vtx[0]; // FIXME - HACK!
-
-        pblock->hashMerkleRoot = pblock->BuildMerkleTree();
-
-        if (!pblock->SignBlock(*pwallet))
-            throw JSONRPCError(-100, "Unable to sign block, wallet locked?");
-
-        return CheckWork(pblock, *pwallet, reservekey);
-    }
-}
-
-
-Value getwork(const Array& params, bool fHelp)
-{
-    CWallet* const pwallet = GetWalletForJSONRPCRequest();
-    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
-        return Value::null;
-    }
-
-    if (fHelp || params.size() > 1)
-        throw runtime_error(
+    if (request.fHelp || request.params.size() > 1)
+        throw std::runtime_error(
             "getwork [data]\n"
             "If [data] is not specified, returns formatted hash data to work on:\n"
             "  \"midstate\" : precomputed hash state after hashing the first half of the data (DEPRECATED)\n" // deprecated
@@ -337,13 +337,13 @@ Value getwork(const Array& params, bool fHelp)
     if (IsInitialBlockDownload())
         throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Yacoin is downloading blocks...");
 
-    typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
+    typedef std::map<uint256, std::pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
     static CReserveKey reservekey(pwallet);
     std::shared_ptr<CReserveScript> coinbase_script;
     pwallet->GetScriptForMining(coinbase_script);
 
-    if (params.size() == 0)
+    if (request.params.size() == 0)
     {
         // Update block
         static unsigned int nTransactionsUpdatedLast;
@@ -417,7 +417,7 @@ Value getwork(const Array& params, bool fHelp)
 
         uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
-        Object result;
+        UniValue result(UniValue::VOBJ);
         result.push_back(Pair("midstate", HexStr(BEGIN(pmidstate), END(pmidstate)))); // deprecated
         result.push_back(Pair("data",     HexStr(BEGIN(pdata), END(pdata))));
         result.push_back(Pair("hash1",    HexStr(BEGIN(phash1), END(phash1)))); // deprecated
@@ -428,8 +428,7 @@ Value getwork(const Array& params, bool fHelp)
     else
     {
         // Parse parameters
-        vector<unsigned char> 
-            vchData = ParseHex(params[0].get_str());
+        std::vector<unsigned char> vchData = ParseHex(request.params[0].get_str());
 
         if (vchData.size() != 128)
         {
@@ -488,16 +487,15 @@ Value getwork(const Array& params, bool fHelp)
     }
 }
 
-
-Value getblocktemplate(const Array& params, bool fHelp)
+UniValue getblocktemplate(const JSONRPCRequest& request)
 {
     CWallet* const pwallet = GetWalletForJSONRPCRequest();
-    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
-        return Value::null;
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
     }
 
-    if (fHelp || params.size() > 1)
-        throw runtime_error(
+    if (request.fHelp || request.params.size() > 1)
+        throw std::runtime_error(
             "getblocktemplate [params]\n"
             "Returns data needed to construct a block to work on:\n"
             "  \"version\" : block version\n"
@@ -517,13 +515,13 @@ Value getblocktemplate(const Array& params, bool fHelp)
             "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.");
 
     std::string strMode = "template";
-    if (params.size() > 0)
+    if (request.params.size() > 0)
     {
-        const Object& oparam = params[0].get_obj();
-        const Value& modeval = find_value(oparam, "mode");
-        if (modeval.type() == str_type)
+        const UniValue& oparam = request.params[0].get_obj();
+        const UniValue& modeval = find_value(oparam, "mode");
+        if (modeval.isStr())
             strMode = modeval.get_str();
-        else if (modeval.type() == null_type)
+        else if (modeval.isNull())
         {
             /* Do nothing */
         }
@@ -574,26 +572,25 @@ Value getblocktemplate(const Array& params, bool fHelp)
     pblock->UpdateTime(pindexPrev);
     pblock->nNonce = 0;
 
-    Array transactions;
-    map<uint256, Value_type> setTxIndex;
+    UniValue transactions(UniValue::VARR);
+    std::map<uint256, int64_t> setTxIndex;
     int i = 0;
     for(CTransaction& tx : pblock->vtx)
     {
         uint256 txHash = tx.GetHash();
-        setTxIndex[txHash] = (Value_type)(i++);
+        setTxIndex[txHash] = i++;
 
         if (tx.IsCoinBase() || tx.IsCoinStake())
             continue;
 
-        Object entry;
+        UniValue entry(UniValue::VOBJ);
 
         CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
         ssTx << tx;
         entry.push_back(Pair("data", HexStr(ssTx.begin(), ssTx.end())));
-
         entry.push_back(Pair("hash", txHash.GetHex()));
 
-        Array deps;
+        UniValue deps(UniValue::VARR);
         for (const CTxIn &in : tx.vin)
         {
             if (setTxIndex.count(in.prevout.hash))
@@ -602,58 +599,56 @@ Value getblocktemplate(const Array& params, bool fHelp)
         entry.push_back(Pair("depends", deps));
 
         int index_in_template = i - 1;
-        entry.push_back(Pair("fee", (Value_type)pblocktemplate->vTxFees[index_in_template]));
-        entry.push_back(Pair("sigops", (Value_type)pblocktemplate->vTxSigOpsCost[index_in_template]));
+        entry.push_back(Pair("fee", pblocktemplate->vTxFees[index_in_template]));
+        int64_t nTxSigOps = pblocktemplate->vTxSigOpsCost[index_in_template];
+        entry.push_back(Pair("sigops", nTxSigOps));
         transactions.push_back(entry);
     }
 
-    Object aux;
+    UniValue aux(UniValue::VOBJ);
     aux.push_back(Pair("flags", HexStr(COINBASE_FLAGS.begin(), COINBASE_FLAGS.end())));
 
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
-    static Array aMutable;
-    if (aMutable.empty())
-    {
-        aMutable.push_back("time");
-        aMutable.push_back("transactions");
-        aMutable.push_back("prevblock");
-    }
+    UniValue aMutable(UniValue::VARR);
+    aMutable.push_back("time");
+    aMutable.push_back("transactions");
+    aMutable.push_back("prevblock");
 
-    Object result;
+    UniValue result(UniValue::VOBJ);
     result.push_back(Pair("version", pblock->nVersion));
     result.push_back(Pair("previousblockhash", pblock->hashPrevBlock.GetHex()));
     result.push_back(Pair("transactions", transactions));
     result.push_back(Pair("coinbaseaux", aux));
-    result.push_back(Pair("coinbasevalue", (Value_type)pblock->vtx[0].vout[0].nValue));
+    result.push_back(Pair("coinbasevalue", (int64_t)pblock->vtx[0].vout[0].nValue));
     result.push_back(Pair("target", hashTarget.GetHex()));
-    result.push_back(Pair("mintime", (Value_type)pindexPrev->GetMedianTimePast()+1));
+    result.push_back(Pair("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1));
     result.push_back(Pair("mutable", aMutable));
     result.push_back(Pair("noncerange", "00000000ffffffff"));
-    result.push_back(Pair("sigoplimit", (Value_type)GetMaxSize(MAX_BLOCK_SIGOPS)));
-    result.push_back(Pair("sizelimit", (Value_type)GetMaxSize(MAX_BLOCK_SIZE)));
-    result.push_back(Pair("curtime", (Value_type)pblock->nTime));
-    result.push_back(Pair("bits", HexBits(pblock->nBits)));
-    result.push_back(Pair("height", (Value_type)(pindexPrev->nHeight+1)));
+    result.push_back(Pair("sigoplimit", (uint64_t)GetMaxSize(MAX_BLOCK_SIGOPS)));
+    result.push_back(Pair("sizelimit", (uint64_t)GetMaxSize(MAX_BLOCK_SIZE)));
+    result.push_back(Pair("curtime", (int64_t)pblock->nTime));
+    result.push_back(Pair("bits", strprintf("%08x", pblock->nBits)));
+    result.push_back(Pair("height", (int64_t)(pindexPrev->nHeight+1)));
 
     return result;
 }
 
-Value submitblock(const Array& params, bool fHelp)
+UniValue submitblock(const JSONRPCRequest& request)
 {
     CWallet* const pwallet = GetWalletForJSONRPCRequest();
-    if (!EnsureWalletIsAvailable(pwallet, fHelp)) {
-        return Value::null;
+    if (!EnsureWalletIsAvailable(pwallet, request.fHelp)) {
+        return NullUniValue;
     }
 
-    if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 2)
+        throw std::runtime_error(
             "submitblock <hex data> [optional-params-obj]\n"
             "[optional-params-obj] parameter is currently ignored.\n"
             "Attempts to submit new block to network.\n"
             "See https://en.bitcoin.it/wiki/BIP_0022 for full specification.");
 
-    vector<unsigned char> blockData(ParseHex(params[0].get_str()));
+    std::vector<unsigned char> blockData(ParseHex(request.params[0].get_str()));
     CDataStream ssBlock(blockData, SER_NETWORK, PROTOCOL_VERSION);
     std::shared_ptr<CBlock> blockptr = std::make_shared<CBlock>();
     CBlock& block = *blockptr;
@@ -676,8 +671,27 @@ Value submitblock(const Array& params, bool fHelp)
     if (!fAccepted)
         return "rejected";
 
-    return Value::null;
+    return NullUniValue;
 }
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif
+
+static const CRPCCommand commands[] =
+{ //  category              name                      actor (function)         okSafeMode
+  //  --------------------- ------------------------  -----------------------  ----------
+    { "mining",             "gethashespersec",        &gethashespersec,        true,   {} },
+    { "mining",             "getmininginfo",          &getmininginfo,          true,  {} },
+    { "mining",             "getblocktemplate",       &getsubsidy,             true,  {"nTarget"} },
+    { "mining",             "submitblock",            &getwork,                true,  {"data"} },
+    { "mining",             "getblocktemplate",       &getblocktemplate,       true,  {"template_request"} },
+    { "mining",             "submitblock",            &submitblock,            true,  {"hexdata","dummy"} },
+
+    /* Coin generation */
+    { "generating",         "getgenerate",            &getgenerate,            true, {}  },
+    { "generating",         "setgenerate",            &setgenerate,            true, {"generate", "genproclimit"}  },
+    { "generating",         "generatetoaddress",      &generatetoaddress,      true,  {"nblocks","address","maxtries"} },
+};
+
+void RegisterMiningRPCCommands(CRPCTable &t)
+{
+    for (unsigned int vcidx = 0; vcidx < ARRAYLEN(commands); vcidx++)
+        t.appendCommand(commands[vcidx].name, &commands[vcidx]);
+}

@@ -82,7 +82,7 @@ class MiningTest(BitcoinTestFramework):
             assert_equal(mining_info['currentblocksize'], 1000)
             assert_equal(mining_info['N'], 32)
             # the low difficulty is only valid because of the low difficulty flag
-            assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000777459625'))
+            assert_equal(mining_info['difficulty'], Decimal('0.0000000777459625'))
             # low nfactor is set for testing
             assert_equal(mining_info['Nfactor'], 4)
             # powreward is based on 100,000,000 initial money supply for testing
@@ -100,7 +100,7 @@ class MiningTest(BitcoinTestFramework):
         for i in range(3):
             self.mine_blocks(0, 1)
             mining_info = self.nodes[0].getmininginfo()
-            assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000777459625'))
+            assert_equal(mining_info['difficulty'], Decimal('0.0000000777459625'))
         assert_equal(mining_info['blocks'], 29)
         assert_approx(mining_info['powreward'], 3.8025705377)
 
@@ -109,7 +109,7 @@ class MiningTest(BitcoinTestFramework):
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 30)
-        assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000777459625'))
+        assert_equal(mining_info['difficulty'], Decimal('0.0000000777459625'))
         assert_approx(mining_info['powreward'], 3.8025705377)
         assert_approx(float(balance), 95.064278)
 
@@ -118,7 +118,7 @@ class MiningTest(BitcoinTestFramework):
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 35)
-        assert_equal(mining_info['difficulty']['proof-of-work'], Decimal('0.0000000777459625'))
+        assert_equal(mining_info['difficulty'], Decimal('0.0000000777459625'))
         assert_approx(balance, 114.077144)
 
 if __name__ == '__main__':

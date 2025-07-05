@@ -64,8 +64,8 @@ class BasicTransfer_Test(BitcoinTestFramework):
             self.log.info("moneysupply "+str(info['moneysupply']))
             mininginfo = self.nodes[nodeId].getmininginfo()
             assert_equal(mininginfo['blockvalue'], blockvalue) # use blockvalue instead of powreward for checking
-            assert_approx(mininginfo['difficulty']['proof-of-work'],difficulty, vspan=1E-12)            
-            self.log.info(str(self.blocks_mined)+ " Difficulty "+str(mininginfo['difficulty']['proof-of-work']))
+            assert_approx(mininginfo['difficulty'],difficulty, vspan=1E-12)            
+            self.log.info(str(self.blocks_mined)+ " Difficulty "+str(mininginfo['difficulty']))
         info = self.nodes[nodeId].getinfo()
         assert_equal(int(info['moneysupply']*1000000),moneysupplyAtEnd)
         self.sync_all()

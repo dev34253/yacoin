@@ -195,6 +195,10 @@ void Shutdown()
     for (CWalletRef pwallet : vpwallets) {
         pwallet->Flush(false);
     }
+
+    // Stop miner threads
+    GenerateYacoins(false, 0, 0);
+
     MapPort(false);
 
     // Stop all background threads: miner, rpc, script validation and hash calculation
@@ -1485,6 +1489,8 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
         return false;
     }
 
+    // Generate coins in the background
+    GenerateYacoins(gArgs.GetBoolArg("-gen", DEFAULT_GENERATE), gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS));
     if (!NewThread(StartNode, NULL))
         InitError(_("Error: could not start node"));
 

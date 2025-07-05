@@ -41,6 +41,7 @@
 #include "util.h"
 #include "utilmoneystr.h"
 #include "validationinterface.h"
+#include "rpc/mining.h"
 
 #include "txdb.h"
 #include "kernel.h"
@@ -949,36 +950,73 @@ void static ThreadYacoinMiner(void* parg) {
 }
 //_____________________________________________________________________________
 
-// here we add the missing PoW mining code from 0.4.4
-void GenerateYacoins(bool fGenerate, int nblocks) {
-  fGenerateBitcoins = fGenerate;
-  nLimitProcessors = gArgs.GetArg("-genproclimit", -1);
-  if (nLimitProcessors == 0) fGenerateBitcoins = false;
-  fLimitProcessors = (nLimitProcessors != -1);
+int GenerateYacoins(bool fGenerate, int nThreads, int nblocks)
+{
+    static boost::thread_group* minerThreads = NULL;
 
-  if (fGenerate) {
+    int numCores = GetNumCores();
+    if (nThreads < 0)
+        nThreads = numCores;
+    LogPrintf("%d processors\n", numCores);
+
+    if (minerThreads != NULL)
+    {
+        minerThreads->interrupt_all();
+        delete minerThreads;
+        minerThreads = NULL;
+    }
+
+    if (nThreads == 0 || !fGenerate)
+        return numCores;
+
+    minerThreads = new boost::thread_group();
     nBlocksToGenerate = nblocks;
-    int nProcessors = boost::thread::hardware_concurrency();
 
-    LogPrintf("%d processors\n", nProcessors);
-    if (nProcessors < 1) nProcessors = 1;
-    if (fLimitProcessors && (nProcessors > nLimitProcessors))
-      nProcessors = nLimitProcessors;
-    int nAddThreads = nProcessors - vnThreadsRunning[THREAD_MINER];
+    //Reset metrics
+    nHPSTimerStart = 0;
 
-    LogPrintf("Starting %d YacoinMiner thread%s\n", nAddThreads,
-           (1 < nAddThreads) ? "s" : "");
-    for (int i = 0; i < nAddThreads; ++i) {
-      if (!NewThread(ThreadYacoinMiner, nullptr))
-        LogPrintf("Error: NewThread(ThreadBitcoinMiner) failed\n");
-      Sleep(nTenMilliseconds);
+    LogPrintf("Starting %d YacoinMiner thread%s\n", nThreads, (1 < nThreads) ? "s" : "");
+    for (int i = 0; i < nThreads; i++){
+        minerThreads->create_thread(&YacoinMiner);
     }
 
     while (nBlocksToGenerate > 0) {
       Sleep(nMillisecondsPerSecond);
     }
-  }
+
+    return(numCores);
 }
+
+// here we add the missing PoW mining code from 0.4.4
+//void GenerateYacoins(bool fGenerate, int nThreads, int nblocks) {
+//  fGenerateBitcoins = fGenerate;
+//  nLimitProcessors = gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS);
+//  if (nLimitProcessors == 0) fGenerateBitcoins = false;
+//  fLimitProcessors = (nLimitProcessors != -1);
+//
+//  if (fGenerate) {
+//    nBlocksToGenerate = nblocks;
+//    int nProcessors = boost::thread::hardware_concurrency();
+//
+//    LogPrintf("%d processors\n", nProcessors);
+//    if (nProcessors < 1) nProcessors = 1;
+//    if (fLimitProcessors && (nProcessors > nLimitProcessors))
+//      nProcessors = nLimitProcessors;
+//    int nAddThreads = nProcessors - vnThreadsRunning[THREAD_MINER];
+//
+//    LogPrintf("Starting %d YacoinMiner thread%s\n", nAddThreads,
+//           (1 < nAddThreads) ? "s" : "");
+//    for (int i = 0; i < nAddThreads; ++i) {
+//      if (!NewThread(ThreadYacoinMiner, nullptr))
+//        LogPrintf("Error: NewThread(ThreadBitcoinMiner) failed\n");
+//      Sleep(nTenMilliseconds);
+//    }
+//
+//    while (nBlocksToGenerate > 0) {
+//      Sleep(nMillisecondsPerSecond);
+//    }
+//  }
+//}
 //_____________________________________________________________________________
 //_____________________________________________________________________________
 #ifdef _MSC_VER
