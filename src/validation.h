@@ -173,6 +173,8 @@ extern CChain chainActive;
 // Best header we've seen so far (used for getheaders queries' starting points).
 extern CBlockIndex *pindexBestHeader;
 extern const std::string strMessageMagic;
+extern CWaitableCriticalSection csBestBlock;
+extern CConditionVariable cvBlockChange;
 extern bool fReindex;
 extern int nScriptCheckThreads;
 extern ::int64_t nTransactionFee;

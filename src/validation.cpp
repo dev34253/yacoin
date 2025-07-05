@@ -72,6 +72,8 @@ BlockMap mapBlockIndex;
 CChain chainActive;
 // Best header we've seen so far (used for getheaders queries' starting points).
 CBlockIndex *pindexBestHeader = nullptr;
+CWaitableCriticalSection csBestBlock;
+CConditionVariable cvBlockChange;
 size_t nCoinCacheUsage = 5000 * 300;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 CTxMemPool mempool;
