@@ -271,8 +271,6 @@ extern json_spirit::Value gettimechaininfo(const json_spirit::Array& params, boo
 extern json_spirit::Value getblockcount(const json_spirit::Array& params, bool fHelp); // in rpc/blockchain.cpp
 extern json_spirit::Value getwalletinfo(const json_spirit::Array& params, bool fHelp); // in rpc/blockchain.cpp
 extern json_spirit::Value getblockcount(const json_spirit::Array& params, bool fHelp); // in rpc/blockchain.cpp
-extern json_spirit::Value getYACprice(const json_spirit::Array& params, bool fHelp);
-extern double doGetYACprice(void);
 extern json_spirit::Value getdifficulty(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value settxfee(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getrawmempool(const json_spirit::Array& params, bool fHelp);

@@ -77,6 +77,8 @@ libyacoin_common_a_SOURCES= \
     compat/strnlen.cpp \
     coins.cpp \
     compressor.cpp \
+    core_read.cpp \
+    core_write.cpp \
     consensus/consensus.cpp \
     consensus/tx_verify.cpp \
     primitives/transaction.cpp \

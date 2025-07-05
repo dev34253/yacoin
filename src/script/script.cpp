@@ -239,6 +239,19 @@ bool CScript::IsPushOnly(const_iterator pc) const
     return true;
 }
 
+bool CScript::HasValidOps() const
+{
+    CScript::const_iterator it = begin();
+    while (it < end()) {
+        opcodetype opcode;
+        std::vector<unsigned char> item;
+        if (!GetOp(it, opcode, item) || opcode > MAX_OPCODE || item.size() > MAX_SCRIPT_ELEMENT_SIZE) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool CScript::IsPayToPublicKey() const
 {
     // Test for pay-to-pubkey CScript with both

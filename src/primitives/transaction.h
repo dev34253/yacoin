@@ -20,8 +20,6 @@ class CDiskTxPos;
 class CBlockIndex;
 class CTransaction;
 
-static const int SERIALIZE_TRANSACTION_NO_WITNESS = 0x40000000;
-
 /** An inpoint - a combination of a transaction and an index n into its vin */
 class CInPoint
 {
