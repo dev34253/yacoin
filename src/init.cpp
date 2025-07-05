@@ -12,6 +12,7 @@
 
 #include "addrman.h"
 #include "amount.h"
+#include "bitcoin-cli.h"
 #include "chain.h"
 #include "chainparams.h"
 //#include "compat/sanity.h"
