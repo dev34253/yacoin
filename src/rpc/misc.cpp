@@ -12,7 +12,7 @@
 #include "tokens/tokens.h"
 #include "tokens/tokendb.h"
 #include "base58.h"
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 #include "wallet/coincontrol.h"
 #include "init.h"
 #include "script/script.h"

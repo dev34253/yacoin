@@ -3,7 +3,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include "main.h"
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 #include "streams.h"
 #include "price.h"
 #include "consensus/validation.h"

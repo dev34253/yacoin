@@ -7,7 +7,7 @@
 
     #include "msvc_warnings.push.h"
 #endif
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 
 #include "chainparams.h"
 #include "consensus/validation.h"

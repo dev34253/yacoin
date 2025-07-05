@@ -16,7 +16,7 @@
 #include "platformstyle.h"
 #include "chainparams.h"
 #include "netbase.h"
-#include "bitcoinrpc.h" // TODO: TACA Remove this after supporting new RPC Command-Line Interface
+#include "rpc/bitcoinrpc.h" // TODO: TACA Remove this after supporting new RPC Command-Line Interface
 //#include "rpc/server.h" // TODO: TACA Support new RPC Command-Line Interface
 //#include "rpc/client.h" // TODO: TACA Support new RPC Command-Line Interface
 #include "util.h"

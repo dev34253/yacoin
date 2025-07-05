@@ -1,5 +1,5 @@
 #include "explorer.h"
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 #include "clientmodel.h"
 #include "guiutil.h"
 #include "main.h"

@@ -33,7 +33,7 @@
 //#include <univalue.h>
 
 // TACA: OLD LOGIC BEGIN
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 #include "streams.h"
 #include "script/standard.h"
 #include "warnings.h"

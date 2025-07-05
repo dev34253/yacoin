@@ -27,7 +27,7 @@
 #include "ui_interface.h"
 #include "validationinterface.h"
 
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 #include "random.h"
 
 #include <stdint.h>

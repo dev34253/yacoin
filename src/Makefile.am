@@ -109,15 +109,15 @@ libyacoin_common_a_SOURCES= \
     net_processing.cpp \
     protocol.cpp \
     pubkey.cpp \
-    bitcoinrpc.cpp \
+    rpc/bitcoinrpc.cpp \
     price.cpp \
     random_nonce.cpp \
-    rpctokens.cpp \
-    rpcnet.cpp \
-    rpcmining.cpp \
-    rpcmisc.cpp \
-    rpcblockchain.cpp \
-    rpcrawtransaction.cpp \
+    rpc/tokens.cpp \
+    rpc/net.cpp \
+    rpc/mining.cpp \
+    rpc/misc.cpp \
+    rpc/blockchain.cpp \
+    rpc/rawtransaction.cpp \
     script/interpreter.cpp \
     script/ismine.cpp \
     script/script.cpp \

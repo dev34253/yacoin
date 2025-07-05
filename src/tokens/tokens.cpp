@@ -25,7 +25,7 @@
 //#include "wallet/wallet.h"
 #include "wallet/wallet.h"
 //#include "rpc/protocol.h"
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 
 #include <iostream>
 #include <boost/algorithm/string.hpp>

@@ -1,7 +1,7 @@
 // Copyright (c) 2009-2012 Bitcoin Developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 
 #include "wallet/wallet.h"
 #include "streams.h"

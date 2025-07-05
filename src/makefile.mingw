@@ -236,7 +236,7 @@ obj/hmac_sha512.o \
 obj/cleanse.o \
 obj/lockedpool.o \
 obj/base58.o \
-obj/bitcoinrpc.o \
+obj/rpc/bitcoinrpc.o \
 obj/block.o \
 obj/coins.o \
 obj/compressor.o \
@@ -275,12 +275,12 @@ obj/feerate.o \
 obj/fees.o \
 obj/pow.o \
 obj/random_nonce.o \
-obj/rpcblockchain.o \
-obj/rpctokens.o \
-obj/rpcmining.o \
-obj/rpcmisc.o \
-obj/rpcnet.o \
-obj/rpcrawtransaction.o \
+obj/rpc/blockchain.o \
+obj/rpc/tokens.o \
+obj/rpc/mining.o \
+obj/rpc/misc.o \
+obj/rpc/net.o \
+obj/rpc/rawtransaction.o \
 obj/interpreter.o \
 obj/ismine.o \
 obj/script.o \

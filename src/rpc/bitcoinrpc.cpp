@@ -10,7 +10,7 @@
     #include "init.h"
  #endif
  #ifndef _BITCOINRPC_H_
-    #include "bitcoinrpc.h"
+    #include "rpc/bitcoinrpc.h"
  #endif
 
     #undef printf
@@ -26,7 +26,7 @@
 #include "sync.h"
 #include "ui_interface.h"
 #include "base58.h"
-#include "bitcoinrpc.h"
+#include "rpc/bitcoinrpc.h"
 #include "wallet/db.h"
 #include "net_processing.h"
 #include "warnings.h"

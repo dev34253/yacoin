@@ -223,7 +223,7 @@ HEADERS += \
     src/qt/transactionfilterproxy.h \
     src/qt/transactionview.h \
     src/qt/walletmodel.h \
-    src/bitcoinrpc.h \
+    src/rpc/bitcoinrpc.h \
     src/qt/overviewpage.h \
     src/qt/explorer.h \	
     src/qt/csvmodelwriter.h \
@@ -340,15 +340,15 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/qt/transactionfilterproxy.cpp \
     src/qt/transactionview.cpp \
     src/qt/walletmodel.cpp \
-    src/bitcoinrpc.cpp \
-    src/rpctokens.cpp \
+    src/rpc/bitcoinrpc.cpp \
+    src/rpc/tokens.cpp \
     src/rpcdump.cpp \
-    src/rpcnet.cpp \
-    src/rpcmining.cpp \
-    src/rpcmisc.cpp \
+    src/rpc/net.cpp \
+    src/rpc/mining.cpp \
+    src/rpc/misc.cpp \
     src/rpcwallet.cpp \
-    src/rpcblockchain.cpp \
-    src/rpcrawtransaction.cpp \
+    src/rpc/blockchain.cpp \
+    src/rpc/rawtransaction.cpp \
     src/qt/overviewpage.cpp \
    	src/qt/explorer.cpp \	
     src/qt/csvmodelwriter.cpp \
