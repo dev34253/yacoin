@@ -27,6 +27,27 @@ jobs:
         with:
           name: yacoin-qt-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
+  build-ubuntu-1604-container:
+    runs-on: ubuntu-latest
+    container: dev34253/yacoin-build:ubuntu.16.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: build
+        run: |
+          echo "Building Yacoin using container directive"
+          echo $GITHUB_WORKFLOW
+          echo $GITHUB_RUN_ID
+          echo $GITHUB_RUN_NUMBER
+          echo $GITHUB_ACTION
+          echo $GITHUB_ACTOR
+          echo $GITHUB_REPOSITORY
+          echo $GITHUB_EVENT_NAME
+          echo $GITHUB_SHA
+          ./autogen.sh
+          ./configure
+          make
+        env:
+          BUILDVERSION: ${{ github.run_number }}
   build-ubuntu-1604-functional-test:
     runs-on: ubuntu-latest  
     steps:
