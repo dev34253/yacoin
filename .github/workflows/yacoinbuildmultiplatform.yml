@@ -19,11 +19,11 @@ jobs:
           echo $GITHUB_SHA
           docker pull dev34253/yacoin-build:ubuntu.16.04
           docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER dev34253/yacoin-build:ubuntu.16.04
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoind-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoind
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoin-qt-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
@@ -69,11 +69,11 @@ jobs:
         run: |
           docker pull dev34253/yacoin-build:ubuntu.18.04
           docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER dev34253/yacoin-build:ubuntu.18.04
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoind-ubuntu-18.04
           path: /home/runner/work/yacoin/yacoin/release/yacoind
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoin-qt-ubuntu-18.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
