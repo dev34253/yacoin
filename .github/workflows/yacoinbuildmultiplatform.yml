@@ -3,7 +3,21 @@ name: Yacoin multi platform build
 on: [push]
 
 jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libboost-test-dev libboost-system-dev
+      - name: Run unit tests
+        run: |
+          cd src/test
+          make -f Makefile.standalone test
+  
   build-ubuntu-1604:
+    needs: unit-tests
     runs-on: ubuntu-latest  
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +42,7 @@ jobs:
           name: yacoin-qt-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
   build-ubuntu-1604-container:
+    needs: unit-tests
     runs-on: ubuntu-latest
     container: dev34253/yacoin-build:ubuntu.16.04
     steps:
@@ -51,6 +66,7 @@ jobs:
         env:
           BUILDVERSION: ${{ github.run_number }}
   build-ubuntu-1604-functional-test:
+    needs: unit-tests
     runs-on: ubuntu-latest  
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +80,7 @@ jobs:
           name: yacoind-low-difficulty-16.04
           path: /home/runner/work/yacoin/yacoin/src/yacoind
   build-ubuntu-1804:
+    needs: unit-tests
     runs-on: ubuntu-latest  
     steps:
       - uses: actions/checkout@v4
