@@ -11,6 +11,48 @@ N increases over time to increase memory requirements.
 10 minute PoS block targets.
 The PoW subsidy decreases as difficulty increases.
 Maximum PoW reward is 100 coins.
+
+## Testing
+
+YACoin includes comprehensive unit tests to ensure code quality and reliability.
+
+### Running Unit Tests
+
+**Standalone Test Suite** (Recommended)
+```bash
+cd src/test
+make -f Makefile.standalone
+make -f Makefile.standalone test
+```
+
+The standalone test suite includes 53 test cases covering:
+- Hash and string utilities
+- Network functionality
+- Cryptographic operations
+- Blockchain validation
+- Data structures (UTXO, mempool, peers)
+- Script validation engine
+- System utilities
+
+**Main Build System Tests** (When available)
+```bash
+./configure --enable-tests
+make
+make check
+```
+
+Note: The main build system currently has OpenSSL 3.0 compatibility issues.
+
+### Test Coverage
+
+The test suite provides comprehensive coverage of:
+- Core utility functions used throughout the codebase
+- Critical blockchain validation logic
+- Network and peer management
+- Script execution engine
+- System infrastructure components
+
+See `TEST_SUMMARY.md` for detailed test documentation.
 Development process
 Developers work in their own trees, then submit pull requests when they think their feature or bug fix is ready. For new features or enhancements to YACoin, please submit pull requests to YACoin testing. Please refer to: https://help.github.com/articles/using-pull-requests if you need any help.
 

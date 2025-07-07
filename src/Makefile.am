@@ -159,6 +159,14 @@ yacoin_test_SOURCES= \
   test/wallet_tests.cpp \
   test/uint160_tests.cpp \
   test/uint256_tests.cpp \
+  test/hash_tests.cpp \
+  test/string_utils_tests.cpp \
+  test/network_utils_tests.cpp \
+  test/crypto_utils_tests.cpp \
+  test/blockchain_validation_tests.cpp \
+  test/data_structures_tests.cpp \
+  test/script_validation_tests.cpp \
+  test/system_utilities_tests.cpp \
   init.cpp
 
 # FAILING tests
