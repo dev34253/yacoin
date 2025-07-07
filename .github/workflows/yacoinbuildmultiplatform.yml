@@ -31,8 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     container: dev34253/yacoin-build:ubuntu.16.04
     steps:
-      - uses: actions/checkout@v4
-      - name: build
+      - name: clone and build
         run: |
           echo "Building Yacoin using container directive"
           echo $GITHUB_WORKFLOW
@@ -43,6 +42,9 @@ jobs:
           echo $GITHUB_REPOSITORY
           echo $GITHUB_EVENT_NAME
           echo $GITHUB_SHA
+          git clone https://github.com/$GITHUB_REPOSITORY.git yacoin
+          cd yacoin
+          git checkout $GITHUB_SHA
           ./autogen.sh
           ./configure
           make
