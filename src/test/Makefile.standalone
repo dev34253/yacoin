@@ -1,0 +1,40 @@
+# Standalone makefile for new YaCoin unit tests
+# This builds tests independently of the main build system
+
+CXX = g++
+CXXFLAGS = -std=c++11 -Wall -Wextra -O2
+INCLUDES = -I../
+LIBS = -lboost_unit_test_framework -lboost_system
+
+# Test source files
+TEST_SOURCES = standalone_test_runner.cpp \
+               hash_tests.cpp \
+               string_utils_tests.cpp \
+               network_utils_tests.cpp \
+               crypto_utils_tests.cpp \
+               blockchain_validation_tests.cpp \
+               data_structures_tests.cpp \
+               script_validation_tests.cpp \
+               system_utilities_tests.cpp
+
+# Output binary
+TEST_BINARY = yacoin_new_tests
+
+# Build target
+$(TEST_BINARY): $(TEST_SOURCES)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
+
+# Run tests
+test: $(TEST_BINARY)
+	./$(TEST_BINARY) --log_level=test_suite
+
+# Clean
+clean:
+	rm -f $(TEST_BINARY)
+
+# Install dependencies (Ubuntu/Debian)
+install-deps:
+	sudo apt-get update
+	sudo apt-get install -y libboost-test-dev libboost-system-dev
+
+.PHONY: test clean install-deps
