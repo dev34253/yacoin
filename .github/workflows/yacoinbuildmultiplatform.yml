@@ -6,7 +6,7 @@ jobs:
   build-ubuntu-1604:
     runs-on: ubuntu-latest  
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: build
         run: |
           echo $GITHUB_WORKFLOW
@@ -19,40 +19,63 @@ jobs:
           echo $GITHUB_SHA
           docker pull dev34253/yacoin-build:ubuntu.16.04
           docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER dev34253/yacoin-build:ubuntu.16.04
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoind-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoind
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoin-qt-ubuntu-16.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
+  build-ubuntu-1604-container:
+    runs-on: ubuntu-latest
+    container: dev34253/yacoin-build:ubuntu.16.04
+    steps:
+      - name: clone and build
+        run: |
+          echo "Building Yacoin using container directive"
+          echo $GITHUB_WORKFLOW
+          echo $GITHUB_RUN_ID
+          echo $GITHUB_RUN_NUMBER
+          echo $GITHUB_ACTION
+          echo $GITHUB_ACTOR
+          echo $GITHUB_REPOSITORY
+          echo $GITHUB_EVENT_NAME
+          echo $GITHUB_SHA
+          git clone https://github.com/$GITHUB_REPOSITORY.git yacoin
+          cd yacoin
+          git checkout $GITHUB_SHA
+          ./autogen.sh
+          ./configure
+          make
+        env:
+          BUILDVERSION: ${{ github.run_number }}
   build-ubuntu-1604-functional-test:
     runs-on: ubuntu-latest  
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: build
         run: |
           docker pull dev34253/yacoin-build:ubuntu.16.04
           docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /bin/bash dev34253/yacoin-build:ubuntu.16.04 -c "cd /src && ./autogen.sh && ./configure --with-gui=no --enable-low-difficulty-for-development && make -j 2"
           docker run -v /home/runner/work/yacoin/yacoin:/src --entrypoint /src/test/functional/test_runner.py dev34253/yacoin-build:ubuntu.16.04 -j 1
-      - uses: actions/upload-artifact@v1
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoind-low-difficulty-16.04
           path: /home/runner/work/yacoin/yacoin/src/yacoind
   build-ubuntu-1804:
     runs-on: ubuntu-latest  
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: build
         run: |
           docker pull dev34253/yacoin-build:ubuntu.18.04
           docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER dev34253/yacoin-build:ubuntu.18.04
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoind-ubuntu-18.04
           path: /home/runner/work/yacoin/yacoin/release/yacoind
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: yacoin-qt-ubuntu-18.04
           path: /home/runner/work/yacoin/yacoin/release/yacoin-qt
