@@ -33,6 +33,8 @@
 
 #include <univalue.h>
 
+extern uint64_t nHashesPerSec;
+
 double GetPoWMHashPS()
 {
     int nPoWInterval = 72;
@@ -64,9 +66,7 @@ UniValue gethashespersec(const JSONRPCRequest& request)
             "gethashespersec\n"
             "Returns a recent hashes per second performance measurement averaged over 30 seconds while generating.");
 
-    if (GetTimeMillis() - nHPSTimerStart > 30000)
-       return (int64_t)dHashesPerSec;
-    return (int64_t)0;
+   return (int64_t)nHashesPerSec;
 }
 
 UniValue getgenerate(const JSONRPCRequest& request)
@@ -660,7 +660,6 @@ UniValue submitblock(const JSONRPCRequest& request)
     }
     while (pwallet->IsLocked())
     {
-        //strMintWarning = strMintMessage;
         Sleep(nMillisecondsPerSecond);
     }
 

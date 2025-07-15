@@ -179,6 +179,8 @@ extern CScript COINBASE_FLAGS;
 extern CCriticalSection cs_main;
 typedef std::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
 extern BlockMap mapBlockIndex;
+extern uint64_t nLastBlockTx;
+extern uint64_t nLastBlockSize;
 /** The currently-connected chain of blocks (protected by cs_main). */
 extern CChain chainActive;
 // Best header we've seen so far (used for getheaders queries' starting points).

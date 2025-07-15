@@ -58,9 +58,6 @@ inline ::int64_t PastDrift(::int64_t nTime)
 inline ::int64_t FutureDrift(::int64_t nTime) 
     { return nTime + nMaxClockDrift; } // up to 2 hours from the future
 
-extern ::uint64_t nLastBlockTx;
-extern ::uint64_t nLastBlockSize;
-extern ::uint32_t nLastCoinStakeSearchInterval;
 extern unsigned char pchMessageStart[4];
 
 // Settings

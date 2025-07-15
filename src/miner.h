@@ -212,8 +212,5 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey);
 /** Base sha256 mining transform */
 void SHA256Transform(void* pstate, void* pinput, const void* pinit);
 
-extern double dHashesPerSec;
-extern ::int64_t nHPSTimerStart;
-
 int GenerateYacoins(bool fGenerate, int nThreads, int nblocks = -10);
 #endif  // NOVACOIN_MINER_H
