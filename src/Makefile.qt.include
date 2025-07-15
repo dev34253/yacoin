@@ -364,112 +364,7 @@ BITCOIN_QT_BASE_CPP = \
   qt/splashscreen.cpp \
   qt/trafficgraphwidget.cpp \
   qt/utilitydialog.cpp \
-  tokens/tokentypes.cpp \
-  tokens/tokendb.cpp \
-  tokens/tokens.cpp \
-  chain.cpp \
-  chainparams.cpp \
-  chainparamsbase.cpp \
-  crypto/aes.cpp \
-  crypto/siphash.cpp \
-  crypto/chacha20.cpp \
-  crypto/sha1.cpp \
-  crypto/sha256.cpp \
-  crypto/sha512.cpp \
-  crypto/ripemd160.cpp \
-  crypto/hmac_sha256.cpp \
-  crypto/hmac_sha512.cpp \
-  compat/strnlen.cpp \
-  coins.cpp \
-  compressor.cpp \
-  core_read.cpp \
-  core_write.cpp \
-  consensus/consensus.cpp \
-  consensus/tx_verify.cpp \
-  primitives/transaction.cpp \
-  primitives/block.cpp \
-  merkleblock.cpp \
-  blockencodings.cpp \
-  policy/policy.cpp \
-  policy/feerate.cpp \
-  policy/fees.cpp \
-  pow.cpp \
-  support/cleanse.cpp \
-  support/lockedpool.cpp \
-  init.cpp \
-  dbwrapper.cpp \
-  txdb.cpp \
-  hash.cpp \
-  httprpc.cpp \
-  httpserver.cpp \
-  base58.cpp \
-  clientversion.cpp \
-  checkpoints.cpp \
-  netbase.cpp \
-  addrman.cpp \
-  addrdb.cpp \
-  bloom.cpp \
-  threadinterrupt.cpp \
-  key.cpp \
-  fs.cpp \
-  validation.cpp \
-  validationinterface.cpp \
-  scheduler.cpp \
-  torcontrol.cpp \
-  random.cpp \
-  keystore.cpp \
-  kernelrecord.cpp \
-  LibBoolEE.cpp \
-  stun.cpp \
-  miner.cpp \
-  main.cpp \
-  net.cpp \
-  arith_uint256.cpp \
-  net_processing.cpp \
-  protocol.cpp \
-  pubkey.cpp \
-  price.cpp \
-  random_nonce.cpp \
-  rpc/tokens.cpp \
-  rpc/net.cpp \
-  rpc/mining.cpp \
-  rpc/misc.cpp \
-  rpc/blockchain.cpp \
-  rpc/rawtransaction.cpp \
-  rpc/server.cpp \
-  rpc/protocol.cpp \
-  rpc/client.cpp \
-  script/interpreter.cpp \
-  script/ismine.cpp \
-  script/script.cpp \
-  script/script_error.cpp \
-  script/sigcache.cpp \
-  script/sign.cpp \
-  script/standard.cpp \
-  sync.cpp \
-  util.cpp \
-  utilstrencodings.cpp \
-  utilmoneystr.cpp \
-  utiltime.cpp \
-  ui_interface.cpp \
-  netaddress.cpp \
-  timedata.cpp \
-  warnings.cpp \
-  txmempool.cpp \
-  wallet/crypter.cpp \
-  wallet/db.cpp \
-  wallet/rpcdump.cpp \
-  wallet/rpcwallet.cpp \
-  wallet/wallet.cpp \
-  wallet/walletdb.cpp \
-  noui.cpp \
-  kernel.cpp \
-  pbkdf2.cpp \
-  scrypt.cpp \
-  scrypt-x86.S \
-  scrypt-x86_64.S \
-  scrypt-generic.cpp \
-  scrypt-jane/scrypt-jane.c  
+  init.cpp
 
 BITCOIN_QT_WINDOWS_CPP = qt/winshutdownmonitor.cpp
 
@@ -565,7 +460,7 @@ qt_yacoin_qt_LDADD = qt/libbitcoinqt.a $(LIBBITCOIN_SERVER)
 if ENABLE_WALLET
 qt_yacoin_qt_LDADD += $(LIBBITCOIN_WALLET)
 endif
-qt_yacoin_qt_LDADD += $(LIBUNIVALUE) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) $(BOOST_LIBS) $(QT_LIBS) $(QT_DBUS_LIBS) $(QR_LIBS) \
+qt_yacoin_qt_LDADD += $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBBITCOIN_UTIL) $(LIBBITCOIN_CONSENSUS) $(LIBBITCOIN_CRYPTO) $(LIBUNIVALUE) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) $(BOOST_LIBS) $(QT_LIBS) $(QT_DBUS_LIBS) $(QR_LIBS) \
   $(PROTOBUF_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBSECP256K1) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS)
 qt_yacoin_qt_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(QT_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)
 qt_yacoin_qt_LIBTOOLFLAGS = --tag CXX
@@ -575,7 +470,7 @@ QT_QM=$(QT_TS:.ts=.qm)
 
 SECONDARY: $(QT_QM)
 
-$(srcdir)/qt/bitcoinstrings.cpp: $(libbitcoin_server_a_SOURCES) $(libbitcoin_wallet_a_SOURCES)
+$(srcdir)/qt/bitcoinstrings.cpp: $(libbitcoin_server_a_SOURCES) $(libbitcoin_wallet_a_SOURCES) $(libbitcoin_common_a_SOURCES) $(libbitcoin_consensus_a_SOURCES) $(libbitcoin_util_a_SOURCES)
 	@test -n $(XGETTEXT) || echo "xgettext is required for updating translations"
 	$(AM_V_GEN) cd $(srcdir); XGETTEXT=$(XGETTEXT) PACKAGE_NAME="$(PACKAGE_NAME)" COPYRIGHT_HOLDERS="$(COPYRIGHT_HOLDERS)" COPYRIGHT_HOLDERS_SUBSTITUTION="$(COPYRIGHT_HOLDERS_SUBSTITUTION)" $(PYTHON) ../share/qt/extract_strings_qt.py $^
 
@@ -585,9 +480,10 @@ translate: $(srcdir)/qt/bitcoinstrings.cpp $(QT_FORMS_UI) $(QT_FORMS_UI) $(BITCO
 
 $(QT_QRC_LOCALE_CPP): $(QT_QRC_LOCALE) $(QT_QM)
 	@test -f $(RCC)
-	@test -f $(@D)/$(<F) || cp -f $< $(@D)
-	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(RCC) -name bitcoin_locale $(@D)/$(<F) | \
+	@cp -f $< $(@D)/temp_$(<F)
+	$(AM_V_GEN) QT_SELECT=$(QT_SELECT) $(RCC) -name bitcoin_locale $(@D)/temp_$(<F) | \
 	  $(SED) -e '/^\*\*.*Created:/d' -e '/^\*\*.*by:/d' > $@
+	@rm $(@D)/temp_$(<F)
 
 $(QT_QRC_CPP): $(QT_QRC) $(QT_FORMS_H) $(RES_ICONS) $(RES_IMAGES) $(RES_MOVIES) $(PROTOBUF_H)
 	@test -f $(RCC)

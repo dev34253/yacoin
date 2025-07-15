@@ -57,7 +57,7 @@ class VersionEdit {
   }
 
   // Add the specified file at the specified number.
-  // REQUIRES: This clientversion.has not been saved (see VersionSet::SaveTo)
+  // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
   void AddFile(int level, uint64_t file,
                uint64_t file_size,

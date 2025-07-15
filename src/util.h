@@ -460,7 +460,6 @@ extern ::uint32_t
     nEpochInterval;
 extern ::int64_t
     nYac10HardforkTime;
-extern std::string strMiscWarning;
 extern unsigned char nFactorAtHardfork;
 
 extern unsigned long long getTotalSystemMemory( void );

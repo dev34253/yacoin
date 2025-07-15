@@ -34,9 +34,9 @@ LIBBITCOIN_CRYPTO=crypto/libbitcoin_crypto.a
 LIBBITCOINQT=qt/libbitcoinqt.a
 LIBSECP256K1=secp256k1/libsecp256k1.la
 
-if BUILD_BITCOIN_LIBS
-LIBBITCOINCONSENSUS=libbitcoinconsensus.la
-endif
+#if BUILD_BITCOIN_LIBS
+#LIBBITCOINCONSENSUS=libbitcoinconsensus.la
+#endif
 if ENABLE_WALLET
 LIBBITCOIN_WALLET=libbitcoin_wallet.a
 endif
@@ -50,10 +50,10 @@ $(LIBSECP256K1): $(wildcard secp256k1/src/*) $(wildcard secp256k1/include/*)
 EXTRA_LIBRARIES += \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBBITCOIN_UTIL) \
-  $(LIBYACOIN_COMMON) \
+  $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_CONSENSUS) \
   $(LIBBITCOIN_SERVER) \
-  $(LIBYACOIN_CLI) \
+  $(LIBBITCOIN_CLI) \
   $(LIBBITCOIN_WALLET)
 
 lib_LTLIBRARIES = $(LIBBITCOINCONSENSUS)
@@ -200,25 +200,29 @@ libbitcoin_server_a_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 libbitcoin_server_a_SOURCES = \
   addrdb.cpp \
   addrman.cpp \
+  bloom.cpp \
   blockencodings.cpp \
   chain.cpp \
   checkpoints.cpp \
   consensus/consensus.cpp \
   consensus/tx_verify.cpp \
+  dbwrapper.cpp \
   httprpc.cpp \
   httpserver.cpp \
-  init.cpp \
-  dbwrapper.cpp \
+  kernel.cpp \
+  main.cpp \
   merkleblock.cpp \
   miner.cpp \
   net.cpp \
   net_processing.cpp \
   noui.cpp \
+  pbkdf2.cpp \
   policy/fees.cpp \
   policy/policy.cpp \
   pow.cpp \
-  rest.cpp \
+  random_nonce.cpp \
   rpc/blockchain.cpp \
+  rpc/client.cpp \
   rpc/mining.cpp \
   rpc/misc.cpp \
   rpc/net.cpp \
@@ -227,6 +231,11 @@ libbitcoin_server_a_SOURCES = \
   rpc/tokens.cpp \
   script/sigcache.cpp \
   script/ismine.cpp \
+  scrypt.cpp \
+  scrypt-x86.S \
+  scrypt-x86_64.S \
+  scrypt-generic.cpp \
+  scrypt-jane/scrypt-jane.c \
   timedata.cpp \
   tokens/tokendb.cpp \
   tokens/tokens.cpp \
@@ -416,20 +425,20 @@ yacoin_cli_LDADD += $(BOOST_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(EVENT_LIBS)
 #
 
 # bitcoinconsensus library #
-if BUILD_BITCOIN_LIBS
-include_HEADERS = script/bitcoinconsensus.h
-libbitcoinconsensus_la_SOURCES = $(crypto_libbitcoin_crypto_a_SOURCES) $(libbitcoin_consensus_a_SOURCES)
+#if BUILD_BITCOIN_LIBS
+#include_HEADERS = script/bitcoinconsensus.h
+#libbitcoinconsensus_la_SOURCES = $(crypto_libbitcoin_crypto_a_SOURCES) $(libbitcoin_consensus_a_SOURCES)
 
-if GLIBC_BACK_COMPAT
-  libbitcoinconsensus_la_SOURCES += compat/glibc_compat.cpp
-endif
+#if GLIBC_BACK_COMPAT
+#  libbitcoinconsensus_la_SOURCES += compat/glibc_compat.cpp
+#endif
 
-libbitcoinconsensus_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS)
-libbitcoinconsensus_la_LIBADD = $(LIBSECP256K1)
-libbitcoinconsensus_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL
-libbitcoinconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+#libbitcoinconsensus_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS)
+#libbitcoinconsensus_la_LIBADD = $(LIBSECP256K1)
+#libbitcoinconsensus_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL
+#libbitcoinconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 
-endif
+#endif
 #
 
 CTAES_DIST =  crypto/ctaes/bench.c
@@ -498,18 +507,18 @@ if EMBEDDED_LEVELDB
 include Makefile.leveldb.include
 endif
 
-if ENABLE_TESTS
-include Makefile.test.include
-endif
+#if ENABLE_TESTS
+#include Makefile.test.include
+#endif
 
-if ENABLE_BENCH
-include Makefile.bench.include
-endif
+#if ENABLE_BENCH
+#include Makefile.bench.include
+#endif
 
 if ENABLE_QT
 include Makefile.qt.include
 endif
 
-if ENABLE_QT_TESTS
-include Makefile.qttest.include
-endif
+#if ENABLE_QT_TESTS
+#include Makefile.qttest.include
+#endif
