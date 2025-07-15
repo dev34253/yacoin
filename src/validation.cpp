@@ -46,9 +46,6 @@
 
 #include "tokens/tokens.h"
 #include "tokens/tokendb.h"
-#ifdef QT_GUI
- #include "explorer.h"
-#endif
 
 #include <atomic>
 #include <sstream>
@@ -88,7 +85,7 @@ bool fBlockHashIndex = true;
 
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
 CAmount maxTxFee = DEFAULT_TRANSACTION_MAXFEE;
-
+CLastTxHash lastTxHash;
 //
 // GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
 //
@@ -184,6 +181,16 @@ namespace {
     /** Dirty block file entries. */
     std::set<int> setDirtyFileInfo;
 }
+
+CLastTxHash::CLastTxHash() {
+    lastHash = 0;
+}
+
+void CLastTxHash::storeLasthash(const uint256 &hash) {
+    lastHash = hash;
+}
+
+uint256 CLastTxHash::retrieveLastHash() { return lastHash; }
 
 CBlockIndex* FindForkInGlobalIndex(const CChain& chain, const CBlockLocator& locator)
 {
@@ -711,13 +718,10 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
     LogPrintf("AcceptToMemoryPoolWorker() : accepted %s (poolsz %zu)\n", hash.ToString().substr(0,10), pool.mapTx.size());
     GetMainSignals().TransactionAddedToMempool(ptx);
 
-#ifdef QT_GUI
     {
         LOCK(pool.cs);
-
-    lastTxHash.storeLasthash( hash );
+        lastTxHash.storeLasthash(hash);
     }
-#endif
     return true;
 }
 

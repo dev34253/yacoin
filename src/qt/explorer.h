@@ -42,16 +42,6 @@ class ClientModel;
 class CTransaction;
 //_____________________________________________________________________________
 const int nNumberOfExplorers = 2;
-class CLastTxHash {
-  public:
-    CLastTxHash();
-    void storeLasthash(const uint256 &hash);
-    uint256 retrieveLastHash(void);
-
-  private:
-    uint256 lastHash;
-    int explorer_counter;
-};
 //_____________________________________________________________________________
 //_____________________________________________________________________________
 //_____________________________________________________________________________
@@ -96,7 +86,6 @@ TX_nm               = 4,
     // virtual ~ExplorerPage();
     ~ExplorerPage();
 
-    CLastTxHash lastTxHashInside;
     // the table and transaction views, that like to be fed by "models"
     QTableView *pQTVblocks;
     QTableView *pQTVtransactions;
@@ -258,7 +247,5 @@ class TransactionExplorerPage : public QDialog
     void on_closeButton_clicked();
 };
 //_____________________________________________________________________________
-
-extern CLastTxHash lastTxHash;
 
 #endif // EXPLORER_H

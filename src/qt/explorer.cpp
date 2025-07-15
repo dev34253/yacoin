@@ -12,7 +12,6 @@
 #include <QMessageBox>
 #include <QTextBrowser>
 
-CLastTxHash lastTxHash;
 #include <QDateTime>
 
 #include <QStandardItemModel>
@@ -1813,17 +1812,3 @@ TransactionExplorerPage::~TransactionExplorerPage() {
 }
 
 void TransactionExplorerPage::on_closeButton_clicked() { close(); }
-
-CLastTxHash::CLastTxHash() {
-    lastHash = 0;
-    // nNumberOfExplorers = 2;
-    explorer_counter = nNumberOfExplorers;
-}
-
-void CLastTxHash::storeLasthash(const uint256 &hash) {
-    lastHash = hash;
-    if (0 == --explorer_counter)
-        explorer_counter = nNumberOfExplorers;
-}
-
-uint256 CLastTxHash::retrieveLastHash() { return lastHash; }

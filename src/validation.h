@@ -160,6 +160,17 @@ struct BlockHasher
     size_t operator()(const uint256& hash) const { return hash.GetCheapHash(); }
 };
 
+class CLastTxHash {
+  public:
+    CLastTxHash();
+    void storeLasthash(const uint256 &hash);
+    uint256 retrieveLastHash(void);
+
+  private:
+    uint256 lastHash;
+};
+
+extern CLastTxHash lastTxHash;
 /**
  * Global state
  */

@@ -17,9 +17,6 @@
 #include "init.h"
 #include "checkqueue.h"
 #include "kernel.h"
-#ifdef QT_GUI
- #include "explorer.h"
-#endif
 #include "pow.h"
 #include "reverse_iterator.h"
 #include "random.h"

@@ -209,6 +209,7 @@ libbitcoin_server_a_SOURCES = \
   dbwrapper.cpp \
   httprpc.cpp \
   httpserver.cpp \
+  init.cpp \
   kernel.cpp \
   main.cpp \
   merkleblock.cpp \
@@ -381,7 +382,7 @@ nodist_libbitcoin_util_a_SOURCES = $(srcdir)/obj/build.h
 #
 
 # yacoind binary #
-yacoind_SOURCES = init.cpp
+yacoind_SOURCES = bitcoind.cpp
 yacoind_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 yacoind_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 yacoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)

@@ -19,12 +19,6 @@
 #include "utilmoneystr.h"
 #include "utiltime.h"
 
-//#include "txdb.h"
-//#include "tokens/tokens.h"
-//#ifdef QT_GUI
-// #include "explorer.h"
-//#endif
-
 CTxMemPoolEntry::CTxMemPoolEntry(const CTransactionRef& _tx, const CAmount& _nFee,
                                  int64_t _nTime, unsigned int _entryHeight,
                                  bool _spendsCoinbase, int64_t _sigOpsCost, LockPoints lp):
