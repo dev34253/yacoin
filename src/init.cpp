@@ -1736,6 +1736,7 @@ bool AppInit(int argc, char* argv[])
 //#endif
             if (gArgs.GetBoolArg("-daemon", false))
             {
+#if HAVE_DECL_DAEMON
                 fprintf(stdout, "Yacoin server starting\n");
 
                 // Daemonize
@@ -1743,6 +1744,10 @@ bool AppInit(int argc, char* argv[])
                     fprintf(stderr, "Error: daemon() failed: %s\n", strerror(errno));
                     return false;
                 }
+#else
+                fprintf(stderr, "Error: -daemon is not supported on this operating system\n");
+                return false;
+#endif // HAVE_DECL_DAEMON
             }
             // Lock data directory after daemonization
             if (!AppInitLockDataDirectory())

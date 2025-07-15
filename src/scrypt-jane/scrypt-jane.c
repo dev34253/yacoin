@@ -3,17 +3,10 @@
 
 	Public Domain or MIT License, whichever is easier
 */
-
-#ifdef _MSC_VER
-    #include <stdint.h>
-#endif
-
 #include <stdlib.h>
 
-#if defined( _WINDOWS )
-#if !defined( QT_GUI )
+#ifdef __cplusplus
 extern "C" {
-#endif
 #endif
 
 #include "scrypt-jane.h"
@@ -244,8 +237,6 @@ int scrypt(
 	scrypt_free(&V);
     return True;
 }
-#if defined( _WINDOWS )
-#if !defined( QT_GUI )
- }
-#endif
+#ifdef __cplusplus
+}
 #endif

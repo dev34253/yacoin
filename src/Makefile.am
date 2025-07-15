@@ -175,8 +175,8 @@ libyacoin_common_a_SOURCES= \
     scrypt-generic.cpp \
     scrypt-jane/scrypt-jane.c
 
-libyacoin_common_a_CPPFLAGS = $(BITCOIN_INCLUDES)
-libyacoin_common_a_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt -L$(srcdir)/src/secp256k1/.libs
+libyacoin_common_a_CPPFLAGS = $(BITCOIN_INCLUDES) $(MINIUPNPC_CPPFLAGS) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS)
+libyacoin_common_a_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -lpthread -L$(srcdir)/src/secp256k1/.libs
 
 # cli: shared between yacoin-cli and yacoin-qt
 libyacoin_cli_a_CPPFLAGS = $(BITCOIN_INCLUDES)
@@ -188,7 +188,7 @@ yacoind_SOURCES = init.cpp
 yacoind_LDADD = $(LIBYACOIN_COMMON)
 yacoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBLEVELDB) $(LIBLEVELDB_SSE42) $(LIBMEMENV) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(LIBSECP256K1) $(LIBUNIVALUE)
 yacoind_CPPFLAGS = $(BITCOIN_INCLUDES)
-yacoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt
+yacoind_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -lpthread
 
 # yacoin-cli binary #
 yacoin_cli_SOURCES = bitcoin-cli.cpp
@@ -224,7 +224,8 @@ clean-local:
 
 .rc.o:
 	@test -f $(WINDRES)
-	$(AM_V_GEN) $(WINDRES) -DWINDRES_PREPROC -i $< -o $@
+	## FIXME: How to get the appropriate modulename_CPPFLAGS in here?
+	$(AM_V_GEN) $(WINDRES) -DHAVE_CONFIG_H -DWINDRES_PREPROC -i $< -o $@
 
 # .mm.o:
 # 	$(AM_V_CXX) $(OBJCXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -275,5 +276,5 @@ yacoin_test_SOURCES= \
 yacoin_test_LDADD = $(LIBYACOIN_COMMON)
 yacoin_test_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBLEVELDB) $(LIBMEMENV)  $(BOOST_UNIT_TEST_FRAMEWORK_LIB)
 yacoin_test_CPPFLAGS = $(BITCOIN_INCLUDES) -DTESTS_ENABLED
-yacoin_test_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -ldl -lpthread -lrt
+yacoin_test_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -lpthread
 endif
