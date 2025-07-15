@@ -107,37 +107,12 @@ bool GetNodeStateStats(NodeId nodeid, CNodeStateStats &stats);
 void Misbehaving(NodeId nodeid, int howmuch);
 
 // Run an instance of the hash calculation thread
-void ThreadHashCalculation(void* parg);
+void ThreadHashCalculation();
 // Stop the hash calculation threads
 void ThreadHashCalculationQuit();
 
 /* Wallet functions */
 void RelayTransaction(const CTransaction& tx, CConnman* connman);
-
-/** Thread types */
-enum threadId
-{
-    THREAD_SOCKETHANDLER,
-    THREAD_OPENCONNECTIONS,
-    THREAD_MESSAGEHANDLER,
-    THREAD_MINER,
-    THREAD_RPCLISTENER,
-    THREAD_UPNP,
-    THREAD_DNSSEED,
-    THREAD_ADDEDCONNECTIONS,
-    THREAD_DUMPADDRESS,
-    THREAD_RPCHANDLER,
-    THREAD_MINTER,
-    THREAD_SCRIPTCHECK,
-    THREAD_HASHCALCULATION,
-
-    THREAD_MAX
-};
-
-void StartNode(void *parg);
-void StopNode();
-
-extern boost::array<int, THREAD_MAX> vnThreadsRunning;
 
 class CTransaction;
 #endif // BITCOIN_NET_PROCESSING_H

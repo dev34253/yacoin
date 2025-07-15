@@ -69,13 +69,7 @@ const int
     nBigLinearTrailingAverageLength = 2100, // arbitrary but 35 hours
     nNewBigLinearTrailingAverageLength = 10 * nBigLinearTrailingAverageLength, // 21000 arbitrary but 350 hours!!
     nExponentialTrailingAverageLength = 8;  //arbitrary
-int 
-    nStatisticsNumberOfBlocks2000 = 2000,
-    nStatisticsNumberOfBlocks1000 = 1000,
-    nStatisticsNumberOfBlocks200 = 200,
-    nStatisticsNumberOfBlocks100 = 100,
-    nStatisticsNumberOfBlocks,  // = nBigLinearTrailingAverageLength,    
-    nConsecutiveStakeSwitchHeight = 420000;  // see timesamps.h
+int nConsecutiveStakeSwitchHeight = 420000;  // see timesamps.h
 
 CBigNum bnProofOfStakeLegacyLimit(~uint256(0) >> 24); 
 CBigNum bnProofOfStakeLimit(~uint256(0) >> 27); 
@@ -84,13 +78,6 @@ CBigNum bnProofOfStakeLimit(~uint256(0) >> 27);
 int nSyncStarted = 0;
 
 CMedianFilter<int> cPeerBlockCounts(5, 0); // Amount of blocks that other nodes claim to have
-
-::int64_t
-    nLongAverageBP2000 = 0,
-    nLongAverageBP1000 = 0,
-    nLongAverageBP200 = 0,
-    nLongAverageBP100 = 0,
-    nLongAverageBP = 0;
 
 // Blocks that are in flight, and that are in the queue to be downloaded.
 // Protected by cs_main.

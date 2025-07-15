@@ -61,84 +61,19 @@ static CCheckQueue<CHashCalculation> hashCalculationQueue(200);
 boost::mutex mapHashmutex;
 std::map<uint256, uint256> mapHash;
 int nHashCalcThreads = 0;
-boost::array<int, THREAD_MAX> vnThreadsRunning;
 const unsigned int nPoWTargetSpacing = nStakeTargetSpacing;
 
-void ThreadHashCalculation(void*)
+void ThreadHashCalculation()
 {
-    ++vnThreadsRunning[THREAD_HASHCALCULATION];
+    LogPrintf("ThreadHashCalculation start\n");
     RenameThread("yacoin-hashcalc");
     hashCalculationQueue.Thread();
     LogPrintf("ThreadHashCalculation shutdown\n");
-    --vnThreadsRunning[THREAD_HASHCALCULATION];
 }
 
 void ThreadHashCalculationQuit()
 {
     hashCalculationQueue.Quit();
-}
-
-void StartNode(void *parg)
-{
-    // Make this thread recognisable as the startup thread
-    RenameThread("yacoin-start");
-
-#ifdef WIN32
-    // Enable away mode and prevent the sleep idle time-out.
-    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED
-#ifdef _MSC_VER
-                            | ES_AWAYMODE_REQUIRED
-#endif
-    );
-#endif
-
-    //
-    // Start threads
-    //
-    // Generate coins in the background
-    GenerateYacoins(gArgs.GetBoolArg("-gen", DEFAULT_GENERATE), gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS));
-}
-
-void StopNode()
-{
-    LogPrintf("StopNode()\n");
-    fShutdown = true;
-
-#ifdef WIN32
-    // Clear EXECUTION_STATE flags to disable away mode and allow the system to
-    // idle to sleep normally.
-    SetThreadExecutionState(ES_CONTINUOUS);
-#endif
-
-    ::int64_t nStart = GetTime();
-    {
-        LOCK(cs_main);
-        ThreadScriptCheckQuit();
-        ThreadHashCalculationQuit();
-    }
-
-    while ((vnThreadsRunning[THREAD_RPCLISTENER] > 0) ||
-           (vnThreadsRunning[THREAD_RPCHANDLER] > 0) ||
-           (vnThreadsRunning[THREAD_MINER] > 0) ||
-           (vnThreadsRunning[THREAD_SCRIPTCHECK] > 0) ||
-           (vnThreadsRunning[THREAD_HASHCALCULATION] > 0)) {
-
-        if (vnThreadsRunning[THREAD_RPCLISTENER] > 0)
-            LogPrintf("ThreadRPCListener still running\n");
-
-        if (vnThreadsRunning[THREAD_RPCHANDLER] > 0)
-            LogPrintf("ThreadsRPCServer still running\n");
-
-        if (vnThreadsRunning[THREAD_MINER] > 0)
-            LogPrintf("ThreadMiner still running\n");
-
-        if (vnThreadsRunning[THREAD_SCRIPTCHECK] > 0)
-            LogPrintf("ThreadScriptCheck still running\n");
-
-        if (vnThreadsRunning[THREAD_HASHCALCULATION] > 0)
-            LogPrintf("ThreadHashCalculation still running\n");
-        Sleep(20 * nTenMilliseconds);
-    }
 }
 
 bool CHashCalculation::operator()()

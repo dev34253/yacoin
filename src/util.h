@@ -450,6 +450,7 @@ extern std::atomic<bool> fRequestShutdown;
 extern bool 
     fDebug,
     fShutdown,
+    fGenerateYacoins,
     fDaemon,
     fServer,
     fTestNet;

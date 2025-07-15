@@ -18,13 +18,6 @@ namespace boost
 class thread_group;
 } // namespace boost
 
-extern ::int64_t
-    nLongAverageBP2000,
-    nLongAverageBP1000,
-    nLongAverageBP200,
-    nLongAverageBP100,
-    nLongAverageBP;
-
 void StartShutdown();
 bool ShutdownRequested();
 /** Interrupt threads */

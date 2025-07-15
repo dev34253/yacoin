@@ -1641,13 +1641,12 @@ static bool FindUndoPos(CValidationState &state, int nFile, CDiskBlockPos &pos, 
 
 static CCheckQueue<CScriptCheck> scriptcheckqueue(128);
 
-void ThreadScriptCheck(void*)
+void ThreadScriptCheck()
 {
-    ++vnThreadsRunning[THREAD_SCRIPTCHECK];
+    LogPrintf("ThreadScriptCheck start\n");
     RenameThread("yacoin-scriptch");
     scriptcheckqueue.Thread();
     LogPrintf("ThreadScriptCheck shutdown\n");
-    --vnThreadsRunning[THREAD_SCRIPTCHECK];
 }
 
 void ThreadScriptCheckQuit()

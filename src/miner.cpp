@@ -682,7 +682,6 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey) {
 //_____________________________________________________________________________
 //_____________________________________________________________________________
 //
-static bool fGenerateBitcoins = false;
 static bool fLimitProcessors = false;
 static int nLimitProcessors = -1;
 
@@ -693,7 +692,7 @@ double dHashesPerSec;
 ::int64_t nHPSTimerStart;
 //_____________________________________________________________________________
 bool check_for_stop_mining(CBlockIndex* pindexPrev) {
-  if ((pindexPrev != chainActive.Tip()) || !fGenerateBitcoins || fShutdown) {
+  if ((pindexPrev != chainActive.Tip()) || !fGenerateYacoins || fShutdown) {
 #ifdef Yac1dot0
     LogPrintf(
         "new block or shutdown!\n"
@@ -733,13 +732,13 @@ static void YacoinMiner()  // here fProofOfStake is always false
   std::shared_ptr<CReserveScript> coinbase_script;
   pWallet->GetScriptForMining(coinbase_script);
 
-  while (fGenerateBitcoins && nBlocksToGenerate != 0) {
+  while (fGenerateYacoins && nBlocksToGenerate != 0) {
     while (IsInitialBlockDownload() || (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 && !fTestNet)) {
       Sleep(nMillisecondsPerSecond);
-      if (fShutdown || !fGenerateBitcoins)  // someone shut off the miner
+      if (fShutdown || !fGenerateYacoins)  // someone shut off the miner
         break;
     }
-    if (fShutdown || !fGenerateBitcoins)  // someone shut off the miner
+    if (fShutdown || !fGenerateYacoins)  // someone shut off the miner
       break;
 
     while (pWallet->IsLocked()) {
@@ -802,7 +801,7 @@ static void YacoinMiner()  // here fProofOfStake is always false
     unsigned int nHashesDone = 0;
 
     LogPrintf("Starting mining loop\n");
-    while (fGenerateBitcoins && nBlocksToGenerate != 0) {
+    while (fGenerateYacoins && nBlocksToGenerate != 0) {
       unsigned int nNonceFound;
 
       nNonceFound = scanhash_scrypt((char*)&pblock->nVersion,
@@ -863,35 +862,7 @@ static void YacoinMiner()  // here fProofOfStake is always false
             {
               dHashesPerSec =
                   1000.0 * nHashCounter / (GetTimeMillis() - nHPSTimerStart);
-              LogPrintf(
-                  "\n"
-                  "hashmeter %3d CPU%s %.1f hash/s\n",
-                  vnThreadsRunning[THREAD_MINER],
-                  (vnThreadsRunning[THREAD_MINER] > 1) ? "s" : "",
-                  dHashesPerSec);
-              if ((nStatisticsNumberOfBlocks > 0) &&
-                  (nStatisticsNumberOfBlocks2000 > 0) &&
-                  (nStatisticsNumberOfBlocks1000 > 0) &&
-                  (nStatisticsNumberOfBlocks200 > 0) &&
-                  (nStatisticsNumberOfBlocks100 > 0)) {
-                LogPrintf("long average block period %" PRId64
-                          " sec (divisor %d)\n"
-                          "long average block period %" PRId64
-                          " sec (divisor %d)\n"
-                          "long average block period %" PRId64
-                          " sec (divisor %d)\n"
-                          "long average block period %" PRId64
-                          " sec (divisor %d)\n"
-                          "long average block period %" PRId64
-                          " sec (divisor %d)\n"
-                          "",
-                          nLongAverageBP, nStatisticsNumberOfBlocks,
-                          nLongAverageBP2000, nStatisticsNumberOfBlocks2000,
-                          nLongAverageBP1000, nStatisticsNumberOfBlocks1000,
-                          nLongAverageBP200, nStatisticsNumberOfBlocks200,
-                          nLongAverageBP100, nStatisticsNumberOfBlocks100);
-              }
-              LogPrintf("\n");
+              LogPrintf("\n hashmeter %.1f hash/s\n", dHashesPerSec);
               nHPSTimerStart = GetTimeMillis();
               nHashCounter = 0;
               nLogTime = GetTime();
@@ -905,10 +876,6 @@ static void YacoinMiner()  // here fProofOfStake is always false
           (g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL) == 0 &&
            !fTestNet))
         break;
-      if (fLimitProcessors &&
-          (vnThreadsRunning[THREAD_MINER] > nLimitProcessors)) {
-        return;
-      }
 
       // Update nTime every few seconds
       pblock->nTime = max(pindexPrev->GetMedianTimePast() + 1,
@@ -926,29 +893,6 @@ static void YacoinMiner()  // here fProofOfStake is always false
   }
   LogPrintf("CPUMiner stopped for proof-of-work\n");
 }
-//_____________________________________________________________________________
-
-void static ThreadYacoinMiner(void* parg) {
-  try {
-    ++vnThreadsRunning[THREAD_MINER];
-    YacoinMiner();
-    --vnThreadsRunning[THREAD_MINER];
-  } catch (std::exception& e) {
-    --vnThreadsRunning[THREAD_MINER];
-    PrintException(&e, "ThreadYacoinMiner()");
-  } catch (...) {
-    --vnThreadsRunning[THREAD_MINER];
-    PrintException(NULL, "ThreadYacoinMiner()");
-  }
-  nHPSTimerStart = 0;
-  if (0 == vnThreadsRunning[THREAD_MINER]) dHashesPerSec = 0;
-  LogPrintf("ThreadYacoinMiner exiting, %d thread%s remaining\n",
-         vnThreadsRunning[THREAD_MINER],
-         (0 < vnThreadsRunning[THREAD_MINER])
-             ? ((1 < vnThreadsRunning[THREAD_MINER]) ? "s" : "")
-             : "s");
-}
-//_____________________________________________________________________________
 
 int GenerateYacoins(bool fGenerate, int nThreads, int nblocks)
 {
@@ -961,7 +905,9 @@ int GenerateYacoins(bool fGenerate, int nThreads, int nblocks)
 
     if (minerThreads != NULL)
     {
+        fGenerateYacoins = false;
         minerThreads->interrupt_all();
+        minerThreads->join_all();
         delete minerThreads;
         minerThreads = NULL;
     }
@@ -971,7 +917,7 @@ int GenerateYacoins(bool fGenerate, int nThreads, int nblocks)
 
     minerThreads = new boost::thread_group();
     nBlocksToGenerate = nblocks;
-    fGenerateBitcoins = fGenerate;
+    fGenerateYacoins = fGenerate;
     nLimitProcessors = gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS);
 
     //Reset metrics
@@ -988,39 +934,3 @@ int GenerateYacoins(bool fGenerate, int nThreads, int nblocks)
 
     return(numCores);
 }
-
-// here we add the missing PoW mining code from 0.4.4
-//void GenerateYacoins(bool fGenerate, int nThreads, int nblocks) {
-//  fGenerateBitcoins = fGenerate;
-//  nLimitProcessors = gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS);
-//  if (nLimitProcessors == 0) fGenerateBitcoins = false;
-//  fLimitProcessors = (nLimitProcessors != -1);
-//
-//  if (fGenerate) {
-//    nBlocksToGenerate = nblocks;
-//    int nProcessors = boost::thread::hardware_concurrency();
-//
-//    LogPrintf("%d processors\n", nProcessors);
-//    if (nProcessors < 1) nProcessors = 1;
-//    if (fLimitProcessors && (nProcessors > nLimitProcessors))
-//      nProcessors = nLimitProcessors;
-//    int nAddThreads = nProcessors - vnThreadsRunning[THREAD_MINER];
-//
-//    LogPrintf("Starting %d YacoinMiner thread%s\n", nAddThreads,
-//           (1 < nAddThreads) ? "s" : "");
-//    for (int i = 0; i < nAddThreads; ++i) {
-//      if (!NewThread(ThreadYacoinMiner, nullptr))
-//        LogPrintf("Error: NewThread(ThreadBitcoinMiner) failed\n");
-//      Sleep(nTenMilliseconds);
-//    }
-//
-//    while (nBlocksToGenerate > 0) {
-//      Sleep(nMillisecondsPerSecond);
-//    }
-//  }
-//}
-//_____________________________________________________________________________
-//_____________________________________________________________________________
-#ifdef _MSC_VER
-#include "msvc_warnings.pop.h"
-#endif

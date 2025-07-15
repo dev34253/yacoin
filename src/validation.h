@@ -298,8 +298,7 @@ void LoadBlockRewardAndHighestDiff();
 /** Unload database information */
 void UnloadBlockIndex();
 /** Run an instance of the script checking thread */
-//void ThreadScriptCheck();
-void ThreadScriptCheck(void* parg);
+void ThreadScriptCheck();
 // Stop the script checking threads
 void ThreadScriptCheckQuit();
 /** Check whether we are doing an initial block download (synchronizing from disk or network) */

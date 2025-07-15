@@ -43,16 +43,6 @@ class CNode;
 // END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
 //
 
-//
-// Global state
-//
-extern int 
-    nStatisticsNumberOfBlocks2000,
-    nStatisticsNumberOfBlocks1000,
-    nStatisticsNumberOfBlocks200,
-    nStatisticsNumberOfBlocks100,
-    nStatisticsNumberOfBlocks;
-
 // PoS constants
 extern const unsigned int nOnedayOfAverageBlocks;
 

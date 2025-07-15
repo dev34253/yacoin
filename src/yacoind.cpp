@@ -44,7 +44,7 @@
 
 void WaitForShutdown(boost::thread_group* threadGroup)
 {
-    bool fShutdown = ShutdownRequested();
+    fShutdown = ShutdownRequested();
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {

@@ -181,12 +181,15 @@ void Interrupt(boost::thread_group& threadGroup)
     InterruptTorControl();
     if (g_connman)
         g_connman->Interrupt();
+    ThreadScriptCheckQuit();
+    ThreadHashCalculationQuit();
     threadGroup.interrupt_all();
 }
 
 void Shutdown()
 {
     LogPrintf("%s: In progress...\n", __func__);
+    fShutdown = true;
     static CCriticalSection cs_Shutdown;
     TRY_LOCK(cs_Shutdown, lockShutdown);
     if (!lockShutdown)
@@ -209,14 +212,10 @@ void Shutdown()
         pwallet->Flush(false);
     }
 #endif
-
     // Stop miner threads
     GenerateYacoins(false, 0, 0);
 
     MapPort(false);
-
-    // Stop all background threads: miner, rpc, script validation and hash calculation
-    StopNode();
 
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
@@ -981,14 +980,14 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     {
         LogPrintf("Using %u threads for script verification\n", nScriptCheckThreads);
         for (int i=0; i<nScriptCheckThreads-1; ++i)
-            NewThread(ThreadScriptCheck, NULL);
+            threadGroup.create_thread(&ThreadScriptCheck);
     }
 
     if (nHashCalcThreads)
     {
         LogPrintf("Using %u threads for hash calculation\n", nHashCalcThreads);
         for (int i=0; i<nHashCalcThreads-1; ++i)
-            NewThread(ThreadHashCalculation, NULL);
+            threadGroup.create_thread(&ThreadHashCalculation);
     }
 
     // Start the lightweight task scheduler thread
@@ -1574,9 +1573,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     // Generate coins in the background
     GenerateYacoins(gArgs.GetBoolArg("-gen", DEFAULT_GENERATE), gArgs.GetArg("-genproclimit", DEFAULT_GENERATE_THREADS));
-    if (!NewThread(StartNode, NULL))
-        InitError(_("Error: could not start node"));
-
     // ********************************************************* Step 12: finished
 
     SetRPCWarmupFinished();

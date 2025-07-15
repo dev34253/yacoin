@@ -198,8 +198,7 @@ unsigned int scanhash_scrypt(
 #else
         nTunedTo5seconds = 100;
 #endif
-const ::uint32_t
-    NArbitraryHashCount = nTunedTo5seconds;   
+const ::uint32_t NArbitraryHashCount = nTunedTo5seconds;
                                 // this is a function of the actual hps, 
                                 // which will vary from cpu to cpu, etc.
                                 // trying for ~5 seconds, noting that
@@ -231,8 +230,7 @@ const ::uint32_t
         data = &old_block_data;
         nOnce = &old_block_data.nonce;
     }
-    uint256
-        nT = *phashTarget;
+    uint256 nT = *phashTarget;
     unsigned char
       //hashTarget = (CBigNum().SetCompact(pdata->nBits)).getuint256(); // PoW hashTarget
         *hasht = (unsigned char *) &nT,
@@ -302,7 +300,7 @@ const ::uint32_t
 #endif
         }
 
-        if ((pindexPrev != chainActive.Tip()) || fShutdown)
+        if ((pindexPrev != chainActive.Tip()) || fShutdown || !fGenerateYacoins)
             break;
     }
     memcpy(result, hash, 32);

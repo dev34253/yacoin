@@ -581,6 +581,7 @@ unsigned char nFactorAtHardfork;
 ::uint32_t nEpochInterval = 21000;
 ::uint32_t nDifficultyInterval = nEpochInterval;
 bool fShutdown = false;
+bool fGenerateYacoins = false;
 bool fDaemon = false;
 bool fServer = false;
 bool fTestNet = false;
