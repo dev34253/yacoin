@@ -155,6 +155,7 @@ void ClientModel::updateTimer()
     // the following calls will acquire the required lock
     Q_EMIT mempoolSizeChanged(getMempoolSize(), getMempoolDynamicUsage());
     Q_EMIT bytesChanged(getTotalBytesRecv(), getTotalBytesSent());
+    Q_EMIT nFactorChanged(getNFactor());
 }
 
 void ClientModel::updateNumConnections(int numConnections)
