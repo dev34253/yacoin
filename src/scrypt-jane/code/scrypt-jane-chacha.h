@@ -131,7 +131,10 @@ scrypt_test_mix(void) {
 	};
 
 	int ret = 1;
+	// Commented out here because scrypt-jane-portable-x86.h isn't included when using Clang with osxcross, as they don't properly support inline assembly
+#if !defined(__clang__)
 	size_t cpuflags = detect_cpu();
+#endif
 
 #if defined(SCRYPT_CHACHA_XOP)
 	if (cpuflags & cpu_xop)

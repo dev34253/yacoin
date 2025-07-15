@@ -4,6 +4,7 @@
 	Public Domain or MIT License, whichever is easier
 */
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {

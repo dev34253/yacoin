@@ -18,12 +18,16 @@ const std::string
     #ifdef QT_GUI
         #ifdef _MSC_VER
             CLIENT_NAME("Yacoin-WM Windows Qt");
+        #elif defined(__APPLE__)
+            CLIENT_NAME("Yacoin-WM MacOS Qt");
         #else
             CLIENT_NAME("Yacoin-WM Qt");
         #endif
     #else
         #ifdef _MSC_VER
             CLIENT_NAME("Yacoin-WM Windows daemon");
+        #elif defined(__APPLE__)
+            CLIENT_NAME("Yacoin-WM MacOS daemon");
         #else
             CLIENT_NAME("Yacoin-WM daemon");
         #endif

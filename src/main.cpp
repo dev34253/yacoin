@@ -139,7 +139,7 @@ unsigned char GetNfactor(::int64_t nTimestamp, bool fYac1dot0BlockOrTx)
     if (n < 0)
         n = 0;
     if (n > 255)
-        LogPrintf("GetNfactor (%"PRId64") - something wrong(n == %d)\n", nTimestamp, n); // for g++
+        LogPrintf("GetNfactor (%lld) - something wrong(n == %d)\n", nTimestamp, n); // for g++
 
     // so n is between 0 and 0xff
     unsigned char N = (unsigned char)n;
