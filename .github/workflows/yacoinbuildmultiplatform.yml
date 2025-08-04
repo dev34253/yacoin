@@ -82,17 +82,17 @@ jobs:
 #   build-windows:
 #     runs-on: windows-latest  
 #     steps:
-#       - uses: actions/checkout@v2
+#       - uses: actions/checkout@v4
 #       - name: build
 #         run: |
 #           docker pull dev34253/yacoin-build:windows.latest
 #           docker run -v %CD%:c:\git\ydir\build\yacoin -e BUILDVERSION=%GITHUB_RUN_NUMBER% --entrypoint c:\git\bin\bash.exe dev34253/yacoin-build:windows.latest c:\git\ydir\build\yacoin\build-windows-in-docker.sh
 #         shell: cmd
-#       - uses: actions/upload-artifact@v1
+#       - uses: actions/upload-artifact@v4
 #         with:
 #           name: yacoin-qt-windows
 #           path: release/yacoin-qt.exe
-#       - uses: actions/upload-artifact@v1
+#       - uses: actions/upload-artifact@v4
 #         with:
 #           name: yacoind-windows
 #           path: src/yacoind.exe
