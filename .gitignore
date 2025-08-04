@@ -30,6 +30,7 @@ utils/downloads
 #compilation and Qt preprocessor part
 *.qm
 Makefile
+!depends/Makefile
 yacoin-qt
 #resources cpp
 qrc_*.cpp
