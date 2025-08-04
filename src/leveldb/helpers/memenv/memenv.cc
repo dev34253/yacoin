@@ -12,7 +12,6 @@
 #include <string.h>
 #include <string>
 #include <vector>
-#include <stdint.h> // for SIZE_MAX in Windows gcc build
 
 namespace leveldb {
 
@@ -274,6 +273,19 @@ class InMemoryEnv : public EnvWrapper {
     file->Ref();
     file_map_[fname] = file;
 
+    *result = new WritableFileImpl(file);
+    return Status::OK();
+  }
+
+  virtual Status NewAppendableFile(const std::string& fname,
+                                   WritableFile** result) {
+    MutexLock lock(&mutex_);
+    FileState** sptr = &file_map_[fname];
+    FileState* file = *sptr;
+    if (file == NULL) {
+      file = new FileState();
+      file->Ref();
+    }
     *result = new WritableFileImpl(file);
     return Status::OK();
   }

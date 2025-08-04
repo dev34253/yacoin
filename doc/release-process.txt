@@ -4,7 +4,7 @@ TODO - update the rest of these text files for YAC.
 
 * update (commit) version in sources
   yacoin-qt.pro
-  src/version.h
+  src/clientversion.h
   share/setup.nsi
   doc/README*
 

@@ -88,8 +88,10 @@ class BasicTransfer_Test(BitcoinTestFramework):
         transaction_id = self.nodes[0].sendtoaddress(address_1, 2)
         tx_details = self.nodes[0].gettransaction(transaction_id)
         self.log.info(str(tx_details))
-        assert_equal(tx_details['vout'][1]['value'],Decimal('2'))
-        assert_equal(tx_details['vout'][1]['scriptPubKey']['addresses'][0],address_1)
+        assert (
+            (tx_details['vout'][0]['value'] == Decimal('2') and tx_details['vout'][0]['scriptPubKey']['addresses'][0] == address_1) or
+            (tx_details['vout'][1]['value'] == Decimal('2') and tx_details['vout'][1]['scriptPubKey']['addresses'][0] == address_1)
+        )
         assert_equal(tx_details['confirmations'],Decimal('0'))
 
         self.mine_blocks(0, 10)

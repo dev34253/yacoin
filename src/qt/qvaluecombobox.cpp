@@ -1,3 +1,8 @@
+// Copyright (c) 2011-2016 The Bitcoin Core developers
+// Copyright (c) 2017-2025 The Yacoin Core developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "qvaluecombobox.h"
 
 QValueComboBox::QValueComboBox(QWidget *parent) :
@@ -16,12 +21,12 @@ void QValueComboBox::setValue(const QVariant &value)
     setCurrentIndex(findData(value, role));
 }
 
-void QValueComboBox::setRole(int role)
+void QValueComboBox::setRole(int _role)
 {
-    this->role = role;
+    this->role = _role;
 }
 
 void QValueComboBox::handleSelectionChanged(int idx)
 {
-    emit valueChanged();
+    Q_EMIT valueChanged();
 }

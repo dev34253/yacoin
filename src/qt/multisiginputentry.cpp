@@ -1,16 +1,13 @@
-#include <QApplication>
-#include <QClipboard>
-#include <string>
-#include <vector>
+#include <qt/multisiginputentry.h>
+#include <qt/forms/ui_multisiginputentry.h>
 
-#include "base58.h"
-#include "multisiginputentry.h"
-#include "ui_multisiginputentry.h"
-#include "main.h"
-#include "script.h"
-#include "util.h"
-#include "wallet.h"
-#include "walletmodel.h"
+#include <validation.h>
+#include <chainparams.h>
+#include <script/standard.h>
+#include <base58.h>
+#include <wallet/wallet.h>
+
+#include <QClipboard>
 
 
 MultisigInputEntry::MultisigInputEntry(QWidget *parent) : QFrame(parent), ui(new Ui::MultisigInputEntry), model(0)
@@ -43,7 +40,7 @@ bool MultisigInputEntry::validate()
 
 CTxIn MultisigInputEntry::getInput()
 {
-    unsigned int nOutput = ui->transactionOutput->currentIndex();
+    int nOutput = ui->transactionOutput->currentIndex();
     CTxIn input(COutPoint(txHash, nOutput));
 
     return input;
@@ -95,7 +92,7 @@ void MultisigInputEntry::on_pasteTransactionIdButton_clicked()
 
 void MultisigInputEntry::on_deleteButton_clicked()
 {
-    emit removeEntry(this);
+    Q_EMIT removeEntry(this);
 }
 
 void MultisigInputEntry::on_pasteRedeemScriptButton_clicked()
@@ -154,15 +151,15 @@ void MultisigInputEntry::on_transactionOutput_currentIndexChanged(int index)
 
         if(model)
         {
-             // Try to find the redeem script
-             CTxDestination dest;
-            if(ExtractDestination(script, dest))
-            {
-                CScriptID scriptID = boost::get<CScriptID>(dest);
-                CScript redeemScript;
-                if(model->getWallet()->GetCScript(scriptID, redeemScript))
-                    ui->redeemScript->setText(HexStr(redeemScript.begin(), redeemScript.end()).c_str());
-            }
+            // Try to find the redeem script
+            CTxDestination dest;
+            if(ExtractDestination(script, dest) && !vpwallets.empty())
+                {
+                    CScriptID scriptID = boost::get<CScriptID>(dest);
+                    CScript redeemScript;
+                    if(vpwallets[0]->GetCScript(scriptID, redeemScript))
+                        ui->redeemScript->setText(HexStr(redeemScript.begin(), redeemScript.end()).c_str());
+                }
         }
     }
     else
@@ -170,5 +167,5 @@ void MultisigInputEntry::on_transactionOutput_currentIndexChanged(int index)
         ui->redeemScript->setEnabled(false);
     }
 
-    emit updateAmount();
+    Q_EMIT updateAmount();
 }

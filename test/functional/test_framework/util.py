@@ -32,6 +32,29 @@ def assert_approx(v, vexp, vspan=0.00001):
     if v > vexp + vspan:
         raise AssertionError("%s > [%s..%s]" % (str(v), str(vexp - vspan), str(vexp + vspan)))
 
+def assert_contains(val, arr):
+    if not (val in arr):
+        raise AssertionError("val %s not in arr" % val)
+
+
+def assert_does_not_contain(val, arr):
+    if val in arr:
+        raise AssertionError("val %s is in arr" % val)
+
+
+def assert_contains_pair(key, val, dict_data):
+    if not (key in dict_data and val == dict_data[key]):
+        raise AssertionError("k/v pair (%s,%s) not in dict" % (key, val))
+
+
+def assert_contains_key(key, dict_data):
+    if key not in dict_data:
+        raise AssertionError("key %s is not in dict" % key)
+
+def assert_does_not_contain_key(key, dict_data):
+    if key in dict_data:
+        raise AssertionError("key %s is in dict" % key)
+
 def assert_fee_amount(fee, tx_size, fee_per_kB):
     """Assert the fee was in range"""
     target_fee = round(tx_size * fee_per_kB / 1000, 8)
@@ -317,7 +340,6 @@ def initialize_datadir(dirname, n, chain):
         f.write("rpcport=" + str(rpc_port(n)) + "\n")
         f.write("rpcpallowip=127.0.0.1\n")
         f.write("checkblocks=8\n")
-        f.write("irc=0\n")
         f.write("server=1\n")
         f.write("daemon=0\n")
         f.write("debug=1\n")
@@ -398,7 +420,7 @@ def connect_nodes(from_connection, node_num):
     ip_port = "127.0.0.1:" + str(p2p_port(node_num))
     from_connection.addnode(ip_port, "onetry")
     time.sleep(10)
-    # poll until version handshake complete to avoid race conditions
+    # poll until clientversion.handshake complete to avoid race conditions
     # with transaction relaying
     wait_until(lambda:  all(peer['version'] != 0 for peer in from_connection.getpeerinfo()[:-1]))
 

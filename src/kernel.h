@@ -4,16 +4,8 @@
 #ifndef PPCOIN_KERNEL_H
 #define PPCOIN_KERNEL_H
 
-#ifndef BITCOIN_MAIN_H
- #include "main.h"
-#endif
-
-#ifndef BITCOIN_WALLET_H
- #include "wallet.h"
-#endif
-
-// ChainDB upgrade time
-extern unsigned int nModifierUpgradeTime;
+#include "main.h"
+#include "wallet/wallet.h"
 
 extern bool fCoinsDataActual;
 
@@ -37,46 +29,19 @@ bool ComputeNextStakeModifier(
                               bool& fGeneratedStakeModifier
                              );
 
-bool CheckStakeKernelHash(
-                          unsigned int nBits, 
-                          const CBlock& blockFrom, 
-                          unsigned int nTxPrevOffset, 
-                          const CTransaction& txPrev, 
-                          const COutPoint& prevout, 
-                          unsigned int nTimeTx, 
-                          uint256& hashProofOfStake, 
-                          bool fPrintProofOfStake=false, 
-                          PosMiningStuff *miningStuff=NULL
-                         );
-
-// The stake modifier used to hash for a stake kernel is chosen as the stake
-// modifier about a selection interval later than the coin generating the kernel
-
-// you can't think that the above is an intelligible sentence!  I can't figure out
-// what it is saying, so it is pretty useless
-bool GetKernelStakeModifier(uint256 hashBlockFrom, ::uint64_t& nStakeModifier);
-
 // Check whether stake kernel meets hash target
 // Sets hashProofOfStake on success return
-bool CheckStakeKernelHash(
-                          unsigned int nBits, 
-                          const CBlock& blockFrom, 
-                          ::uint32_t nTxPrevOffset, 
-                          const CTransaction& txPrev, 
-                          const COutPoint& prevout, 
-                          ::uint32_t nTimeTx, 
-                          uint256& hashProofOfStake, 
-                          uint256& targetProofOfStake, 
-                          bool fPrintProofOfStake=false
-                         );
-
-
-// Scan given coins set for kernel solution
-bool ScanForStakeKernelHash(MetaMap &mapMeta, ::uint32_t nBits, ::uint32_t nTime, ::uint32_t nSearchInterval, CoinsSet::value_type &kernelcoin, ::uint32_t &nTimeTx, ::uint32_t &nBlockTime, ::uint64_t &nKernelsTried, ::uint64_t &nCoinDaysTried);
+bool CheckStakeKernelHash(unsigned int nBits, CBlockIndex* pindexPrev,
+                          const CBlockHeader& blockFrom,
+                          ::uint32_t nTxPrevOffset, const CTransaction& txPrev,
+                          const COutPoint& prevout, ::uint32_t nTimeTx,
+                          uint256& hashProofOfStake,
+                          uint256& targetProofOfStake,
+                          bool fPrintProofOfStake = false);
 
 // Check kernel hash target and coinstake signature
 // Sets hashProofOfStake on success return
-bool CheckProofOfStake(const CTransaction& tx, unsigned int nBits, uint256& hashProofOfStake, uint256& targetProofOfStake);
+bool CheckProofOfStake(CValidationState &state, CBlockIndex* pindexPrev, const CTransaction& tx, unsigned int nBits, uint256& hashProofOfStake, uint256& targetProofOfStake);
 
 // Get stake modifier checksum
 ::uint32_t GetStakeModifierChecksum(const CBlockIndex* pindex);

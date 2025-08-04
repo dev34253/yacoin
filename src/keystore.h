@@ -5,33 +5,19 @@
 #ifndef BITCOIN_KEYSTORE_H
 #define BITCOIN_KEYSTORE_H
 
-#ifndef __CRYPTER_H__
- #include "crypter.h"
-#endif
-
-#ifndef BITCOIN_SYNC_H
- #include "sync.h"
-#endif
+#include "key.h"
+#include "pubkey.h"
+#include "script/script.h"
+#include "script/standard.h"
+#include "sync.h"
 
 #include <boost/signals2/signal.hpp>
 #include <boost/variant.hpp>
 
+typedef std::vector<unsigned char, secure_allocator<unsigned char> > CKeyingMaterial;
+typedef std::map<CKeyID, std::pair<CPubKey, std::vector<unsigned char> > > CryptedKeyMap;
+
 class CScript;
-
-class CNoDestination {
-public:
-    friend bool operator==(const CNoDestination &a, const CNoDestination &b) { return true; }
-    friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
-};
-
-/** A txout script template with a specific destination. It is either:
-  * CNoDestination: no destination set
-  * CKeyID: TX_PUBKEYHASH destination
-  * CScriptID: TX_SCRIPTHASH destination
-  *
-  * A CTxDestination is the internal data type encoded in a CBitcoinAddress.
-  */
-typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 
 /** A virtual base class for key stores */
 class CKeyStore
@@ -43,7 +29,8 @@ public:
     virtual ~CKeyStore() {}
 
     // Add a key to the store.
-    virtual bool AddKey(const CKey& key) =0;
+    virtual bool AddKeyPubKey(const CKey &key, const CPubKey &pubkey) =0;
+    virtual bool AddKey(const CKey &key);
 
     // Check whether a key corresponding to a given address is present in the store.
     virtual bool HaveKey(const CKeyID &address) const =0;
@@ -62,17 +49,10 @@ public:
     virtual bool HaveWatchOnly(const CScript &dest) const =0;
     virtual bool HaveWatchOnly() const =0;
 
-    virtual bool GetSecret(const CKeyID &address, CSecret& vchSecret, bool &fCompressed) const
-    {
-        CKey key;
-        if (!GetKey(address, key))
-            return false;
-        vchSecret = key.GetSecret(fCompressed);
-        return true;
-    }
+    virtual bool GetSecret(const CScript& scriptPubKey, CKeyingMaterial& vchSecret, bool &fCompressed, txnouttype& whichTypeRet, CScript& subscript) const = 0;
 };
 
-typedef std::map<CKeyID, std::pair<CSecret, bool> > KeyMap;
+typedef std::map<CKeyID, CKey> KeyMap;
 typedef std::map<CScriptID, CScript > ScriptMap;
 typedef std::set<CScript> WatchOnlySet;
 
@@ -85,7 +65,7 @@ protected:
     WatchOnlySet setWatchOnly;
 
 public:
-    bool AddKey(const CKey& key);
+    bool AddKeyPubKey(const CKey& key, const CPubKey &pubkey);
     bool HaveKey(const CKeyID &address) const
     {
         bool result;
@@ -115,13 +95,13 @@ public:
             KeyMap::const_iterator mi = mapKeys.find(address);
             if (mi != mapKeys.end())
             {
-                keyOut.Reset();
-                keyOut.SetSecret((*mi).second.first, (*mi).second.second);
+                keyOut = mi->second;
                 return true;
             }
         }
         return false;
     }
+    bool GetSecret(const CScript& scriptPubKey, CKeyingMaterial& vchSecret, bool &fCompressed, txnouttype& whichTypeRet, CScript& subscript) const;
     virtual bool AddCScript(const CScript& redeemScript);
     virtual bool HaveCScript(const CScriptID &hash) const;
     virtual bool GetCScript(const CScriptID &hash, CScript& redeemScriptOut) const;
@@ -130,91 +110,6 @@ public:
     virtual bool RemoveWatchOnly(const CScript &dest);
     virtual bool HaveWatchOnly(const CScript &dest) const;
     virtual bool HaveWatchOnly() const;
-};
-
-typedef std::map<CKeyID, std::pair<CPubKey, std::vector<unsigned char> > > CryptedKeyMap;
-
-/** Keystore which keeps the private keys encrypted.
- * It derives from the basic key store, which is used if no encryption is active.
- */
-class CCryptoKeyStore : public CBasicKeyStore
-{
-private:
-    CryptedKeyMap mapCryptedKeys;
-
-    CKeyingMaterial vMasterKey;
-
-    // if fUseCrypto is true, mapKeys must be empty
-    // if fUseCrypto is false, vMasterKey must be empty
-    bool fUseCrypto;
-
-protected:
-    bool SetCrypted();
-
-    // will encrypt previously unencrypted keys
-    bool EncryptKeys(CKeyingMaterial& vMasterKeyIn);
-    bool DecryptKeys(const CKeyingMaterial& vMasterKeyIn);
-
-    bool Unlock(const CKeyingMaterial& vMasterKeyIn);
-
-public:
-    CCryptoKeyStore() : fUseCrypto(false)
-    {
-    }
-
-    bool IsCrypted() const
-    {
-        return fUseCrypto;
-    }
-
-    bool IsLocked() const
-    {
-        if (!IsCrypted())
-            return false;
-        bool result;
-        {
-            LOCK(cs_KeyStore);
-            result = vMasterKey.empty();
-        }
-        return result;
-    }
-
-    bool Lock();
-
-    virtual bool AddCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret);
-    bool AddKey(const CKey& key);
-    bool HaveKey(const CKeyID &address) const
-    {
-        {
-            LOCK(cs_KeyStore);
-            if (!IsCrypted())
-                return CBasicKeyStore::HaveKey(address);
-            return mapCryptedKeys.count(address) > 0;
-        }
-        return false;
-    }
-    bool GetKey(const CKeyID &address, CKey& keyOut) const;
-    bool GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) const;
-    void GetKeys(std::set<CKeyID> &setAddress) const
-    {
-        if (!IsCrypted())
-        {
-            CBasicKeyStore::GetKeys(setAddress);
-            return;
-        }
-        setAddress.clear();
-        CryptedKeyMap::const_iterator mi = mapCryptedKeys.begin();
-        while (mi != mapCryptedKeys.end())
-        {
-            setAddress.insert((*mi).first);
-            mi++;
-        }
-    }
-
-    /* Wallet status (encrypted, locked) changed.
-     * Note: Called without locks held.
-     */
-    boost::signals2::signal<void (CCryptoKeyStore* wallet)> NotifyStatusChanged;
 };
 
 #endif
