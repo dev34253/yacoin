@@ -17,6 +17,9 @@ jobs:
           echo $GITHUB_REPOSITORY
           echo $GITHUB_EVENT_NAME
           echo $GITHUB_SHA
+          echo "Running in folder in run agent:"
+          echo $PWD
+          pwd
           docker pull dev34253/yacoin-build:ubuntu.16.04-1
           docker run -v /home/runner/work/yacoin/yacoin:/src -e BUILDVERSION=$GITHUB_RUN_NUMBER dev34253/yacoin-build:ubuntu.16.04-1
       - uses: actions/upload-artifact@v4
