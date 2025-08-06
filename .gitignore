@@ -26,6 +26,8 @@ utils/downloads
 *.orig
 *.o
 *.patch
+!depends/patches/**/*.patch
+!depends/patches
 .yacoin
 #compilation and Qt preprocessor part
 *.qm
