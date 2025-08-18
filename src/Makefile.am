@@ -106,6 +106,10 @@ libyacoin_common_a_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -
 
 yacoind_SOURCES = init.cpp
 
+if TARGET_WINDOWS
+yacoind_SOURCES += yacoind-res.rc
+endif
+
 yacoind_LDADD = $(LIBYACOIN_COMMON)
 yacoind_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(LIBLEVELDB) $(LIBMEMENV)
 yacoind_CPPFLAGS = $(BITCOIN_INCLUDES)
