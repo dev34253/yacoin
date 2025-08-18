@@ -44,6 +44,7 @@ build
 .genjane
 .genleveldb
 yacoind-*
+!yacoind-res.rc
 autom4te.cache
 .deps
 .dirstamp
