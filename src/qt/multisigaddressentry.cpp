@@ -1,19 +1,16 @@
-#include <QApplication>
+#include <qt/multisigaddressentry.h>
+#include <qt/forms/ui_multisigaddressentry.h>
+
+#include <qt/guiutil.h>
+#include <qt/addressbookpage.h>
+#include <qt/walletmodel.h>
+#include <qt/addresstablemodel.h>
+
+#include <utilstrencodings.h>
+
 #include <QClipboard>
-#include <string>
-#include <vector>
 
-#include "addressbookpage.h"
-#include "addresstablemodel.h"
-#include "base58.h"
-#include "guiutil.h"
-#include "key.h"
-#include "multisigaddressentry.h"
-#include "ui_multisigaddressentry.h"
-#include "walletmodel.h"
-
-
-MultisigAddressEntry::MultisigAddressEntry(QWidget *parent) : QFrame(parent), ui(new Ui::MultisigAddressEntry), model(0)
+MultisigAddressEntry::MultisigAddressEntry(const PlatformStyle *_platformStyle, QWidget *parent) : QFrame(parent), ui(new Ui::MultisigAddressEntry), model(0), platformStyle(_platformStyle)
 {
     ui->setupUi(this);
     GUIUtil::setupAddressWidget(ui->address, this);
@@ -60,7 +57,7 @@ void MultisigAddressEntry::on_pasteButton_clicked()
 
 void MultisigAddressEntry::on_deleteButton_clicked()
 {
-    emit removeEntry(this);
+    Q_EMIT removeEntry(this);
 }
 
 void MultisigAddressEntry::on_addressBookButton_clicked()
@@ -68,7 +65,7 @@ void MultisigAddressEntry::on_addressBookButton_clicked()
     if(!model)
         return;
 
-    AddressBookPage dlg(AddressBookPage::ForSending, AddressBookPage::ReceivingTab, this);
+    AddressBookPage dlg(platformStyle, AddressBookPage::ForSelection, AddressBookPage::ReceivingTab, this);
     dlg.setModel(model->getAddressTableModel());
     if(dlg.exec())
     {
@@ -108,7 +105,7 @@ void MultisigAddressEntry::on_address_textChanged(const QString &address)
     {
         CPubKey vchPubKey;
         model->getPubKey(keyID, vchPubKey);
-        std::string pubkey = HexStr(vchPubKey.Raw());
+        std::string pubkey = HexStr(vchPubKey);
         if(!pubkey.empty())
             ui->pubkey->setText(pubkey.c_str());
     }

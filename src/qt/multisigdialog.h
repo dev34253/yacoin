@@ -1,45 +1,50 @@
-#ifndef MULTISIGDIALOG_H
-#define MULTISIGDIALOG_H
+// Copyright (c) 2013-2025 The Yacoin developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#ifndef YACOIN_QT_MULTISIGDIALOG_H
+#define YACOIN_QT_MULTISIGDIALOG_H
 
-#include <QWidget>
+//#include "multisigaddressentry.h"
+//#include "multisiginputentry.h"
+//#include "sendcoinsentry.h"
+//#include "walletmodel.h"
 
-#include "multisigaddressentry.h"
-#include "multisiginputentry.h"
-#include "sendcoinsentry.h"
-#include "walletmodel.h"
+#include <qt/platformstyle.h>
 
+#include <QDialog>
+
+class MultisigAddressEntry;
+class MultisigInputEntry;
+class WalletModel;
+class SendCoinsEntry;
 
 namespace Ui
 {
     class MultisigDialog;
 }
 
-class MultisigDialog : public QWidget
+class MultisigDialog : public QDialog
 {
     Q_OBJECT;
-  protected:
-    void keyPressEvent(QKeyEvent *);
 
   public:
-    explicit MultisigDialog(QWidget *parent);
-    MultisigDialog();
+    explicit MultisigDialog(const PlatformStyle *_platformStyle, QWidget *parent = 0);
     ~MultisigDialog();
     void setModel(WalletModel *model);
 
-  public slots:
+  public Q_SLOTS:
     MultisigAddressEntry * addPubKey();
     void clear();
     void updateRemoveEnabled();
     MultisigInputEntry * addInput();
     SendCoinsEntry * addOutput();
 
-  private:
+private:
     Ui::MultisigDialog *ui;
     WalletModel *model;
+    const PlatformStyle *platformStyle;
 
-  private slots:
-    void showEvent(QShowEvent *event);
-    void hideEvent(QHideEvent *event);
+  private Q_SLOTS:
     void on_createAddressButton_clicked();
     void on_copyMultisigAddressButton_clicked();
     void on_copyRedeemScriptButton_clicked();
@@ -58,4 +63,4 @@ class MultisigDialog : public QWidget
     void updateAmounts();
 };
 
-#endif // MULTISIGDIALOG_H
+#endif // YACOIN_QT_MULTISIGDIALOG_H

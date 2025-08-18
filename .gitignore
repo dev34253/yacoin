@@ -26,10 +26,13 @@ utils/downloads
 *.orig
 *.o
 *.patch
+!depends/patches/**/*.patch
+!depends/patches
 .yacoin
 #compilation and Qt preprocessor part
 *.qm
 Makefile
+!depends/Makefile
 yacoin-qt
 #resources cpp
 qrc_*.cpp
@@ -38,7 +41,6 @@ qrc_*.cpp
 #mac specific
 .DS_Store
 build
-README.md
 .genjane
 .genleveldb
 yacoind-*
@@ -46,8 +48,8 @@ autom4te.cache
 .deps
 .dirstamp
 Makefile.in
-src/config/bitcoin-config.h
-src/config/bitcoin-config.h.in
+src/config/yacoin-config.h
+src/config/yacoin-config.h.in
 src/config/stamp-h1
 src/qt/forms/ui*.h
 src/yacoin_test
@@ -64,3 +66,8 @@ Makefile.release
 object_script.yacoin-qt.Debug
 object_script.yacoin-qt.Release
 *.pyc
+.autotools
+.cproject
+.project
+.settings/
+src/univalue/gen

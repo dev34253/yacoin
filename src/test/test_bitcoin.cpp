@@ -3,9 +3,9 @@
 #define BOOST_TEST_MODULE BitcoinTestSuite
 #include <boost/test/unit_test.hpp>
 
-#include "db.h"
+#include "wallet/db.h"
 #include "main.h"
-#include "wallet.h"
+#include "wallet/wallet.h"
 
 extern CWallet* pwalletMain;
 extern CClientUIInterface uiInterface;
@@ -15,7 +15,7 @@ extern void noui_connect();
 
 struct TestingSetup {
     TestingSetup() {
-        fPrintToDebugger = true; // don't want to write to debug.log file
+        fPrintToDebugLog = true; // don't want to write to debug.log file
         noui_connect();
         bitdb.MakeMock();
         LoadBlockIndex(true);

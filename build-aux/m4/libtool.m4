@@ -3349,7 +3349,7 @@ dnl AC_DEFUN([AC_PROG_LD], [])
 #- --------------
 m4_defun([_LT_PATH_LD_GNU],
 [AC_CACHE_CHECK([if the linker ($LD) is GNU ld], lt_cv_prog_gnu_ld,
-[# I'd rather use --version here, but apparently some GNU lds only accept -v.
+[# I'd rather use --clientversion.here, but apparently some GNU lds only accept -v.
 case `$LD -v 2>&1 </dev/null` in
 *GNU* | *'with BFD'*)
   lt_cv_prog_gnu_ld=yes
