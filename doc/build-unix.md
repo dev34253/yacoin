@@ -21,7 +21,6 @@ To Build
 ./autogen.sh
 ./configure
 make
-make install # optional
 ```
 
 This will build yacoin-qt as well if the dependencies are met.

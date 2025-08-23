@@ -38,6 +38,7 @@ class CAddress;
 class CInv;
 class CRequestTracker;
 class CNode;
+class CBlockIndexWorkComparator;
 
 //
 // END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
@@ -62,6 +63,7 @@ extern unsigned char pchMessageStart[4];
 
 // Settings
 extern const uint256 entropyStore[38];
+extern bool fStoreBlockHashToDb;
 
 // Minimum disk space required - used in CheckDiskSpace()
 static const ::uint64_t nMinDiskSpace = 52428800;

@@ -9,6 +9,11 @@
 #include "amount.h"
 
 #include <QAbstractListModel>
+#include <string>
+
+QT_BEGIN_NAMESPACE
+class QNetworkProxy;
+QT_END_NAMESPACE
 
 QT_BEGIN_NAMESPACE
 class QNetworkProxy;

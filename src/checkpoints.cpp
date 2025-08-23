@@ -13,7 +13,7 @@
 #endif
 
 #ifndef BITCOIN_TXDB_H
- #include "txdb.h"
+ #include "txdb-leveldb.h"
 #endif
 #include "streams.h"
 #include "reverse_iterator.h"

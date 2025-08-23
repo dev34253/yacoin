@@ -64,6 +64,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
+#include "random.h"
 
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 static const bool DEFAULT_DISABLE_SAFEMODE = false;
@@ -617,7 +618,6 @@ ServiceFlags nLocalServices = NODE_NETWORK;
 
 bool AppInitBasicSetup()
 {
-    // ********************************************************* Step 1: setup
 #ifdef _MSC_VER
     // Turn off Microsoft heap dump noise
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
