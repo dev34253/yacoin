@@ -99,6 +99,11 @@ jobs:
           name: yacoind-windows
           path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoind.exe
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yacoin-cli-windows
+          path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoin-cli.exe
+          if-no-files-found: error
   build-macos:
     runs-on: ubuntu-latest
     steps:
@@ -109,10 +114,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: yacoin-qt-macos
-          path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoin-qt.exe
+          path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoin-qt
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: yacoind-macos
-          path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoind.exe
+          path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoind
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yacoin-cli-macos
+          path: /home/runner/work/yacoin/yacoin/release-root/bin/yacoin-cli
           if-no-files-found: error
