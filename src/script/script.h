@@ -395,8 +395,6 @@ inline std::string ValueString(const std::vector<unsigned char>& vch)
 
 typedef std::vector< unsigned char> CScriptBase;
 
-typedef std::vector< ::uint8_t> CScriptBase;
-
 /** Serialized script, used inside transaction inputs and outputs */
 class CScript : public CScriptBase
 {
