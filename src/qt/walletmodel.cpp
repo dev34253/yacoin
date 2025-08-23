@@ -132,7 +132,6 @@ void WalletModel::pollBalanceChanged()
 
         // Balance and number of transactions might have changed
         cachedNumBlocks = chainActive.Height();
-
         checkBalanceChanged();
         if(transactionTableModel)
             transactionTableModel->updateConfirmations();

@@ -38,6 +38,54 @@ class CAddress;
 class CInv;
 class CRequestTracker;
 class CNode;
+class CBlockIndexWorkComparator;
+
+//
+// GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
+//
+/** Global variable that point to the active tokens database (protected by cs_main) */
+extern CTokensDB *ptokensdb;
+
+/** Global variable that point to the active tokens (protected by cs_main) */
+extern CTokensCache *ptokens;
+
+/** Global variable that point to the tokens metadata LRU Cache (protected by cs_main) */
+extern CLRUCache<std::string, CDatabasedTokenData> *ptokensCache;
+extern bool fTokenIndex;
+extern bool fAddressIndex;
+//
+// END OF GLOBAL VARIABLES USED FOR TOKEN MANAGEMENT SYSTEM
+//
+
+//
+// FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
+//
+/** Flush all state, indexes and buffers to disk. */
+bool FlushTokenToDisk();
+bool AreTokensDeployed();
+CTokensCache* GetCurrentTokenCache();
+bool CheckTxTokens(
+    const CTransaction& tx, CValidationState& state, MapPrevTx inputs,
+    CTokensCache* tokenCache, bool fCheckMempool,
+    std::vector<std::pair<std::string, uint256> >& vPairReissueTokens);
+void UpdateTokenInfo(const CTransaction& tx, MapPrevTx& prevInputs, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
+void UpdateTokenInfoFromTxInputs(const COutPoint& out, const CTxOut& txOut, CTokensCache* tokensCache);
+void UpdateTokenInfoFromTxOutputs(const CTransaction& tx, int nHeight, uint256 blockHash, CTokensCache* tokensCache, std::pair<std::string, CBlockTokenUndo>* undoTokenData);
+bool GetAddressIndex(uint160 addressHash, int type, std::string tokenName,
+                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
+                     int start = 0, int end = 0);
+bool GetAddressIndex(uint160 addressHash, int type,
+                     std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,
+                     int start = 0, int end = 0);
+bool GetAddressUnspent(uint160 addressHash, int type, std::string tokenName,
+                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
+bool GetAddressUnspent(uint160 addressHash, int type,
+                       std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &unspentOutputs);
+/** Translation to a filesystem path */
+boost::filesystem::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
+//
+// END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
+//
 
 //
 // END OF FUNCTIONS USED FOR TOKEN MANAGEMENT SYSTEM
@@ -62,6 +110,7 @@ extern unsigned char pchMessageStart[4];
 
 // Settings
 extern const uint256 entropyStore[38];
+extern bool fStoreBlockHashToDb;
 
 // Minimum disk space required - used in CheckDiskSpace()
 static const ::uint64_t nMinDiskSpace = 52428800;

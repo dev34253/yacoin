@@ -395,6 +395,14 @@ inline std::string ValueString(const std::vector<unsigned char>& vch)
 
 typedef std::vector< unsigned char> CScriptBase;
 
+template <typename T>
+std::vector<unsigned char> ToByteVector(const T& in)
+{
+    return std::vector<unsigned char>(in.begin(), in.end());
+}
+
+typedef std::vector< ::uint8_t> CScriptBase;
+
 /** Serialized script, used inside transaction inputs and outputs */
 class CScript : public CScriptBase
 {

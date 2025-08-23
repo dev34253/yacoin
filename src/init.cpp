@@ -64,6 +64,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
+#include "random.h"
 
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 static const bool DEFAULT_DISABLE_SAFEMODE = false;
@@ -82,6 +83,18 @@ using std::map;
 bool fConfChange;
 bool fUseFastStakeMiner;
 bool fUseMemoryLog;
+
+std::unique_ptr<CConnman> g_connman;
+std::unique_ptr<PeerLogicValidation> peerLogic;
+
+#ifdef WIN32
+// Win32 LevelDB doesn't use filedescriptors, and the ones used for
+// accessing block files don't count towards the fd_set size limit
+// anyway.
+#define MIN_CORE_FILEDESCRIPTORS 0
+#else
+#define MIN_CORE_FILEDESCRIPTORS 150
+#endif
 
 std::unique_ptr<CConnman> g_connman;
 std::unique_ptr<PeerLogicValidation> peerLogic;
@@ -617,7 +630,6 @@ ServiceFlags nLocalServices = NODE_NETWORK;
 
 bool AppInitBasicSetup()
 {
-    // ********************************************************* Step 1: setup
 #ifdef _MSC_VER
     // Turn off Microsoft heap dump noise
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
