@@ -42,9 +42,6 @@
 
 #include <boost/thread.hpp>
 
-#include <boost/thread.hpp>
-#include "scheduler.h"
-
 #include <QApplication>
 #include <QDebug>
 #include <QLibraryInfo>

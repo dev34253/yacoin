@@ -306,6 +306,7 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             fMinimizeOnClose = value.toBool();
             settings.setValue("fMinimizeOnClose", fMinimizeOnClose);
             break;
+
         // default proxy
         case ProxyUse:
             if (settings.value("fUseProxy") != value) {

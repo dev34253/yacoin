@@ -32,12 +32,6 @@
 
 #include <memory>
 
-#include "reverse_iterator.h"
-#include "random.h"
-#include "streams.h"
-#include "validationinterface.h"
-#include "net_processing.h"
-
 using namespace boost;
 
 using std::list;
@@ -84,14 +78,6 @@ CBigNum bnProofOfStakeLimit(~uint256(0) >> 27);
 int nSyncStarted = 0;
 
 CMedianFilter<int> cPeerBlockCounts(5, 0); // Amount of blocks that other nodes claim to have
-
-// Blocks that are in flight, and that are in the queue to be downloaded.
-// Protected by cs_main.
-struct QueuedBlock {
-    uint256 hash;
-    CBlockIndex *pindex; // Optional.
-    int64_t nTime;  // Time of "getdata" request in microseconds.
-};
 
 // Blocks that are in flight, and that are in the queue to be downloaded.
 // Protected by cs_main.

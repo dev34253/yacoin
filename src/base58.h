@@ -89,7 +89,6 @@ public:
     std::string ToString() const;
     int CompareTo(const CBase58Data& b58) const;
 
-    int CompareTo(const CBase58Data& b58) const;
     bool operator==(const CBase58Data& b58) const { return CompareTo(b58) == 0; }
     bool operator<=(const CBase58Data& b58) const { return CompareTo(b58) <= 0; }
     bool operator>=(const CBase58Data& b58) const { return CompareTo(b58) >= 0; }
