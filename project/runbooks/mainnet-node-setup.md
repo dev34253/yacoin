@@ -18,7 +18,7 @@ P0-44 (CI). Decisions behind it: `done/P0-00-phase0-decisions.md`.
 
 ```bash
 # as an admin user
-sudo apt update && sudo apt install -y git docker.io jq zstd
+sudo apt update && sudo apt install -y git docker.io jq zstd   # skip what is already installed
 sudo adduser --disabled-password --gecos "" yacoin      # runs node and runner
 sudo usermod -aG docker yacoin
 sudo mkdir -p /srv/yacoin/{datadir,snapshots,dumps,bin} && sudo chown -R yacoin: /srv/yacoin
@@ -33,22 +33,43 @@ outbound); optionally `sudo ufw allow 7688/tcp` for inbound. Keep the RPC port
 Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11 from P0-57; until it is published, use `dev34253/yacoin-build:ubuntu.22.04-1`); mainnet parameters (no
 low-difficulty flag), no Qt.
 
+Put the build steps in a script rather than one long nested `sudo -iu … bash -c "…"`
+command – the nested quoting there broke the first real build (`CONFIG_SITE`
+was never applied, so `configure` failed to find Berkeley DB even though
+`depends` had built it).
+
 ```bash
 sudo -iu yacoin
-git clone https://github.com/dev34253/yacoin.git ~/yacoin && cd ~/yacoin
+git clone https://github.com/dev34253/yacoin.git ~/yacoin
+cat > ~/build-mainnet.sh <<'EOS'
+#!/bin/bash
+set -euo pipefail
+cd "$HOME/yacoin"
+docker run --rm -i --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$HOME/yacoin:/src" -w /src --entrypoint /bin/bash \
+  ghcr.io/dev34253/yacoin-build:ubuntu-24.04-gcc11 -s <<'EOC'
+set -euo pipefail
+git config --global --add safe.directory /src
+make -C depends -j"$(nproc)" HOST=x86_64-pc-linux-gnu NO_QT=1
+./autogen.sh
+CONFIG_SITE="$PWD/depends/x86_64-pc-linux-gnu/share/config.site" \
+  ./configure --with-gui=no --enable-glibc-back-compat --enable-reduce-exports \
+              LDFLAGS=-static-libstdc++ --prefix=/
+make -j"$(nproc)"
+EOC
 git rev-parse HEAD > /srv/yacoin/bin/COMMIT
-docker run --rm -v "$HOME/yacoin:/src" -w /src --entrypoint /bin/bash \
-  ghcr.io/dev34253/yacoin-build:ubuntu-24.04-gcc11 -c '
-    git config --global --add safe.directory /src &&
-    make -C depends -j"$(nproc)" HOST=x86_64-pc-linux-gnu NO_QT=1 &&
-    ./autogen.sh &&
-    CONFIG_SITE=$PWD/depends/x86_64-pc-linux-gnu/share/config.site \
-      ./configure --with-gui=no --enable-glibc-back-compat --enable-reduce-exports \
-                  LDFLAGS=-static-libstdc++ --prefix=/ &&
-    make -j"$(nproc)"'
 cp src/yacoind src/yacoin-cli /srv/yacoin/bin/
-sha256sum /srv/yacoin/bin/yacoin* > /srv/yacoin/bin/SHA256SUMS
+sha256sum /srv/yacoin/bin/yacoind /srv/yacoin/bin/yacoin-cli > /srv/yacoin/bin/SHA256SUMS
+EOS
+chmod +x ~/build-mainnet.sh && ~/build-mainnet.sh > ~/build.log 2>&1; tail -3 ~/build.log
 ```
+
+Notes:
+- Until P0-57 publishes the 24.04 image, replace the image name with
+  `dev34253/yacoin-build:ubuntu.22.04-1`.
+- The `depends` step takes 20–40 minutes the first time; later builds reuse it.
+- The version string ends in `-dirty`: `autogen.sh` rewrites some committed
+  build-helper files. Harmless – no source files change.
 
 Once P0-01 lands, replace the `docker run` block with
 `contrib/testing/build.sh --config mainnet`.
@@ -104,9 +125,15 @@ sudo systemctl daemon-reload && sudo systemctl enable --now yacoind
 CLI="/srv/yacoin/bin/yacoin-cli -datadir=/srv/yacoin/datadir"
 $CLI getconnectioncount          # should be > 0 within minutes
 $CLI getpeerinfo | jq '.[].addr'
-$CLI getblockcount               # rising
+$CLI getblockcount               # rising – but see below
+$CLI getinfo                     # overview (this version has no getblockchaininfo)
 tail -f /srv/yacoin/datadir/debug.log
 ```
+
+The node first downloads and checks all block headers (~2 million); `getblockcount`
+stays flat during that stage (`debug.log` shows header batches). Header
+verification slows down further along the chain because the scrypt-jane
+N-factor rises (9 → 21). Expect hours for the full sync.
 
 If no peers connect: check outbound 7688, then add `addnode=` lines for
 peers known from the community and restart.
