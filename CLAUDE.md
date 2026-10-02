@@ -1,0 +1,94 @@
+# CLAUDE.md
+
+Yacoin is a Bitcoin Core 0.16-derived PoW/PoS cryptocurrency (C++11, autotools,
+`depends` build system). This fork (dev34253/yacoin) tracks yacoin/yacoin and is
+modernising the dependencies (OpenSSL, Boost, compiler) so it builds on current
+Linux. Work is organised in `project/` – read `project/README.md` first; plans
+are in `project/plans/`, tasks in `project/{todo,inprogress,done}/`, operational
+guides in `project/runbooks/`.
+
+## Rules for every change
+
+1. **Consensus safety.** Never change consensus behaviour (difficulty, block
+   trust, stake kernel, rewards, block size, block hash, script/token rules)
+   unless the plan explicitly calls for it and the Phase 0 tests cover it.
+   Phase 0 records current behaviour, bugs included – pin it, don't fix it.
+2. **Run the tests locally before every commit** (see *Testing*). At minimum
+   the unit tests; the functional suite for anything touching node, wallet,
+   RPC, P2P or consensus code. Paste the results (pass counts) into the PR or
+   task log. Never commit with new failures; never skip or disable a test.
+3. **Review the code before every commit.** Run the `code-review` skill (or a
+   reviewer subagent) on the staged diff, fix or explicitly answer every
+   finding, then commit. Mention in the commit message body that it was
+   reviewed and anything deliberately left as is.
+4. **Logging.** New or changed behaviour must be observable in `debug.log`:
+   - `LogPrintf(...)` for important, always-on events (start-up, errors,
+     consensus-relevant decisions, rejections with their reason).
+   - `LogPrint(BCLog::<CATEGORY>, ...)` for detail/debug output, using an
+     existing category from `src/util.h` (NET, MEMPOOL, RPC, DB, …) or a new
+     one if none fits.
+   - Include the values needed to diagnose (hashes, heights, sizes), never
+     secrets (keys, passphrases, RPC passwords). No `printf`/`std::cout` in
+     daemon code.
+5. **Documentation.** Add or update documentation for everything new or
+   changed in the same commit/PR: `doc/` for builds and user-facing behaviour,
+   RPC help text for RPCs, `project/` for plans, tasks and runbooks, code
+   comments for non-obvious logic. **Documentation is reviewed like code** –
+   include it in the review in rule 3 and check it against what was actually
+   built and run.
+6. **Task board.** Move task files with `git mv` (todo → inprogress → done),
+   fill in Owner/Started/Finished and a short Log with results and links.
+
+## Building
+
+The supported build uses `depends` inside a pinned Docker image (Ubuntu 24.04
+with GCC 11 – task P0-57; legacy: `dev34253/yacoin-build:ubuntu.22.04-1`).
+Build out of tree so the checkout stays clean:
+
+```bash
+make -C depends -j"$(nproc)" HOST=x86_64-pc-linux-gnu NO_QT=1   # Qt is deferred
+./autogen.sh
+mkdir -p build-lowdiff && cd build-lowdiff
+CONFIG_SITE=$PWD/../depends/x86_64-pc-linux-gnu/share/config.site \
+  ../configure --with-gui=no --enable-low-difficulty-for-development
+make -j"$(nproc)"
+```
+
+- **Two configurations:** *mainnet* (no extra flag) for unit tests and
+  anything mainnet-related; *low difficulty*
+  (`--enable-low-difficulty-for-development`) for functional tests.
+- **Coverage:** add `CFLAGS="-O0 -g --coverage" CXXFLAGS="-O0 -g --coverage"
+  LDFLAGS=--coverage` and use `lcov`.
+- Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
+
+## Testing
+
+```bash
+src/test/test_bitcoin --log_level=test_suite          # unit tests (239)
+python3 test/functional/test_runner.py -j4            # functional tests (45)
+```
+
+- Expected today: mainnet build 239/239 unit; low-difficulty build 238/239
+  (`pow_tests/get_next_work_pow_limit` fails only because of the
+  low-difficulty `powLimit` – known, P0-02) and 45/45 functional.
+- The functional runner reads `test/config.ini` next to its own source dir; for
+  out-of-tree builds copy `<builddir>/test/config.ini` to `test/config.ini`.
+- Any stderr output (including Python warnings) fails a functional test.
+- Functional tests do **not** use regtest: they run main params with the
+  low-difficulty genesis, `-epochinterval=10`, N-factor 4. Unit tests run with
+  the fork globals (`nMainnetNewLogicBlockNumber`, `nFactorAtHardfork`) at 0.
+- RPCs that do not exist here: `getblockchaininfo`, `gettxoutsetinfo` (use
+  `getinfo`; `gettxoutsetinfo` is task P0-48).
+
+## Environment notes
+
+- **Cloud sessions:** Docker is installed but not running – start `dockerd`.
+  Containers need the proxy and CA: `--network host -e HTTPS_PROXY -e
+  https_proxy=$HTTPS_PROXY -e SSL_CERT_FILE=/ca.crt -e CURL_CA_BUNDLE=/ca.crt
+  -v /root/.ccr/ca-bundle.crt:/ca.crt:ro`. Docker Hub may answer 429 – retry
+  with backoff. Outbound P2P (port 7688) is blocked, so no mainnet node here.
+- **Mainnet node:** runs on the owner's laptop (`yacoind.service`, datadir
+  `/srv/yacoin/datadir`), set up per `project/runbooks/mainnet-node-setup.md`
+  and reachable through the owner's Remote Control session.
+- **Build images** are defined in dev34253/yacoin-build-ubuntu and published
+  to Docker Hub as `dev34253/yacoin-build:<tag>`.
