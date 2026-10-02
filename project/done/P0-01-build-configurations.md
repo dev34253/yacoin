@@ -77,5 +77,6 @@ records what was built and tested.)
 
 - **Unit-test runtime is not a concern** (both configurations about 30 s at `-O2`; in the earlier coverage build at `-O0` the unit tests themselves took about 7–10 min). **Recommendation for CI (P0-03):** run the unit tests in the *mainnet* configuration as the gate (239/239), and the functional tests in the *lowdiff* configuration; run lowdiff unit tests too once P0-02 handles the known case.
 - Script exit code is non-zero when the lowdiff unit run hits the known `pow_tests` failure – CI must account for that until P0-02.
+- PR: https://github.com/dev34253/yacoin/pull/50
 - `--sanitizers` is implemented but was not run here; validation is part of P0-29.
 - Documentation reviewed by a subagent (22 findings: nested-subagent fallback, lowdiff exit code, branch order, PR target, blocked handling, README accuracy, …); all applied.
