@@ -33,7 +33,7 @@ outbound); optionally `sudo ufw allow 7688/tcp` for inbound. Keep the RPC port
 
 ## 3. Build the mainnet binaries
 
-Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11, `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, digest `sha256:d913fd15c3d4166f81a365e103486774414a8aa8bbc48b29448f92a013193a5b`, task P0-57); mainnet parameters (no
+Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11, `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, digest `sha256:b7365321bd98ce7297c30bc2eb555f56407548d4cea1836cfbd4b806ba934f7a`, task P0-57); mainnet parameters (no
 low-difficulty flag), no Qt.
 
 Put the build steps in a script rather than one long nested `sudo -iu … bash -c "…"`
@@ -49,7 +49,7 @@ git clone https://github.com/dev34253/yacoin.git ~/yacoin
 cat > ~/build-mainnet.sh <<'EOS'
 #!/bin/bash
 set -euo pipefail
-IMAGE="${IMAGE:-dev34253/yacoin-build:ubuntu.24.04-gcc11-1}"
+IMAGE="${IMAGE:-dev34253/yacoin-build@sha256:b7365321bd98ce7297c30bc2eb555f56407548d4cea1836cfbd4b806ba934f7a}"
 cd "$HOME/yacoin"
 docker run --rm -i --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$HOME/yacoin:/src" -w /src --entrypoint /bin/bash \

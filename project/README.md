@@ -12,6 +12,11 @@ compiler) so it builds on current Linux distributions such as Ubuntu 24.04.
 
 ## How to process a task
 
+Tasks are implemented with the `implement-task` skill
+(`.claude/skills/implement-task/SKILL.md`), run by a subagent – see
+`CLAUDE.md`. The skill covers the steps below plus the detailed description,
+reviews, tests, documentation and pull request.
+
 1. Pick a task from `todo/` whose dependencies (listed in the file) are all in `done/`.
 2. Move it to `inprogress/` with `git mv` and commit that move on its own, so
    everyone can see the task is taken. Fill in `Owner` and `Started`.
@@ -40,5 +45,7 @@ File name: `P<phase>-<number>-<short-slug>.md`, e.g. `P0-14-pow-synthetic-chain-
 ## Steps
 ## Acceptance criteria
 ## Notes
+## Detailed description   (added by the implement-task skill)
+## Implementation plan    (added by the implement-task skill)
 ## Log
 ```

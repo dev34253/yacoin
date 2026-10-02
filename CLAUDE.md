@@ -7,6 +7,19 @@ Linux. Work is organised in `project/` – read `project/README.md` first; plans
 are in `project/plans/`, tasks in `project/{todo,inprogress,done}/`, operational
 guides in `project/runbooks/`.
 
+## Implementing a task
+
+To implement a task from the project board (e.g. "do P0-14"), **spawn a
+subagent (Agent tool) and have it run the `implement-task` skill on that
+task** (`.claude/skills/implement-task/SKILL.md`). The skill is the required
+process: read the task → detailed description with edge cases and tests →
+reviewed by a subagent → implementation plan → reviewed → implement → code
+review → tests until all pass → documentation → documentation review →
+commit, push and pull request. Give the subagent the task id and the branch
+to use, and report its result (PR link, test results, open points) back. If
+the subagent has no Agent tool of its own, the skill tells it to do the
+reviews as separate, logged self-review passes.
+
 ## Rules for every change
 
 1. **Consensus safety.** Never change consensus behaviour (difficulty, block
@@ -45,17 +58,28 @@ guides in `project/runbooks/`.
 
 The supported build uses `depends` inside a pinned Docker image:
 `dev34253/yacoin-build:ubuntu.24.04-gcc11-1` (Ubuntu 24.04, GCC 11 – task P0-57;
-pin `dev34253/yacoin-build@sha256:d913fd15c3d4166f81a365e103486774414a8aa8bbc48b29448f92a013193a5b`; legacy:
+pin `dev34253/yacoin-build@sha256:b7365321bd98ce7297c30bc2eb555f56407548d4cea1836cfbd4b806ba934f7a`; legacy:
 `dev34253/yacoin-build:ubuntu.22.04-1`; GCC 13 variant:
 `dev34253/yacoin-build:ubuntu.24.04-1`).
-Build out of tree so the checkout stays clean:
+The easiest way is `contrib/testing/build.sh` (P0-01; see
+`contrib/testing/README.md`). It builds out of tree in the pinned image and
+can run the tests:
+
+```bash
+contrib/testing/build.sh --config mainnet --unit                 # unit tests
+contrib/testing/build.sh --config lowdiff --unit --functional    # all tests
+```
+
+Equivalent manual steps, run inside the build image. They modify the
+checkout (`autogen.sh` rewrites some tracked build files, `depends` writes
+into `depends/`), which `build.sh` avoids by building from a copy:
 
 ```bash
 make -C depends -j"$(nproc)" HOST=x86_64-pc-linux-gnu NO_QT=1   # Qt is deferred
 ./autogen.sh
 mkdir -p build-lowdiff && cd build-lowdiff
-CONFIG_SITE=$PWD/../depends/x86_64-pc-linux-gnu/share/config.site \
-  ../configure --with-gui=no --enable-low-difficulty-for-development
+../configure --prefix=$PWD/../depends/x86_64-pc-linux-gnu \
+  --with-gui=no --enable-low-difficulty-for-development
 make -j"$(nproc)"
 ```
 
@@ -75,7 +99,9 @@ python3 test/functional/test_runner.py -j4            # functional tests (45)
 
 - Expected today: mainnet build 239/239 unit; low-difficulty build 238/239
   (`pow_tests/get_next_work_pow_limit` fails only because of the
-  low-difficulty `powLimit` – known, P0-02) and 45/45 functional.
+  low-difficulty `powLimit` – known, P0-02) and 45/45 functional. Until P0-02
+  is done, `build.sh --config lowdiff --unit` therefore exits 1; that one
+  case is expected, any other failure is real.
 - The functional runner reads `test/config.ini` next to its own source dir; for
   out-of-tree builds copy `<builddir>/test/config.ini` to `test/config.ini`.
 - Any stderr output (including Python warnings) fails a functional test.
