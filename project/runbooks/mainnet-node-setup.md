@@ -33,7 +33,7 @@ outbound); optionally `sudo ufw allow 7688/tcp` for inbound. Keep the RPC port
 
 ## 3. Build the mainnet binaries
 
-Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11 from P0-57; until it is published, use `dev34253/yacoin-build:ubuntu.22.04-1`); mainnet parameters (no
+Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11, `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, task P0-57); mainnet parameters (no
 low-difficulty flag), no Qt.
 
 Put the build steps in a script rather than one long nested `sudo -iu … bash -c "…"`
@@ -49,7 +49,7 @@ git clone https://github.com/dev34253/yacoin.git ~/yacoin
 cat > ~/build-mainnet.sh <<'EOS'
 #!/bin/bash
 set -euo pipefail
-IMAGE="${IMAGE:-ghcr.io/dev34253/yacoin-build:ubuntu-24.04-gcc11}"
+IMAGE="${IMAGE:-dev34253/yacoin-build:ubuntu.24.04-gcc11-1}"
 cd "$HOME/yacoin"
 docker run --rm -i --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$HOME/yacoin:/src" -w /src --entrypoint /bin/bash \
@@ -71,7 +71,8 @@ chmod +x ~/build-mainnet.sh && ~/build-mainnet.sh > ~/build.log 2>&1; tail -3 ~/
 ```
 
 Notes:
-- Until P0-57 publishes the 24.04 image, run
+- The build needs a source tree with the glibc 2.36/2.38 fixes (any commit of
+  this branch after `4b77e2c`). For older commits use
   `IMAGE=dev34253/yacoin-build:ubuntu.22.04-1 ~/build-mainnet.sh`.
 - The `depends` step takes 20–40 minutes the first time; later builds reuse it.
 - The version string ends in `-dirty`: `autogen.sh` rewrites some committed

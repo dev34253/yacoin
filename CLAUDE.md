@@ -43,8 +43,10 @@ guides in `project/runbooks/`.
 
 ## Building
 
-The supported build uses `depends` inside a pinned Docker image (Ubuntu 24.04
-with GCC 11 – task P0-57; legacy: `dev34253/yacoin-build:ubuntu.22.04-1`).
+The supported build uses `depends` inside a pinned Docker image:
+`dev34253/yacoin-build:ubuntu.24.04-gcc11-1` (Ubuntu 24.04, GCC 11 – task P0-57; legacy:
+`dev34253/yacoin-build:ubuntu.22.04-1`; GCC 13 variant:
+`dev34253/yacoin-build:ubuntu.24.04-1`).
 Build out of tree so the checkout stays clean:
 
 ```bash
