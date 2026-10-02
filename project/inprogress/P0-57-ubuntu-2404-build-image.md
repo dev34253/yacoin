@@ -3,8 +3,8 @@
 - Plan section: 0.1
 - Depends on: none
 - Size: M
-- Owner:
-- Started:
+- Owner: Claude (cloud session)
+- Started: 2026-10-02
 - Finished:
 
 ## Goal
