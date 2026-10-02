@@ -168,6 +168,10 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 - **Mutation testing** (P0-56) over `pow.cpp`, trust, kernel and reward:
   every surviving mutant gets a test or a written justification.
 - **ASan + UBSan** (P0-29) on unit and functional suites.
+- **Static analysis** (P0-58): clang-tidy (curated checks), Clang Static
+  Analyzer, cppcheck and CodeQL; today's findings recorded as a baseline and
+  CI fails on new findings only. Consensus-code findings are pinned by tests,
+  not fixed, in Phase 0.
 
 ## 0.5 Functional tests (Python, low-difficulty main params)
 

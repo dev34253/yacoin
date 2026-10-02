@@ -17,11 +17,13 @@ guides in `project/runbooks/`.
    the unit tests; the functional suite for anything touching node, wallet,
    RPC, P2P or consensus code. Paste the results (pass counts) into the PR or
    task log. Never commit with new failures; never skip or disable a test.
-3. **Review the code before every commit.** Run the `code-review` skill (or a
+3. **Static analysis** (once P0-58 lands): run it on the changed files before
+   committing; CI fails on findings that are not in the recorded baseline.
+4. **Review the code before every commit.** Run the `code-review` skill (or a
    reviewer subagent) on the staged diff, fix or explicitly answer every
    finding, then commit. Mention in the commit message body that it was
    reviewed and anything deliberately left as is.
-4. **Logging.** New or changed behaviour must be observable in `debug.log`:
+5. **Logging.** New or changed behaviour must be observable in `debug.log`:
    - `LogPrintf(...)` for important, always-on events (start-up, errors,
      consensus-relevant decisions, rejections with their reason).
    - `LogPrint(BCLog::<CATEGORY>, ...)` for detail/debug output, using an
@@ -30,13 +32,13 @@ guides in `project/runbooks/`.
    - Include the values needed to diagnose (hashes, heights, sizes), never
      secrets (keys, passphrases, RPC passwords). No `printf`/`std::cout` in
      daemon code.
-5. **Documentation.** Add or update documentation for everything new or
+6. **Documentation.** Add or update documentation for everything new or
    changed in the same commit/PR: `doc/` for builds and user-facing behaviour,
    RPC help text for RPCs, `project/` for plans, tasks and runbooks, code
    comments for non-obvious logic. **Documentation is reviewed like code** –
-   include it in the review in rule 3 and check it against what was actually
+   include it in the review in rule 4 and check it against what was actually
    built and run.
-6. **Task board.** Move task files with `git mv` (todo → inprogress → done),
+7. **Task board.** Move task files with `git mv` (todo → inprogress → done),
    fill in Owner/Started/Finished and a short Log with results and links.
 
 ## Building
