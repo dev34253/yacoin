@@ -255,10 +255,13 @@ token consensus rely on existing tests and replay).
 7. Performance and long-running: P0-39–43; full reindex P0-24, P0-52.
 8. Exit review P0-45.
 
-## Open decisions (P0-00)
+## Decisions (P0-00, settled 2026-10-02)
 
-- Host for the mainnet node and block data (self-hosted runner is required).
-- Fork first or straight upstream.
-- Old release wallets: confirmed in scope (P0-30) unless decided otherwise.
-- Qt: deferred or in Phase 0 scope (Qt 5.7.1 in `depends` won't build with
-  GCC 13; `qt/explorer.cpp` uses `CBigNum`).
+| Topic | Decision |
+|---|---|
+| Mainnet node host | Your own machine/server as a self-hosted GitHub Actions runner (cloud sessions can't reach P2P port 7688). |
+| Sync peers | 7 fixed seeds + known reliable peers via `addnode`, listed in the P0-07 runbook. |
+| Where work lands | Fork first (dev34253/yacoin), upstream later in reviewed batches. |
+| Old release wallets | v1.0.0/v1.1.0 encrypted wallets must stay readable; tested in P0-30. |
+| Qt | Deferred to its own later phase; Phase 0 builds with `NO_QT=1`. |
+| CI and images | GitHub Actions (hosted for per-push, self-hosted for long jobs); build images mirrored to GHCR and pinned by digest. |

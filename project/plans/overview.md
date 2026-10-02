@@ -80,6 +80,7 @@ libsecp256k1), `random_nonce.cpp` (`rand()`, dead code).
 | 4 – Replace `CBigNum` | Migrate to `arith_uint256` one function at a time; 512-bit intermediates (or rearranged comparisons) for the stake kernel **and the pre-fork reward**; every trust branch preserved. | Chain split. |
 | 5 – Drop OpenSSL | Remove `SSL_LIBS` from non-Qt targets and the libssl requirement; decide Qt BIP70; remove `--with-libressl`/`RAND_egd`; plain `apt install` build docs for 24.04. | Low once 3–4 are done. |
 | 6 – Berkeley DB (separate decision) | Keep 4.8 or plan a wallet migration. | Wallet compatibility. |
+| Later – Qt GUI (deferred, P0-00) | Qt 5.7.1 in `depends` won't build with GCC 13; BIP70 TLS; `qt/explorer.cpp` uses `CBigNum`. Phase 0 builds with `NO_QT=1`. | GUI-only code paths. |
 
 Each phase is its own set of pull requests, keeps the build green, and is
 checked against the previous phase's behaviour using the Phase 0 tests.

@@ -14,9 +14,10 @@ Provide the CI structure other tasks add their jobs to.
 ## Steps
 
 1. Workflow triggers for push, nightly and weekly/manual; self-hosted runner registration (per P0-00).
-2. Artifact and fixture-cache conventions.
-3. Mirror dev34253/yacoin-build images to GHCR (or authenticate pulls) and pin by digest – Docker Hub anonymous pulls hit rate limits.
-4. Document how a task adds a job.
+2. Per-push jobs on GitHub-hosted runners; long jobs (reindex, replay, soak) on the self-hosted runner from P0-07 (P0-00 decisions 1 and 6).
+3. Artifact and fixture-cache conventions.
+4. Mirror dev34253/yacoin-build images to ghcr.io (decided) and pin by digest – Docker Hub anonymous pulls hit rate limits.
+5. Document how a task adds a job.
 
 ## Acceptance criteria
 
