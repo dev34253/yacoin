@@ -25,7 +25,7 @@ Have a fully synced mainnet node from the current code and reusable data-directo
 
 ## Notes
 
-Longest lead time – start early. Review: D8, E3. Note -reindex-fast skips hash recomputation and is not a substitute for -reindex.
+Follow project/runbooks/mainnet-node-setup.md. Longest lead time – start early. Review: D8, E3. Note -reindex-fast skips hash recomputation and is not a substitute for -reindex.
 
 ## Log
 

@@ -5,6 +5,7 @@ compiler) so it builds on current Linux distributions such as Ubuntu 24.04.
 
 - `plans/` – the plans. Start with [`plans/overview.md`](plans/overview.md),
   then the detailed [`plans/phase0-test-safety-net.md`](plans/phase0-test-safety-net.md).
+- `runbooks/` – step-by-step operational guides (e.g. [mainnet node setup](runbooks/mainnet-node-setup.md)).
 - `todo/` – tasks that have not been started.
 - `inprogress/` – tasks someone is working on right now.
 - `done/` – finished tasks.
