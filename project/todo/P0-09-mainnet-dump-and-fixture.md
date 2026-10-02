@@ -1,7 +1,7 @@
-# P0-09: Produce full mainnet dump and sampled in-repo fixture
+# P0-09: Produce full mainnet dump and in-repo fixture
 
 - Plan section: 0.3
-- Depends on: P0-07, P0-08, P0-05
+- Depends on: P0-05, P0-07, P0-08
 - Size: M
 - Owner:
 - Started:
@@ -9,22 +9,23 @@
 
 ## Goal
 
-Produce the golden data used by the replay and kernel tests.
+Produce the golden data for replay, difficulty, kernel and reward tests.
 
 ## Steps
 
-1. Run the dump tool on the P0-07 snapshot; store the full dump per P0-05.
-2. Select a sample (a few thousand records): every retarget and epoch boundary ±N blocks, hardfork heights, a spread of PoS blocks, all checkpoints, stake-modifier checkpoints.
-3. Commit the sample under src/test/data/.
+1. Run the dump tool on the tip snapshot; store the full dump (P0-05).
+2. In-repo fixture: several contiguous segments (≥ 50k blocks each, enough for the 30-day stake age and modifier selection intervals) covering early PoS, the stake-switch time, pre-fork late chain and the fork boundary, plus all post-fork blocks (needed for nMinEase).
+3. Include the matching block-index data needed to rebuild CBlockIndex chains in tests.
+4. Measure the compressed size; if too large for the repo, keep the post-fork part in repo and segments in fixture storage.
 
 ## Acceptance criteria
 
 - [ ] Full dump stored with checksum.
-- [ ] Sample committed, small enough for normal CI (target < 5 MB compressed).
+- [ ] Fixture available to CI; size and layout recorded in Log.
 
 ## Notes
 
--
+Review: C2.
 
 ## Log
 

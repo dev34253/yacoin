@@ -1,4 +1,4 @@
-# P0-15: Difficulty tests on real mainnet windows
+# P0-15: Difficulty tests on real mainnet data
 
 - Plan section: 0.2b
 - Depends on: P0-09, P0-14
@@ -9,15 +9,15 @@
 
 ## Goal
 
-Check difficulty calculations against real mainnet data around every boundary.
+Check difficulty against real mainnet data.
 
 ## Steps
 
-1. Load the sampled fixture; rebuild block-index windows; compare computed next target with the recorded value.
+1. Rebuild index chains from the fixture (all post-fork entries present); compare next target and running min nBits with the dump.
 
 ## Acceptance criteria
 
-- [ ] Every sampled window matches.
+- [ ] Every fixture block matches.
 
 ## Notes
 

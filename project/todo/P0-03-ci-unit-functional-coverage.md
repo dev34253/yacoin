@@ -13,18 +13,19 @@ Run unit and functional tests on every push and publish coverage reports.
 
 ## Steps
 
-1. Add a GitHub Actions workflow using the P0-01 script: mainnet build → unit tests; lowdiff build → functional tests (test_runner.py -j4).
-2. Collect lcov after unit and after unit+functional; exclude /usr, depends, test, leveldb, secp256k1, univalue, bench.
-3. Upload HTML reports and .info files as artifacts; print the summary in the job log.
+1. GitHub Actions workflow using the P0-01 script: unit tests in the configuration chosen in P0-01; functional tests (test_runner.py -j4) in the low-diff configuration.
+2. Collect lcov per configuration; define and document how the two .info files are merged (different #ifdef line maps) or reported separately.
+3. Exclude /usr, depends, test, leveldb, secp256k1, univalue, bench.
+4. Upload HTML and .info files as artifacts; print summaries in the log.
 
 ## Acceptance criteria
 
-- [ ] Workflow runs on push and is green (apart from known failures tracked in tasks).
-- [ ] Coverage HTML is downloadable from each run.
+- [ ] Workflow runs on push and is green apart from known failures tracked in tasks.
+- [ ] Coverage HTML downloadable from each run; merge method documented.
 
 ## Notes
 
-Baseline: 56.7% unit, 75.7% unit+functional lines.
+Review: C5.
 
 ## Log
 

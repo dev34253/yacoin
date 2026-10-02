@@ -9,17 +9,17 @@
 
 ## Goal
 
-Pin SetCompact/GetCompact behaviour exactly, including edge cases.
+Pin SetCompact/GetCompact exactly.
 
 ## Steps
 
-1. Every exponent 0–34, sign bit set, mantissa overflow, 0x00800000, zero.
-2. Port Bitcoin Core's arith_uint256 compact tests; record every case where Yacoin's result differs.
+1. Every exponent 0–34, sign bit, mantissa overflow, 0x00800000, zero, values ≥ 2^256.
+2. Port Bitcoin Core's arith_uint256 compact tests; list every difference from Yacoin's behaviour.
 
 ## Acceptance criteria
 
 - [ ] All cases pass against current code.
-- [ ] Differences from Bitcoin's arith_uint256 listed in Log (these are the cases Phase 4 must special-case).
+- [ ] Differences from arith_uint256 listed in Log (Phase 4 special cases).
 
 ## Notes
 

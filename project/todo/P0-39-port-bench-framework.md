@@ -13,13 +13,11 @@ Add a microbenchmark framework; there is no src/bench in this tree.
 
 ## Steps
 
-1. Port src/bench (framework + bench_bitcoin.cpp) from Bitcoin Core 0.16.
-2. Wire into configure (--enable-bench) and the Makefile.
-3. Add one trivial benchmark to prove it works.
+1. Port src/bench from Bitcoin Core 0.16; wire into configure (--enable-bench) and Makefile; one trivial benchmark.
 
 ## Acceptance criteria
 
-- [ ] bench_bitcoin builds and runs in the P0-01 build.
+- [ ] bench_bitcoin builds and runs.
 
 ## Notes
 

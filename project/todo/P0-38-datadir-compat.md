@@ -1,7 +1,7 @@
 # P0-38: Data directory compatibility test
 
 - Plan section: 0.6
-- Depends on: P0-06
+- Depends on: P0-06, P0-54
 - Size: S
 - Owner:
 - Started:
@@ -9,12 +9,12 @@
 
 ## Goal
 
-Check data directories (block index, chainstate, wallet) work in both directions between baseline and candidate.
+Check data directories work both ways between baseline/old releases and candidate.
 
 ## Steps
 
-1. Create a datadir with the baseline; open with candidate; and the reverse.
-2. Check chain state and wallet contents match.
+1. Create a datadir with each; open with the other; compare chain state and wallet contents.
+2. Fail on 'Failed stake modifier checkpoint' in debug.log (stored nStakeModifier/hashProofOfStake).
 
 ## Acceptance criteria
 
@@ -22,7 +22,7 @@ Check data directories (block index, chainstate, wallet) work in both directions
 
 ## Notes
 
--
+Review: A12.
 
 ## Log
 

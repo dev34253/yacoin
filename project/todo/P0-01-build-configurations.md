@@ -9,24 +9,25 @@
 
 ## Goal
 
-Have two reproducible builds: one with mainnet parameters (for unit tests and mainnet replay) and one with --enable-low-difficulty-for-development (for functional tests), both with optional coverage instrumentation.
+Have reproducible mainnet and low-difficulty builds with optional coverage and sanitizer instrumentation.
 
 ## Steps
 
-1. Write a script (e.g. contrib/testing/build.sh) that runs inside dev34253/yacoin-build:ubuntu.22.04-1: builds depends (NO_QT=1), then configures and builds yacoin.
-2. Options: --config mainnet|lowdiff, --coverage, --sanitizers (placeholder for P0-29).
-3. Build out-of-tree (copy or separate build dir) so the source checkout stays clean.
-4. Document usage in contrib/testing/README.md, including the HTTPS proxy/CA variables needed in restricted environments.
+1. Script (e.g. contrib/testing/build.sh) running inside dev34253/yacoin-build:ubuntu.22.04-1: depends (NO_QT=1 unless P0-00 says otherwise), then configure and build.
+2. Options: --config mainnet|lowdiff, --coverage (sets both CFLAGS and CXXFLAGS so scrypt-jane C code is instrumented), --sanitizers (filled in by P0-29).
+3. Build out-of-tree so the checkout stays clean.
+4. Measure test_bitcoin runtime in both configurations (TestChain100Setup brute-forces blocks; mainnet powLimit may be slow) and record it.
+5. Document usage, including the HTTPS proxy/CA variables needed in restricted environments, in contrib/testing/README.md.
 
 ## Acceptance criteria
 
 - [ ] Both configurations build from a clean checkout with one command each.
-- [ ] test_bitcoin, yacoind and yacoin-cli are produced for both.
 - [ ] The source tree has no untracked or modified files after a build.
+- [ ] Unit-test runtime per configuration recorded in Log, with a recommendation for which configuration(s) CI runs unit tests in.
 
 ## Notes
 
-Reference build: depends + CONFIG_SITE configure, CXXFLAGS='-O0 -g --coverage' for coverage builds.
+Review: C4, E4.
 
 ## Log
 

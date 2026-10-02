@@ -1,7 +1,7 @@
-# P0-16: Block trust and chain trust tests
+# P0-16: Block trust, chain trust and fork-choice tests
 
 - Plan section: 0.2c
-- Depends on: P0-10
+- Depends on: P0-10, P0-47
 - Size: M
 - Owner:
 - Started:
@@ -9,22 +9,24 @@
 
 ## Goal
 
-Pin GetBlockTrust, accumulated trust and fork choice.
+Pin every trust branch and its uses in fork choice and P2P.
 
 ## Steps
 
-1. GetBlockTrust for PoW and PoS, zero target, maximum target, before/after hardfork, including the (1<<256)/(target+1) path.
-2. Accumulated bnChainTrust over a synthetic chain; CBlockIndexWorkComparator ordering (validation.cpp:116).
-3. chaintrust hex formatting in getblock/getblockheader (rpc/blockchain.cpp:96,127).
+1. GetBlockTrust branches: genesis = 1; PoW before CONSECUTIVE_STAKE_SWITCH_TIME = 1; PoW after = powLimit/target (×2 after PoS); PoS after PoW = pprev->GetBlockTrust()+1; PoS after PoS = 0; legacy PoS = (1<<256)/(target+1); fTestNet switch (chain.cpp:83).
+2. Accumulated bnChainTrust; CBlockIndexWorkComparator (validation.cpp:116).
+3. GetBlockProofEquivalentTime (chain.cpp:188-205) – pin, don't fix.
+4. net_processing.cpp comparisons (438-456, 536, 1481, 1507, 1583, 3113-3119) via unit-level scenarios where practical.
+5. chaintrust hex in getblock/getblockheader and gettimechaininfo's getuint64 truncation (rpc/blockchain.cpp:945).
 
 ## Acceptance criteria
 
-- [ ] chain.cpp ≥ 95% lines covered.
-- [ ] Real-chain trust values from the sampled fixture match (once P0-09 is done).
+- [ ] 100% of GetBlockTrust branches covered.
+- [ ] Mainnet trust values are checked by P0-23 (not here).
 
 ## Notes
 
-bnChainTrust is not serialised, so there is no disk format to preserve.
+Review: A5, A7, C8, D6.
 
 ## Log
 

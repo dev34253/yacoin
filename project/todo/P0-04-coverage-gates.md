@@ -1,0 +1,32 @@
+# P0-04: Coverage gates (line and branch) in CI
+
+- Plan section: 0.1, 0.10
+- Depends on: P0-03, P0-50
+- Size: S
+- Owner:
+- Started:
+- Finished:
+
+## Goal
+
+Fail CI when coverage of consensus code drops, using meaningful measures.
+
+## Steps
+
+1. Script reading lcov .info and checking per-file (and per-function-group) minimums from a config file.
+2. Enable branch coverage for pow.cpp, chain.cpp, kernel.cpp and the reward functions in validation.cpp.
+3. Exclude from denominators: dead code listed in P0-50, dead fTestNet branches, and kernel.cpp debug-logging blocks (fDebug / -printstakemodifier).
+4. Re-baseline thresholds from the merged CI numbers (not the single low-diff build); document how to ratchet them.
+
+## Acceptance criteria
+
+- [ ] CI fails when a gated file drops below its minimum.
+- [ ] Thresholds config committed; later tasks raise it.
+
+## Notes
+
+Review: B11, C4, C5. Final targets: plan 0.10.
+
+## Log
+
+-

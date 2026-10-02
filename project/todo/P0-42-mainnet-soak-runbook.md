@@ -9,16 +9,16 @@
 
 ## Goal
 
-Define how a candidate node is run against live mainnet for 24–72 h and what is checked.
+Define how a candidate runs against live mainnet for 24–72 h and what is checked.
 
 ## Steps
 
-1. Runbook: setup, duration, metrics (forks, stalls, memory, log errors), pass criteria.
-2. Do one run with the baseline binary to establish normal values.
+1. Runbook: setup, peers, duration, metrics (forks, stalls, memory, log errors), pass criteria.
+2. One run with the baseline to establish normal values.
 
 ## Acceptance criteria
 
-- [ ] Runbook committed; baseline run results recorded.
+- [ ] Runbook committed; baseline run recorded.
 
 ## Notes
 

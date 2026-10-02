@@ -1,6 +1,6 @@
-# P0-43: Nightly fuzzing job with corpus retention
+# P0-43: Nightly fuzzing with corpus retention
 
-- Plan section: 0.8, 0.9
+- Plan section: 0.8
 - Depends on: P0-28, P0-44
 - Size: S
 - Owner:
@@ -13,12 +13,11 @@ Run fuzzers continuously and keep inputs that find new paths.
 
 ## Steps
 
-1. Scheduled job running each target for a fixed time in a sanitizer build.
-2. Merge new corpus entries back into storage; report crashes as issues.
+1. Nightly job per target in the sanitizer build; merge new corpus entries; report crashes.
 
 ## Acceptance criteria
 
-- [ ] Job runs nightly; corpus grows; crashes are reported.
+- [ ] Job runs nightly; corpus grows; crashes reported.
 
 ## Notes
 

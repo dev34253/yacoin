@@ -9,12 +9,12 @@
 
 ## Goal
 
-Check difficulty adjustment end to end on regtest.
+Check difficulty adjustment end to end on the functional-test network (low-difficulty main params).
 
 ## Steps
 
-1. Use -epochinterval to force several retargets; mine with controlled timestamps.
-2. Compare getdifficulty and nBits at each retarget with stored expected values from the baseline.
+1. Force several retargets (epochinterval 10); mine with controlled timestamps; set the fork height explicitly.
+2. Compare getdifficulty and nBits at each retarget with stored expected values.
 
 ## Acceptance criteria
 
@@ -22,7 +22,7 @@ Check difficulty adjustment end to end on regtest.
 
 ## Notes
 
-Existing related test: feature_epoch.py.
+Related: feature_epoch.py. Review: A3.
 
 ## Log
 

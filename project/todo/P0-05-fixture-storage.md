@@ -1,4 +1,4 @@
-# P0-05: Fixture storage and download convention
+# P0-05: Fixture storage, download convention and source pre-fetch
 
 - Plan section: 0.1
 - Depends on: P0-00
@@ -9,22 +9,22 @@
 
 ## Goal
 
-Agree on how test fixtures are stored: small ones in the repo, large ones outside with checksums.
+Agree how fixtures are stored and make old build inputs durable.
 
 ## Steps
 
-1. Small fixtures: src/test/data/ (JSON, compressed if needed) and test/functional/data/.
-2. Large fixtures: versioned location decided in P0-00; manifest file in repo with URL, size and SHA-256.
-3. Script to download and verify large fixtures into a cache directory; tests skip with a clear message if absent.
+1. Small fixtures: src/test/data/ and test/functional/data/.
+2. Large fixtures: location from P0-00; manifest in repo with URL, size, SHA-256; download-and-verify script; tests skip with a clear message when absent.
+3. Pre-fetch and checksum the depends source tarballs (current and those needed for old tags) into fixture storage, since upstream URLs disappear (bintray is already gone).
 
 ## Acceptance criteria
 
-- [ ] Manifest format and download script committed and documented.
-- [ ] A test can request a large fixture by name and gets a verified local path.
+- [ ] Manifest format and script committed and documented.
+- [ ] depends sources available from fixture storage.
 
 ## Notes
 
--
+Review: E6.
 
 ## Log
 

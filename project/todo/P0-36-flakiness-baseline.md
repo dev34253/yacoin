@@ -13,8 +13,8 @@ Know which tests are flaky before later phases change anything.
 
 ## Steps
 
-1. Run the full functional suite 10× (in CI or a dedicated runner).
-2. Record per-test pass rate and duration in project/plans or a results file.
+1. Run the full functional suite 10×; record per-test pass rate and duration in a results file.
+2. Repeat at Phase 0 exit (P0-45) including the new tests.
 
 ## Acceptance criteria
 
@@ -22,7 +22,7 @@ Know which tests are flaky before later phases change anything.
 
 ## Notes
 
--
+Review: D11.
 
 ## Log
 

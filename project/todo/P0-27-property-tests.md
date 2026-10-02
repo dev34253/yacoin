@@ -9,16 +9,15 @@
 
 ## Goal
 
-Catch classes of arithmetic errors with algebraic identities on random inputs.
+Catch classes of arithmetic errors with identities on random inputs.
 
 ## Steps
 
-1. (a*b)/b == a, (a<<n)>>n == a, a+b-b == a, compact round-trips, ordering consistency.
-2. Inputs include >256-bit and negative values; fixed seed with option to randomise.
+1. (a*b)/b == a, (a<<n)>>n == a, a+b-b == a, compact round-trips, ordering consistency; inputs include >256-bit and negative values; fixed seed with a randomise option.
 
 ## Acceptance criteria
 
-- [ ] Tests pass and run in < 10 s.
+- [ ] Tests pass in < 10 s.
 
 ## Notes
 

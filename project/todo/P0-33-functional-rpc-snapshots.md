@@ -9,13 +9,12 @@
 
 ## Goal
 
-Detect unintended changes to RPC output.
+Detect unintended changes to RPC output, especially RPCs touched by CBigNum or OpenSSL.
 
 ## Steps
 
-1. Deterministic regtest chain; call getblock, getblockheader, getdifficulty, getmininginfo, getblocktemplate, getblockchaininfo.
-2. Mask volatile fields (times, sizes that depend on randomness); compare with stored JSON.
-3. Option to regenerate snapshots deliberately.
+1. Deterministic chain; snapshot getblock, getblockheader, getdifficulty (incl. target field, rpc/blockchain.cpp:358), getmininginfo, getblocktemplate, getsubsidy, getwork (midstate and data – miner.cpp SHA256 internals), gettimechaininfo, calculatescrypthash.
+2. Mask volatile fields; option to regenerate deliberately.
 
 ## Acceptance criteria
 
@@ -23,7 +22,7 @@ Detect unintended changes to RPC output.
 
 ## Notes
 
--
+getblockchaininfo does not exist in this tree. Review: B5, C6.
 
 ## Log
 
