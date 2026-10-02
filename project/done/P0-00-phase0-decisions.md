@@ -40,6 +40,7 @@ Decisions (2026-10-02):
 | 4 | Old release wallets | **Yes – v1.0.0/v1.1.0 encrypted wallets must stay readable** and are tested. | P0-30 and P0-54 stay in scope. |
 | 5 | Qt | **Deferred.** Phase 0 builds with `NO_QT=1`. | Qt (5.7.1 in depends, BIP70/TLS, `qt/explorer.cpp` CBigNum) becomes its own later phase; listed in plans/overview.md. |
 | 6 | CI and images | **GitHub Actions + GHCR.** Hosted runners for per-push jobs, the self-hosted runner for long jobs; `dev34253/yacoin-build` images mirrored to ghcr.io and pinned by digest. | Implemented in P0-44. |
+| 7 | Build OS (added 2026-10-02) | **Ubuntu 24.04**, with GCC 11 pinned for Phase 0. | New task P0-57 (in-repo Dockerfile, GHCR). GCC 13 is a Phase 1 change, so the baseline compiler stays constant. |
 
 Open follow-ups (owned by the named tasks, not blocking P0-00):
 - Machine specs, runner registration and peer list → P0-07 / P0-44.

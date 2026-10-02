@@ -42,6 +42,7 @@ mainnet values.
 
 | Item | Detail | Task |
 |---|---|---|
+| Build image | Ubuntu 24.04 with GCC 11 pinned (same compiler as the 22.04 baseline); Dockerfile in the repo; published to GHCR. | P0-57 |
 | Build configurations | Mainnet and low-difficulty builds via one script, coverage (`CFLAGS` **and** `CXXFLAGS`) and sanitizer options; out-of-tree. Measure unit-test runtime in the mainnet config before deciding where unit tests run. | P0-01 |
 | `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. | P0-02 |
 | CI | Unit, functional, coverage on push; a CI skeleton with schedules, runner, artifact storage and image mirroring. Each later job task adds its own job. | P0-03, P0-44 |
@@ -264,4 +265,5 @@ token consensus rely on existing tests and replay).
 | Where work lands | Fork first (dev34253/yacoin), upstream later in reviewed batches. |
 | Old release wallets | v1.0.0/v1.1.0 encrypted wallets must stay readable; tested in P0-30. |
 | Qt | Deferred to its own later phase; Phase 0 builds with `NO_QT=1`. |
+| Build OS | Ubuntu 24.04 image with GCC 11 pinned (P0-57); GCC 13 in Phase 1. |
 | CI and images | GitHub Actions (hosted for per-push, self-hosted for long jobs); build images mirrored to GHCR and pinned by digest. |

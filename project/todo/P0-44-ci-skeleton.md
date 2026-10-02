@@ -1,7 +1,7 @@
 # P0-44: CI skeleton: schedules, runner, artifacts, images
 
 - Plan section: 0.9
-- Depends on: P0-00, P0-03
+- Depends on: P0-00, P0-03, P0-57
 - Size: M
 - Owner:
 - Started:
@@ -16,7 +16,7 @@ Provide the CI structure other tasks add their jobs to.
 1. Workflow triggers for push, nightly and weekly/manual; self-hosted runner registration (per P0-00).
 2. Per-push jobs on GitHub-hosted runners; long jobs (reindex, replay, soak) on the self-hosted runner from P0-07 (P0-00 decisions 1 and 6).
 3. Artifact and fixture-cache conventions.
-4. Mirror dev34253/yacoin-build images to ghcr.io (decided) and pin by digest – Docker Hub anonymous pulls hit rate limits.
+4. Use the P0-57 image from ghcr.io (and mirror the legacy dev34253/yacoin-build images there) pinned by digest – Docker Hub anonymous pulls hit rate limits.
 5. Document how a task adds a job.
 
 ## Acceptance criteria

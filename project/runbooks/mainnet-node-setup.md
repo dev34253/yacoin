@@ -30,7 +30,7 @@ outbound); optionally `sudo ufw allow 7688/tcp` for inbound. Keep the RPC port
 
 ## 3. Build the mainnet binaries
 
-Same image and `depends` approach as CI; mainnet parameters (no
+Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11 from P0-57; until it is published, use `dev34253/yacoin-build:ubuntu.22.04-1`); mainnet parameters (no
 low-difficulty flag), no Qt.
 
 ```bash
@@ -38,7 +38,7 @@ sudo -iu yacoin
 git clone https://github.com/dev34253/yacoin.git ~/yacoin && cd ~/yacoin
 git rev-parse HEAD > /srv/yacoin/bin/COMMIT
 docker run --rm -v "$HOME/yacoin:/src" -w /src --entrypoint /bin/bash \
-  dev34253/yacoin-build:ubuntu.22.04-1 -c '
+  ghcr.io/dev34253/yacoin-build:ubuntu-24.04-gcc11 -c '
     git config --global --add safe.directory /src &&
     make -C depends -j"$(nproc)" HOST=x86_64-pc-linux-gnu NO_QT=1 &&
     ./autogen.sh &&

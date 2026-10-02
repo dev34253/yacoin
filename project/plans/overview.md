@@ -74,7 +74,7 @@ libsecp256k1), `random_nonce.cpp` (`rand()`, dead code).
 | Phase | Content | Main risk |
 |---|---|---|
 | **0 – Safety net** | Characterisation tests, mainnet replay, oracle, fuzzing, benchmarks. See [`phase0-test-safety-net.md`](phase0-test-safety-net.md). | Mainnet data logistics; kernel/reward coverage. |
-| 1 – Newer compilers | Missing includes and other GCC 13 errors; build on 24.04 with `depends`; 24.04 CI job. | `std::regex`, floating point and scrypt-jane code-path changes (covered by Phase 0 tests). |
+| 1 – Newer compilers | Switch the Ubuntu 24.04 build image (P0-57) from GCC 11 to GCC 13; fix missing includes and other GCC 13 errors. | `std::regex`, floating point and scrypt-jane code-path changes (covered by Phase 0 tests). |
 | 2 – Boost upgrade | Placeholders, `filesystem`, `signals2`, `assign`; possibly C++14; bump Boost in `depends`. | Thread shutdown/interruption hangs; path handling. |
 | 3 – OpenSSL out of non-consensus code | RNG (port Bitcoin Core's), `cleanse`, `util.cpp` init, `getwork` SHA256 midstate, test oracles → fixed vectors; delete dead `pbkdf2.cpp`/`scrypt.cpp` functions. | Weaker randomness (review against Bitcoin Core); `getwork` output. |
 | 4 – Replace `CBigNum` | Migrate to `arith_uint256` one function at a time; 512-bit intermediates (or rearranged comparisons) for the stake kernel **and the pre-fork reward**; every trust branch preserved. | Chain split. |
