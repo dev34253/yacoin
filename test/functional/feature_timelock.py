@@ -4,7 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Testing token use cases"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from test_framework.blocktools import TIME_GENESIS_BLOCK
@@ -252,7 +252,7 @@ class TokenTest(BitcoinTestFramework):
             amount_timelock_coins, LOCK_TIME, False, False, address_1
         )
         self.mine_blocks(0, 1)
-        date_time = datetime.utcfromtimestamp(LOCK_TIME)
+        date_time = datetime.fromtimestamp(LOCK_TIME, timezone.utc)
         timestamp_str = date_time.strftime("%Y-%m-%d %H:%M:%S UTC")
         expected_message = (
             "%d.000000 YAC are now locked. These coins will be locked until %s"
