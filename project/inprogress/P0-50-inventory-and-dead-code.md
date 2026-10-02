@@ -3,8 +3,8 @@
 - Plan section: 0.1
 - Depends on: none
 - Size: S
-- Owner:
-- Started:
+- Owner: Claude (subagent of the owner's Claude Code session)
+- Started: 2026-10-02
 - Finished:
 
 ## Goal
