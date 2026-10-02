@@ -3,8 +3,8 @@
 - Plan section: 0.2
 - Depends on: P0-01
 - Size: M
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-02
 - Finished:
 
 ## Goal
@@ -29,4 +29,4 @@ Review: A4, B7, D7.
 
 ## Log
 
--
+- 2026-10-02 – Step 0: picked up; dependency P0-01 is in done/; moved to inprogress/
