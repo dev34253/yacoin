@@ -42,6 +42,12 @@ if [ -e "$(command -v git)" -a -e "$(which git 2>/dev/null)" -a "$(git rev-parse
     TIME="$(git log -n 1 --format="%ci")"
 fi
 
+# Builds from a copy of the source without .git (e.g. contrib/testing/build.sh)
+# can pass the commit in BUILD_GIT_COMMIT.
+if [ -z "$GIT_TAG" ] && [ -z "$GIT_COMMIT" ] && [ -n "$BUILD_GIT_COMMIT" ]; then
+    GIT_COMMIT="$BUILD_GIT_COMMIT"
+fi
+
 if [ -n "$GIT_TAG" ]; then
     NEWINFO="#define BUILD_DESC \"$GIT_TAG\""
 elif [ -n "$GIT_COMMIT" ]; then

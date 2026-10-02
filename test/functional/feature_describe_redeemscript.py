@@ -81,7 +81,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         assert_equal(description['RedeemScriptHex'], csv_redeemscript)        
         assert_equal(description['CsvAddress'], csv_address)
         assert_equal(description['LockType'], 'Time-based lock')
-        nlocktime = int(re.match('(\d+) ', description['RedeemScriptFormat']).groups()[0])
+        nlocktime = int(re.match(r'(\d+) ', description['RedeemScriptFormat']).groups()[0])
         assert_equal(nlocktime>>31,0)
         assert_equal(nlocktime>>30,1)
         assert_equal(nlocktime & 0x3fffffff, 1200)
@@ -98,7 +98,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         assert_equal(description['RedeemScriptHex'], csv_redeemscript)        
         assert_equal(description['CsvAddress'], csv_address)
         assert_equal(description['LockType'], 'Block-based lock')
-        nlocktime = int(re.match('(\d+) ', description['RedeemScriptFormat']).groups()[0])
+        nlocktime = int(re.match(r'(\d+) ', description['RedeemScriptFormat']).groups()[0])
         assert_equal(nlocktime>>31,0)
         assert_equal(nlocktime>>30,0)
         assert_equal(nlocktime & 0x3fffffff, 100)
@@ -115,7 +115,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         assert_equal(description['RedeemScriptHex'], cltv_redeemscript)
         assert_equal(description['CltvAddress'], cltv_address)
         assert_equal(description['LockType'], 'Time-based lock')
-        nlocktime = int(re.match('(\d+) ', description['RedeemScriptFormat']).groups()[0])
+        nlocktime = int(re.match(r'(\d+) ', description['RedeemScriptFormat']).groups()[0])
         assert_equal(nlocktime, TIME_GENESIS_BLOCK+1200)
 
         cltv_info = self.nodes[0].createcltvaddress(1000, 'cltv_2')
@@ -130,7 +130,7 @@ class OP_CSV_Test(BitcoinTestFramework):
         assert_equal(description['RedeemScriptHex'], cltv_redeemscript)        
         assert_equal(description['CltvAddress'], cltv_address)
         assert_equal(description['LockType'], 'Block-based lock')
-        nlocktime = int(re.match('(\d+) ', description['RedeemScriptFormat']).groups()[0])
+        nlocktime = int(re.match(r'(\d+) ', description['RedeemScriptFormat']).groups()[0])
         assert_equal(nlocktime, 1000)
 
 if __name__ == '__main__':

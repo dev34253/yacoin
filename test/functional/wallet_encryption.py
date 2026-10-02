@@ -35,8 +35,7 @@ class WalletEncryptionTest(BitcoinTestFramework):
         assert_raises_rpc_error(-15, "Error: running with an unencrypted wallet, but walletpassphrasechange was called.", self.nodes[0].walletpassphrasechange, 'ff', 'ff')
 
         # Encrypt the wallet
-        self.nodes[0].encryptwallet(passphrase)
-        self.stop_node(0)
+        self.nodes[0].node_encrypt_wallet(passphrase)
         self.start_node(0)
 
         # Test that the wallet is encrypted

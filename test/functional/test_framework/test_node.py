@@ -313,6 +313,27 @@ class TestNode():
     def wait_until_stopped(self, timeout=BITCOIND_PROC_WAIT_TIMEOUT):
         wait_until(self.is_node_stopped, timeout=timeout)
 
+    def node_encrypt_wallet(self, passphrase, expected_stderr=''):
+        """Encrypt the wallet and wait for the node to shut down.
+
+        encryptwallet makes yacoind shut itself down. Sending a separate
+        `stop` RPC afterwards races with that shutdown and fails when the
+        node is already gone, so wait for the process to exit instead."""
+        self.encryptwallet(passphrase)
+        # Same cleanup as stop_node(): close the local RPC connection (no RPC
+        # is sent) and stop any running perf processes.
+        self.close()
+        for profile_name in tuple(self.perf_subprocesses.keys()):
+            self._stop_perf(profile_name)
+        self.wait_until_stopped()
+        self.stderr.seek(0)
+        stderr = self.stderr.read().decode('utf-8').strip()
+        if stderr != expected_stderr:
+            raise AssertionError("Unexpected stderr {} != {}".format(stderr, expected_stderr))
+        self.stdout.close()
+        self.stderr.close()
+        del self.p2ps[:]
+
     @contextlib.contextmanager
     def assert_debug_log(self, expected_msgs, unexpected_msgs=None, timeout=2):
         if unexpected_msgs is None:
