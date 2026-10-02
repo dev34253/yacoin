@@ -18,7 +18,10 @@ P0-44 (CI). Decisions behind it: `done/P0-00-phase0-decisions.md`.
 
 ```bash
 # as an admin user
-sudo apt update && sudo apt install -y git docker.io jq zstd   # skip what is already installed
+sudo apt update && sudo apt install -y git jq zstd
+# Docker: install docker.io only if Docker is not already present
+# (docker.io conflicts with Docker's own docker-ce packages)
+command -v docker >/dev/null || sudo apt install -y docker.io
 sudo adduser --disabled-password --gecos "" yacoin      # runs node and runner
 sudo usermod -aG docker yacoin
 sudo mkdir -p /srv/yacoin/{datadir,snapshots,dumps,bin} && sudo chown -R yacoin: /srv/yacoin
@@ -41,13 +44,16 @@ was never applied, so `configure` failed to find Berkeley DB even though
 ```bash
 sudo -iu yacoin
 git clone https://github.com/dev34253/yacoin.git ~/yacoin
+# Builds whatever is checked out (default: master). To build another ref:
+#   git -C ~/yacoin fetch origin <ref> && git -C ~/yacoin checkout <ref>
 cat > ~/build-mainnet.sh <<'EOS'
 #!/bin/bash
 set -euo pipefail
+IMAGE="${IMAGE:-ghcr.io/dev34253/yacoin-build:ubuntu-24.04-gcc11}"
 cd "$HOME/yacoin"
 docker run --rm -i --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$HOME/yacoin:/src" -w /src --entrypoint /bin/bash \
-  ghcr.io/dev34253/yacoin-build:ubuntu-24.04-gcc11 -s <<'EOC'
+  "$IMAGE" -s <<'EOC'
 set -euo pipefail
 git config --global --add safe.directory /src
 make -C depends -j"$(nproc)" HOST=x86_64-pc-linux-gnu NO_QT=1
@@ -65,8 +71,8 @@ chmod +x ~/build-mainnet.sh && ~/build-mainnet.sh > ~/build.log 2>&1; tail -3 ~/
 ```
 
 Notes:
-- Until P0-57 publishes the 24.04 image, replace the image name with
-  `dev34253/yacoin-build:ubuntu.22.04-1`.
+- Until P0-57 publishes the 24.04 image, run
+  `IMAGE=dev34253/yacoin-build:ubuntu.22.04-1 ~/build-mainnet.sh`.
 - The `depends` step takes 20–40 minutes the first time; later builds reuse it.
 - The version string ends in `-dirty`: `autogen.sh` rewrites some committed
   build-helper files. Harmless – no source files change.
@@ -81,18 +87,22 @@ Once P0-01 lands, replace the `docker run` block with
 ```ini
 server=1
 daemon=0
-txindex=1            # default is 1; required for PoS calculations
-dbcache=4000         # MB; lower to 2000 on 8 GB machines
+# txindex is the default and required for PoS calculations
+txindex=1
+# MB; lower to 2000 on 8 GB machines
+dbcache=4000
 rpcbind=127.0.0.1
 rpcallowip=127.0.0.1
 rpcuser=yacoin
 rpcpassword=CHANGE_ME_LONG_RANDOM
-listen=1             # set 0 if inbound 7688 is not open
+# set listen=0 if inbound 7688 is not open
+listen=1
 # known reliable peers in addition to the 7 built-in seeds:
 #addnode=<ip>:7688
 #addnode=<ip>:7688
 ```
 
+Keep comments on their own lines – do not put `# …` after a value.
 Generate a password with `openssl rand -hex 32`. Do not enable pruning.
 
 ## 5. Run as a service
@@ -134,6 +144,11 @@ The node first downloads and checks all block headers (~2 million); `getblockcou
 stays flat during that stage (`debug.log` shows header batches). Header
 verification slows down further along the chain because the scrypt-jane
 N-factor rises (9 → 21). Expect hours for the full sync.
+
+Not all built-in seeds are reachable (on 2026-10-02 96.32.210.58 timed out,
+62.146.224.245 worked). Test one with
+`timeout 6 bash -c 'echo > /dev/tcp/<ip>/7688' && echo open`. One reachable
+peer is enough; the node discovers more from it.
 
 If no peers connect: check outbound 7688, then add `addnode=` lines for
 peers known from the community and restart.
