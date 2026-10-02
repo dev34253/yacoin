@@ -5,7 +5,7 @@
 - Size: M
 - Owner: Claude (cloud session)
 - Started: 2026-10-02
-- Finished:
+- Finished: 2026-10-02
 
 ## Goal
 
@@ -21,7 +21,7 @@ Move all Phase 0 builds to Ubuntu 24.04 (P0-00 decision 7) without changing the 
 
 ## Acceptance criteria
 
-- [ ] Dockerfile committed; image published to Docker Hub and pinned by digest.
+- [x] Dockerfile committed; image published to Docker Hub and pinned by digest.
 - [x] `depends` + yacoin build succeeds in the image for both configurations.
 - [x] Test results identical to the 22.04 baseline (differences explained in Log).
 - [x] P0-01 and the runbook use this image.
@@ -55,4 +55,4 @@ Validation with the exact image (`dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, l
 
 Notes: binaries built on 24.04 need glibc ≥ 2.38 (dev/CI only). Qt not tested in this image. The yacoin-build-ubuntu workflow republishes all image tags on every branch push.
 
-Image: Dockerfile pushed to dev34253/yacoin-build-ubuntu branch `claude/ubuntu-2404-gcc11` (6a96f51); publishing run 37065216122 – digest pending.
+Image: Dockerfile on dev34253/yacoin-build-ubuntu branch `claude/ubuntu-2404-gcc11` (6a96f51), published by run 37065216122 (step succeeded 21:11 UTC) as `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, digest `sha256:d913fd15c3d4166f81a365e103486774414a8aa8bbc48b29448f92a013193a5b`. Smoke test of the published image itself: mainnet build OK, unit tests 239/239. Not yet merged into that repo's master (PR on request).

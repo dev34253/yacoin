@@ -33,7 +33,7 @@ outbound); optionally `sudo ufw allow 7688/tcp` for inbound. Keep the RPC port
 
 ## 3. Build the mainnet binaries
 
-Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11, `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, task P0-57); mainnet parameters (no
+Same image and `depends` approach as CI (Ubuntu 24.04 / GCC 11, `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`, digest `sha256:d913fd15c3d4166f81a365e103486774414a8aa8bbc48b29448f92a013193a5b`, task P0-57); mainnet parameters (no
 low-difficulty flag), no Qt.
 
 Put the build steps in a script rather than one long nested `sudo -iu … bash -c "…"`
