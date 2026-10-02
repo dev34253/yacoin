@@ -18,7 +18,7 @@ P0-44 (CI). Decisions behind it: `done/P0-00-phase0-decisions.md`.
 
 ```bash
 # as an admin user
-sudo apt update && sudo apt install -y git docker.io jq
+sudo apt update && sudo apt install -y git docker.io jq zstd
 sudo adduser --disabled-password --gecos "" yacoin      # runs node and runner
 sudo usermod -aG docker yacoin
 sudo mkdir -p /srv/yacoin/{datadir,snapshots,dumps,bin} && sudo chown -R yacoin: /srv/yacoin
