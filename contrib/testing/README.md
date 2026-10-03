@@ -178,8 +178,12 @@ in `$RUNNER_TEMP/yacoin-build`:
   schedules, the self-hosted runner and long-running jobs.
 - When the image digest changes, update both `DEFAULT_IMAGE` in `build.sh`
   and `YACOIN_BUILD_IMAGE` in the workflow.
-- The older workflow `yacoinbuildmultiplatform.yml` (release binaries for
-  all platforms) is unchanged.
+- Both workflows (this one and the older `yacoinbuildmultiplatform.yml`,
+  which builds the release binaries for all platforms) have a
+  `concurrency` group per workflow and branch with `cancel-in-progress`: a
+  newer push to the same branch cancels the older run, so runners are not
+  tied up by superseded commits. Otherwise the release-build workflow is
+  unchanged.
 
 ## Restricted networks (proxy and CA)
 
