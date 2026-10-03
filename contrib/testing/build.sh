@@ -164,9 +164,14 @@ if [ "$IN_CONTAINER" = 0 ]; then
     log "syncing checkout $REPO ($BUILD_GIT_COMMIT) to $WORK_DIR/src"
     python3 "$REPO/contrib/testing/sync_tree.py" "$REPO" "$WORK_DIR/src"
 
-    INNER_ARGS=(--in-container --config "$CONFIG" --functional-args "$FUNCTIONAL_ARGS")
+    INNER_ARGS=(--in-container --functional-args "$FUNCTIONAL_ARGS")
+    # --coverage-report covers both configurations and rejects --config.
+    if [ "$COVERAGE_REPORT" = 1 ]; then
+        INNER_ARGS+=(--coverage-report)
+    else
+        INNER_ARGS+=(--config "$CONFIG")
+    fi
     [ "$COVERAGE" = 1 ] && INNER_ARGS+=(--coverage)
-    [ "$COVERAGE_REPORT" = 1 ] && INNER_ARGS+=(--coverage-report)
     [ -n "$SANITIZERS" ] && INNER_ARGS+=(--sanitizers "$SANITIZERS")
     [ -n "$JOBS" ] && INNER_ARGS+=(--jobs "$JOBS")
     [ "$RECONFIGURE" = 1 ] && INNER_ARGS+=(--reconfigure)
