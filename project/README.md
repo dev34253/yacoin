@@ -9,6 +9,8 @@ compiler) so it builds on current Linux distributions such as Ubuntu 24.04.
 - `todo/` – tasks that have not been started.
 - `inprogress/` – tasks someone is working on right now.
 - `done/` – finished tasks.
+- [`open-questions.md`](open-questions.md) – questions and decisions for the
+  owner, collected while tasks are implemented; answer them there.
 
 ## How to process a task
 
