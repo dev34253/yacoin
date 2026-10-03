@@ -3,8 +3,8 @@
 - Plan section: 0.1, 0.10
 - Depends on: P0-03, P0-50
 - Size: S
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-03
 - Finished:
 
 ## Goal
@@ -35,4 +35,4 @@ Review: B11, C4, C5. Final targets: plan 0.10.
 
 ## Log
 
--
+- 2026-10-03: moved to inprogress. Dependencies P0-03 and P0-50 are in `project/done/`.
