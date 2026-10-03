@@ -38,6 +38,7 @@ BITCOIN_TESTS =\
   test/base64_tests.cpp \
   test/bignum_compact_tests.cpp \
   test/bignum_consensus_tests.cpp \
+  test/bignum_property_tests.cpp \
   test/bignum_tests.cpp \
   test/bignum_vectors_tests.cpp \
   test/bip32_tests.cpp \

@@ -99,11 +99,11 @@ make -j"$(nproc)"
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (316)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (327)
 python3 test/functional/test_runner.py -j4            # functional tests (46)
 ```
 
-- Expected today: 316/316 unit tests in both builds (mainnet and low
+- Expected today: 327/327 unit tests in both builds (mainnet and low
   difficulty) and 46/46 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef

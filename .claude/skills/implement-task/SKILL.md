@@ -102,9 +102,9 @@ contrib/testing/build.sh --config lowdiff --unit --functional
 plus any task-specific tests from the description.
 
 **Passing means:**
-- mainnet: exit code 0, `unit.log` reports all test cases passed (316 today,
+- mainnet: exit code 0, `unit.log` reports all test cases passed (327 today,
   plus any the task adds);
-- lowdiff: exit code 0, `unit.log` reports all test cases passed (316
+- lowdiff: exit code 0, `unit.log` reports all test cases passed (327
   today, plus any the task adds) and `functional.log` ends with `ALL ...
   Passed` (46 today, plus new ones). A test whose expected value depends on
   the chain parameters pins the value for each build (`#ifdef
