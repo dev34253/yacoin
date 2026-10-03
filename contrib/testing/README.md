@@ -88,12 +88,12 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13 and P0-27)
+## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46 and P0-19)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 341/341 | – (not supported) |
-| `lowdiff` | 341/341 | 46/46 |
+| `mainnet` | 344/344 | – (not supported) |
+| `lowdiff` | 344/344 | 46/46 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to
@@ -328,6 +328,42 @@ post-fork, 60 epoch, 18 PoS rows agree. `LIST` has one hex `nBits` per line
 (`#` comments allowed); P0-23 adds the pre-fork `nBits` of the mainnet dump
 this way. Not run by `build.sh` or CI; `reward_tests` in every `--unit` run
 replays the file through the node code.
+
+## Block-header hash vectors (P0-19)
+
+`header_hash_vectors.py` writes and checks the block-header hash known
+answers `src/test/data/header_hash_vectors.json` (format in
+`src/test/README.md`, "Block-header hash"). The hashes come from a pure
+Python model of scrypt-jane as the node builds it (Keccak-512 with the
+original padding, HMAC/PBKDF2, ChaCha20/8 BlockMix, ROMix; N = 2^(Nf+1),
+r = p = 1), not from the node code. Before anything else it self-tests the
+model: the Keccak permutation against `hashlib.sha3_512`, the scrypt-jane
+power-on-self-test vector for Keccak-512/ChaCha, and the mainnet and
+low-difficulty genesis hashes of `chainparams.cpp`. Python 3, standard
+library, on the host:
+
+```bash
+contrib/testing/header_hash_vectors.py --selftest                 # model only, < 1 s
+contrib/testing/header_hash_vectors.py                            # check, N-factor ≤ 12
+contrib/testing/header_hash_vectors.py --max-nfactor 21 --jobs 4  # check all real N-factors
+contrib/testing/header_hash_vectors.py --reference ./refhash      # + N-factor 13-25 via upstream
+contrib/testing/header_hash_vectors.py --write --max-nfactor 21 --jobs 4 --reference ./refhash
+```
+
+Pure Python needs about 0.8 s at N-factor 12 and twice as long per step
+(about 7 min and 512 MiB at 21, about 2 h and 8 GiB at 25), so `--check`
+checks N-factors up to `--max-nfactor` (default 12) with Python, higher
+ones with `--reference BIN` if given, and lists the rest as not checked
+(not a failure). `--check` also compares every field except `hash` and
+`source` with the case list. Exit code 1 on any disagreement.
+
+`BIN` is `scrypt_jane_refhash.c` built against the **upstream**
+scrypt-jane (floodyberry, commit 0ab6125), a second implementation
+independent of `src/scrypt-jane`; the build commands are in the file's
+header comment. In the committed file N-factors 0-21 have `source`
+`python` and 22-25 `reference`; the upstream build agrees with Python on
+every vector up to 21. Not run by `build.sh` or CI; `header_hash_tests`
+in every `--unit` run replays the file through the node code.
 
 ## Restricted networks (proxy and CA)
 
