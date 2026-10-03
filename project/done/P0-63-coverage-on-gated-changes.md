@@ -5,7 +5,7 @@
 - Size: S
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -37,9 +37,9 @@ answered by the owner on 2026-10-03).
 
 ## Acceptance criteria
 
-- [ ] A push that changes a gated file runs the coverage jobs and the gate; a
+- [x] A push that changes a gated file runs the coverage jobs and the gate; a
       docs-only push does not (show both runs).
-- [ ] The two logging blocks are excluded; the gate passes; actionlint clean.
+- [x] The two logging blocks are excluded; the gate passes; actionlint clean.
 
 ## Notes
 
@@ -224,3 +224,19 @@ decision and the matched files to the job log and step summary.
   (exclusions, ratchet, README): no findings (regexes match exactly
   kernel.cpp:485 and validation.cpp:954/971, not kernel.cpp:370; extents
   485–522, 954–958, 971–975; minimums = floor(measured − 0.5)).
+- 2026-10-03 merged origin/master (P0-62, #72; no conflicts) → f3539ab.
+- 2026-10-03 CI run 3 (gated push: 8ff9550 toml + merge f3539ab):
+  https://github.com/dev34253/yacoin/actions/runs/37122575959 – `changes`
+  (6 s) "Run: the branch changes watched files:
+  contrib/testing/coverage-gates.toml"; unit (mainnet), unit + functional
+  (lowdiff), coverage (mainnet), coverage (lowdiff) and coverage report
+  (merged) all green; gate 22/22 ok with the same numbers as locally
+  (kernel.cpp branches 33.33 %, rewards branches 71.86 %, suggestions =
+  the new minimums).
+- 2026-10-03 step 10, documentation self-review (no Agent tool): fixed
+  "All jobs of a run start in parallel" (now: once `changes` is done) and
+  "tests" → "unwatched files" in README "CI"; times of `changes` checked
+  (4–6 s). actionlint clean on the final `tests.yml`.
+- Not applied / left as is: `tests.yml` and the `overall` gate are not
+  watched (task list, owner answer Q11: other pushes stay fast;
+  documented, *Run workflow* for workflow changes).

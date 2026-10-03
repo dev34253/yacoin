@@ -285,7 +285,7 @@ under a minute). Each build job runs `build.sh` with Docker on a GitHub-hosted
   cancels the older run (`concurrency` below), so a docs commit pushed
   right after a gated change must still run the gate. Once a branch
   changes a watched file, every later push of it runs coverage; a branch
-  that changes only docs, tests or other files keeps the two test jobs.
+  that changes only docs, tests or other unwatched files keeps the two test jobs.
 - Any error in the decision (no merge base, unreadable toml, failed
   `git diff`) runs the coverage jobs (fail safe); the run's summary page
   says which rule applied and which watched files changed.
@@ -296,7 +296,7 @@ under a minute). Each build job runs `build.sh` with Docker on a GitHub-hosted
   the workflow by hand.
 
 - The `-O2` jobs test the optimised build; the coverage jobs (`-O0`)
-  measure coverage. All jobs of a run start in parallel (times above
+  measure coverage. The build jobs of a run start in parallel once `changes` is done (times above
   exclude waiting for a runner).
 - Artifacts of each run: `coverage-mainnet`, `coverage-lowdiff` and
   `coverage-merged` (`.info`, `summary.txt`, `html/` – open
