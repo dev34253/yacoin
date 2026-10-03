@@ -134,6 +134,13 @@ All consensus unit tests use the shared harness (P0-47): block-index /
   `LoadBlockRewardAndHighestDiff`, `getsubsidy`.
 - Golden table for every pre-fork `nBits` seen on mainnet plus boundaries;
   reward and max size per epoch.
+- Done in P0-46 (`src/test/reward_tests.cpp`, golden table
+  `src/test/data/reward_vectors.json`): boundary and sweep `nBits`, a model
+  per-epoch table. The mainnet `nBits` and real per-epoch supplies need the
+  dump (P0-09) and are added by P0-23. On x86-64 both post-fork `double`
+  forms equal `floor(nMoneySupply / 26,298,000)` up to `MAX_MONEY`
+  (`postfork_double_equals_integer`), which Phase 4 can use instead of
+  `double`.
 
 ### g) Token-name validation – P0-49
 

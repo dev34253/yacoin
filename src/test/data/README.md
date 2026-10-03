@@ -8,6 +8,9 @@ This directory contains data-driven tests for various aspects of Bitcoin.
 embedded as strings (`*.json.xz.h`), see `src/Makefile.test.include`.
 `bignum_vectors.json.xz` holds the `CBigNum` golden vectors (task P0-13;
 format and regeneration in `src/test/README.md`); never edit it by hand.
+`reward_vectors.json` is the reward and block-size golden table (task
+P0-46), written by `contrib/testing/reward_vectors.py`; never edit it by
+hand either.
 
 License
 --------

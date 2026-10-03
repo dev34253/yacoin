@@ -25,6 +25,13 @@ Recompute every dumped value without running a node. Primary exit criterion for 
 
 Review: C3.
 
+- From P0-46: add every distinct pre-fork `nBits` of the dump to the reward
+  golden table (`contrib/testing/reward_vectors.py --write --mainnet-nbits
+  LIST`, one hex value per line; `reward_tests` replays it unchanged) and
+  check the reward and max size of every post-fork epoch against the real
+  `nMoneySupply` (the committed `epochs` table is a model). P0-46 left
+  these open because the dump did not exist yet.
+
 ## Log
 
 -

@@ -40,6 +40,36 @@
 
 #include <boost/test/unit_test.hpp>
 
+/** validation.cpp:942-977 without fees, logging and the post-fork branch;
+ *  bnTargetLimit is the already round-tripped compact powLimit. Not in the
+ *  anonymous namespace: reward_tests.cpp (P0-46) uses it for the target
+ *  limit of the other build configuration. */
+int64_t RewardBisection(uint32_t nBits, uint32_t nTargetLimitCompact)
+{
+    CBigNum bnSubsidyLimit = MAX_MINT_PROOF_OF_WORK;
+    CBigNum bnTarget;
+    bnTarget.SetCompact(nBits);
+    CBigNum bnTargetLimit;
+    bnTargetLimit.SetCompact(nTargetLimitCompact);
+
+    CBigNum bnLowerBound = CENT;
+    CBigNum bnUpperBound = bnSubsidyLimit;
+    while (bnLowerBound + CENT <= bnUpperBound)
+    {
+        CBigNum bnMidValue = (bnLowerBound + bnUpperBound) / 2;
+        if (bnMidValue * bnMidValue * bnMidValue * bnMidValue * bnMidValue *
+                bnMidValue * bnTargetLimit >
+            bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit *
+                bnSubsidyLimit * bnSubsidyLimit * bnTarget)
+            bnUpperBound = bnMidValue;
+        else
+            bnLowerBound = bnMidValue;
+    }
+    int64_t nSubsidy = bnUpperBound.getuint64();
+    nSubsidy = (nSubsidy / CENT) * CENT;
+    return std::min(nSubsidy, MAX_MINT_PROOF_OF_WORK);
+}
+
 BOOST_FIXTURE_TEST_SUITE(bignum_consensus_tests, BasicTestingSetup)
 
 namespace {
@@ -67,33 +97,6 @@ CBigNum TrustShift(const CBigNum& bnTarget)
     return (CBigNum(1) << 256) / (bnTarget + 1);
 }
 
-/** validation.cpp:942-977 without fees, logging and the post-fork branch;
- *  bnTargetLimit is the already round-tripped compact powLimit. */
-int64_t RewardBisection(uint32_t nBits, uint32_t nTargetLimitCompact)
-{
-    CBigNum bnSubsidyLimit = MAX_MINT_PROOF_OF_WORK;
-    CBigNum bnTarget;
-    bnTarget.SetCompact(nBits);
-    CBigNum bnTargetLimit;
-    bnTargetLimit.SetCompact(nTargetLimitCompact);
-
-    CBigNum bnLowerBound = CENT;
-    CBigNum bnUpperBound = bnSubsidyLimit;
-    while (bnLowerBound + CENT <= bnUpperBound)
-    {
-        CBigNum bnMidValue = (bnLowerBound + bnUpperBound) / 2;
-        if (bnMidValue * bnMidValue * bnMidValue * bnMidValue * bnMidValue *
-                bnMidValue * bnTargetLimit >
-            bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit * bnSubsidyLimit *
-                bnSubsidyLimit * bnSubsidyLimit * bnTarget)
-            bnUpperBound = bnMidValue;
-        else
-            bnLowerBound = bnMidValue;
-    }
-    int64_t nSubsidy = bnUpperBound.getuint64();
-    nSubsidy = (nSubsidy / CENT) * CENT;
-    return std::min(nSubsidy, MAX_MINT_PROOF_OF_WORK);
-}
 
 /** x^6, written out like the production code. */
 CBigNum Pow6(const CBigNum& x)

@@ -129,6 +129,25 @@ too slow: more CPU for the node, or a second node.
 *For now:* master/by hand, the rule above, exclusions as listed in
 `contrib/testing/coverage-gates.toml`.
 
+### Q12 – Reward quirks found while pinning them (from P0-46)
+- Post-fork, `GetProofOfWorkReward` ignores `nFees` (`validation.cpp:932`
+  has no `+ nFees`), so a post-fork PoW coinbase cannot claim the fees of
+  its transactions; pre-fork it can. Pinned as consensus behaviour. Is
+  this intended (fees burned), and should it be documented for miners?
+- `getsubsidy`: `yacoin-cli` converts `ntarget` as JSON
+  (`rpc/client.cpp:81`), so the hex target only works quoted
+  (`'"0000…"'`); the server then reads it with `get_str()`. After the
+  fork the target is ignored. Fix the client conversion (RPC only, not
+  consensus) in a later phase, or leave it?
+- `getmininginfo`'s `blockvalue` passes `chainActive.Height()` (the tip,
+  not the next block) to `GetProofOfWorkReward` (`rpc/mining.cpp:301`);
+  when the next block starts a new epoch it still shows the current
+  epoch's reward. Leave as is?
+- `LoadBlockRewardAndHighestDiff` logs reward 0 and "something wrong" when
+  the fork height is not a multiple of `-epochinterval` and the tip is in
+  the first epoch (functional tests with such a fork height). Log only.
+*For now:* all pinned as they are by `reward_tests`; nothing changed.
+
 ## Answered
 
 (none yet)
