@@ -5,7 +5,7 @@
 - Size: S
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -18,8 +18,8 @@ Replace the OpenSSL test oracle with fixed vectors and pin the already-internal 
 
 ## Acceptance criteria
 
-- [ ] wallet/crypter.cpp ≥ 95% lines.
-- [ ] Fixed vectors committed; OpenSSL oracle can later be removed without losing coverage.
+- [x] wallet/crypter.cpp ≥ 95% lines (96.62 %, 200/207; functions 100 %).
+- [x] Fixed vectors committed; OpenSSL oracle can later be removed without losing coverage (the seven new cases use no OpenSSL).
 
 ## Notes
 
@@ -164,7 +164,7 @@ files (P0-30), any fix of the empty-input behaviour.
 | Criterion | Test / command | Expected |
 |---|---|---|
 | Fixed vectors committed, independent | `contrib/testing/crypter_vectors.py --check` and `--cross-check` | exit 0, 0 mismatches |
-| Node agrees with the vectors | `build.sh --config mainnet --unit`, `--config lowdiff --unit --functional` | 377+7 unit cases pass in both; 48/48 functional; vector check in `vectors.log` OK |
+| Node agrees with the vectors | `build.sh --config mainnet --unit`, `--config lowdiff --unit --functional` | 381 (master after merge) + 7 unit cases pass in both; 48/48 functional; vector check in `vectors.log` OK |
 | Oracle removable | the new cases use no OpenSSL symbol (grep) | – |
 | crypter.cpp ≥ 95 % lines | `build.sh --coverage --unit` both configs + `--coverage-report`, `coverage_gate.py` | ≥ 95 % lines, gate passes; ratchet with `--suggest` |
 | CI | PR checks | green incl. coverage gate |
@@ -240,3 +240,38 @@ existing OpenSSL oracle in the same binary.
   (openssl 3.0.13, cryptography 49.0.0), 0 disagree; a changed value in a
   copy of the file makes `--check` exit 1. Seven cases added to
   `wallet_crypto`; checker added to `build.sh --unit`.
+- 2026-10-03 step 8, first run: `keystore_decrypt_keys` failed – my
+  expectation was wrong, not the vectors: `DecryptKeys` re-adds keys through
+  the virtual `AddKeyPubKey`, so it fails on a locked store and loses the
+  keys on an unlocked one. Test changed to pin that (known issue, dead
+  caller `DecryptWallet`). Then: mainnet 384/384, lowdiff 384/384 + 48/48
+  functional, all four vector checkers ok. `wallet_crypto` new cases take
+  ~0.2 s (-O2).
+- 2026-10-03 step 7, code review (`code-review` skill, medium) on the staged
+  diff: no correctness bugs; two low findings, both applied – the JSON
+  loader now resets on a bad format/version so every case fails, and the
+  known-issues text on crypter reuse in `CWallet` was wrong (Unlock /
+  ChangeWalletPassphrase do reuse one crypter; `wallet.cpp:429,433` ignore
+  the result, `:441` re-checks) – corrected.
+- 2026-10-03 coverage (local, mainnet `--coverage --unit` + lowdiff
+  `--coverage --unit --functional` + `--coverage-report`, code of
+  341702d): `wallet/crypter.cpp` 96.62 % lines (200/207), 100 % functions
+  (before: 73.43 / 94.12); gate passed. Ratcheted the crypter gate to
+  lines 96 / functions 100 (`--suggest`); the other gates' suggestions come
+  from other tasks' tests and are left to them. Uncovered: `Encrypt`'s
+  short-output return, the `Unlock` LogPrintf/assert pair, the
+  unreachable `AddCryptedKey`/`AddKey` failure returns, and `Unlock` on a
+  plain store with keys (`:176`) – the last one is covered by one more
+  check added after the measurement (f71e4db).
+- 2026-10-03 step 10, documentation review (self-review, no Agent tool):
+  checked `src/test/README.md`, `contrib/testing/README.md`, known issues,
+  plan 0.2j against the code and the runs; fixed a line reference
+  (`crypter.cpp:106`), the runtime claim, the "not in the image" claim
+  (the image has `openssl`, not `cryptography`), a paragraph wrap.
+- 2026-10-03 merged origin/master (P0-55, #79, #80; d44bbf2); counts now
+  381 + 7 = 388 unit, 48 functional. No Boost ≥ 1.59-only macros in the
+  new cases (BOOST_CHECK/REQUIRE/_EQUAL/_MESSAGE only).
+- 2026-10-03 step 8, final runs on d44bbf2 (merged master): mainnet
+  388/388 unit; lowdiff 388/388 unit and 48/48 functional; all four vector
+  checkers ok in both.
+- 2026-10-03 step 11: PR https://github.com/dev34253/yacoin/pull/82
