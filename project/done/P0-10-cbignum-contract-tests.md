@@ -178,7 +178,11 @@ the same table.
   `d[4]`), and `getBytes()` of zero / `setBytes()` of an empty vector take
   `&v[0]` of an empty vector. Undefined behaviour – not tested, documented in
   the test file. Negative zero only arises from `setvch`/`Unserialize`,
-  which have no production caller.
+  which have no production caller. *(Corrected by P0-11: `SetCompact` also
+  creates a negative zero, for any `nBits` with exponent ≥ 1, the sign bit
+  set and all kept mantissa bytes zero, e.g. `0x01800000`; this is
+  reachable from block headers. All current production callers are safe –
+  see `project/done/P0-11-compact-encoding-tests.md`.)*
 - Overload resolution: the integer constructors are for the fixed-width
   types only, so e.g. `CBigNum(1LL)` (`long long`, not `int64_t` on
   x86_64 Linux) is ambiguous and does not compile. Tests use fixed-width

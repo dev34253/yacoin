@@ -163,6 +163,26 @@ height,hash,prev_hash,time,bits,version,nonce,merkle_root,flags,stake_modifier,h
   a segment; for later rows a given `prev_hash` must match the previous row.
 - Any error throws `std::runtime_error` with `<name>:<line>: <reason>`.
 
+### Compact encoding tests (P0-11)
+
+`bignum_compact_tests.cpp` pins `CBigNum::SetCompact`/`GetCompact`
+(`bignum.h`, OpenSSL MPI based) exactly, bugs included: every exponent 0–34,
+the sign bit, zero, values ≥ 2^256 (exponents up to 255), `GetCompact`
+normalisation and truncation, Bitcoin Core's `arith_uint256` compact tests
+ported, and a sweep of 3840 compacts against `arith_uint256`. Behaviour the
+replacement in Phase 4 must handle specially (full list in
+`project/done/P0-11-compact-encoding-tests.md`):
+
+- negative compacts give negative values (`arith_uint256`: magnitude plus
+  `fNegative`);
+- a sign bit with all kept mantissa bytes zero (e.g. `0x01800000`) gives a
+  negative zero: `<= 0` is true, `GetCompact`/`getuint256` on it are
+  undefined behaviour and are never called;
+- values ≥ 2^256 are exact, there is no overflow flag; `getuint256()` takes
+  them mod 2^256;
+- `GetCompact` of |v| ≥ 2^2039 wraps the exponent byte (2^2040 →
+  `0x00010000`).
+
 ### Chain trust tests (P0-16)
 
 `chain_trust_tests.cpp` pins block trust, chain trust and their uses as they
