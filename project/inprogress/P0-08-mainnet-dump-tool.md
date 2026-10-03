@@ -3,8 +3,8 @@
 - Plan section: 0.1, 0.3
 - Depends on: P0-01, P0-07
 - Size: M
-- Owner:
-- Started:
+- Owner: Claude (subagent of the local Remote Control session on artman-X) for dev34253
+- Started: 2026-10-03
 - Finished:
 
 ## Goal
@@ -32,4 +32,11 @@ Review: B7, C1.
 
 ## Log
 
--
+- 2026-10-03 – step 0: picked up on branch `task/P0-08-mainnet-dump-tool`
+  (from master 6859321). Dependencies: P0-01 is done; P0-07 is still in
+  `inprogress/` (snapshots and checksums not finished), but the owner's
+  answer to Q9 says P0-08 can start, and the parent session prepared a
+  consistent tip snapshot of the node (height 1,964,617, tip
+  `00000384e8e155597aad553e8609b27aec6321086fe6aeb029869f47dcce17bf`,
+  taken with the node stopped, `/srv/yacoin/snapshots/p0-08-datadir/`),
+  which is all this task needs from P0-07. Proceeding on that basis.
