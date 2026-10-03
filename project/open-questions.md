@@ -48,6 +48,11 @@ send-buffer gap and removes P0-16's workarounds).
 - `-testnet` has base params but no chain params (`CreateChainParams("test")`
   throws "Unknown chain test"); checkpoint 1,750,000 has no leading zeros.
   Recorded only.
+**Answer (owner, 2026-10-03):** (1) yes – `build.sh` fails when `unit.log` has no
+"test cases … passed" summary, and the `Shutdown(void*)` stub exits 1; added to
+P0-61. (2) record only; fix the framework docstring (40 blocks, epoch
+interval 20) – also in P0-61. (3) leave as is (testnet remnants go with
+P0-59 at the end of Phase 0).
 
 ### Q10 – CBigNum golden vectors: CI check, `xz`, size (from P0-13)
 - `contrib/testing/bignum_vectors_check.py` (independent Python model of
