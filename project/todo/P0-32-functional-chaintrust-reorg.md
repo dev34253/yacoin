@@ -25,6 +25,16 @@ Check fork choice by chain trust end to end.
 
 Review: A5, C8.
 
+- From P0-16: the unit tests in `src/test/chain_trust_tests.cpp` cover the
+  trust comparisons in `net_processing.cpp` 438-456 (inv / block
+  availability), 536 (block download) and 3113-3119 (`ConsiderEviction`),
+  and fork choice by trust for PoW blocks on regtest. Not covered there and
+  left to this task: the header-sync comparisons in `ProcessHeadersMessage`
+  – 1481 (`m_last_block_announcement` for a header with more trust than the
+  tip), 1507 (direct fetch when the headers reach at least the tip's trust)
+  and 1583 (protecting an outbound peer whose best block has at least the
+  tip's trust).
+
 ## Log
 
 -
