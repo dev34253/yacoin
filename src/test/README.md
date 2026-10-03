@@ -298,6 +298,50 @@ contrib/testing/bignum_vectors_check.py src/test/data/bignum_vectors.json.xz
 The first command fails its comparison as long as the binary still embeds
 the old file; rebuild and run the suite again afterwards.
 
+### CBigNum property tests (P0-27)
+
+`bignum_property_tests.cpp` checks algebraic identities of `CBigNum` on
+random inputs (1000 samples per case by default): values from 0 to about
+1100 bits (about 2400 bits for the compact exponent wrap), half of them
+negative, powers of two (and ±1) and byte patterns of 0x00/0xff runs that
+provoke carries. The 11 cases cover `+`/`-`, `*`/`/` (with `int64_t`
+operands as in `pow.cpp`), truncating division and `%`, shifts, ordering,
+compact round trips (from values and from random encodings),
+`getuint256`/`getuint64`/`setuint256`, agreement with `arith_uint256` below
+2^256, and operations with a negative zero. Where an identity does not hold
+for `CBigNum` the test pins what it does instead (all inputs stay in):
+
+- `a >> n` of any negative `a` is an ordinary 0 (also for `n = 0`), so
+  `(a << n) >> n == a` only for `a >= 0`;
+- `/` truncates toward zero; `a % b` is in `[0, |b|)`, i.e. the truncated
+  remainder plus `|b|` when that is negative;
+- no operation on ordinary values gives a negative zero; with a negative
+  zero `nz` (from `SetCompact`, e.g. `0x01800000`): `nz - 0`, `nz + nz` and
+  `nz << n` stay negative zeros, `nz % x == |x|`, products, quotients,
+  `nz >> n` and `-nz` are ordinary zeros, `x / nz` throws;
+- `GetCompact` of a value of 256 or more MPI bytes wraps the exponent byte.
+
+The random source is deterministic by default: each case uses its own
+`FastRandomContext` seeded with SHA256(fixed base seed, case name), so a case
+gives the same inputs whether it runs alone or with the others. Two
+environment variables change that without touching the default run:
+
+```bash
+YACOIN_PROPERTY_SEED=random test_bitcoin --run_test=bignum_property_tests --log_level=message
+YACOIN_PROPERTY_SEED=<64 hex digits> ...   # replay a seed
+YACOIN_PROPERTY_ITERATIONS=20000 ...       # more samples per case
+```
+
+With `random` every case draws its own base seed; replaying the seed a case
+printed reproduces that case. `--log_level=message` prints the seed, the
+number of checks, the time and
+how often each input class was generated per case. A failure message names
+the line, the expression, the case, the iteration, the operands in hex and
+the `YACOIN_PROPERTY_SEED` value that replays it; a case stops after 20
+failures. Invalid variable values fail the case with a message. With the
+default iteration count each case also checks that every input class it
+needs was generated at least once.
+
 ### Chain trust tests (P0-16)
 
 `chain_trust_tests.cpp` pins block trust, chain trust and their uses as they
