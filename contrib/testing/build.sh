@@ -10,6 +10,7 @@
 #
 #   contrib/testing/build.sh --config mainnet --unit
 #   contrib/testing/build.sh --config lowdiff --coverage --unit --functional
+#   contrib/testing/build.sh --coverage-report
 
 set -euo pipefail
 
@@ -25,6 +26,11 @@ Build options:
                             --enable-low-difficulty-for-development (needed
                             by the functional tests).
   --coverage                Instrument C and C++ code for gcov/lcov (-O0).
+                            With --unit/--functional, also writes an lcov
+                            report to <builddir>/coverage/ (task P0-03).
+  --coverage-report         Do not build: merge the coverage reports of the
+                            mainnet and lowdiff --coverage runs in this work
+                            dir into WORK_DIR/coverage-report/.
   --sanitizers LIST         Build with -fsanitize=LIST (e.g. address,undefined).
   --jobs N                  Parallel jobs (default: number of CPUs).
   --reconfigure             Re-run configure even if the build dir exists.
@@ -62,6 +68,8 @@ need_arg() { [ -n "${2:-}" ] && [ "${2#--}" = "$2" ] || die "$1 needs a value"; 
 # ---------------------------------------------------------------- arguments
 CONFIG=mainnet
 COVERAGE=0
+COVERAGE_REPORT=0
+CONFIG_SET=0
 SANITIZERS=""
 JOBS=""
 RECONFIGURE=0
@@ -76,8 +84,9 @@ WORK_DIR="${YACOIN_WORK_DIR:-$HOME/.cache/yacoin-build}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --config) need_arg "$1" "${2:-}"; CONFIG="$2"; shift 2 ;;
+        --config) need_arg "$1" "${2:-}"; CONFIG="$2"; CONFIG_SET=1; shift 2 ;;
         --coverage) COVERAGE=1; shift ;;
+        --coverage-report) COVERAGE_REPORT=1; shift ;;
         --sanitizers) need_arg "$1" "${2:-}"; SANITIZERS="$2"; shift 2 ;;
         --jobs) need_arg "$1" "${2:-}"; JOBS="$2"; shift 2 ;;
         --reconfigure) RECONFIGURE=1; shift ;;
@@ -104,6 +113,11 @@ fi
 case "$SANITIZERS" in
     ""|*[!a-z,]*) [ -z "$SANITIZERS" ] || die "--sanitizers takes a comma-separated list such as address,undefined" ;;
 esac
+
+if [ "$COVERAGE_REPORT" = 1 ] &&
+   { [ "$CONFIG_SET$COVERAGE$RUN_UNIT$RUN_FUNCTIONAL$CLEAN$RECONFIGURE" != 000000 ] || [ -n "$SANITIZERS" ]; }; then
+    die "--coverage-report does not build or test; run it on its own after the --coverage runs"
+fi
 
 BUILD_NAME="build-$CONFIG"
 [ "$COVERAGE" = 1 ] && BUILD_NAME="$BUILD_NAME-cov"
@@ -150,7 +164,13 @@ if [ "$IN_CONTAINER" = 0 ]; then
     log "syncing checkout $REPO ($BUILD_GIT_COMMIT) to $WORK_DIR/src"
     python3 "$REPO/contrib/testing/sync_tree.py" "$REPO" "$WORK_DIR/src"
 
-    INNER_ARGS=(--in-container --config "$CONFIG" --functional-args "$FUNCTIONAL_ARGS")
+    INNER_ARGS=(--in-container --functional-args "$FUNCTIONAL_ARGS")
+    # --coverage-report covers both configurations and rejects --config.
+    if [ "$COVERAGE_REPORT" = 1 ]; then
+        INNER_ARGS+=(--coverage-report)
+    else
+        INNER_ARGS+=(--config "$CONFIG")
+    fi
     [ "$COVERAGE" = 1 ] && INNER_ARGS+=(--coverage)
     [ -n "$SANITIZERS" ] && INNER_ARGS+=(--sanitizers "$SANITIZERS")
     [ -n "$JOBS" ] && INNER_ARGS+=(--jobs "$JOBS")
@@ -191,6 +211,102 @@ CACHE="$WORK_DIR/depends-cache"
 JOBS="${JOBS:-$(nproc)}"
 cd "$SRC"
 
+# ------------------------------------------------------------- coverage
+# lcov 2.0 (build image). Branch coverage is recorded for P0-04. It includes
+# the branches GCC adds for C++ exception handling: lcov 2.0's
+# no_exception_branch option drops *all* branch data of GCC 11's gcov
+# output, so filtering them is left to P0-04.
+LCOV_OPTS=(--rc branch_coverage=1 --parallel "$JOBS")
+# Not part of the coverage numbers (task P0-03 step 3): system headers,
+# depends, test code, bundled libraries, benchmarks, and files generated in
+# the build dirs. They are left out while capturing: besides being faster,
+# this avoids lcov 2.0's "mismatched end line" error for the Boost.Test
+# case functions in src/test (GCC 11 reports their end line before their
+# start). "unused" is ignored because not every build compiles every
+# excluded directory (src/secp256k1 is built without --coverage).
+COVERAGE_CAPTURE=(--directory "$BUILD/src" --ignore-errors unused)
+for pattern in '/usr/*' '*/depends/*' '*/test/*' '*/src/leveldb/*' \
+               '*/src/secp256k1/*' '*/src/univalue/*' '*/src/bench/*' \
+               "$WORK_DIR/build-*"; do
+    COVERAGE_CAPTURE+=(--exclude "$pattern")
+done
+
+# coverage_start: before the tests – reset the counters (repeated runs in
+# one build dir must not add up) and record a zero baseline of every
+# instrumented file, so files no test runs show as 0 % instead of missing.
+coverage_start() {
+    command -v lcov >/dev/null && command -v genhtml >/dev/null ||
+        die "--coverage with tests needs lcov and genhtml (they are in the build image)"
+    rm -rf "$BUILD/coverage"
+    mkdir -p "$BUILD/coverage"
+    log "coverage: reset counters, record baseline (log: $BUILD/coverage/lcov.log)"
+    lcov --zerocounters --directory "$BUILD" > "$BUILD/coverage/lcov.log" 2>&1 ||
+        { tail -n 20 "$BUILD/coverage/lcov.log"; die "lcov --zerocounters failed"; }
+    lcov "${LCOV_OPTS[@]}" --capture --initial "${COVERAGE_CAPTURE[@]}" \
+        --output-file "$BUILD/coverage/baseline.info" >> "$BUILD/coverage/lcov.log" 2>&1 ||
+        { tail -n 20 "$BUILD/coverage/lcov.log"; die "lcov baseline capture failed"; }
+}
+
+# coverage_html INFO DIR TITLE: HTML report and text summary next to INFO.
+coverage_html() {
+    genhtml "${LCOV_OPTS[@]}" --title "$3" --legend --output-directory "$2/html" "$1" \
+        >> "$2/lcov.log" 2>&1 ||
+        { tail -n 20 "$2/lcov.log"; die "genhtml failed (log: $2/lcov.log)"; }
+    lcov "${LCOV_OPTS[@]}" --summary "$1" 2>&1 | grep -E "^ *(lines|functions|branches)" > "$2/summary.txt" ||
+        die "lcov --summary failed for $1"
+}
+
+# coverage_finish: after the tests – capture, add the baseline, write
+# coverage.info, html/ and summary.txt to <builddir>/coverage/.
+coverage_finish() {
+    local dir="$BUILD/coverage"
+    log "coverage: capture"
+    lcov "${LCOV_OPTS[@]}" --capture "${COVERAGE_CAPTURE[@]}" --output-file "$dir/tests.info" \
+        >> "$dir/lcov.log" 2>&1 ||
+        { tail -n 20 "$dir/lcov.log"; die "lcov capture failed (log: $dir/lcov.log)"; }
+    lcov "${LCOV_OPTS[@]}" --add-tracefile "$dir/baseline.info" --add-tracefile "$dir/tests.info" \
+        --output-file "$dir/coverage.info" >> "$dir/lcov.log" 2>&1 ||
+        { tail -n 20 "$dir/lcov.log"; die "lcov merge with baseline failed"; }
+    rm -f "$dir/baseline.info" "$dir/tests.info"
+    coverage_html "$dir/coverage.info" "$dir" "YaCoin $CONFIG (${BUILD_GIT_COMMIT:-unknown})"
+    log "coverage $CONFIG: $dir/coverage.info, html/, summary.txt"
+    cat "$dir/summary.txt"
+}
+
+# coverage_report: merge the two configurations. gcov records lines of the
+# original source file, so both builds use the same line numbers; lines in
+# #ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT blocks exist in one build only. The
+# merge is the union: a line counts if it is instrumented in either build
+# and as hit if it ran in either; hit counts are added.
+coverage_report() {
+    local out="$WORK_DIR/coverage-report" c f args=()
+    command -v lcov >/dev/null && command -v genhtml >/dev/null ||
+        die "--coverage-report needs lcov and genhtml (they are in the build image)"
+    for c in mainnet lowdiff; do
+        f="$WORK_DIR/build-$c-cov/coverage/coverage.info"
+        [ -f "$f" ] || die "missing $f – run build.sh --config $c --coverage with tests first"
+        args+=(--add-tracefile "$f")
+    done
+    rm -rf "$out"
+    mkdir -p "$out"
+    log "coverage report: merging mainnet and lowdiff into $out"
+    lcov "${LCOV_OPTS[@]}" "${args[@]}" --output-file "$out/merged.info" > "$out/lcov.log" 2>&1 ||
+        { tail -n 20 "$out/lcov.log"; die "lcov merge failed (log: $out/lcov.log)"; }
+    coverage_html "$out/merged.info" "$out" "YaCoin mainnet + lowdiff (${BUILD_GIT_COMMIT:-unknown})"
+    for c in mainnet lowdiff; do
+        f="$WORK_DIR/build-$c-cov/coverage/summary.txt"
+        echo "$c:"
+        if [ -f "$f" ]; then cat "$f"; else echo "  (no summary.txt)"; fi
+    done
+    echo "merged (mainnet + lowdiff):"
+    cat "$out/summary.txt"
+}
+
+if [ "$COVERAGE_REPORT" = 1 ]; then
+    coverage_report
+    exit 0
+fi
+
 log "compiler: $(g++ --version | head -n1)"
 log "depends (NO_QT=1, cache $CACHE)"
 mkdir -p "$CACHE/sources" "$CACHE/built"
@@ -211,7 +327,10 @@ CONFIGURE_ARGS=(--with-gui=no --prefix="$SRC/depends/$HOST_TRIPLET")
 OPT="-O2 -g"
 LDEXTRA=""
 if [ "$COVERAGE" = 1 ]; then
-    OPT="-O0 -g --coverage"
+    # Atomic counters: the node and the tests are multi-threaded, and plain
+    # counters lose updates and can even end up negative (lcov 2.0 then
+    # refuses the data, e.g. for crypto/sha256.cpp).
+    OPT="-O0 -g --coverage -fprofile-update=atomic"
     LDEXTRA="--coverage"
 fi
 if [ -n "$SANITIZERS" ]; then
@@ -224,14 +343,23 @@ cd "$BUILD"
 # Re-run configure when asked, when there is no Makefile yet, or when the
 # configure arguments changed since the last run in this build dir.
 CONFIGURE_ID="${CONFIGURE_ARGS[*]} CFLAGS=$OPT CXXFLAGS=$OPT LDFLAGS=$LDEXTRA"
-if [ "$RECONFIGURE" = 1 ] || [ ! -f Makefile ] ||
-   [ "$(cat .configure-args 2>/dev/null)" != "$CONFIGURE_ID" ]; then
+PREVIOUS_ID="$(cat .configure-args 2>/dev/null || true)"
+if [ "$RECONFIGURE" = 1 ] || [ ! -f Makefile ] || [ "$PREVIOUS_ID" != "$CONFIGURE_ID" ]; then
+    # make does not rebuild objects when only CFLAGS/CXXFLAGS change, so
+    # changed arguments in an existing build dir need a clean build.
+    NEED_CLEAN=0
+    [ -f Makefile ] && [ "$PREVIOUS_ID" != "$CONFIGURE_ID" ] && NEED_CLEAN=1
     log "configure $BUILD_NAME: ${CONFIGURE_ARGS[*]} CFLAGS/CXXFLAGS='$OPT'"
     rm -f .configure-args
     CONFIG_SITE="$SRC/depends/$HOST_TRIPLET/share/config.site" \
         "$SRC/configure" "${CONFIGURE_ARGS[@]}" \
         CFLAGS="$OPT" CXXFLAGS="$OPT" LDFLAGS="$LDEXTRA" > configure.log 2>&1 ||
         { tail -n 30 configure.log; die "configure failed (log: $BUILD/configure.log)"; }
+    if [ "$NEED_CLEAN" = 1 ]; then
+        log "configure arguments changed: make clean"
+        make clean > make-clean.log 2>&1 ||
+            { tail -n 20 make-clean.log; die "make clean failed (log: $BUILD/make-clean.log)"; }
+    fi
     echo "$CONFIGURE_ID" > .configure-args
 fi
 
@@ -241,6 +369,12 @@ make -j"$JOBS" > make.log 2>&1 ||
 log "built: $BUILD/src/yacoind, yacoin-cli, test/test_bitcoin ($(grep -c ' warning:' make.log) compiler warnings)"
 
 STATUS=0
+WANT_COVERAGE=0
+if [ "$COVERAGE" = 1 ] && [ "$RUN_UNIT$RUN_FUNCTIONAL" != 00 ]; then
+    WANT_COVERAGE=1
+    coverage_start
+fi
+
 if [ "$RUN_UNIT" = 1 ]; then
     log "unit tests"
     start=$(date +%s)
@@ -275,5 +409,8 @@ if [ "$RUN_FUNCTIONAL" = 1 ]; then
     [ "$rc" = 0 ] || echo "failed tests keep their datadirs and logs under $BUILD/functional-tmp"
     [ "$rc" = 0 ] || STATUS=1
 fi
+
+# Captured even when tests failed; the exit code still reports the failure.
+[ "$WANT_COVERAGE" = 1 ] && coverage_finish
 
 exit "$STATUS"

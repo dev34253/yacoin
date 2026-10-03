@@ -46,7 +46,7 @@ mainnet values.
 | Build image | Ubuntu 24.04 with GCC 11 pinned (same compiler as the 22.04 baseline); Dockerfile in dev34253/yacoin-build-ubuntu (`Dockerfile.ubuntu.24.04-gcc11`); published to Docker Hub as `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`. | P0-57 |
 | Build configurations | Mainnet and low-difficulty builds via one script, coverage (`CFLAGS` **and** `CXXFLAGS`) and sanitizer options; out-of-tree. Measure unit-test runtime in the mainnet config before deciding where unit tests run. | P0-01 |
 | `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. Done: the test pins the result per configuration, unit tests 239/239 in both. | P0-02 |
-| CI | Unit, functional, coverage on push; a CI skeleton with schedules, runner, artifact storage and image mirroring. Each later job task adds its own job. | P0-03, P0-44 |
+| CI | Unit, functional, coverage on push; a CI skeleton with schedules, runner, artifact storage and image mirroring. Each later job task adds its own job. P0-03: `.github/workflows/tests.yml` – unit tests in both configurations, functional in lowdiff, coverage of both configurations merged as a union (`contrib/testing/README.md`). | P0-03, P0-44 |
 | Coverage gates | Re-baselined after CI merges both configurations; **branch** coverage for consensus math; dead code and dead `fTestNet` branches excluded from denominators. | P0-04 |
 | Fixture storage | Small in repo, large external with manifest and checksums; also pre-fetched `depends` sources. | P0-05 |
 | Baseline binaries | Built from the **end of Phase 0 infrastructure** (includes the dump tool and `gettxoutsetinfo`), mainnet and low-diff builds, recorded by commit and image digest. | P0-06 |
@@ -219,7 +219,7 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 
 | Trigger | Jobs |
 |---|---|
-| Every push | Both builds; unit (both configs if affordable); functional; sampled replay; coverage gates |
+| Every push | Both builds; unit (both configs if affordable); functional; sampled replay; coverage gates. Done by P0-03 (`tests.yml`): unit in both configs and functional on every push; coverage per config and merged on master and by hand |
 | Nightly | Sanitizers; fuzzers; benchmarks; functional 3×; Windows/macOS test runs |
 | Weekly / manual | Full replay and reindex (self-hosted, 24–48 h); cross-version network; soak |
 

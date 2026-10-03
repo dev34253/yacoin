@@ -89,8 +89,14 @@ make -j"$(nproc)"
 - **Two configurations:** *mainnet* (no extra flag) for unit tests and
   anything mainnet-related; *low difficulty*
   (`--enable-low-difficulty-for-development`) for functional tests.
-- **Coverage:** add `CFLAGS="-O0 -g --coverage" CXXFLAGS="-O0 -g --coverage"
-  LDFLAGS=--coverage` and use `lcov`.
+- **Coverage:** `build.sh --config <cfg> --coverage --unit [--functional]`
+  writes `<builddir>/coverage/` (lcov `.info`, HTML, summary);
+  `build.sh --coverage-report` merges mainnet + lowdiff (union; see
+  `contrib/testing/README.md`).
+- **CI:** `.github/workflows/tests.yml` runs unit tests (both configs) and
+  functional tests (lowdiff) on every push to any branch; coverage (HTML as
+  a run artifact) on `master` and via *Run workflow*. The release builds
+  (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 
 ## Testing

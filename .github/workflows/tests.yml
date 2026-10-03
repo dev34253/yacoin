@@ -1,0 +1,146 @@
+# Unit and functional tests on every push; coverage on master and by hand
+# (task P0-03).
+#
+# Every job runs contrib/testing/build.sh on a GitHub-hosted runner, which
+# runs the build in the pinned build image with Docker – the same command a
+# developer runs locally (see contrib/testing/README.md, section "CI").
+# Schedules, the self-hosted runner and image mirroring are task P0-44.
+name: Tests
+
+on:
+  push:
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# "shell: bash" adds -o pipefail to the default -e.
+defaults:
+  run:
+    shell: bash
+
+env:
+  # P0-57 image (Ubuntu 24.04, GCC 11), pinned by digest; keep in sync with
+  # DEFAULT_IMAGE in contrib/testing/build.sh.
+  YACOIN_BUILD_IMAGE: dev34253/yacoin-build@sha256:b7365321bd98ce7297c30bc2eb555f56407548d4cea1836cfbd4b806ba934f7a
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      # The two test jobs run on every push. The two coverage jobs (-O0, about
+      # twice as slow) only run on master and when started by hand (Run
+      # workflow), so task branches get their results sooner.
+      matrix:
+        include: >-
+          ${{ fromJSON((github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"},{"name":"coverage (mainnet)","id":"mainnet-cov","args":"--config mainnet --coverage --unit","coverage":"mainnet"},{"name":"coverage (lowdiff)","id":"lowdiff-cov","args":"--config lowdiff --coverage --unit --functional","coverage":"lowdiff"}]' || '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"}]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker Hub may answer 429 (anonymous pull rate limit): retry.
+      - name: Pull build image
+        run: |
+          for i in 1 2 3 4; do
+            docker pull -q "$YACOIN_BUILD_IMAGE" && exit 0
+            echo "pull failed (attempt $i), retrying in $((i * 30)) s"
+            sleep $((i * 30))
+          done
+          exit 1
+
+      # Downloaded sources and built packages of depends. The depends build
+      # itself decides (by its own hashes) what it can reuse, so an older
+      # cache from restore-keys is safe.
+      - name: Restore depends cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/yacoin-build/depends-cache
+          key: depends-${{ env.YACOIN_BUILD_IMAGE }}-${{ hashFiles('depends/**') }}
+          restore-keys: |
+            depends-${{ env.YACOIN_BUILD_IMAGE }}-
+
+      - name: Build and test
+        run: |
+          contrib/testing/build.sh ${{ matrix.args }} --work-dir "$RUNNER_TEMP/yacoin-build"
+
+      - name: Coverage summary
+        if: ${{ always() && matrix.coverage }}
+        run: |
+          f="$RUNNER_TEMP/yacoin-build/build-${{ matrix.coverage }}-cov/coverage/summary.txt"
+          if [ -f "$f" ]; then
+            { echo "### Coverage (${{ matrix.coverage }})"; echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage
+        if: ${{ always() && matrix.coverage }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.coverage }}
+          path: |
+            ${{ runner.temp }}/yacoin-build/build-${{ matrix.coverage }}-cov/coverage/coverage.info
+            ${{ runner.temp }}/yacoin-build/build-${{ matrix.coverage }}-cov/coverage/summary.txt
+            ${{ runner.temp }}/yacoin-build/build-${{ matrix.coverage }}-cov/coverage/html/
+          if-no-files-found: ignore
+
+      # Build and test logs, plus datadirs of failed functional tests.
+      - name: Upload logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.id }}
+          path: |
+            ${{ runner.temp }}/yacoin-build/*.log
+            ${{ runner.temp }}/yacoin-build/build-*/*.log
+            ${{ runner.temp }}/yacoin-build/build-*/coverage/lcov.log
+            ${{ runner.temp }}/yacoin-build/build-*/functional-tmp/
+          if-no-files-found: ignore
+
+  coverage-report:
+    name: coverage report (merged)
+    needs: test
+    # Only where the coverage jobs ran; also after a failed test job.
+    if: ${{ !cancelled() && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull build image
+        run: |
+          for i in 1 2 3 4; do
+            docker pull -q "$YACOIN_BUILD_IMAGE" && exit 0
+            echo "pull failed (attempt $i), retrying in $((i * 30)) s"
+            sleep $((i * 30))
+          done
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-mainnet
+          path: ${{ runner.temp }}/yacoin-build/build-mainnet-cov/coverage
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-lowdiff
+          path: ${{ runner.temp }}/yacoin-build/build-lowdiff-cov/coverage
+
+      - name: Merge coverage
+        run: |
+          contrib/testing/build.sh --coverage-report --work-dir "$RUNNER_TEMP/yacoin-build" | tee "$RUNNER_TEMP/report.txt"
+          { echo "### Coverage"; echo '```'; sed -n '/^mainnet:/,$p' "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-merged
+          path: |
+            ${{ runner.temp }}/yacoin-build/coverage-report/merged.info
+            ${{ runner.temp }}/yacoin-build/coverage-report/summary.txt
+            ${{ runner.temp }}/yacoin-build/coverage-report/html/
+          if-no-files-found: error
