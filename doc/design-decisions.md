@@ -4,8 +4,8 @@ A log of the significant design and implementation decisions, in the style
 of architecture decision records (ADRs): context, decision, consequences
 and evidence. It covers the decisions inherited from the history of the
 code (D-01 … D-14) and those of the current modernisation work
-(D-15 … D-22), plus D-23, which is historical and was added after the
-review.
+(D-15 … D-22, D-24), plus D-23, which is historical and was added after
+the review.
 
 - What the software does: [functional specification](functional-specification.md).
 - How it is organised: [architecture](architecture.md).
@@ -47,6 +47,7 @@ in `project/` that make a decision link to the entry.
 | D-21 | [Scripted out-of-tree builds in two configurations](#d-21-scripted-out-of-tree-builds-in-two-configurations) | Accepted | 2026-10-02 |
 | D-22 | [Documentation set and process](#d-22-documentation-set-and-process) | Accepted | 2026-10-03 |
 | D-23 | [Keep `getwork` next to `getblocktemplate`](#d-23-keep-getwork-next-to-getblocktemplate) | Accepted | 2020–2026 |
+| D-24 | [CI: tests on every push, release builds on `master` only](#d-24-ci-tests-on-every-push-release-builds-on-master-only) | Accepted | 2026-10-03 |
 
 ---
 
@@ -808,3 +809,40 @@ xmrig" (which asks for getwork, getblocktemplate and Stratum).
 
 **Evidence.** `src/rpc/mining.cpp` (`getwork`, `getblocktemplate`);
 `src/miner.cpp` (`FormatHashBuffers_64bit_nTime`, `SHA256Transform`).
+
+## D-24: CI: tests on every push, release builds on `master` only
+
+- **Status:** Accepted.
+- **Date:** 2026-10-03 (P0-03, dev34253/yacoin#56).
+
+**Context.** The only workflow, `yacoinbuildmultiplatform.yml`, ran on
+every push to every branch. It built release binaries for eight targets
+(15–25 min per job) but ran no unit tests. With several task branches open
+at once, its jobs filled the account's GitHub-hosted runners, and new jobs
+waited in the queue for a long time (owner feedback, 2026-10-03).
+
+**Decision.**
+
+- New workflow `tests.yml`: on every push, unit tests in the mainnet build
+  and unit + functional tests in the low-difficulty build, run with
+  `contrib/testing/build.sh` in the pinned image (D-19, D-21). On `master`
+  and by hand it also measures coverage of both builds and merges the
+  reports.
+- `yacoinbuildmultiplatform.yml` runs only on pushes to `master`, on tags
+  and by hand.
+- Both workflows have a `concurrency` group per workflow and branch with
+  `cancel-in-progress`, so a newer push cancels the older run.
+
+**Consequences.**
+
+- Task branches and pull requests get the unit and functional results in
+  about 8–14 minutes and use two runners instead of eight.
+- Release builds for the other platforms are no longer checked before a
+  merge; a pull request that breaks them shows up on `master`, or earlier
+  if someone starts the workflow on the branch by hand.
+- The coverage figures on `master` are the baseline for P0-04.
+
+**Evidence.** `.github/workflows/tests.yml`;
+`.github/workflows/yacoinbuildmultiplatform.yml`;
+`contrib/testing/README.md` (CI);
+`project/done/P0-03-ci-unit-functional-coverage.md`.

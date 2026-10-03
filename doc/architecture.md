@@ -293,7 +293,7 @@ Transaction (P2P / RPC / wallet)
 | Configurations | *mainnet* (default) and *low difficulty* (`--enable-low-difficulty-for-development`) |
 | Build image | `dev34253/yacoin-build:ubuntu.24.04-gcc11-1` (Ubuntu 24.04, GCC 11), pinned by digest; Dockerfiles in dev34253/yacoin-build-ubuntu |
 | Scripted build | `contrib/testing/build.sh` – out-of-tree build from a copy, in the pinned image; options for configuration, coverage, sanitizers, unit and functional tests |
-| CI | `.github/workflows/yacoinbuildmultiplatform.yml`: depends builds for Ubuntu 16.04–22.04, Windows and macOS (cross), a low-difficulty build and a functional-test job; no unit-test job yet (P0-03, P0-44) |
+| CI | Two GitHub Actions workflows (D-24). `.github/workflows/tests.yml`, on every push: unit tests (mainnet) and unit + functional tests (low difficulty) with `contrib/testing/build.sh` in the pinned image; on `master` and by hand also coverage for both builds and a merged report. `.github/workflows/yacoinbuildmultiplatform.yml`, only on `master`, tags and by hand: release builds for Ubuntu 16.04–22.04, Windows and macOS (cross), a low-difficulty build and a functional-test job. Both cancel superseded runs on the same branch. Schedules, self-hosted runner and image mirror: P0-44. Details: [contrib/testing/README.md](../contrib/testing/README.md#ci). |
 | Legacy | `build-windows-in-docker.sh` (qmake/makefile.mingw, files no longer exist), `doc/README_ubuntu.txt`, `doc/release-process.txt` |
 
 ## 8. Test architecture
