@@ -212,6 +212,21 @@ hard fork or at least a careful, separately reviewed change.
 - **`qt/paymentserver.cpp:230,232,249`** select testnet params that do not
   exist. (P0-50, Q2)
 
+## RNG (not consensus)
+
+- **No argument checks for negative sizes.** `GetRandInt(nMax)` with
+  `nMax < 0` converts it to a huge `uint64_t` (`random.cpp:368-371`) and
+  returns an implementation-defined `int`, possibly negative;
+  `GetStrongRandBytes(buf, num)` only asserts `num <= 32`
+  (`random.cpp:320`), so a negative `num` reaches `memcpy` as a huge size.
+  No node code passes a negative value; one test does:
+  `src/test/DoS_tests.cpp:96` calls `GetRandInt(0xffffffff)`, i.e.
+  `GetRandInt(-1)`, which draws from the whole 64-bit range and works there
+  only because the result is used as a random IPv4 address. Not pinned by
+  `random_tests` (implementation-defined / undefined behaviour or abort).
+  Bitcoin Core later replaced these APIs; revisit with the Phase 3 RNG
+  change. (P0-21)
+
 ## Tests and tooling
 
 - **`GetMaxSize(mode, 0)` means "tip + 1"** (`consensus/consensus.cpp:22`), so

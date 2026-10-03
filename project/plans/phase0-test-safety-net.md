@@ -207,7 +207,15 @@ Globals (`util.cpp`; all but `nYac10HardforkTime` set by `AppInit` from `init.cp
 
 ### i) Randomness – P0-21
 
-- API contracts and a loose statistical check for `random.cpp`.
+- API contracts and a loose statistical check for `random.cpp`. Done
+  (`src/test/random_tests.cpp`, 12 cases): `GetRand`/`GetRandInt` ranges,
+  `GetRandBytes`/`GetStrongRandBytes` output lengths, no repeats in 10^6
+  `GetStrongRandBytes` calls and across 4 threads, ChaCha20 known answers
+  of `FastRandomContext(true)` and of a seeded context, `GetOSRand` and the
+  `/dev/urandom` fallback, the seeding functions, and a chi-square test of
+  the byte distribution of four sources (bounds [124, 450], false-positive
+  rate about 3e-12). They catch broken generators, not weak ones: the
+  Phase 3 RNG change still needs a review against Bitcoin Core.
 - `random_nonce.cpp` recorded as dead code ([`dead-code.md`](dead-code.md)).
 
 ### j) Wallet encryption – P0-22

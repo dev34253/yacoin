@@ -285,4 +285,4 @@ min = { lines = 96, functions = 100 }
 [[gate]]
 name = "random.cpp"
 paths = ["src/random.cpp"]
-min = { lines = 85, functions = 90 }
+min = { lines = 92, functions = 94 }
