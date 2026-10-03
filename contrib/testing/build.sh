@@ -44,6 +44,12 @@ Test options:
   --functional-args "ARGS"  Arguments for test_runner.py, replacing the
                             default -j4 (e.g. "-j4 wallet_dump.py").
 
+Environment variables:
+  TEST_RUNNER_PORT_MIN      Use this port base for the functional tests
+                            instead of a port slot (1024-55535).
+  YACOIN_PORT_LOCK_DIR      Directory of the port slot locks (default
+                            /tmp/yacoin-build-ports).
+
 Environment options:
   --image IMAGE             Build image (default: pinned P0-57 image).
   --no-docker               Run directly on this machine (e.g. already inside
@@ -55,7 +61,9 @@ Environment options:
 
 The checkout is mirrored (tracked and untracked, non-ignored files) to
 WORK_DIR/src and built in WORK_DIR/build-<config>[-cov][-san-<list>]. Only one run
-per work dir at a time (a lock enforces this). Proxy and CA
+per work dir at a time (a lock enforces this). With --functional the run
+claims one of 10 port slots (preferred: a hash of the work dir), so runs in
+different work dirs can test at the same time. Proxy and CA
 settings are passed into the container when HTTPS_PROXY / YACOIN_CA_BUNDLE
 are set (see README.md).
 EOF
@@ -82,6 +90,7 @@ IMAGE="${YACOIN_BUILD_IMAGE:-$DEFAULT_IMAGE}"
 USE_DOCKER=1
 IN_CONTAINER=0
 WORK_DIR="${YACOIN_WORK_DIR:-$HOME/.cache/yacoin-build}"
+PORT_MIN=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -99,6 +108,7 @@ while [ $# -gt 0 ]; do
         --no-docker) USE_DOCKER=0; shift ;;
         --work-dir) need_arg "$1" "${2:-}"; WORK_DIR="$2"; shift 2 ;;
         --in-container) IN_CONTAINER=1; USE_DOCKER=0; shift ;;
+        --port-min) need_arg "$1" "${2:-}"; PORT_MIN="$2"; shift 2 ;;  # internal
         -h|--help) usage; exit 0 ;;
         *) usage >&2; die "unknown option: $1" ;;
     esac
@@ -123,6 +133,58 @@ fi
 BUILD_NAME="build-$CONFIG"
 [ "$COVERAGE" = 1 ] && BUILD_NAME="$BUILD_NAME-cov"
 [ -n "$SANITIZERS" ] && BUILD_NAME="$BUILD_NAME-san-${SANITIZERS//,/-}"
+
+# ------------------------------------------------------------ port slots
+# Functional tests bind p2p ports PORT_MIN + [0, 12 * tests] and rpc ports
+# 5000 higher (test_framework/util.py p2p_port/rpc_port: seed * 12 + node;
+# test_runner.py gives the tests of one run the seeds 0..tests-1 and
+# create_cache.py the seed "tests"). Every run uses the
+# same seeds, so two runs at the same time need different PORT_MIN values
+# (with --network host they share the ports of this machine; task P0-61).
+# Slot k: PORT_MIN = 11000 + 10000 * (k / 5) + 1000 * (k % 5), i.e. p2p
+# 11000-15999 / rpc 16000-20999 for slots 0-4 and 21000-25999 / 26000-30999
+# for slots 5-9: 1000 ports each (runs of up to 83 tests), disjoint, and
+# below the Linux ephemeral port range (32768).
+PORT_SLOTS=10
+PORT_SLOT_WIDTH=1000
+slot_port_min() { echo $(( 11000 + 10000 * ($1 / 5) + PORT_SLOT_WIDTH * ($1 % 5) )); }
+
+# claim_port_slot: hold one slot's lock on fd 8 for the rest of the run
+# (inherited by exec docker, like the work dir lock) and set PORT_MIN.
+# Preferred slot: a hash of the work dir; if another run holds it, the next
+# free one; if all are held, wait for the preferred one.
+claim_port_slot() {
+    local dir="${YACOIN_PORT_LOCK_DIR:-/tmp/yacoin-build-ports}" first i k f
+    if [ ! -d "$dir" ]; then
+        mkdir -p "$dir" || die "cannot create the port slot lock dir $dir (YACOIN_PORT_LOCK_DIR)"
+        # Shared by all users of this machine; lock files are opened read-only.
+        chmod 1777 "$dir" 2>/dev/null || true
+    fi
+    first=$(( $(printf '%s' "$WORK_DIR" | cksum | cut -d' ' -f1) % PORT_SLOTS ))
+    for i in $(seq 0 $((PORT_SLOTS - 1))); do
+        k=$(( (first + i) % PORT_SLOTS ))
+        f="$dir/slot-$k.lock"
+        [ -e "$f" ] || (umask 000; : >> "$f") 2>/dev/null || true
+        [ -r "$f" ] || continue
+        { exec 8<"$f"; } 2>/dev/null || continue
+        if flock -n 8; then
+            PORT_SLOT=$k
+            break
+        fi
+        exec 8<&-
+    done
+    if [ -z "$PORT_SLOT" ]; then
+        f="$dir/slot-$first.lock"
+        [ -r "$f" ] || die "no usable port slot lock in $dir (set YACOIN_PORT_LOCK_DIR or TEST_RUNNER_PORT_MIN)"
+        log "all $PORT_SLOTS port slots are in use; waiting for slot $first ($f)"
+        exec 8<"$f"
+        flock 8
+        PORT_SLOT=$first
+    fi
+    PORT_MIN="$(slot_port_min "$PORT_SLOT")"
+    [ "$PORT_SLOT" = "$first" ] || log "port slot $first is in use by another run; using slot $PORT_SLOT"
+    log "functional test ports: slot $PORT_SLOT, p2p $PORT_MIN-$((PORT_MIN + PORT_SLOT_WIDTH - 1)), rpc $((PORT_MIN + 5000))-$((PORT_MIN + 5000 + PORT_SLOT_WIDTH - 1)) (lock $dir/slot-$PORT_SLOT.lock)"
+}
 
 # ------------------------------------------------------------- host side
 if [ "$IN_CONTAINER" = 0 ]; then
@@ -166,6 +228,22 @@ if [ "$IN_CONTAINER" = 0 ]; then
     python3 "$REPO/contrib/testing/sync_tree.py" "$REPO" "$WORK_DIR/src"
 
     INNER_ARGS=(--in-container --functional-args "$FUNCTIONAL_ARGS")
+    if [ "$RUN_FUNCTIONAL" = 1 ]; then
+        PORT_SLOT=""
+        if [ -n "${TEST_RUNNER_PORT_MIN:-}" ]; then
+            case "$TEST_RUNNER_PORT_MIN" in
+                *[!0-9]*) die "TEST_RUNNER_PORT_MIN must be a number, not '$TEST_RUNNER_PORT_MIN'" ;;
+            esac
+            if [ "$TEST_RUNNER_PORT_MIN" -lt 1024 ] || [ "$TEST_RUNNER_PORT_MIN" -gt 55535 ]; then
+                die "TEST_RUNNER_PORT_MIN must be between 1024 and 55535 (p2p and rpc ports use up to 10000 above it)"
+            fi
+            PORT_MIN="$TEST_RUNNER_PORT_MIN"
+            log "functional test ports: TEST_RUNNER_PORT_MIN=$PORT_MIN from the environment (no port slot)"
+        else
+            claim_port_slot
+        fi
+        INNER_ARGS+=(--port-min "$PORT_MIN")
+    fi
     # --coverage-report covers both configurations and rejects --config.
     if [ "$COVERAGE_REPORT" = 1 ]; then
         INNER_ARGS+=(--coverage-report)
@@ -378,6 +456,28 @@ make -j"$JOBS" > make.log 2>&1 ||
     { grep -E " error:|\*\*\*" make.log | head -n 30; die "build failed (log: $BUILD/make.log)"; }
 log "built: $BUILD/src/yacoind, yacoin-cli, test/test_bitcoin ($(grep -c ' warning:' make.log) compiler warnings)"
 
+# run_vector_checkers: the independent Python models of the golden vector
+# files (P0-13, P0-46, P0-19); they use no node code, so they do not depend
+# on the configuration. Output in <builddir>/vectors.log; 1 on a mismatch.
+run_vector_checkers() {
+    local rc=0 checker out
+    : > vectors.log
+    for checker in "bignum_vectors_check.py" "reward_vectors.py --check" "header_hash_vectors.py --check"; do
+        echo "== $checker" >> vectors.log
+        # shellcheck disable=SC2086
+        if out="$(python3 "$SRC/contrib/testing/"$checker 2>&1)"; then
+            echo "$out" >> vectors.log
+            log "vector check $checker: ok ($(echo "$out" | tail -n 1 | cut -c1-100))"
+        else
+            echo "$out" >> vectors.log
+            log "vector check $checker: FAILED (log: $BUILD/vectors.log)"
+            echo "$out" | tail -n 10
+            rc=1
+        fi
+    done
+    return "$rc"
+}
+
 STATUS=0
 WANT_COVERAGE=0
 if [ "$COVERAGE" = 1 ] && [ "$RUN_UNIT$RUN_FUNCTIONAL" != 00 ]; then
@@ -396,6 +496,13 @@ if [ "$RUN_UNIT" = 1 ]; then
     log "unit tests finished in $(( $(date +%s) - start )) s (exit $rc, log: $BUILD/unit.log)"
     grep -E "test cases? out of|assertions out of|error: in" unit.log | head -n 20 || true
     [ "$rc" = 0 ] || STATUS=1
+    # test_bitcoin can end early with status 0 (e.g. exit() in node code):
+    # require Boost's summary with every test case passed (task P0-61, Q8).
+    if ! grep -qE "^ *([0-9]+) test cases? out of \1 passed$" unit.log; then
+        echo "unit tests: no 'N test cases out of N passed' summary in $BUILD/unit.log (test_bitcoin ended early or not every test case passed)"
+        STATUS=1
+    fi
+    run_vector_checkers || STATUS=1
 fi
 
 if [ "$RUN_FUNCTIONAL" = 1 ]; then
@@ -405,7 +512,9 @@ if [ "$RUN_FUNCTIONAL" = 1 ]; then
     # discarded); older runs are removed first.
     rm -rf "${BUILD:?}/functional-tmp"
     mkdir -p "$BUILD/functional-tmp"
-    log "functional tests ($FUNCTIONAL_ARGS)"
+    # Port base of this run's slot (claimed on the host side, see above).
+    [ -n "$PORT_MIN" ] && export TEST_RUNNER_PORT_MIN="$PORT_MIN"
+    log "functional tests ($FUNCTIONAL_ARGS, TEST_RUNNER_PORT_MIN=${TEST_RUNNER_PORT_MIN:-11000})"
     start=$(date +%s)
     # shellcheck disable=SC2086
     if python3 "$SRC/test/functional/test_runner.py" --tmpdirprefix="$BUILD/functional-tmp" \

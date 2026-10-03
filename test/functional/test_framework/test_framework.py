@@ -527,7 +527,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def _initialize_chain(self):
         """Initialize a pre-mined blockchain for use by the test.
 
-        Create a cache of a 199-block-long chain
+        Create a cache of a 40-block-long chain (4 x 10 blocks, mined by
+        node 0 with -epochinterval=20; the test nodes run with 10).
         Afterward, create num_nodes copies from the cache."""
 
         CACHE_NODE_ID = 0  # Use node 0 to create the cache for all other nodes

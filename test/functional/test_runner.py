@@ -451,9 +451,12 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
         coverage = None
 
     if len(test_list) > 1 and jobs > 1:
-        # Populate cache
+        # Populate cache. Port seed len(test_list): the tests get 0..len-1,
+        # and the default (the process id) could pick ports far outside the
+        # range build.sh reserves for this run (task P0-61).
         try:
-            subprocess.check_output([sys.executable, tests_dir + 'create_cache.py'] + flags + ["--tmpdir=%s/cache" % tmpdir])
+            subprocess.check_output([sys.executable, tests_dir + 'create_cache.py'] + flags +
+                                    ["--portseed={}".format(len(test_list)), "--tmpdir=%s/cache" % tmpdir])
         except subprocess.CalledProcessError as e:
             sys.stdout.buffer.write(e.output)
             raise

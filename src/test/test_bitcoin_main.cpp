@@ -13,9 +13,13 @@
 
 std::unique_ptr<CConnman> g_connman;
 
+// Like StartShutdown() below: a run that ends here has no Boost test summary,
+// so it must not exit with status 0 (task P0-61, open question Q8). No test
+// calls it today.
 void Shutdown(void* parg)
 {
-  exit(EXIT_SUCCESS);
+  fprintf(stderr, "test_bitcoin: Shutdown() called; failing the run\n");
+  exit(EXIT_FAILURE);
 }
 
 // Node code calls StartShutdown() when it gives up, e.g. a failed Yassert in a

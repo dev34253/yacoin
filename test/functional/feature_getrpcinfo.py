@@ -5,7 +5,7 @@
 """Verify that uptime is reported as expected."""
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, PortSeed
+from test_framework.util import assert_equal, PortSeed, rpc_port
 import time
 import re
 import os
@@ -22,7 +22,10 @@ class UptimeTest(BitcoinTestFramework):
         self.log.info("RPC info node 0: "+str(rpcinfo_0))
         self.log.info("RPC info node 1: "+str(rpcinfo_1))
         self.log.info("PortSeed: "+str(PortSeed.n))
-        expected = 16000 + (12 * PortSeed.n) % (5000 - 1 - 12)
+        # rpc_port() honours TEST_RUNNER_PORT_MIN (build.sh sets it per
+        # port slot, task P0-61); with the default 11000 this is
+        # 16000 + (12 * PortSeed.n) % (5000 - 1 - 12).
+        expected = rpc_port(0)
         assert_equal(int(rpcinfo_0['RPCport']),expected)
         assert_equal(int(rpcinfo_1['RPCport']),expected + 1)
 
