@@ -369,16 +369,25 @@ are today, bugs included (review A5, A7, C8 in
   block download (536) and outbound eviction (3113-3119). The header-sync
   comparisons (1481, 1507, 1583) are left to the functional test of P0-32.
 
-Two pitfalls of `TestingSetup` these suites work around, useful for other
-tests of the same kind:
+What these suites need from `TestingSetup` (provided since P0-62, pinned by
+`chain_trust_fork_choice_tests/testingsetup_token_db_and_buffers`), useful
+for other tests of the same kind:
 
-- `TestingSetup` creates no token database (`ptokensdb` is null), and
-  `DisconnectBlock` reads token undo data from it, so a reorg crashes. The
-  regtest fixture installs an in-memory `CTokensDB` and removes it again.
-- The test `CConnman` is never started, so its send-buffer limit is 0: every
-  queued message sets the peer's `fPauseSend`, and `ProcessMessages` then
-  skips the receive queue. The test peer clears `fPauseSend` before
-  delivering a message. Only one test peer may exist at a time, because
+- `TestingSetup` creates an in-memory token database (`ptokensdb`), empty
+  for every fixture, and deletes it and resets the pointer to null when the
+  fixture ends (`BasicTestingSetup` tests have none). `ConnectBlock` writes
+  token undo data to it and `DisconnectBlock` reads it
+  (`validation.cpp:1322`), so reorgs work without per-test setup.
+- The test `CConnman` is never started; `TestingSetup` sets its send and
+  receive buffer limits to the node defaults (`1000 * DEFAULT_MAXSENDBUFFER`
+  and `1000 * DEFAULT_MAXRECEIVEBUFFER` bytes) with
+  `CConnmanTest::SetBufferSizes`. With a limit of 0 every queued message
+  would set the peer's `fPauseSend`, and `ProcessMessages` would skip the
+  receive queue; the P2P test peer requires `fPauseSend` to be clear before
+  it delivers a message. A test that calls `connman->Init(options)` (as
+  `DoS_tests/stale_tip_peer_management` does) resets both limits to the
+  values in `options` (0 by default).
+- Only one test peer may exist at a time, because
   `CConnmanTest::ClearNodes()` empties the whole node list.
 
 Current behaviour these tests pin (not fixed in Phase 0):
