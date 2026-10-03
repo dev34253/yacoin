@@ -564,6 +564,7 @@ BOOST_AUTO_TEST_CASE(keystore_encrypt_unlock)
     BOOST_CHECK(store.GetKey(keys[0].pubkey.GetID(), out) && out == keys[0].key);
     BOOST_CHECK(store.GetPubKey(keys[1].pubkey.GetID(), pubout) && pubout == keys[1].pubkey);
     BOOST_CHECK(!store.Lock());                                               // keys in the clear
+    BOOST_CHECK(!store.Unlock(master));                                       // likewise
     BOOST_CHECK(!store.AddCryptedKey(keys[2].pubkey, keys[2].crypted));
     BOOST_CHECK(!store.IsCrypted());
 
