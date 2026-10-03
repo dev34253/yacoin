@@ -13,8 +13,9 @@
 // big integer) would get wrong.
 //
 // Expected values are literals (decimal or hex strings, byte strings) and
-// never computed with CBigNum itself. Inputs above 64 bits are built with
-// SetHex, which is pinned separately in sethex_parsing.
+// never computed with CBigNum itself. Inputs above 64 bits are mostly built
+// with SetHex (pinned separately in sethex_parsing), a few with
+// CBigNum(uint256) or << (pinned in their own cases).
 //
 // These tests call the CBigNum API directly and are therefore temporary:
 // they are retired in Phase 4 (plan rule 3, review C9). The durable,

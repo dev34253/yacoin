@@ -5,7 +5,7 @@
 - Size: M
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -259,3 +259,6 @@ it (no node code changes, so no change is expected).
 - 2026-10-03 extra check: the suite built standalone (scratch, stub fixture) with `-fsanitize=address,undefined -D_GLIBCXX_ASSERTIONS` runs clean (OpenSSL itself is not instrumented). No compiler warnings from the test file with `-Wall -Wextra`.
 - 2026-10-03 coverage: scratch-only gcov build of `bignum_tests.cpp` alone (same image and `depends`, stub `BasicTestingSetup`; no project coverage build – disk). `bignum.h`: 449/483 instantiated lines = 93.0 %; used methods (ranges listed in the description) 252/270 = **93.3 %**. Missed lines are all OpenSSL failure `throw`s (allocation failure, not reachable without fault injection) and the dead `nSize < 4` returns of `getuint64`/`getuint160`/`getuint256`. gcov does not count inline functions that are never called (`randBignum`, `RandKBitBigum`, `generatePrime`) and the `setuint64` MPI branch for 32-bit `BN_ULONG` is compiled out on x86_64. The project-wide figure belongs to P0-03/P0-04.
 - 2026-10-03 step 8 tests (`contrib/testing/build.sh … --jobs 2`): mainnet `--unit` exit 0, **258/258** (239 + 19 new). lowdiff `--unit --functional` exit 1 as expected: unit **257/258**, the only failure is the known `pow_tests/get_next_work_pow_limit` (P0-02); functional **45/45**, `ALL … Passed`. `bignum_tests` 19/19 in both builds.
+- 2026-10-03 step 9: documentation = this task file (findings, description, plan, Log, acceptance criteria) and the header comment of `src/test/bignum_tests.cpp`. No `doc/`, RPC help or runbook change (no user-facing behaviour). Not edited on purpose: the test-count lines in `CLAUDE.md`, `contrib/testing/README.md` and the implement-task skill (PRs #51/#52 change the same lines; update to +19 after they merge) and `src/test/README.md` (#52 appends to it).
+- 2026-10-03 step 10: documentation review – self-review (no Agent tool), checked against the code and the test logs. Applied: test header said all inputs above 64 bits come from `SetHex` – corrected (a few use `CBigNum(uint256)` or `<<`). Verified: "mainnet powLimit" claim (`chainparams.cpp:78`, non-lowdiff branch), counts 258/257/45, coverage figures, case list matches the 19 cases. Not applied: none.
+- 2026-10-03 step 11: moved to done/; PR: see below.
