@@ -1,6 +1,8 @@
-# Unit and functional tests on every push; coverage and the coverage gate
-# on master, by hand, and on branches that change a file the coverage
-# gate watches (tasks P0-03, P0-04, P0-63).
+# Unit and functional tests on every push, except on branches that change
+# documentation only (P0-64); coverage and the coverage gate on master, by
+# hand, and on branches that change a file the coverage gate watches
+# (tasks P0-03, P0-04, P0-63). "[skip ci]" in a commit message skips the
+# whole workflow for that push (GitHub feature).
 #
 # Every job runs contrib/testing/build.sh on a GitHub-hosted runner, which
 # runs the build in the pinned build image with Docker – the same command a
@@ -38,11 +40,15 @@ jobs:
   # changes a watched file: a path of a [[gate]] or [[exclude]] in
   # contrib/testing/coverage-gates.toml, or the gate's own files. On any
   # error it answers "true" (fail safe).
+  # It also decides whether the build and test jobs run at all (P0-64):
+  # not on a branch whose changes since the merge base are documentation
+  # only (*.md, doc/, project/, .claude/); always on master and by hand.
   changes:
     name: changes (coverage needed?)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
+      tests: ${{ steps.docs.outputs.tests }}
       coverage: ${{ steps.decide.outputs.coverage }}
     steps:
       # Full history for the merge base; blob:none skips file contents of
@@ -51,6 +57,36 @@ jobs:
         with:
           fetch-depth: 0
           filter: blob:none
+
+      - name: Decide whether the build and test jobs run
+        id: docs
+        env:
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          say() { echo "$1"; echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          changed="$RUNNER_TEMP/changed-all.txt" code="$RUNNER_TEMP/changed-code.txt"
+          echo "### Build and test jobs" >> "$GITHUB_STEP_SUMMARY"
+          tests=true
+          if [ "$REF" = refs/heads/master ] || [ "$EVENT" = workflow_dispatch ]; then
+            say "Run: master or Run workflow."
+          elif ! base=$(git merge-base origin/master HEAD); then
+            say "Run: no merge base with origin/master (fail safe)."
+          elif ! git diff --name-only --no-renames "$base" HEAD > "$changed"; then
+            say "Run: git diff against the merge base failed (fail safe)."
+          elif [ ! -s "$changed" ]; then
+            say "Run: the branch has no changes against master."
+          else
+            rc=0
+            grep -Ev '\.md$|^doc/|^project/|^\.claude/' "$changed" > "$code" || rc=$?
+            case $rc in
+              0) say "Run: the branch changes files other than documentation, e.g. $(head -n 3 "$code" | paste -sd ' ')" ;;
+              1) tests=false
+                 say "Skipped: the branch (since merge base ${base:0:10} with master) changes documentation only ($(wc -l < "$changed") files: *.md, doc/, project/, .claude/)." ;;
+              *) say "Run: grep failed with exit code $rc (fail safe)." ;;
+            esac
+          fi
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
 
       - name: Decide whether the coverage jobs run
         id: decide
@@ -97,6 +133,8 @@ jobs:
   test:
     name: ${{ matrix.name }}
     needs: changes
+    # Not on documentation-only branches (P0-64).
+    if: ${{ needs.changes.outputs.tests == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -172,7 +210,7 @@ jobs:
     name: coverage report (merged)
     needs: [changes, test]
     # Only where the coverage jobs ran; also after a failed test job.
-    if: ${{ !cancelled() && needs.changes.outputs.coverage == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.tests == 'true' && needs.changes.outputs.coverage == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

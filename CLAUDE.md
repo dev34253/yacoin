@@ -107,17 +107,19 @@ make -j"$(nproc)"
   a run artifact) and the coverage gate on `master`, via *Run workflow*, and
   on branches that change a file the gate watches (gated/excluded files in
   `coverage-gates.toml`, the gate's own files; P0-63). The release builds
-  (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
+  (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03). Branches that change only
+  documentation (`*.md`, `doc/`, `project/`, `.claude/`) skip the build and
+  test jobs (P0-64); `[skip ci]` in a commit message skips CI for that push.
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (390)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (397)
 python3 test/functional/test_runner.py -j4            # functional tests (48)
 ```
 
-- Expected today: 390/390 unit tests in both builds (mainnet and low
+- Expected today: 397/397 unit tests in both builds (mainnet and low
   difficulty) and 48/48 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef

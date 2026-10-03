@@ -272,10 +272,15 @@ select_functions = [
 ]
 min = { lines = 92, functions = 100, branches = 77 }
 
+# P0-22 (local run of 341702d's code, crypter known-answer cases added;
+# ratcheted with --suggest): crypter 96.62 / 100 (200/207 lines; left:
+# Encrypt's short-output check, the Unlock assert pair, the unreachable
+# AddCryptedKey/AddKey failure returns; Unlock on a plain store with keys
+# is covered since, after the measurement).
 [[gate]]
 name = "wallet/crypter.cpp"
 paths = ["src/wallet/crypter.cpp"]
-min = { lines = 72, functions = 93 }
+min = { lines = 96, functions = 100 }
 
 [[gate]]
 name = "random.cpp"

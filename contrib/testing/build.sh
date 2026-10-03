@@ -457,12 +457,12 @@ make -j"$JOBS" > make.log 2>&1 ||
 log "built: $BUILD/src/yacoind, yacoin-cli, test/test_bitcoin ($(grep -c ' warning:' make.log) compiler warnings)"
 
 # run_vector_checkers: the independent Python models of the golden vector
-# files (P0-13, P0-46, P0-19); they use no node code, so they do not depend
-# on the configuration. Output in <builddir>/vectors.log; 1 on a mismatch.
+# files (P0-13, P0-46, P0-19, P0-22); they use no node code, so they do not
+# depend on the configuration. Output in <builddir>/vectors.log; 1 on a mismatch.
 run_vector_checkers() {
     local rc=0 checker out
     : > vectors.log
-    for checker in "bignum_vectors_check.py" "reward_vectors.py --check" "header_hash_vectors.py --check"; do
+    for checker in "bignum_vectors_check.py" "reward_vectors.py --check" "header_hash_vectors.py --check" "crypter_vectors.py --check"; do
         echo "== $checker" >> vectors.log
         # shellcheck disable=SC2086
         if out="$(python3 "$SRC/contrib/testing/"$checker 2>&1)"; then

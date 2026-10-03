@@ -85,10 +85,11 @@ check the exact value for each configuration.
    re-runs keep using the `depends` libraries. Different configurations can
    coexist; `configure` re-runs when its arguments change.
 6. Builds, then runs the requested tests. `--unit` runs `test_bitcoin`,
-   checks its summary, then the three independent vector checkers
-   `bignum_vectors_check.py`, `reward_vectors.py --check` and
-   `header_hash_vectors.py --check` (P0-13, P0-46, P0-19; about 5 s
-   together, in both configurations, so CI runs them in its unit jobs).
+   checks its summary, then the four independent vector checkers
+   `bignum_vectors_check.py`, `reward_vectors.py --check`,
+   `header_hash_vectors.py --check` and `crypter_vectors.py --check`
+   (P0-13, P0-46, P0-19, P0-22; about 5 s together, in both
+   configurations, so CI runs them in its unit jobs).
    Logs: `WORK_DIR/depends.log`, `WORK_DIR/autogen.log`,
    `<builddir>/{configure,make,unit,vectors,functional}.log`.
    Datadirs and node logs of **failed** functional tests are kept in
@@ -137,12 +138,12 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46, P0-19, P0-62, P0-08, P0-14, P0-48, P0-55 and P0-21)
+## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46, P0-19, P0-62, P0-08, P0-14, P0-48, P0-55, P0-22 and P0-21)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 390/390 | – (not supported) |
-| `lowdiff` | 390/390 | 48/48 |
+| `mainnet` | 397/397 | – (not supported) |
+| `lowdiff` | 397/397 | 48/48 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to
@@ -296,7 +297,15 @@ was well covered).
 ## CI
 
 `.github/workflows/tests.yml` runs on every push to any branch (and by hand
-via *Run workflow*). The two test jobs run on every push. The coverage
+via *Run workflow*). The two test jobs run on every push, except on branches
+that change **documentation only** (task P0-64): when every file the branch
+changes since its merge base with `master` matches `*.md`, `doc/**`,
+`project/**` or `.claude/**`, the `changes` job skips all build and test jobs
+and the run takes about a minute. On `master` and with *Run workflow* they
+always run. To skip CI for a single push by hand, put `[skip ci]` in the
+commit message (a GitHub feature; it skips every workflow for that push).
+The release workflow `yacoinbuildmultiplatform.yml` also skips pushes to
+`master` that change documentation only (`paths-ignore`); tags always build. The coverage
 jobs and the merged report with the coverage gate take about twice as
 long (`-O0`), so they run only where they are needed (task P0-63): on
 `master`, when the workflow is started by hand (*Run workflow* on any
@@ -454,6 +463,33 @@ every vector up to 21. The checks above N-factor 12 (`--max-nfactor`,
 `--reference`) are not run by `build.sh` or CI; `header_hash_tests` in
 every `--unit` run replays the file through the node code.
 
+## Wallet crypter vectors (P0-22)
+
+`crypter_vectors.py` writes and checks the wallet encryption known answers
+`src/test/data/crypter_vectors.json` (format and test cases in
+`src/test/README.md`, "Wallet crypter"): key derivation
+(`BytesToKeySHA512AES`), AES-256-CBC with PKCS#7, the decrypt outcomes of
+`CCrypter`, a master key and three crypted private keys. The values come
+from a Python model without node code or OpenSSL (`hashlib`, AES-256 from
+FIPS-197, secp256k1 for the public keys), which self-tests against
+FIPS-197, SP 800-38A and secp256k1 known answers first. Python 3, standard
+library, on the host; under a second:
+
+```bash
+contrib/testing/crypter_vectors.py                 # check the committed file
+contrib/testing/crypter_vectors.py --write         # rewrite it
+contrib/testing/crypter_vectors.py --selftest      # model self-tests only
+contrib/testing/crypter_vectors.py --cross-check   # + OpenSSL CLI / cryptography
+```
+
+`--check` (the default) compares the file byte for byte with the model
+and prints the first differing line; expected today: 11 kdf, 9 aes,
+13 decrypt, 3 keys agree. `--cross-check` additionally needs the
+`openssl` command (also in the build image) or the Python `cryptography`
+package (not in the image); expected with both: 53 comparisons, 0
+disagree. `build.sh --unit` runs the check (a mismatch fails the run),
+and `wallet_crypto` in `test_bitcoin` replays the file through the node
+code.
 ## Restricted networks (proxy and CA)
 
 In environments where outbound HTTPS goes through a proxy that re-signs TLS

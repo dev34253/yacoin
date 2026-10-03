@@ -1,0 +1,265 @@
+{
+ "format": "yacoin-crypter-vectors",
+ "version": "1",
+ "kdf": [
+  {
+   "comment": "1 round",
+   "passphrase": "74657374",
+   "salt": "0000deadbeef0000",
+   "rounds": 1,
+   "key": "be95ec08ef6c20b08d7a76aa3a12e336d4939a5877b9272441f52271e49102bc",
+   "iv": "6677530edf2247116e22b77e9cf0584b"
+  },
+  {
+   "comment": "2 rounds",
+   "passphrase": "74657374",
+   "salt": "0000deadbeef0000",
+   "rounds": 2,
+   "key": "9a624d4d2be8d3827f1b77412bb8c5383b13b079ade9ea79100c75f2a65c2def",
+   "iv": "66dd46c29c5c18be7379a47b205b3fa8"
+  },
+  {
+   "comment": "3 rounds",
+   "passphrase": "74657374",
+   "salt": "0000deadbeef0000",
+   "rounds": 3,
+   "key": "6d92bd1c47138adc7090026f29e60e4348ed75b7c7949690b6a8c3e692e73efd",
+   "iv": "5cfc14b318df0a614d5beb7a16a4bd84"
+  },
+  {
+   "comment": "1000 rounds",
+   "passphrase": "74657374",
+   "salt": "0000deadbeef0000",
+   "rounds": 1000,
+   "key": "2ef8c4f20a8823632f41eb536ddd611a651556c1d9a42180917b02f5ddcef20d",
+   "iv": "6af8f7c63fcc6c30de6103137bb3e499"
+  },
+  {
+   "comment": "25000 rounds (default nDeriveIterations), the oracle test's answer",
+   "passphrase": "74657374",
+   "salt": "0000deadbeef0000",
+   "rounds": 25000,
+   "key": "fc7aba077ad5f4c3a0988d8daa4810d0d4a0e3bcb53af662998898f33df0556a",
+   "iv": "cf2f2691526dd1aa220896fb8bf7c369"
+  },
+  {
+   "comment": "123457 rounds, other salt",
+   "passphrase": "70617373706872617365",
+   "salt": "0102030405060708",
+   "rounds": 123457,
+   "key": "b9717a637259db9c36ce4b247df0c5b612772f0992710bc9b536660a9b924a1a",
+   "iv": "c7dab61f112ae2d36c8c9d612ef80c86"
+  },
+  {
+   "comment": "empty passphrase",
+   "passphrase": "",
+   "salt": "0000deadbeef0000",
+   "rounds": 25000,
+   "key": "576fc45bd3253b1b7828843664dd0b87b5acf17c7c41d0f2af988600a504004c",
+   "iv": "330eb34e988599948a0e7d01bceb4a15"
+  },
+  {
+   "comment": "UTF-8 passphrase",
+   "passphrase": "4772c3bcc39f6520e282ac",
+   "salt": "ffffffffffffffff",
+   "rounds": 1000,
+   "key": "09daf5236522cf1e5fbefda64b66b693a64d5440c037e4bd20b111926113e252",
+   "iv": "b9c86abc02b912cd6d4456c01e241323"
+  },
+  {
+   "comment": "embedded NUL byte (the whole SecureString is hashed)",
+   "passphrase": "610062",
+   "salt": "0000000000000000",
+   "rounds": 7,
+   "key": "a682690e763c0fd6cef7e4c14fe6a7e4653d9af64159ab24d644183dbb5624d0",
+   "iv": "08e39226e1adcc52d33dc33aee55e9a5"
+  },
+  {
+   "comment": "100-byte passphrase",
+   "passphrase": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283",
+   "salt": "8899aabbccddeeff",
+   "rounds": 500,
+   "key": "ece6fd936c638f8b21350186331b8d6342df0b4eeafa990eb42cd931f672b1ac",
+   "iv": "10ead25cbd4586e1da485d307875692b"
+  },
+  {
+   "comment": "empty salt (BytesToKeySHA512AES only; SetKeyFromPassphrase needs 8 bytes)",
+   "passphrase": "74657374",
+   "salt": "",
+   "rounds": 25000,
+   "key": "5563e3b9679e994c8ba891a7f21fbbcbb2202801fae0b16cbcaba9c261a99339",
+   "iv": "e9129d9476ec42d83d49473bf6bfb407"
+  }
+ ],
+ "aes_cbc": {
+  "key": "8a1ab187639705894cfc01dd38d9d795092d7e0cbd9ca26fe31fc14fe8993c5f",
+  "iv": "1d36fd2043a856a04eb602968167a3e8",
+  "vectors": [
+   {
+    "plaintext": "",
+    "ciphertext": "131b57ebafe27062dd360dcb1f9aca05",
+    "padding": 16
+   },
+   {
+    "plaintext": "d9",
+    "ciphertext": "aaa60b8d416f8c57cc48959f47d1720b",
+    "padding": 15
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88",
+    "ciphertext": "45fb98accb05a0c1236fdf92cab5bc9a",
+    "padding": 1
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88d1",
+    "ciphertext": "864341b3cd7260daf0b61db462605fa913f3caed6d0678eb48366dd171fd52a8",
+    "padding": 16
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88d125",
+    "ciphertext": "864341b3cd7260daf0b61db462605fa9f5035b41cdaa37029cd031f86d8a4014",
+    "padding": 15
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88d1254c2f7482ddbf31a774fc45b8722a",
+    "ciphertext": "864341b3cd7260daf0b61db462605fa90d5ed8fc7da0cc6e2ca59fe35929c8a2",
+    "padding": 1
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88d1254c2f7482ddbf31a774fc45b8722a9e",
+    "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb95f681afdc0af388ce7f567269fc605bbc",
+    "padding": 16
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88d1254c2f7482ddbf31a774fc45b8722a9ecd",
+    "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb95dcc2706358684381ae11ae874b7d85dc",
+    "padding": 15
+   },
+   {
+    "plaintext": "d9a0cf51c352aa74c729a429d0ae88d1254c2f7482ddbf31a774fc45b8722a9ecd191ec5878b6d49bb07beb29ab00ec8",
+    "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb953eacb77d93dd11fe4567e070fcfa2cf10fd015e31786e5b60021f7ee96e7f760",
+    "padding": 16
+   }
+  ]
+ },
+ "decrypt": [
+  {
+   "comment": "valid, 40 bytes plaintext",
+   "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb959d63de8191a6dc96e19204c7c2b83076",
+   "ok": true,
+   "plaintext": "d9a0cf51c352aa74c729a429d0ae88d1254c2f7482ddbf31a774fc45b8722a9ecd191ec5878b6d49"
+  },
+  {
+   "comment": "damaged: last byte flipped (padding check fails)",
+   "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb959d63de8191a6dc96e19204c7c2b83077",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "damaged: first byte flipped (block 1 garbled, block 2 one bit flipped, padding intact)",
+   "ciphertext": "874341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb959d63de8191a6dc96e19204c7c2b83076",
+   "ok": true,
+   "plaintext": "ff4438a961eefd7b9129bf3ad53454d8244c2f7482ddbf31a774fc45b8722a9ecd191ec5878b6d49"
+  },
+  {
+   "comment": "wrong key",
+   "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb959d63de8191a6dc96e19204c7c2b83076",
+   "ok": false,
+   "plaintext": "",
+   "key": "0fabb087b66eb582115eb477016b336deddd4f4f6ba3cbaa5fc18b74c51d839b"
+  },
+  {
+   "comment": "wrong IV (only the first block changes)",
+   "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb959d63de8191a6dc96e19204c7c2b83076",
+   "ok": true,
+   "plaintext": "64edd9a2a3aada4152e8e2856263dccc254c2f7482ddbf31a774fc45b8722a9ecd191ec5878b6d49",
+   "iv": "a07bebd323502695db77443a33aaf7f5"
+  },
+  {
+   "comment": "length not a multiple of 16 (47 bytes)",
+   "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb959d63de8191a6dc96e19204c7c2b830",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "truncated to the first two blocks (padding check on block 2)",
+   "ciphertext": "864341b3cd7260daf0b61db462605fa92d8db325e6810022dee12ec1ff67bb95",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "empty",
+   "ciphertext": "",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "padding byte 0",
+   "ciphertext": "d77199bd7bd1ad67923fa2cbe9c4d6de",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "padding byte 17",
+   "ciphertext": "54778da6f3c546b346c38f39d0e952cb",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "inconsistent padding (..01 02)",
+   "ciphertext": "e43f2456c35fa8b6c602de1a903df27d",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "only a padding block (CCrypter fails, OpenSSL would return empty)",
+   "ciphertext": "131b57ebafe27062dd360dcb1f9aca05",
+   "ok": false,
+   "plaintext": ""
+  },
+  {
+   "comment": "data block and a full padding block",
+   "ciphertext": "b9422c7cd4b6e8efd74108203a2cbbf06589a783b9bb5b5e652069dd34aff2fc",
+   "ok": true,
+   "plaintext": "975cbb5fd4ae17e645230fe486c7b6d2"
+  }
+ ],
+ "masterkey": {
+  "passphrase": "636f727265637420686f727365206261747465727920737461706c65",
+  "salt": "0000deadbeef0000",
+  "rounds": 25000,
+  "derivation_method": 0,
+  "master_key": "2caaf3259602510cbae82c92da6bfeb99f9b47fdb69373048b066bdb589a0278",
+  "crypted_key": "323675289ce983ac1c10adbf5f214baf1b7d831908751176a14c46ecfc1b09b7dd3287593f9049c0bcbea3d93e63729c",
+  "serialized": "30323675289ce983ac1c10adbf5f214baf1b7d831908751176a14c46ecfc1b09b7dd3287593f9049c0bcbea3d93e63729c080000deadbeef000000000000a861000000",
+  "wrong_passphrase": "636f727265637420686f727365206261747465727920737461706c6572",
+  "wrong_passphrase_ok": false
+ },
+ "keys": [
+  {
+   "secret": "e13fc92d803b47df40d4e054edaf9a4e2820461bbdabcb77b676215e6ab16705",
+   "compressed": true,
+   "pubkey": "038676a35f8ee962496864a044c4028eecc36b30abadd9c67c3cb78c73b0e196ee",
+   "pubkey_hash": "c3ddd6d844af2b9b0b47649f5dce5f80f543c138725166bfe2b8cd9a12161a50",
+   "crypted_secret": "c7d83774e1c58f59ffce63b8fade050b1a6cab922d10ce1a39f3b408160dd7930712fb0721932fcb0b5966d4ceb87825"
+  },
+  {
+   "secret": "ebbd9a206b74718d4061cad5b230d541571debae2ccc5fa88c095c77effcd225",
+   "compressed": false,
+   "pubkey": "04a9665fc3c6e686923aeb02826857e2ab4803a9c12023bbba628d83442e8765e21f0a23840d9b1f281dd34963d1ea748ba6d5f5eb1bd7047454472123a18e5a14",
+   "pubkey_hash": "99001ad09349e1cbac84d5fde607db4515950bf0d7aae4931adc50945dc5583f",
+   "crypted_secret": "27c1111f08bd5ad6b41148b4b4f4a62348d7b7c3df79083c729e781d5792bcfd1919ed151c467d610194e38a42cd0c34"
+  },
+  {
+   "secret": "d2ee449bf0feedda2c5e2b9f6c533006b197f6d4e2cc461d0ddd0d4c4e0371bf",
+   "compressed": true,
+   "pubkey": "02eff762439d69e8fa17c80336b2ee58e414c2218778726e15f26fd97add79c71d",
+   "pubkey_hash": "9fae7f3e951bfbf16df7e19951709f7781458b3c329ab3e73c0e9b950c513fda",
+   "crypted_secret": "7cd3cfea5a486303fd7d9e8940c1a55ec5b81271d426171ccab2724d064299073e4c8cae75214d04def65acb8681da08"
+  }
+ ],
+ "short_secret": {
+  "pubkey": "038676a35f8ee962496864a044c4028eecc36b30abadd9c67c3cb78c73b0e196ee",
+  "crypted_secret": "c7d83774e1c58f59ffce63b8fade050b2151fc5ba8feed25cc3d6cd73eae4e58"
+ }
+}
