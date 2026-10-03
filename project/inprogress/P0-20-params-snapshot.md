@@ -3,8 +3,8 @@
 - Plan section: 0.2h
 - Depends on: P0-01
 - Size: S
-- Owner:
-- Started:
+- Owner: Claude (subagent of owner session, laptop)
+- Started: 2026-10-02
 - Finished:
 
 ## Goal
