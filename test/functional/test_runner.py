@@ -69,6 +69,7 @@ TEST_EXIT_SKIPPED = 77
 BASE_SCRIPTS = [
     'feature_help.py', # at the beginning to quickly check that it can be started
     'feature_defaultport.py',
+    'feature_params_snapshot.py',
     'feature_reindex.py',
     'feature_basic_transfer.py',
     'feature_describe_redeemscript.py',

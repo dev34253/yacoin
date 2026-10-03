@@ -31,7 +31,7 @@ This version incorporates the [review](phase0-review.md).
 | Context | Chain params | Globals | Consequence |
 |---|---|---|---|
 | Unit tests (`test_bitcoin`) | main (or low-diff main) | `nMainnetNewLogicBlockNumber = 0`, `nFactorAtHardfork = 0` (only set in `AppInit`) | Everything is "post-fork from height 0" with Nf 0; stake-modifier code returns early; old retarget branch unreachable. |
-| Functional tests | **main params with the low-difficulty genesis** (never `-regtest`) | `epochinterval=10`, `nFactorAtHardfork=4`, fork height set per test | Fast mining; PoW-only chains. |
+| Functional tests | **main params with the low-difficulty genesis** (never `-regtest`) | `epochinterval=10` (the cached chain is mined with 20), `nFactorAtHardfork=4`, fork height set per test | Fast mining; PoW-only chains. |
 | Mainnet node | main | fork at 1,890,000, Nf 21 | The real thing. |
 
 A shared harness (P0-47, `src/test/consensus_harness.h`, usage in
@@ -138,6 +138,57 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 - All three parameter sets (mainnet, low-diff functional, unit-test
   globals), including fork heights, N-factor at fork, epoch interval,
   checkpoints, stake-modifier checkpoints.
+- Done: `src/test/chainparams_snapshot_tests.cpp` pins the chain parameters
+  (main per build, regtest, base params, stake-modifier checkpoints),
+  `test/functional/feature_params_snapshot.py` pins what a node logs in
+  `debug.log` (framework values and compiled-in defaults), and
+  `consensus_harness_tests` (P0-47) pins the unit-test globals. A changed
+  value fails one of them. `test_bitcoin` now also fails when node code
+  calls `StartShutdown()` (a failed genesis `Yassert`); it used to exit 0.
+
+Chain parameters (`chainparams.cpp`, `chainparamsbase.cpp`,
+`chainparamsseeds.h`). Mainnet build / low-difficulty build where they
+differ:
+
+| Parameter | Main | Regtest (`-regtest`; not used by the functional tests) |
+|---|---|---|
+| Message start, P2P port | `d9 e6 e7 e5`, 7688 | same as main |
+| RPC port, data dir | 7687, – | 17687, `regtest` (testnet: 17687, `testnet3`, but no chain params – `-testnet` throws "Unknown chain test") |
+| powLimit (compact) | `~0>>20` (`0x1e0fffff`) / `~0>>3` (`0x201fffff`) | `0x7fff…` (`0x207fffff`) |
+| initialHashTarget | `~0>>20` (`0x1e0fffff`) / `~0>>8` (`0x2000ffff`) | `0x7fff…` (`0x207fffff`) |
+| initialMoneySupply | 0 / 1E14 | 1E14 |
+| Genesis hash | `0000060f…53e5` / `1ddf335e…8848` | `08603b3b…4e2e` |
+| Genesis nonce, nBits, time | 127357 / 127358, powLimit, `nChainStartTime`+20 = 1367991220 | 127357, `0x207fffff`, same time |
+| Genesis merkle root | `678b7641…244f` (all) | same |
+| BIP65, BIP68, Heliopolis height | 1,890,000 | 0 |
+| Target timespan / spacing | 21000×60 s / 60 s (interval 21000) | 10 s / 60 s (interval 0) |
+| Min-difficulty blocks, no retargeting | false, false | true, true |
+| Versionbits threshold / window | 19950 / 6 | 2 / 6 |
+| Stake min/max age, modifier interval | 30 d / 90 d / 6 h | same |
+| Base58 prefixes | 77, 139, 205, xpub/xprv | same |
+| Checkpoints | 51 (0 = build's genesis … 1,911,210; 1,750,000 is the one hash without leading zeros) | 1 (genesis) |
+| Fixed seeds | 7 IPv4:7688 / none | same as main (per build) |
+| DNS seeds | none | none |
+| Mining requires peers | true / false | false |
+| chainTxData | 1749704574, 2525586, 0.0005 | 0, 0, 0 |
+| Network id | `main` | `regtest` |
+| Same in both | prune after 100000; consistency checks false, require standard true, mine on demand false; deployments TESTDUMMY bit 28 (1199145601–1230767999), CSV bit 0 (1462060800–1493596800) | |
+
+Stake-modifier checkpoints (`kernel.cpp`): 26 heights 0 … 712,177; height 0
+is `0x0e00670b` / `0xfd11f4e7`; the testnet table has height 0 only. They are
+only checked while `chainActive.Tip()->nHeight + 1` is below the fork height
+(or there is no tip) – never with the unit-test globals (review A4).
+
+Globals (`util.cpp`; all but `nYac10HardforkTime` set by `AppInit` from `init.cpp` defaults or options):
+
+| Global | Mainnet node | Functional tests | Unit tests (no `AppInit`) |
+|---|---|---|---|
+| `nMainnetNewLogicBlockNumber` (`-testnetNewLogicBlockNumber`) | 1,890,000 | `block_fork_1_0` per test (default 0) | 0 |
+| `nTokenSupportBlockNumber` (`-tokenSupportBlockNumber`) | 1,911,210 | 1,911,210 (token tests pass their own) | 0 |
+| `nFactorAtHardfork` (`-nFactorAtHardfork`) | 21 | 4 | 0 |
+| `nEpochInterval` = `nDifficultyInterval` (`-epochinterval`) | 21000 | 10 (the cached chain is mined with 20) | 21000 |
+| `fTestNet` (`-testnet`) | false | false | false |
+| `nYac10HardforkTime` (compiled in, no option) | 1619048730 | 1619048730 | 1619048730 |
 
 ### i) Randomness – P0-21
 

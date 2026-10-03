@@ -1144,6 +1144,7 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     nMainnetNewLogicBlockNumber = gArgs.GetArg("-testnetNewLogicBlockNumber", mainnetNewLogicBlockNumber);
     nTokenSupportBlockNumber = gArgs.GetArg("-tokenSupportBlockNumber", tokenSupportBlockNumber);
     LogPrintf("Param nMainnetNewLogicBlockNumber = %d\n",nMainnetNewLogicBlockNumber);
+    LogPrintf("Param nTokenSupportBlockNumber = %d\n", nTokenSupportBlockNumber);
 
     // cache size calculations
     int64_t nTotalCache = (gArgs.GetArg("-dbcache", nDefaultDbCache) << 20);
