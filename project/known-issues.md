@@ -22,6 +22,18 @@ hard fork or at least a careful, separately reviewed change.
   time. (P0-12, Q2)
 - **PoW trust 0 above powLimit; unreachable `chain.cpp:112`.** Such blocks
   are rejected by `CheckProofOfWork` anyway; leave. (P0-16, Q6)
+- **`GetHash()` cache can return a stale PoW hash.** `CBlockHeader::GetHash()`
+  (`primitives/block.h:235-248`) recomputes only when a header field differs
+  from `previousBlockHeader`. `SerializationOp` (block.h:110-115) also
+  writes `previousBlockHeader`, so changing a field and then serialising the
+  header before `GetHash()` leaves the old hash in the cache; a change of
+  `nFactorAtHardfork` is not part of the key either (a node does not change
+  it after `AppInit`). Impact: only if a code path changes `nNonce`/`nTime`
+  and serialises before hashing (not investigated); fixing it changes hashing
+  code. Pinned by `header_hash_tests/gethash_cache_quirks`. (P0-19)
+- **N-factor table comment.** `block.h:170` says "(Nf) 26" for `nSpanOf25`,
+  but the cap `MAXIMUM_N_FACTOR` gives 25 from 3515474848 on; comment only.
+  Pinned by `header_hash_tests`. (P0-19)
 
 - **Retarget minimum depends on the tip** (review B7). `CalculateNextWorkRequired`
   starts its `nMinEase` scan at `chainActive.Tip()` (`pow.cpp:40-51`), and
@@ -101,3 +113,12 @@ hard fork or at least a careful, separately reviewed change.
 - **Functional cache chain** is mined with `-epochinterval=20` (40 blocks)
   while the tests run with 10. Recorded; docstring fix in P0-61. (P0-20, Q8)
 - **Checkpoint 1,750,000** is written without leading zeros (harmless). (P0-20, Q8)
+- **`TestingSetup` leaves dangling globals.** Its destructor deletes
+  `pcoinsTip`, `pcoinsdbview`, `pblocktree` and `ptokens` without resetting
+  the globals (`src/test/test_bitcoin.cpp`), so a `BasicTestingSetup` test
+  that ran after a `TestingSetup` one and used them would see freed memory.
+  No test does today; `ptokensdb` is reset since P0-62. `ptokensCache` is
+  never created in unit tests (the code using it checks for null). (P0-62)
+- **`DoS_tests/stale_tip_peer_management`** calls `connman->Init(options)`,
+  which sets the test `CConnman`'s send/receive buffer limits back to 0 for
+  the rest of that case (harmless: it calls no `ProcessMessages`). (P0-62)

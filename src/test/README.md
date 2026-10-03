@@ -473,16 +473,25 @@ are today, bugs included (review A5, A7, C8 in
   block download (536) and outbound eviction (3113-3119). The header-sync
   comparisons (1481, 1507, 1583) are left to the functional test of P0-32.
 
-Two pitfalls of `TestingSetup` these suites work around, useful for other
-tests of the same kind:
+What these suites need from `TestingSetup` (provided since P0-62, pinned by
+`chain_trust_fork_choice_tests/testingsetup_token_db_and_buffers`), useful
+for other tests of the same kind:
 
-- `TestingSetup` creates no token database (`ptokensdb` is null), and
-  `DisconnectBlock` reads token undo data from it, so a reorg crashes. The
-  regtest fixture installs an in-memory `CTokensDB` and removes it again.
-- The test `CConnman` is never started, so its send-buffer limit is 0: every
-  queued message sets the peer's `fPauseSend`, and `ProcessMessages` then
-  skips the receive queue. The test peer clears `fPauseSend` before
-  delivering a message. Only one test peer may exist at a time, because
+- `TestingSetup` creates an in-memory token database (`ptokensdb`), empty
+  for every fixture, and deletes it and resets the pointer to null when the
+  fixture ends (`BasicTestingSetup` tests have none). `ConnectBlock` writes
+  token undo data to it and `DisconnectBlock` reads it
+  (`validation.cpp:1322`), so reorgs work without per-test setup.
+- The test `CConnman` is never started; `TestingSetup` sets its send and
+  receive buffer limits to the node defaults (`1000 * DEFAULT_MAXSENDBUFFER`
+  and `1000 * DEFAULT_MAXRECEIVEBUFFER` bytes) with
+  `CConnmanTest::SetBufferSizes`. With a limit of 0 every queued message
+  would set the peer's `fPauseSend`, and `ProcessMessages` would skip the
+  receive queue; the P2P test peer requires `fPauseSend` to be clear before
+  it delivers a message. A test that calls `connman->Init(options)` (as
+  `DoS_tests/stale_tip_peer_management` does) resets both limits to the
+  values in `options` (0 by default).
+- Only one test peer may exist at a time, because
   `CConnmanTest::ClearNodes()` empties the whole node list.
 
 Current behaviour these tests pin (not fixed in Phase 0):
@@ -612,3 +621,76 @@ wrote; it restores both when it ends. Do not call `BOOST_CHECK` while it
 captures. `ScopedArg` sets a `-switch` for a scope (afterwards it is `"0"`,
 `ArgsManager` cannot remove an argument), `ScopedValue` a global such as
 `fDebug` or `fTxIndex`.
+
+### Block-header hash (P0-19)
+
+`header_hash_tests.cpp` pins the proof-of-work hash `CBlockHeader::GetHash()`
+/ `CalculateHash()` (`primitives/block.h`, plan 0.2e, review A2/B4): it
+hashes the raw bytes of `block_header` (v≥7, `#pragma pack(1)`, 84 bytes,
+64-bit `nTime`) or `old_block_header` (v<7, 80 bytes) with `scrypt_hash`,
+i.e. scrypt-jane with Keccak-512 (original Keccak padding, not SHA3-512)
+and ChaCha20/8, password = salt = the header, N = 2^(N-factor+1),
+r = p = 1, 32 bytes. v<7 takes the N-factor from the timestamp table
+(4 … 25, first `nTime` of N-factor 5 is 1368515488, of 25 3247039392; from
+3515474848 the cap `MAXIMUM_N_FACTOR` = 25 applies); v≥7 takes the global
+`nFactorAtHardfork` (21 on a mainnet node, 4 in functional tests, 0 in
+`test_bitcoin`) and ignores the timestamp.
+
+**Vectors** `data/header_hash_vectors.json` (embedded as
+`data/header_hash_vectors.json.h`), written and checked by
+`contrib/testing/header_hash_vectors.py`; never edit by hand. One object
+`{"format": "yacoin-header-hash-vectors", "version": "1", "comment",
+"vectors": [...]}`; each vector has:
+
+| Field | Meaning |
+|---|---|
+| `name` | e.g. `v6_bound_1636426656_minus_1`, `v7_nf21_time_1700000000`, `genesis_mainnet` |
+| `version`, `prev_block`, `merkle_root`, `time`, `bits`, `nonce` | the header fields (hashes in `GetHex()` order, numbers decimal) |
+| `nfactor_at_hardfork` | the `nFactorAtHardfork` the vector needs (v≥7), else `null` |
+| `nfactor` | the N-factor the hash uses |
+| `getnfactor` | `GetNfactor(time, false)` (v<7), else `null` |
+| `header_hex` | the 80/84 hashed bytes = the serialised header (hex in) |
+| `hash` | `uint256::GetHex()` of the 32 output bytes (hex out) |
+| `source` | `python` (pure-Python model) or `reference` (upstream scrypt-jane build) |
+
+`header_hex`, `nfactor` and `hash` are enough to rerun a vector on another
+platform without the node code (P0-53).
+
+59 vectors: `nTime` = 0 and both sides (B−1, B) of each of the 22 table
+bounds for v6; v1, v3 and `nVersion` = −1 at N-factor 4; the mainnet and
+low-difficulty genesis headers (their hashes are the constants in
+`chainparams.cpp`); v7 with `nFactorAtHardfork` 0, 4 and 21, and at 0 and 4
+also a 64-bit `nTime`, an `nTime` in the N-factor-4 era and
+`nVersion` = 0x7fffffff.
+
+**Test cases.** `known_answers` checks, per vector: serialisation and the
+raw struct bytes equal `header_hex`; `GetHash()` (which calls
+`CalculateHash()` once on a fresh header) equals `hash`; `GetNfactor`. For
+N-factors up to 12 it also checks `CalculateHash()` and
+`scrypt_hash(header_hex, nfactor)` directly (higher ones would double the
+runtime). A match also pins which N-factor is used, because the expected
+hash was computed with it. v≥7 vectors
+set `nFactorAtHardfork` with `ScopedConsensusGlobals`. `nfactor_table_coverage`
+checks that every N-factor 4 … 25 has a v<7 vector and that `GetNfactor`
+(display only) agrees with the table. `gethash_cache_quirks` pins the cache
+of `GetHash()`: it is keyed on the header fields only, so it returns a
+stale hash after `nFactorAtHardfork` changes, and after a field change
+followed by a serialisation (`SerializationOp` updates the cache key, not
+the hash); `GetHash(height)` ignores `height`. The `static_assert`s on the
+sizes (84/80) and field offsets are at the top of the file.
+
+**Runtime.** Vectors with an N-factor above `YACOIN_HEADER_HASH_MAX_NFACTOR`
+(default 21, the highest N-factor of real mainnet blocks) are skipped with a
+test message. Memory is N × 128 bytes: 512 MiB at 21, 8 GiB at 25.
+Measured (`-O2` build, 4 cores): the default run of `header_hash_tests`
+takes about 10 s of the 44 s unit suite; with the variable at 25 it takes
+about 210 s. The `-O0` coverage build is slower.
+
+```bash
+src/test/test_bitcoin --run_test=header_hash_tests                       # N-factor ≤ 21
+YACOIN_HEADER_HASH_MAX_NFACTOR=25 src/test/test_bitcoin --run_test=header_hash_tests  # all, 8 GiB
+```
+
+Real mainnet headers (task step 3) need the P0-09 dump; P0-23 adds them
+by extending the case list in `header_hash_vectors.py` (the checker
+compares the file with that list) and regenerating the file.

@@ -16,7 +16,8 @@ JSON_TEST_FILES = \
   test/data/tx_invalid.json \
   test/data/tx_valid.json \
   test/data/sighash.json \
-  test/data/reward_vectors.json
+  test/data/reward_vectors.json \
+  test/data/header_hash_vectors.json
 
 # xz-compressed JSON, embedded decompressed as a C string (see the
 # %.json.xz.h rule below); too large to commit uncompressed (task P0-13).
@@ -68,6 +69,7 @@ BITCOIN_TESTS =\
   test/DoS_tests.cpp \
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
+  test/header_hash_tests.cpp \
   test/kernel_tests.cpp \
   test/key_tests.cpp \
   test/limitedmap_tests.cpp \

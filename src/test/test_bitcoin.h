@@ -53,6 +53,9 @@ class CNode;
 struct CConnmanTest {
     static void AddNode(CNode& node);
     static void ClearNodes();
+    /** Set g_connman's per-peer send and receive buffer limits (bytes). The
+     *  test CConnman is never started, so without this both stay 0. */
+    static void SetBufferSizes(unsigned int nSendBufferMaxSize, unsigned int nReceiveFloodSize);
 };
 
 class PeerLogicValidation;

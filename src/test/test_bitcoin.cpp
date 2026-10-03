@@ -12,6 +12,7 @@
 #include "key.h"
 #include "validation.h"
 #include "miner.h"
+#include "net.h"
 #include "net_processing.h"
 #include "pubkey.h"
 #include "random.h"
@@ -21,6 +22,7 @@
 #include "rpc/server.h"
 #include "rpc/register.h"
 #include "script/sigcache.h"
+#include "tokens/tokendb.h"
 
 #include <memory>
 
@@ -34,6 +36,12 @@ void CConnmanTest::ClearNodes()
 {
     LOCK(g_connman->cs_vNodes);
     g_connman->vNodes.clear();
+}
+
+void CConnmanTest::SetBufferSizes(unsigned int nSendBufferMaxSize, unsigned int nReceiveFloodSize)
+{
+    g_connman->nSendBufferMaxSize = nSendBufferMaxSize;
+    g_connman->nReceiveFloodSize = nReceiveFloodSize;
 }
 
 uint256 insecure_rand_seed = GetRandHash();
@@ -83,6 +91,12 @@ TestingSetup::TestingSetup(const std::string& chainName) : BasicTestingSetup(cha
         pblocktree = new CBlockTreeDB(1 << 20, true);
         pcoinsdbview = new CCoinsViewDB(1 << 23, true);
         pcoinsTip = new CCoinsViewCache(pcoinsdbview);
+        // In-memory token database (task P0-62): ConnectBlock writes token
+        // undo data to it and DisconnectBlock reads it (validation.cpp:1322),
+        // so without it any reorg in a unit test dereferences a null pointer.
+        // Each memory database has its own LevelDB environment: every fixture
+        // starts with an empty one.
+        ptokensdb = new CTokensDB(1 << 20, true /* fMemory */);
         if (!LoadGenesisBlock(chainparams)) {
             throw std::runtime_error("LoadGenesisBlock failed.");
         }
@@ -99,6 +113,11 @@ TestingSetup::TestingSetup(const std::string& chainName) : BasicTestingSetup(cha
             threadGroup.create_thread(&ThreadScriptCheck);
         g_connman = std::unique_ptr<CConnman>(new CConnman(0x1337, 0x1337)); // Deterministic randomness for tests.
         connman = g_connman.get();
+        // The test CConnman is never started, so Init() never sets its buffer
+        // limits; with a send limit of 0 every queued message sets the peer's
+        // fPauseSend and ProcessMessages skips the receive queue. Use the
+        // node's defaults (init.cpp, -maxsendbuffer/-maxreceivebuffer).
+        CConnmanTest::SetBufferSizes(1000 * DEFAULT_MAXSENDBUFFER, 1000 * DEFAULT_MAXRECEIVEBUFFER);
         peerLogic.reset(new PeerLogicValidation(connman, scheduler));
 }
 
@@ -114,6 +133,8 @@ TestingSetup::~TestingSetup()
         delete pcoinsTip;
         delete pcoinsdbview;
         delete pblocktree;
+        delete ptokensdb;
+        ptokensdb = nullptr; // BasicTestingSetup tests and later fixtures must not see a dangling pointer
         delete ptokens;
         fs::remove_all(pathTemp);
 }
