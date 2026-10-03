@@ -188,11 +188,12 @@ handling (marked `e` in the tracefile) are left out
 |---|---|---|
 | `file` | the whole file | dead files (`pbkdf2.cpp`, `random_nonce.cpp`, `scrypt-generic.cpp`) |
 | `function` | the lines, branches and function records between a function's first and last line (all overloads, or one signature) | dead functions in `scrypt.cpp` and `pow.cpp` |
-| `lines` | the line matched by `match` (`extent = "line"`), or the whole statement that starts there (`extent = "block"`: up to its `;`, or the `}` closing its first `{`) | the testnet `else` arm in `primitives/block.h`, the `if (fDebug …)` logging blocks in `kernel.cpp` |
+| `lines` | the line matched by `match` (`extent = "line"`), or the whole statement that starts there (`extent = "block"`: up to its `;`, or the `}` closing its first `{`) | the testnet `else` arm in `primitives/block.h`, the `if (fDebug …)` and `if (fPrintProofOfStake)` logging blocks in `kernel.cpp`, the two `-printcreation` logging statements in `GetProofOfWorkReward` (`validation.cpp`; P0-63) |
 | `branches` | the branch outcomes `outcomes` (`"<block>,<branch>"` ids from the tracefile) on the matched line, whether they ran or not | the dead `fTestNet` operands (one outcome each) |
 
 The list follows [`dead-code.md`](../../project/plans/dead-code.md) a)
-and b) (task P0-50) and the task's kernel debug logging. `match` is a
+and b) (task P0-50), the kernel debug logging (P0-04) and the two
+logging blocks added by P0-63 (owner answer Q11). `match` is a
 regex on the source text, so line shifts do not break it; it must match
 exactly one line, or for `lines` any number with `all = true`. Every exclusion must find its target
 (file, function, line with data, branch outcome), otherwise the gate

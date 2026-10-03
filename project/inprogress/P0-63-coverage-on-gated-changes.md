@@ -204,3 +204,23 @@ decision and the matched files to the job log and step summary.
   watched list, branch-diff rule, fail-safe cases and the unwatched
   `overall` gate / `tests.yml` match the code; the `changes` job time is
   checked against run 1.
+- 2026-10-03 CI run 2 (docs-only push, 4953d8f):
+  https://github.com/dev34253/yacoin/actions/runs/37120267125 – `changes`
+  (4 s) said "Skipped: … changes no file the coverage gate watches";
+  unit (mainnet) and unit + functional (lowdiff) green; coverage jobs not
+  in the matrix; "coverage report (merged)" skipped. (Run 1 of 4edb8c8,
+  37120234274, was cancelled by run 2 via `concurrency`.)
+- 2026-10-03 step 8, local coverage pair of the branch (C++ = master
+  1f56719; `build.sh --coverage`, work dir yacoin-build-P0-63): mainnet
+  344/344 unit; lowdiff 344/344 unit, 46/46 functional; `--coverage-report`
+  exit 0. Gate on that `merged.info`: old config 22/22 ok; new config
+  22/22 ok. The new exclusions remove kernel.cpp 485–522 (3 lines, 30
+  branches) and validation.cpp 954–958, 971–975 (4 lines, 60 branches).
+  `--suggest` raises: kernel.cpp branches 29 → 32 (33.33 %),
+  validation.cpp rewards branches 67 → 71 (71.86 %); all others unchanged
+  (kernel lines 45.33 → still 44; overall 70.82 / 78.03 / 49.10).
+  `test_coverage_gate.py` OK.
+- 2026-10-03 step 7, code review (`code-review` skill, medium) of commit 3
+  (exclusions, ratchet, README): no findings (regexes match exactly
+  kernel.cpp:485 and validation.cpp:954/971, not kernel.cpp:370; extents
+  485–522, 954–958, 971–975; minimums = floor(measured − 0.5)).
