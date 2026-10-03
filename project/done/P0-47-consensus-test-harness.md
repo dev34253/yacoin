@@ -350,6 +350,7 @@ BOOST_FIXTURE_TEST_CASE(x, ConsensusTestingSetup) {
   behaviour after the step-7 fix). Not applied: `project/plans/overview.md`
   keeps its historical 238/239 baseline (it records the state at review
   time, not today's count).
+- 2026-10-03 – Step 11: committed d6577b6, pushed, PR https://github.com/dev34253/yacoin/pull/52
 - Open points: P0-08 must emit (or adapt the loader to) the CSV columns;
   logging uses `BOOST_TEST_MESSAGE` only (test code, `debug.log` is off in
   `test_bitcoin`); the existing `pow_tests` were left unchanged (P0-14).
