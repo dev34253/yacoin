@@ -35,6 +35,19 @@ hard fork or at least a careful, separately reviewed change.
   but the cap `MAXIMUM_N_FACTOR` gives 25 from 3515474848 on; comment only.
   Pinned by `header_hash_tests`. (P0-19)
 
+- **Retarget minimum depends on the tip** (review B7). `CalculateNextWorkRequired`
+  starts its `nMinEase` scan at `chainActive.Tip()` (`pow.cpp:40-51`), and
+  `nMinEase` compares compact `nBits` as plain integers. A node that checks
+  an epoch-boundary block while its tip is elsewhere (header-first sync,
+  reorg) can compute a different target. On mainnet so far harmless: all
+  74,618 post-fork blocks up to 1,964,617 have `nBits` 0x1e0fffff (powLimit),
+  so the minimum never moved; the P0-08 dump found no difference. (P0-08)
+- **`CBlockIndex::prevoutStake` and `nStakeTime` are never set.** They are
+  serialised in the block index (`chain.h:522-527`) but only read
+  (`txdb.cpp:487-488`); none of the 1,964,618 mainnet entries has them.
+  Harmless (nothing reads them), but anyone expecting the ppcoin values must
+  take them from the coinstake (`CBlock::GetProofOfStake()`). (P0-08)
+
 ## CBigNum / OpenSSL (go away with the arith_uint256 replacement, Phase 4)
 
 - **Negative zero.** `getuint64`/`getuint256` on a negative zero write one
@@ -53,6 +66,11 @@ hard fork or at least a careful, separately reviewed change.
 - **`gettimechaininfo` chain trust**: returned as a JSON number holding only
   the low 64 bits, although the help says hex string; trust 0 is shown as an
   empty string in `chaintrust`/`blocktrust`. Owner: fix later. (P0-16, Q6)
+- **`-rpcclienttimeout=0` does not disable the timeout.** `yacoin-cli` passes
+  the value straight to `evhttp_connection_set_timeout` (`rpc/client.cpp:474`);
+  libevent then uses its 50-second default, although the help says "0 for no
+  timeout". Long calls (e.g. `dumpconsensusvalues`) need a large value; the
+  server side finishes regardless. Bitcoin Core fixed this later. (P0-08)
 - **`getsubsidy`**: `yacoin-cli` converts `ntarget` as JSON
   (`rpc/client.cpp:81`), so the hex target must be quoted (`'"0000…"'`).
   Owner: leave for now. (P0-46, Q12)
@@ -84,6 +102,11 @@ hard fork or at least a careful, separately reviewed change.
   exist. (P0-50, Q2)
 
 ## Tests and tooling
+
+- **`GetMaxSize(mode, 0)` means "tip + 1"** (`consensus/consensus.cpp:22`), so
+  the size limit of height 0 cannot be asked for; callers that pass a real
+  height of 0 get the next block's limit. Only reachable for the genesis.
+  (P0-08)
 
 - **`BuildSkip()`** asserts on index chains that start above height 0 (only
   reachable in tests; the P0-47 harness computes skip pointers itself). (P0-47, Q2)

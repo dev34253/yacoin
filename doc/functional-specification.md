@@ -372,6 +372,18 @@ built.
 | Tokens (`rpc/tokens.cpp`) | 9 | `issue`, `reissue`, `transfer`, `transferfromaddress`, `listmytokens`, `listtokens`, `gettokendata`, `listaddressesbytoken`, `listtokenbalancesbyaddress` |
 | Wallet (`wallet/rpcwallet.cpp`, `rpcdump.cpp`) | 53 | timelock commands (section 6), `removeaddress` |
 
+Hidden commands (not listed by `help`, but `help <command>` works) include
+`dumpconsensusvalues "filename" ( start_height end_height )` (P0-08): it
+writes one CSV row per block of the active chain with the consensus values
+(index fields, N-factor, required target, running minimum `nBits` since the
+fork, block and chain trust, stake modifier and checksum, kernel inputs and
+result, fees, rewards, coin age, size and sigop limits, money supply) and
+returns statistics and self-check counters (all 0 on a valid chain except
+`required_bits_mismatch`, see the format description). It is read-only but holds
+`cs_main` for the whole run and needs `-txindex`; use it on an offline node.
+Format: `src/test/README.md` ("Consensus value dump"); procedure:
+`project/runbooks/mainnet-dump.md`.
+
 Not available: `getblockchaininfo` (use `getinfo` / `gettimechaininfo`),
 `gettxoutsetinfo` (planned, P0-48), REST, ZMQ notifications.
 
