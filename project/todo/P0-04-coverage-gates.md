@@ -27,6 +27,12 @@ Fail CI when coverage of consensus code drops, using meaningful measures.
 
 Review: B11, C4, C5. Final targets: plan 0.10.
 
+- `bignum.h` (P0-12): the target counts only the line ranges of the used
+  methods listed in [plans/dead-code.md](../plans/dead-code.md) c) ("Used by
+  production code" and "Used only inside `bignum.h`"). The unused methods are
+  instantiated by `bignum_tests` in coverage builds, so a whole-file
+  percentage would include them.
+
 ## Log
 
 -
