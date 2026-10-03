@@ -34,14 +34,19 @@ BITCOIN_TESTS =\
   test/bip32_tests.cpp \
   test/bloom_tests.cpp \
   test/bswap_tests.cpp \
+  test/chain_trust_tests.cpp \
   test/checkqueue_tests.cpp \
   test/coins_tests.cpp \
   test/compress_tests.cpp \
+  test/consensus_harness.cpp \
+  test/consensus_harness.h \
+  test/consensus_harness_tests.cpp \
   test/crypto_tests.cpp \
   test/cuckoocache_tests.cpp \
   test/DoS_tests.cpp \
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
+  test/kernel_tests.cpp \
   test/key_tests.cpp \
   test/limitedmap_tests.cpp \
   test/dbwrapper_tests.cpp \

@@ -102,11 +102,11 @@ contrib/testing/build.sh --config lowdiff --unit --functional
 plus any task-specific tests from the description.
 
 **Passing means:**
-- mainnet: exit code 0, `unit.log` reports all test cases passed (239 today,
+- mainnet: exit code 0, `unit.log` reports all test cases passed (258 today,
   plus any the task adds);
 - lowdiff: `functional.log` ends with `ALL ... Passed` (45 today, plus new
   ones) and `unit.log` shows exactly one failure, the known
-  `pow_tests/get_next_work_pow_limit` case (238/239 today). **Until P0-02 is
+  `pow_tests/get_next_work_pow_limit` case (257/258 today). **Until P0-02 is
   done this command exits 1 because of that case – that is expected; do not
   try to fix it.** Any other failure is real.
 

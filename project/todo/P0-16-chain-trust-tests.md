@@ -28,6 +28,8 @@ Pin every trust branch and its uses in fork choice and P2P.
 
 Review: A5, A7, C8, D6.
 
+- `src/test/chain_trust_tests.cpp` exists (P0-47) with the first trust-branch tests on harness chains; extend it.
+
 ## Log
 
 -
