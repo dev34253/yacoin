@@ -256,6 +256,15 @@ N-factor table of `CBlockHeader::CalculateHash` and the stake-modifier walk
 of `GetKernelStakeModifier`; the undo reader repeats the file-local
 `UndoReadFromDisk`. The test-side reader is `src/test/consensus_dump_reader.h`.
 
+`gettxoutsetinfo` (P0-48) is implemented by `GetUTXOStats()` in
+`rpc/blockchain.cpp` (declared with `CCoinsStats` in `rpc/blockchain.h` for
+the unit tests in `src/test/utxostats_tests.cpp`). After
+`FlushStateToDisk()` it creates the `CCoinsViewDB` cursor and a
+`ptokensdb` iterator under `cs_main` and scans both snapshots without the
+lock; the token metadata records are hashed by
+`CTokensDB::HashTokenData()` (`tokens/tokendb.cpp`, which owns the key
+prefixes). Hash definitions: functional specification section 7.
+
 ### 6.5 Wallet
 
 - `CWallet` instances (one per `-wallet=`), stored in BDB 4.8
@@ -310,8 +319,8 @@ Transaction (P2P / RPC / wallet)
 
 | Level | Where | Notes |
 |---|---|---|
-| Unit | `src/test/*_tests.cpp`, `src/wallet/test/` → `test_bitcoin` (371 cases) | Boost.Test; fixtures `BasicTestingSetup`, `TestingSetup`, `TestChain100Setup`, `WalletTestingSetup`; consensus tests use the harness in `src/test/consensus_harness.h` (P0-47). Run in **both** builds; results that depend on the chain parameters are pinned per build with `#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT` (P0-02). Fork globals are 0 unless a test sets them through the harness. |
-| Functional | `test/functional/` (47 tests in `test_runner.py`) | Python framework from Bitcoin Core. Run in the **low-difficulty** build on main params (never `-regtest`), with `epochinterval=10`, `nFactorAtHardfork=4` and a per-test fork height. Yacoin-specific: `feature_hardfork_1_0`, `feature_epoch`, `feature_tokens`, `feature_token_overflow`, `feature_timelock`, `feature_op_cltv`, `feature_op_csv`, `feature_tx_malleability`, `feature_set_min_fee`, `feature_uptime`, `rpc_dumpconsensusvalues`. |
+| Unit | `src/test/*_tests.cpp`, `src/wallet/test/` → `test_bitcoin` (377 cases) | Boost.Test; fixtures `BasicTestingSetup`, `TestingSetup`, `TestChain100Setup`, `WalletTestingSetup`; consensus tests use the harness in `src/test/consensus_harness.h` (P0-47). Run in **both** builds; results that depend on the chain parameters are pinned per build with `#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT` (P0-02). Fork globals are 0 unless a test sets them through the harness. |
+| Functional | `test/functional/` (48 tests in `test_runner.py`) | Python framework from Bitcoin Core. Run in the **low-difficulty** build on main params (never `-regtest`), with `epochinterval=10`, `nFactorAtHardfork=4` and a per-test fork height. Yacoin-specific: `feature_hardfork_1_0`, `feature_epoch`, `feature_tokens`, `feature_token_overflow`, `feature_timelock`, `feature_op_cltv`, `feature_op_csv`, `feature_tx_malleability`, `feature_set_min_fee`, `feature_uptime`, `rpc_dumpconsensusvalues`, `rpc_gettxoutsetinfo`. |
 | Fuzz | `test_bitcoin_fuzzy` | AFL/stdin only. |
 | Planned (Phase 0) | `project/plans/phase0-test-safety-net.md` | mainnet replay, golden vectors, consensus harness, oracle, fuzzing, sanitizers, static analysis, benchmarks. |
 
