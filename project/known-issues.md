@@ -90,3 +90,12 @@ hard fork or at least a careful, separately reviewed change.
 - **Functional cache chain** is mined with `-epochinterval=20` (40 blocks)
   while the tests run with 10. Recorded; docstring fix in P0-61. (P0-20, Q8)
 - **Checkpoint 1,750,000** is written without leading zeros (harmless). (P0-20, Q8)
+- **`TestingSetup` leaves dangling globals.** Its destructor deletes
+  `pcoinsTip`, `pcoinsdbview`, `pblocktree` and `ptokens` without resetting
+  the globals (`src/test/test_bitcoin.cpp`), so a `BasicTestingSetup` test
+  that ran after a `TestingSetup` one and used them would see freed memory.
+  No test does today; `ptokensdb` is reset since P0-62. `ptokensCache` is
+  never created in unit tests (the code using it checks for null). (P0-62)
+- **`DoS_tests/stale_tip_peer_management`** calls `connman->Init(options)`,
+  which sets the test `CConnman`'s send/receive buffer limits back to 0 for
+  the rest of that case (harmless: it calls no `ProcessMessages`). (P0-62)
