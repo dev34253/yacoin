@@ -93,11 +93,11 @@ make -j"$(nproc)"
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (239)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (277)
 python3 test/functional/test_runner.py -j4            # functional tests (45)
 ```
 
-- Expected today: 239/239 unit tests in both builds (mainnet and low
+- Expected today: 277/277 unit tests in both builds (mainnet and low
   difficulty) and 45/45 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef
@@ -106,6 +106,9 @@ python3 test/functional/test_runner.py -j4            # functional tests (45)
 - The functional runner reads `test/config.ini` next to its own source dir; for
   out-of-tree builds copy `<builddir>/test/config.ini` to `test/config.ini`.
 - Any stderr output (including Python warnings) fails a functional test.
+- Consensus unit tests use the harness in `src/test/consensus_harness.h`
+  (P0-47; usage in `src/test/README.md`): explicit, restored globals,
+  block-index chains, blocks on disk, index-chain CSV loader.
 - Functional tests do **not** use regtest: they run main params with the
   low-difficulty genesis, `-epochinterval=10`, N-factor 4. Unit tests run with
   the fork globals (`nMainnetNewLogicBlockNumber`, `nFactorAtHardfork`) at 0.

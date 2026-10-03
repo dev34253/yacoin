@@ -34,7 +34,8 @@ This version incorporates the [review](phase0-review.md).
 | Functional tests | **main params with the low-difficulty genesis** (never `-regtest`) | `epochinterval=10`, `nFactorAtHardfork=4`, fork height set per test | Fast mining; PoW-only chains. |
 | Mainnet node | main | fork at 1,890,000, Nf 21 | The real thing. |
 
-A shared harness (P0-47) lets unit tests set these globals explicitly, so
+A shared harness (P0-47, `src/test/consensus_harness.h`, usage in
+`src/test/README.md`) lets unit tests set these globals explicitly, so
 consensus functions can be tested in pre-fork and post-fork mode with real
 mainnet values.
 

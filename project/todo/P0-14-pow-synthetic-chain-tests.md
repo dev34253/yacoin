@@ -26,6 +26,8 @@ Cover every function in pow.cpp in pre-fork and post-fork mode.
 
 Review: A4, B7.
 
+- Harness (P0-47) is in `src/test/consensus_harness.h`; `pow_tests/harness_*` already show the post-fork epoch retarget (genesis on disk) and the pre-fork per-block retarget.
+
 ## Log
 
 -
