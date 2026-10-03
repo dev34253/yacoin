@@ -197,3 +197,10 @@ decision and the matched files to the job log and step summary.
   one finding (low) – the header said "on any error true", but a failing
   `git diff` or `grep` failed the job (and with it the test jobs). Fixed:
   both now answer `true` with a message, like the other errors.
+- 2026-10-03 step 9, commit 2 (docs only): README "CI" (new rows and
+  "When the coverage jobs run"), "Coverage gate" (where it runs, ratchet),
+  `CLAUDE.md` CI bullet, D-24 update, `architecture.md` CI row, plan 0.9
+  row, Q11 note. Self-review (no Agent tool) against the workflow: the
+  watched list, branch-diff rule, fail-safe cases and the unwatched
+  `overall` gate / `tests.yml` match the code; the `changes` job time is
+  checked against run 1.

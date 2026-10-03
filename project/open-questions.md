@@ -100,7 +100,8 @@ format changes.
 pushes that change a gated file or the gate config (path filter); other
 pushes stay fast. (2) keep the rule floor(measured − 0.5), only raised.
 (3) exclude the `fPrintProofOfStake` and `-printcreation` logging blocks too.
-(1) and (3): task `todo/P0-63-coverage-on-gated-changes.md`.
+(1) and (3): task P0-63 (`tests.yml` job `changes`; see
+`contrib/testing/README.md`, "CI").
 
 ### Q12 – Reward quirks found while pinning them (from P0-46)
 - Post-fork, `GetProofOfWorkReward` ignores `nFees` (`validation.cpp:932`
