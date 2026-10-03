@@ -58,7 +58,8 @@ harness in `consensus_harness.h`. It gives every test the same way to set the
 consensus globals, build block-index chains and put blocks on disk, and it
 restores everything when the test ends. Tests using it today:
 `consensus_harness_tests` (the harness itself), `pow_tests/harness_*`,
-`chain_trust_tests`, `kernel_tests`.
+`chain_trust_tests` (and `chain_trust_fork_choice_tests`,
+`chain_trust_p2p_tests`, see below), `kernel_tests`.
 
 **Why it is needed.** Without `AppInit`, `test_bitcoin` runs with
 `nMainnetNewLogicBlockNumber = 0` and `nFactorAtHardfork = 0`: everything is
@@ -161,3 +162,63 @@ height,hash,prev_hash,time,bits,version,nonce,merkle_root,flags,stake_modifier,h
   hash is already in `mapBlockIndex` (e.g. the genesis), otherwise it starts
   a segment; for later rows a given `prev_hash` must match the previous row.
 - Any error throws `std::runtime_error` with `<name>:<line>: <reason>`.
+
+### Chain trust tests (P0-16)
+
+`chain_trust_tests.cpp` pins block trust, chain trust and their uses as they
+are today, bugs included (review A5, A7, C8 in
+`project/plans/phase0-review.md`). Three suites:
+
+- `chain_trust_tests` (main params, synthetic `TestChain` entries): every
+  reachable branch of `CBlockIndex::GetBlockTrust` (`chain.cpp:75-115`) –
+  target <= 0, first entry, PoW (`powLimit / target`, doubled after PoS),
+  PoS after PoW (`pprev` trust + 1), PoS after PoS (0), the switch time
+  boundary, the legacy rules and the `fTestNet` switch; the fork-choice
+  consequences of the PoS rules; `GetBlockProofEquivalentTime`; the RPC
+  output (`getblockheader`, `blockToJSON`, `gettimechaininfo`). Values that
+  depend on `powLimit` are pinned for each build.
+- `chain_trust_fork_choice_tests` (regtest, real mined blocks through
+  `ProcessNewBlock`): `bnChainTrust` from `AddToBlockIndex`, fork choice by
+  trust (`CBlockIndexWorkComparator`: more trust wins, equal trust keeps the
+  block received first) and `AcceptBlock`'s "at least the tip's trust" rule
+  for unrequested blocks. Regtest (powLimit 2^255 - 1) keeps mining cheap;
+  these cases create no `TestChain` entries because `CheckBlockIndex` walks
+  `mapBlockIndex`.
+- `chain_trust_p2p_tests` (main params, synthetic entries, one outbound test
+  peer that receives `inv` messages through `ProcessMessages`): the trust
+  comparisons in `net_processing.cpp` for block availability (438-456),
+  block download (536) and outbound eviction (3113-3119). The header-sync
+  comparisons (1481, 1507, 1583) are left to the functional test of P0-32.
+
+Two pitfalls of `TestingSetup` these suites work around, useful for other
+tests of the same kind:
+
+- `TestingSetup` creates no token database (`ptokensdb` is null), and
+  `DisconnectBlock` reads token undo data from it, so a reorg crashes. The
+  regtest fixture installs an in-memory `CTokensDB` and removes it again.
+- The test `CConnman` is never started, so its send-buffer limit is 0: every
+  queued message sets the peer's `fPauseSend`, and `ProcessMessages` then
+  skips the receive queue. The test peer clears `fPauseSend` before
+  delivering a message. Only one test peer may exist at a time, because
+  `CConnmanTest::ClearNodes()` empties the whole node list.
+
+Current behaviour these tests pin (not fixed in Phase 0):
+
+- PoW trust is `powLimit / target` with integer division, so a PoW block
+  whose target is above `powLimit` has trust 0 under the new rules (1 under
+  the legacy rules).
+- The final `return CBigNum(0)` in `GetBlockTrust` (`chain.cpp:112`) is
+  unreachable: a block is either PoS or PoW.
+- `GetBlockProofEquivalentTime` divides a Yacoin trust difference by
+  Bitcoin's `GetBlockProof` of the tip: a month of mainnet PoW blocks is
+  "worth" 2 seconds (low-difficulty build: about 3.75 days), so the
+  one-month check at `net_processing.cpp:1119` does not trigger for blocks
+  of the new-rules era (only legacy PoS trust, about 2^32 per block, is big
+  enough). The trust difference and its product with the spacing are
+  taken mod 2^256 (a difference of 2^255 or 2^256 gives 0), the result
+  saturates at +-INT64_MAX, and a tip whose `GetBlockProof` is 0 makes it
+  throw `uint_error` (division by zero).
+- `chaintrust`/`blocktrust` in the RPC are hex without leading zeros, so a
+  value of 0 is the empty string; `gettimechaininfo` returns
+  `bnChainTrust` as a JSON number holding only the low 64 bits, although
+  its help says "string ... hexadecimal".
