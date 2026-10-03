@@ -19,7 +19,11 @@ decision.
   `chain.cpp:112` is unreachable.
 *For now:* pinned in `src/test/chain_trust_tests.cpp`, not changed (rule 1).
 Fix candidates for after Phase 0?
-*Owner (2026-10-03):* to discuss.
+**Answer (owner, 2026-10-03):** (1) RPC output (`gettimechaininfo` chain trust as a
+number with only the low 64 bits; trust 0 as empty string): fix later, after
+Phase 0, as a small RPC task. (2) `GetBlockProofEquivalentTime` / the
+one-month check: leave as is. (3) trust 0 above powLimit and the unreachable
+`chain.cpp:112`: leave as is.
 
 ### Q7 – Unit-test setup gaps (from P0-16)
 `TestingSetup` creates no `ptokensdb`, so any unit test that reorganises the
@@ -28,7 +32,10 @@ injected P2P messages are ignored (`fPauseSend`). P0-16 works around both in
 its own test file. *For now:* documented in `src/test/README.md`. Should a
 small task fix `TestingSetup` (shared test setup) so later tests do not need
 the workarounds?
-*Owner (2026-10-03):* to discuss.
+**Answer (owner, 2026-10-03):** yes – `TestingSetup` creates the in-memory token
+database itself (`ptokensdb`, like `pblocktree`/`pcoinsdbview`); task
+`todo/P0-62-testingsetup-tokensdb.md` (also covers the test `CConnman`
+send-buffer gap and removes P0-16's workarounds).
 
 ### Q8 – Test tooling gaps found by P0-20 (from P0-20)
 - `build.sh` does not fail when `unit.log` has no Boost "test cases" summary
