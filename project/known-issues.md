@@ -65,6 +65,16 @@ hard fork or at least a careful, separately reviewed change.
 - **`LoadBlockRewardAndHighestDiff`** logs reward 0 and "something wrong" when
   the fork height is not a multiple of `-epochinterval` and the tip is in the
   first epoch (only in functional tests). Leave. (P0-46, Q12)
+- **Every scrypt hash and received header is logged with `LogPrintf`.**
+  `scrypt_hash()` logs its run time on every call (`scrypt.cpp:131,136`), and
+  header processing logs each received header (`net_processing.cpp:100,1380`),
+  as always-on lines. The first mainnet sync (1,964,616 blocks, about 15 h)
+  wrote 1.4 GB of `debug.log`, and a full reindex (P0-24) will do the same.
+  `-shrinkdebugfile` (on by default unless `-debug` is set) trims the log to
+  its last 10 MB at the next start-up (`init.cpp:948`, `util.cpp:989-995`), so
+  it only grows without limit while the node runs; there is no rotation. Fix
+  later: move these lines to `LogPrint(BCLog::<category>, ...)` (CLAUDE.md
+  rule 5) and/or add rotation. Not consensus. (P0-07 mainnet sync)
 
 ## Qt (deferred)
 
