@@ -309,3 +309,4 @@ accepted by `ProcessNewBlock` and becomes the tip.
   problem – a new chain cannot start PoS); P0-18/P0-25 can extend
   `synthetic_pos_kernel` with overflow and further mutations; the two
   hard-coded PoS hashes were not checked against early mainnet heights.
+- 2026-10-03 – PR: https://github.com/dev34253/yacoin/pull/78
