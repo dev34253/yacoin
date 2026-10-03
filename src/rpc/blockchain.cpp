@@ -27,6 +27,7 @@
 #include "utilstrencodings.h"
 #include "hash.h"
 #include "scrypt.h"
+#include "tokens/tokendb.h"
 
 #include <stdint.h>
 
@@ -34,6 +35,8 @@
 
 #include <boost/thread/thread.hpp> // boost::thread::interrupt
 
+#include <map>
+#include <memory>
 #include <mutex>
 #include <condition_variable>
 
@@ -884,6 +887,150 @@ UniValue gettxout(const JSONRPCRequest& request)
     return ret;
 }
 
+/**
+ * Hash one txid's unspent outputs (Bitcoin Core 0.16 ApplyStats, adapted):
+ * txid, then per output VARINT(n+1), scriptPubKey, VARINT(nValue),
+ * VARINT(nHeight*2+fCoinBase), VARINT(nTime), fCoinStake, then VARINT(0).
+ * Unlike Bitcoin Core, height and coinbase flag are hashed per output and
+ * Yacoin's nTime and fCoinStake are added, so every field of Coin is covered.
+ */
+static void ApplyStats(CCoinsStats& stats, CHashWriter& ss, const uint256& hash, const std::map<uint32_t, Coin>& outputs)
+{
+    assert(!outputs.empty());
+    ss << hash;
+    stats.nTransactions++;
+    for (const auto& output : outputs) {
+        const Coin& coin = output.second;
+        const uint32_t nCode = (uint32_t)coin.nHeight * 2 + coin.fCoinBase;
+        const unsigned char fCoinStake = coin.fCoinStake ? 1 : 0;
+        ss << VARINT(output.first + 1);
+        ss << coin.out.scriptPubKey;
+        ss << VARINT(coin.out.nValue);
+        ss << VARINT(nCode);
+        ss << VARINT(coin.nTime);
+        ss << fCoinStake;
+        stats.nTransactionOutputs++;
+        stats.nTotalAmount += coin.out.nValue;
+        stats.nBogoSize += 32 /* txid */ + 4 /* vout index */ + 4 /* height + coinbase */ + 8 /* amount */ +
+                           2 /* scriptPubKey len */ + coin.out.scriptPubKey.size() /* scriptPubKey */;
+    }
+    ss << VARINT(0);
+}
+
+bool GetUTXOStats(CCoinsView* view, CTokensDB* tokensdb, CCoinsStats& stats)
+{
+    std::unique_ptr<CCoinsViewCursor> pcursor;
+    std::unique_ptr<CDBIterator> ptokencursor;
+    {
+        // Coins and token data are written together by a full flush under
+        // cs_main, so cursors created under it see the same best block.
+        LOCK(cs_main);
+        pcursor.reset(view->Cursor());
+        assert(pcursor);
+        if (tokensdb)
+            ptokencursor.reset(tokensdb->NewIterator());
+        stats.hashBlock = pcursor->GetBestBlock();
+        BlockMap::const_iterator it = mapBlockIndex.find(stats.hashBlock);
+        stats.nHeight = (it != mapBlockIndex.end() && it->second) ? it->second->nHeight : -1;
+    }
+
+    CHashWriter ss(SER_GETHASH, PROTOCOL_VERSION);
+    ss << stats.hashBlock;
+    uint256 prevkey;
+    std::map<uint32_t, Coin> outputs;
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+        COutPoint key;
+        Coin coin;
+        if (pcursor->GetKey(key) && pcursor->GetValue(coin)) {
+            if (!outputs.empty() && key.hash != prevkey) {
+                ApplyStats(stats, ss, prevkey, outputs);
+                outputs.clear();
+            }
+            prevkey = key.hash;
+            outputs[key.n] = std::move(coin);
+        } else {
+            return error("%s: unable to read value", __func__);
+        }
+        pcursor->Next();
+    }
+    if (!outputs.empty()) {
+        ApplyStats(stats, ss, prevkey, outputs);
+    }
+    stats.hashSerialized = ss.GetHash();
+    stats.nDiskSize = view->EstimateSize();
+
+    CHashWriter ssTokens(SER_GETHASH, PROTOCOL_VERSION);
+    ssTokens << stats.hashBlock;
+    stats.nTokens = 0;
+    if (ptokencursor && !CTokensDB::HashTokenData(*ptokencursor, ssTokens, stats.nTokens))
+        return error("%s: unable to read token data", __func__);
+    stats.hashTokens = ssTokens.GetHash();
+    return true;
+}
+
+UniValue gettxoutsetinfo(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
+            "gettxoutsetinfo\n"
+            "\nReturns statistics and hashes of the unspent transaction output set and of\n"
+            "the token metadata, to compare the chainstate of two nodes (task P0-48).\n"
+            "Flushes the chainstate to disk first, then scans the coins and token\n"
+            "databases without holding the chain lock. This may take some time on mainnet;\n"
+            "use a longer yacoin-cli -rpcclienttimeout if the call times out.\n"
+            "Identical chainstates give identical results, except disk_size.\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"height\":n,            (numeric) The height of bestblock\n"
+            "  \"bestblock\": \"hex\",    (string) The hash of the block the scanned chainstate belongs to\n"
+            "  \"transactions\": n,     (numeric) The number of transactions with unspent outputs\n"
+            "  \"txouts\": n,           (numeric) The number of unspent transaction outputs\n"
+            "  \"bogosize\": n,         (numeric) A meaningless metric for UTXO set size (Bitcoin Core formula)\n"
+            "  \"hash_serialized\": \"hash\", (string) SHA-256d of bestblock and, per txid in database order,\n"
+            "                           the txid and per unspent output: VARINT(n+1), scriptPubKey,\n"
+            "                           VARINT(value), VARINT(height*2+coinbase), VARINT(nTime), coinstake\n"
+            "                           flag (1 byte), then VARINT(0). Token outputs are included (the token\n"
+            "                           is in the scriptPubKey). Not comparable with Bitcoin Core's\n"
+            "                           hash_serialized_2.\n"
+            "  \"disk_size\": n,        (numeric) The estimated size of the chainstate on disk\n"
+            "  \"total_amount\": x.xxx  (numeric) The total amount of unspent outputs in " + CURRENCY_UNIT + "\n"
+            "  \"tokens\": n,           (numeric) The number of tokens in the token database\n"
+            "  \"hash_tokens\": \"hash\"  (string) SHA-256d of bestblock and, per token in database order,\n"
+            "                           the name and its metadata (amount, units, reissuable, IPFS hash,\n"
+            "                           issue height and block). Per-address balances (-tokenindex) are\n"
+            "                           not included, so the value does not depend on node options.\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("gettxoutsetinfo", "")
+            + HelpExampleRpc("gettxoutsetinfo", "")
+        );
+
+    const int64_t nStart = GetTimeMicros();
+    CCoinsStats stats;
+    FlushStateToDisk();
+    if (!GetUTXOStats(pcoinsdbview, ptokensdb, stats)) {
+        LogPrintf("gettxoutsetinfo: unable to read the UTXO set or token data\n");
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Unable to read UTXO set");
+    }
+    LogPrint(BCLog::RPC, "gettxoutsetinfo: height=%d bestblock=%s transactions=%u txouts=%u total_amount=%d hash_serialized=%s tokens=%u hash_tokens=%s (%.3fs)\n",
+             stats.nHeight, stats.hashBlock.GetHex(), stats.nTransactions, stats.nTransactionOutputs, stats.nTotalAmount,
+             stats.hashSerialized.GetHex(), stats.nTokens, stats.hashTokens.GetHex(), (GetTimeMicros() - nStart) * 0.000001);
+
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("height", (int64_t)stats.nHeight);
+    ret.pushKV("bestblock", stats.hashBlock.GetHex());
+    ret.pushKV("transactions", (int64_t)stats.nTransactions);
+    ret.pushKV("txouts", (int64_t)stats.nTransactionOutputs);
+    ret.pushKV("bogosize", (int64_t)stats.nBogoSize);
+    ret.pushKV("hash_serialized", stats.hashSerialized.GetHex());
+    ret.pushKV("disk_size", stats.nDiskSize);
+    ret.pushKV("total_amount", ValueFromAmount(stats.nTotalAmount));
+    ret.pushKV("tokens", (int64_t)stats.nTokens);
+    ret.pushKV("hash_tokens", stats.hashTokens.GetHex());
+    return ret;
+}
+
 UniValue verifychain(const JSONRPCRequest& request)
 {
     int nCheckLevel = gArgs.GetArg("-checklevel", DEFAULT_CHECKLEVEL);
@@ -1407,6 +1554,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "getmempoolinfo",         &getmempoolinfo,         true,  {} },
     { "blockchain",         "getrawmempool",          &getrawmempool,          true,  {"verbose"} },
     { "blockchain",         "gettxout",               &gettxout,               true,  {"txid","n","include_mempool"} },
+    { "blockchain",         "gettxoutsetinfo",        &gettxoutsetinfo,        true,  {} },
     { "blockchain",         "verifychain",            &verifychain,            true,  {"checklevel","nblocks"} },
     { "blockchain",         "getblockbynumber",       &getblockbynumber,       true,  {"number","verbose"} },
     { "blockchain",         "calculatescrypthash",    &calculateScryptHash,    true,  {"data"} },

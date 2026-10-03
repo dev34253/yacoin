@@ -112,7 +112,7 @@ slots** and sets `TEST_RUNNER_PORT_MIN` for it:
 | 5–9 | 21000, 22000, …, 25000 | slot base + 0…999 | slot base + 5000…5999 (26000–30999) |
 
 The slots do not overlap and stay below the Linux ephemeral port range
-(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000; 47 today).
+(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000; 48 today).
 The preferred slot is `cksum(work dir) % 10`; the run holds
 `flock` on `/tmp/yacoin-build-ports/slot-<k>.lock` (`YACOIN_PORT_LOCK_DIR`)
 until it ends. If another run holds the preferred slot, the next free one
@@ -137,12 +137,12 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46, P0-19, P0-62, P0-08 and P0-14)
+## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46, P0-19, P0-62, P0-08, P0-14 and P0-48)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 371/371 | – (not supported) |
-| `lowdiff` | 371/371 | 47/47 |
+| `mainnet` | 377/377 | – (not supported) |
+| `lowdiff` | 377/377 | 48/48 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to

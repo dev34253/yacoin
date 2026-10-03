@@ -18,6 +18,7 @@ class CNewToken;
 class uint256;
 class COutPoint;
 class CDatabasedTokenData;
+class CHashWriter;
 
 struct CBlockTokenUndo
 {
@@ -72,6 +73,18 @@ public:
 
     bool AddressDir(std::vector<std::pair<std::string, CAmount> >& vecTokenAmount, int& totalEntries, const bool& fGetTotal, const std::string& address, const size_t count, const long start);
     bool TokenAddressDir(std::vector<std::pair<std::string, CAmount> >& vecAddressAmount, int& totalEntries, const bool& fGetTotal, const std::string& tokenName, const size_t count, const long start);
+
+    /**
+     * Hash the token metadata records (key 'A': token name ->
+     * CDatabasedTokenData) in key order into ss and count them (task P0-48,
+     * gettxoutsetinfo "hash_tokens"). For each record the name and the
+     * CDatabasedTokenData serialized as stored (SER_DISK, as a length-prefixed
+     * string) are hashed. Address-quantity records
+     * (-tokenindex only), block undo data and the mempool reissue state are
+     * not included. The caller creates the iterator (NewIterator()), so it can
+     * take the snapshot under cs_main. Returns false if a record cannot be read.
+     */
+    static bool HashTokenData(CDBIterator& cursor, CHashWriter& ss, uint64_t& nTokens);
 };
 
 

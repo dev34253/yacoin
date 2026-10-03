@@ -90,6 +90,7 @@ BASE_SCRIPTS = [
     'rpc_decodescript.py',
     'rpc_blockchain.py',
     'rpc_dumpconsensusvalues.py',
+    'rpc_gettxoutsetinfo.py',
     'rpc_getchaintips.py',
     'rpc_invalidateblock.py',
     'rpc_net.py',
