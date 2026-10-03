@@ -58,6 +58,7 @@ harness in `consensus_harness.h`. It gives every test the same way to set the
 consensus globals, build block-index chains and put blocks on disk, and it
 restores everything when the test ends. Tests using it today:
 `consensus_harness_tests` (the harness itself), `pow_tests/harness_*`,
+`pow_chain_tests` (every function in `pow.cpp`, pre- and post-fork, P0-14),
 `chain_trust_tests` (and `chain_trust_fork_choice_tests`,
 `chain_trust_p2p_tests`, see below), `kernel_tests`, `reward_tests`.
 
@@ -162,6 +163,110 @@ height,hash,prev_hash,time,bits,version,nonce,merkle_root,flags,stake_modifier,h
   hash is already in `mapBlockIndex` (e.g. the genesis), otherwise it starts
   a segment; for later rows a given `prev_hash` must match the previous row.
 - Any error throws `std::runtime_error` with `<name>:<line>: <reason>`.
+
+### Consensus value dump (P0-08)
+
+The hidden RPC `dumpconsensusvalues "filename" ( start_height end_height )`
+(`src/consensusdump.{h,cpp}`, `rpc/blockchain.cpp`) writes one CSV row per
+block of the active chain with the values later phases must reproduce and
+the inputs needed to recompute them offline (plan 0.3; P0-09 cuts fixtures
+from it, P0-23 replays it). It only reads – block index, block and undo
+files, transaction index – and calls the node's own consensus functions;
+it holds `cs_main` for the whole run, so use it on an offline node
+(runbook: `project/runbooks/mainnet-dump.md`). Needs `-txindex`. A relative
+filename is relative to the data directory; the file is written as
+`<filename>.incomplete` and renamed when complete; an existing file (also a
+stale `.incomplete`) is never overwritten. Use a long
+`yacoin-cli -rpcclienttimeout` (0 does not disable it in this version); if
+the client gives up, the dump still completes in the node.
+The output is deterministic for a given binary and chain.
+
+**Reader.** `test/consensus_dump_reader.h`:
+`consensus_dump::ReadConsensusDump(istream, name)` /
+`ReadConsensusDumpFile(path)` return the comment-line metadata, the rows as
+`ConsensusDumpRow` (`consensusdump.h`) and whether the end trailer was
+present. Parsing is strict (every field's syntax and range, ascending
+heights, trailer count and hash); errors throw `std::runtime_error` with
+`<name>:<line>: <reason>`. The full dump is stored zstd-compressed outside
+git; decompress it before reading (the committed samples are plain CSV). The index-chain loader of P0-47 reads a dump too (it ignores the
+extra columns), with its limits: a range starting at height 0 cannot be
+loaded in a `TestingSetup` (the genesis is already in `mapBlockIndex`), and
+a loaded segment's chain trust restarts at 0.
+
+**Format, version 1.**
+
+```
+# format=yacoin-consensus-dump version=1 doc=src/test/README.md
+# client=<version> chain=main lowdiff=0 fork_height=1890000 heliopolis_hardfork_height=1890000 nfactor_at_hardfork=21 epoch_interval=21000 difficulty_interval=21000 yac10_hardfork_time=1619048730 start_height=0 end_height=<n>
+height,hash,prev_hash,...,mint,money_supply
+<one row per block, ascending>
+# end rows=<rows> end_hash=<hash of the last row>
+```
+
+An empty field means "not applicable". Hashes: 64 lowercase hex digits in
+RPC byte order. `0x` + 8 hex digits: `bits`, `required_bits`,
+`min_bits_since_fork`, `stake_modifier_checksum`; `0x` + 16:
+`stake_modifier`, `kernel_stake_modifier`; `0x` + hex without leading
+zeros (`0x0` for zero): `block_trust`, `chain_trust`, `kernel_target`.
+Amounts are signed decimal integers in the smallest unit (1 YAC =
+1,000,000). Outpoints are `<txid>:<n>`.
+
+| Column | Value |
+|---|---|
+| `height` … `stake_time` | the 13 index-chain CSV columns (P0-47), index values as stored; `prev_hash` empty at the genesis, `hash_proof_of_stake`, `prevout_stake`, `stake_time` empty when null/0. `hash` is the scrypt-jane header hash (the block id and the PoW hash). `prevout_stake`/`stake_time` are never set by this code (always empty on a node synced with it); the kernel's prevout and time are in the `kernel_*` columns |
+| `header_sha256` | `GetSHA256Hash()`, the `mapHash` key: SHA256d of the packed 84-byte header struct (64-bit time) for every version |
+| `nfactor` | N-factor of the scrypt header hash: version ≥ 7 `nFactorAtHardfork`, older headers by `nTime` (copy of the table in `CBlockHeader::CalculateHash`). The RPC recomputes one hash per distinct value and layout and counts mismatches |
+| `is_pos` | 1 for proof-of-stake (index flag) |
+| `median_time_past` | `GetMedianTimePast()` of the block |
+| `required_bits` | `GetNextTargetRequired(pprev, is_pos)` on the dumping node's chain. At post-fork epoch boundaries it depends on `chainActive.Tip()` (review B7), so it can differ from `bits` there; the value the network enforced is `bits` itself |
+| `min_bits_since_fork` | `nMinEase` for validating this block with tip h−1: minimum of `powLimit.GetCompact()` and the `nBits` of heights fork … h−1, compared as unsigned integers; empty below the fork |
+| `block_trust`, `chain_trust` | `GetBlockTrust()`, `bnChainTrust` |
+| `stake_modifier_checksum` | `nStakeModifierChecksum` (computed when the index is loaded) |
+| `kernel_prevout` … `kernel_tx_time` | PoS only: coinstake `vin[0].prevout`; hash and time of the block holding the kernel input (`txPrev`); `txPrev.nTime`; offset of `txPrev` within its block (`nTxOffset` + header size); value of the prevout; coinstake `nTime` |
+| `kernel_stake_modifier`, `kernel_modifier_height` | stake modifier the kernel uses and the height that generated it (copy of the `GetKernelStakeModifier` walk, checked by hashing again) |
+| `kernel_hash`, `kernel_target`, `kernel_ok` | `CheckStakeKernelHash` today: hash (empty if it fails before hashing), target (only when it passes; `getuint256()`, so a product ≥ 2^256 would be truncated – never the case on mainnet, P0-08 Log), result |
+| `tx_count`, `block_size` | number of transactions, network serialised size |
+| `sigops`, `max_sigops` | Σ `GetLegacySigOpCount` and `GetMaxSize(MAX_BLOCK_SIGOPS, h)`, the check of `ContextualCheckBlock`. `ConnectBlock` also compares the sigop *cost* (legacy + P2SH) with the same limit; that cost is not dumped |
+| `coinbase_value` | `vtx[0].GetValueOut()` |
+| `fees` | Σ (in − out) of the non-coinbase, non-coinstake transactions, inputs from the block's undo data (as `ConnectBlock` counts them); equals `mint − (money_supply − previous money_supply)` |
+| `pow_reward` | PoW only: `GetProofOfWorkReward(bits, fees, h)`, the coinbase limit (after the fork without fees) |
+| `coinstake_value_in`, `coinstake_value_out`, `coin_age`, `pos_reward`, `pos_reward_limit` | PoS only: coinstake inputs (undo data) and outputs; `GetCoinAge` on the undo-data coins (coin-days); `GetProofOfStakeReward`; that `− GetMinFee(size) + CENT` as in `Consensus::CheckTxInputs` |
+| `max_block_size` | `GetMaxSize(MAX_BLOCK_SIZE, h)` |
+| `mint`, `money_supply` | index `nMint`, `nMoneySupply` |
+
+At the genesis `required_bits`, `fees`, `pow_reward`, `max_block_size`
+and `max_sigops` are empty, and so is `min_bits_since_fork` unless the fork
+height is 0 (unit tests) (it has no undo
+data and `GetMaxSize(…, 0)` means "tip + 1"). Undo records of coins
+created after `HeliopolisHardforkHeight` do not store the coinstake flag;
+no column depends on it.
+
+Not dumped (why, and where it is covered): a recomputed stake modifier
+(`ComputeNextStakeModifier` returns early on a post-fork tip; the stored one
+is dumped and checked against the modifier checkpoints when the index is
+loaded – P0-17/P0-23); the scrypt hash of every block (about 1 s each at
+N-factor 20–21; one per N-factor is checked); the kernel's coin-day weight
+(it does not enter the kernel hash; follows from the dumped inputs).
+
+**RPC result.** Rows, range, end hash, and counters that should be 0 on a
+valid chain: `kernel_failed`, `kernel_hash_mismatch` (vs stored
+`hashProofOfStake`), `kernel_rehash_mismatch`, `kernel_modifier_after_prev`,
+`fees_mismatch`, `coinbase_over_reward`, `coinstake_over_limit`,
+`pos_without_coinstake`, `coinstake_in_pow_block`, `nfactor_mismatch`; plus
+`pos_blocks`, `required_bits_mismatch` (explained above), `nfactor_checked`
+and `seconds`. Each counted row is also logged.
+
+**Tests.** `consensus_dump_tests` (unit): the column list and exact row
+text, round trip through the reader (also reordered and unknown columns,
+CRLF), the P0-47 loader on a dump, reader errors, the N-factor table
+against `CalculateHash`, the run-time error path (no file left behind),
+the genesis dumped and read back, and the committed mainnet samples. The
+proof-of-stake path (kernel, modifier walk, coin age) has no synthetic
+test: it is checked on every mainnet PoS row by the self-check counters
+(P0-08 Log) and through the committed PoS sample.
+`test/functional/rpc_dumpconsensusvalues.py`: every row against
+`getblock`/`getblockheader` on a low-difficulty chain across the fork and
+epoch boundaries, ranges, determinism, errors.
 
 ### Compact encoding tests (P0-11)
 

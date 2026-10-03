@@ -98,19 +98,21 @@ make -j"$(nproc)"
   "Coverage gate", `coverage_gate.py --suggest`).
 - **CI:** `.github/workflows/tests.yml` runs unit tests (both configs) and
   functional tests (lowdiff) on every push to any branch; coverage (HTML as
-  a run artifact) and the coverage gate on `master` and via *Run workflow*. The release builds
+  a run artifact) and the coverage gate on `master`, via *Run workflow*, and
+  on branches that change a file the gate watches (gated/excluded files in
+  `coverage-gates.toml`, the gate's own files; P0-63). The release builds
   (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (345)
-python3 test/functional/test_runner.py -j4            # functional tests (46)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (371)
+python3 test/functional/test_runner.py -j4            # functional tests (47)
 ```
 
-- Expected today: 345/345 unit tests in both builds (mainnet and low
-  difficulty) and 46/46 functional (low-difficulty build); `build.sh` (see
+- Expected today: 371/371 unit tests in both builds (mainnet and low
+  difficulty) and 47/47 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef
   LOW_DIFFICULTY_FOR_DEVELOPMENT` (e.g. `pow_tests/get_next_work_pow_limit`,

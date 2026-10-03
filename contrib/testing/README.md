@@ -137,12 +137,12 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46 and P0-19)
+## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46, P0-19, P0-62, P0-08 and P0-14)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 345/345 | – (not supported) |
-| `lowdiff` | 345/345 | 46/46 |
+| `mainnet` | 371/371 | – (not supported) |
+| `lowdiff` | 371/371 | 47/47 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to
@@ -209,8 +209,8 @@ written first; the gate output goes to the console and to
 `build.sh`: 0 all checks passed, 1 a check is below its minimum, 2 config
 or data error (for example an exclusion that no longer finds its target).
 In CI this is the `coverage report (merged)` job, so the gate runs where
-the coverage jobs run: on `master` and when the workflow is started by
-hand.
+the coverage jobs run: on `master`, when the workflow is started by hand,
+and on branches that change a file the gate watches (see "CI").
 
 The script also runs on its own, on any merged tracefile made from the
 same commit as the checkout (the exclusions find their lines in the source
@@ -237,11 +237,12 @@ handling (marked `e` in the tracefile) are left out
 |---|---|---|
 | `file` | the whole file | dead files (`pbkdf2.cpp`, `random_nonce.cpp`, `scrypt-generic.cpp`) |
 | `function` | the lines, branches and function records between a function's first and last line (all overloads, or one signature) | dead functions in `scrypt.cpp` and `pow.cpp` |
-| `lines` | the line matched by `match` (`extent = "line"`), or the whole statement that starts there (`extent = "block"`: up to its `;`, or the `}` closing its first `{`) | the testnet `else` arm in `primitives/block.h`, the `if (fDebug …)` logging blocks in `kernel.cpp` |
+| `lines` | the line matched by `match` (`extent = "line"`), or the whole statement that starts there (`extent = "block"`: up to its `;`, or the `}` closing its first `{`) | the testnet `else` arm in `primitives/block.h`, the `if (fDebug …)` and `if (fPrintProofOfStake)` logging blocks in `kernel.cpp`, the two `-printcreation` logging statements in `GetProofOfWorkReward` (`validation.cpp`; P0-63) |
 | `branches` | the branch outcomes `outcomes` (`"<block>,<branch>"` ids from the tracefile) on the matched line, whether they ran or not | the dead `fTestNet` operands (one outcome each) |
 
 The list follows [`dead-code.md`](../../project/plans/dead-code.md) a)
-and b) (task P0-50) and the task's kernel debug logging. `match` is a
+and b) (task P0-50), the kernel debug logging (P0-04) and the two
+logging blocks added by P0-63 (owner answer Q11). `match` is a
 regex on the source text, so line shifts do not break it; it must match
 exactly one line, or for `lines` any number with `all = true`. Every exclusion must find its target
 (file, function, line with data, branch outcome), otherwise the gate
@@ -286,7 +287,8 @@ in CI and 77.58 % locally for the same code); a measured 100 % stays 100. `--sug
 prints that value next to each check and marks `<- raise` where it is
 above the config (`build.sh` always passes it, so `gate.txt` has the
 suggestions). A task that raises coverage raises the minimums in the same
-PR, from the merged report of a coverage run of its branch (*Run
+PR, from the merged report of a coverage run of its branch (CI runs it
+when the branch changes a watched file, see "CI"; otherwise *Run
 workflow*, or the local commands under "Quick start"). A minimum is only lowered
 with a reason in the PR and the task log (for example code removed that
 was well covered).
@@ -294,23 +296,56 @@ was well covered).
 ## CI
 
 `.github/workflows/tests.yml` runs on every push to any branch (and by hand
-via *Run workflow*). The two test jobs run on every push; the coverage
-jobs and the merged report run only on `master` and when the workflow is
-started by hand (*Run workflow* on any branch), because the `-O0` coverage
-jobs take about twice as long. Each job runs `build.sh` with Docker on a
-GitHub-hosted `ubuntu-24.04` runner, in the pinned image, with the work dir
-in `$RUNNER_TEMP/yacoin-build`:
+via *Run workflow*). The two test jobs run on every push. The coverage
+jobs and the merged report with the coverage gate take about twice as
+long (`-O0`), so they run only where they are needed (task P0-63): on
+`master`, when the workflow is started by hand (*Run workflow* on any
+branch), and on branches that change a file the coverage gate watches.
+The first job, `changes`, decides this; the other jobs wait for it (well
+under a minute). Each build job runs `build.sh` with Docker on a GitHub-hosted
+`ubuntu-24.04` runner, in the pinned image, with the work dir in
+`$RUNNER_TEMP/yacoin-build`:
 
 | Job | Runs | Command (`build.sh` options) | Time (2026-10-03) |
 |---|---|---|---|
+| changes (coverage needed?) | every push | decides whether the coverage jobs run (below) | <1 min |
 | unit (mainnet) | every push | `--config mainnet --unit` | ~8 min |
 | unit + functional (lowdiff) | every push | `--config lowdiff --unit --functional` | ~12–14 min |
-| coverage (mainnet) | master, by hand | `--config mainnet --coverage --unit` | ~15 min |
-| coverage (lowdiff) | master, by hand | `--config lowdiff --coverage --unit --functional` | ~16–19 min |
-| coverage report (merged) | master, by hand | `test_coverage_gate.py`, then `--coverage-report` with the coverage gate, after the jobs above (also when a test job failed; it fails itself if a coverage job uploaded no report or a gate is below its minimum) | ~1 min |
+| coverage (mainnet) | master, by hand, watched file changed | `--config mainnet --coverage --unit` | ~15 min |
+| coverage (lowdiff) | master, by hand, watched file changed | `--config lowdiff --coverage --unit --functional` | ~16–19 min |
+| coverage report (merged) | master, by hand, watched file changed | `test_coverage_gate.py`, then `--coverage-report` with the coverage gate, after the jobs above (also when a test job failed; it fails itself if a coverage job uploaded no report or a gate is below its minimum) | ~1 min |
+
+**When the coverage jobs run** (job `changes`, P0-63):
+
+- Always on `master` and for *Run workflow*.
+- On any other ref when the branch changes a *watched* file: every `path`
+  of a `[[gate]]` or `[[exclude]]` entry in `coverage-gates.toml` (read
+  from the branch's own copy; today the gated `src/pow.cpp`,
+  `src/chain.cpp`, `src/kernel.cpp`, `src/validation.cpp`,
+  `src/consensus/consensus.cpp`, `src/bignum.h`, `src/wallet/crypter.cpp`,
+  `src/random.cpp`, plus the files with exclusions such as
+  `src/consensus/tx_verify.cpp` or `src/primitives/block.h`, where a change
+  can make an exclusion stale), and the gate's own files
+  `contrib/testing/coverage-gates.toml`, `coverage_gate.py`,
+  `test_coverage_gate.py` and `build.sh`.
+- "Changes" means all commits of the branch since its merge base with
+  `origin/master` (`git diff --name-only --no-renames $(git merge-base
+  origin/master HEAD) HEAD`), not only the latest push: a newer push
+  cancels the older run (`concurrency` below), so a docs commit pushed
+  right after a gated change must still run the gate. Once a branch
+  changes a watched file, every later push of it runs coverage; a branch
+  that changes only docs, tests or other unwatched files keeps the two test jobs.
+- Any error in the decision (no merge base, unreadable toml, failed
+  `git diff`) runs the coverage jobs (fail safe); the run's summary page
+  says which rule applied and which watched files changed.
+- Not watched: the `overall` gate (it has no `paths`; watching every file
+  would run coverage on almost every push), so a branch that lowers
+  overall coverage without touching a watched file is caught on `master`
+  only; and `tests.yml` itself – after changing the coverage jobs, start
+  the workflow by hand.
 
 - The `-O2` jobs test the optimised build; the coverage jobs (`-O0`)
-  measure coverage. All jobs of a run start in parallel (times above
+  measure coverage. The build jobs of a run start in parallel once `changes` is done (times above
   exclude waiting for a runner).
 - Artifacts of each run: `coverage-mainnet`, `coverage-lowdiff` and
   `coverage-merged` (`.info`, `summary.txt`, `html/` – open
