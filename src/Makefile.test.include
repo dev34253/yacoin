@@ -80,6 +80,9 @@ BITCOIN_TESTS =\
   test/netbase_tests.cpp \
   test/pmt_tests.cpp \
   test/pow_chain_tests.cpp \
+  test/pos_generator.cpp \
+  test/pos_generator.h \
+  test/pos_generator_tests.cpp \
   test/pow_tests.cpp \
   test/prevector_tests.cpp \
   test/raii_event_tests.cpp \
