@@ -1,5 +1,5 @@
-# Unit and functional tests on every push; coverage on master and by hand
-# (task P0-03).
+# Unit and functional tests on every push; coverage and the coverage gate
+# on master and by hand (tasks P0-03, P0-04).
 #
 # Every job runs contrib/testing/build.sh on a GitHub-hosted runner, which
 # runs the build in the pinned build image with Docker – the same command a
@@ -131,16 +131,34 @@ jobs:
           name: coverage-lowdiff
           path: ${{ runner.temp }}/yacoin-build/build-lowdiff-cov/coverage
 
-      - name: Merge coverage
+      - name: Test the coverage gate script
+        run: python3 contrib/testing/test_coverage_gate.py
+
+      # Merges both configurations and runs the coverage gate (P0-04,
+      # contrib/testing/coverage-gates.toml); fails the job when a gate
+      # is below its minimum, after writing the report and the summary.
+      - name: Merge coverage and check the gate
         run: |
-          contrib/testing/build.sh --coverage-report --work-dir "$RUNNER_TEMP/yacoin-build" | tee "$RUNNER_TEMP/report.txt"
-          { echo "### Coverage"; echo '```'; sed -n '/^mainnet:/,$p' "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          rc=0
+          contrib/testing/build.sh --coverage-report --work-dir "$RUNNER_TEMP/yacoin-build" | tee "$RUNNER_TEMP/report.txt" || rc=$?
+          gate="$RUNNER_TEMP/yacoin-build/coverage-report/gate.txt"
+          {
+            echo "### Coverage (lcov)"; echo '```'
+            sed -n '/^mainnet:/,/^== .* coverage gate:/p' "$RUNNER_TEMP/report.txt" | grep -v '^== ' || true
+            echo '```'
+            echo "### Coverage gate"; echo '```'
+            if [ -f "$gate" ]; then grep -v '^  exclude ' "$gate"; else echo "(no gate output)"; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
 
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
         with:
           name: coverage-merged
           path: |
             ${{ runner.temp }}/yacoin-build/coverage-report/merged.info
             ${{ runner.temp }}/yacoin-build/coverage-report/summary.txt
+            ${{ runner.temp }}/yacoin-build/coverage-report/gate.txt
             ${{ runner.temp }}/yacoin-build/coverage-report/html/
           if-no-files-found: error

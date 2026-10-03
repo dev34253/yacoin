@@ -30,7 +30,8 @@ Build options:
                             report to <builddir>/coverage/ (task P0-03).
   --coverage-report         Do not build: merge the coverage reports of the
                             mainnet and lowdiff --coverage runs in this work
-                            dir into WORK_DIR/coverage-report/.
+                            dir into WORK_DIR/coverage-report/, then run the
+                            coverage gate (P0-04; exit 1 if a gate fails).
   --sanitizers LIST         Build with -fsanitize=LIST (e.g. address,undefined).
   --jobs N                  Parallel jobs (default: number of CPUs).
   --reconfigure             Re-run configure even if the build dir exists.
@@ -215,7 +216,7 @@ cd "$SRC"
 # lcov 2.0 (build image). Branch coverage is recorded for P0-04. It includes
 # the branches GCC adds for C++ exception handling: lcov 2.0's
 # no_exception_branch option drops *all* branch data of GCC 11's gcov
-# output, so filtering them is left to P0-04.
+# output, so the coverage gate (P0-04, coverage_gate.py) leaves them out.
 LCOV_OPTS=(--rc branch_coverage=1 --parallel "$JOBS")
 # Not part of the coverage numbers (task P0-03 step 3): system headers,
 # depends, test code, bundled libraries, benchmarks, and files generated in
@@ -300,11 +301,20 @@ coverage_report() {
     done
     echo "merged (mainnet + lowdiff):"
     cat "$out/summary.txt"
+
+    # Coverage gate (task P0-04): exclusions and minimums in
+    # contrib/testing/coverage-gates.toml. The report above is written
+    # either way; the exit code of the gate becomes the exit code of the run.
+    log "coverage gate: $out/gate.txt"
+    python3 "$SRC/contrib/testing/coverage_gate.py" --source-root "$SRC" --verbose --suggest \
+        "$out/merged.info" > "$out/gate.txt" 2>&1 || GATE_RC=$?
+    cat "$out/gate.txt"
 }
 
 if [ "$COVERAGE_REPORT" = 1 ]; then
+    GATE_RC=0
     coverage_report
-    exit 0
+    exit "$GATE_RC"
 fi
 
 log "compiler: $(g++ --version | head -n1)"

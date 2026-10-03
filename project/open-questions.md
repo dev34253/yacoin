@@ -111,6 +111,24 @@ too slow: more CPU for the node, or a second node.
 *For now:* checker manual (documented in `contrib/testing/README.md`),
 `xz` required, file committed as is.
 
+### Q11 – Coverage gate: where it runs, threshold rule (from P0-04)
+- The gate runs only where the coverage jobs run: on `master` and when the
+  Tests workflow is started by hand (owner decision in P0-03: coverage
+  jobs not on every push). A task branch that lowers coverage is
+  therefore caught only after the merge, unless its author starts the
+  workflow by hand. Run coverage (and the gate) on PRs that touch gated
+  files (`pow.cpp`, `chain.cpp`, `kernel.cpp`, `validation.cpp`,
+  `bignum.h`, `wallet/crypter.cpp`, `random.cpp`), e.g. with a
+  `pull_request` path filter?
+- Threshold rule: minimum = `floor(measured − 0.5)` %, a measured 100 %
+  stays 100; minimums are only raised (lowering needs a reason in the PR).
+  Tighter (e.g. exact counts for the consensus files) or looser?
+- Exclusions: only what the task names. `if (fPrintProofOfStake)`
+  logging in `kernel.cpp` (line 485) and the `fDebug`/`-printcreation`
+  logging in `GetProofOfWorkReward` are counted. Exclude them too?
+*For now:* master/by hand, the rule above, exclusions as listed in
+`contrib/testing/coverage-gates.toml`.
+
 ## Answered
 
 (none yet)

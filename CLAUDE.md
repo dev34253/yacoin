@@ -89,10 +89,13 @@ make -j"$(nproc)"
 - **Coverage:** `build.sh --config <cfg> --coverage --unit [--functional]`
   writes `<builddir>/coverage/` (lcov `.info`, HTML, summary);
   `build.sh --coverage-report` merges mainnet + lowdiff (union; see
-  `contrib/testing/README.md`).
+  `contrib/testing/README.md`) and runs the coverage gate (P0-04,
+  minimums in `contrib/testing/coverage-gates.toml`; exit 1 below a
+  minimum). A task that raises coverage raises the minimums (README
+  "Coverage gate", `coverage_gate.py --suggest`).
 - **CI:** `.github/workflows/tests.yml` runs unit tests (both configs) and
   functional tests (lowdiff) on every push to any branch; coverage (HTML as
-  a run artifact) on `master` and via *Run workflow*. The release builds
+  a run artifact) and the coverage gate on `master` and via *Run workflow*. The release builds
   (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 

@@ -1,0 +1,245 @@
+# Coverage gate config (task P0-04), read by coverage_gate.py.
+#
+# The gate runs on the merged mainnet + lowdiff tracefile
+# (build.sh --coverage-report; CI job "coverage report (merged)").
+# Format, exclusion rules and the ratchet procedure:
+# contrib/testing/README.md, section "Coverage gate".
+#
+# Paths are relative to the repository root. Function names are demangled
+# C++ names: a name without "(" matches every overload, one with "("
+# matches that signature exactly. "match" is a Python regex that is
+# searched in each source line. Every exclusion must find its target,
+# otherwise the gate fails (exit 2): when code on the list is removed
+# (task P0-59), remove its entry here.
+
+[settings]
+# Branches GCC adds for C++ exception handling (lcov marks them with an
+# "e" block) are not counted: they inflate the branch numbers of every
+# function that can throw, and lcov 2.0's no_exception_branch cannot be
+# used with GCC 11 (task P0-03).
+exception_branches = false
+
+# ------------------------------------------------------------ exclusions
+# a) Dead code, project/plans/dead-code.md list a (P0-50). Only the items
+#    whose "gcov" column is "yes"; the scrypt-x86*.S files assemble to
+#    empty objects and have no data, and the two unused globals in
+#    main.cpp:74-75 have no line data in the tracefile either.
+
+[[exclude]]
+kind = "file"
+path = "src/pbkdf2.cpp"
+reason = "dead-code.md a): only called by the dead scrypt.cpp functions"
+
+[[exclude]]
+kind = "file"
+path = "src/random_nonce.cpp"
+reason = "dead-code.md a): only called by scanhash_scrypt"
+
+[[exclude]]
+kind = "file"
+path = "src/scrypt-generic.cpp"
+reason = "dead-code.md a): scrypt_core, only called by the dead scrypt.cpp functions"
+
+[[exclude]]
+kind = "function"
+path = "src/scrypt.cpp"
+functions = [
+    "scrypt_nosalt",
+    "scrypt_SHA256",
+    "scrypt_hash(void const*, unsigned long)",   # the live overload takes 4 arguments
+    "scrypt_salted_hash",
+    "scrypt_salted_multiround_hash",
+    "scrypt_blockhash",
+    "scrypt_buffer_alloc",
+    "scrypt_buffer_free",
+    "scanhash_scrypt",
+]
+reason = "dead-code.md a): no callers outside this list"
+
+[[exclude]]
+kind = "function"
+path = "src/pow.cpp"
+functions = ["ComputeMinWork", "ComputeMinStake", "ComputeMaxBits", "GetProofOfStakeLimit"]
+reason = "dead-code.md a): no callers outside this list"
+
+# b) Dead fTestNet branches, dead-code.md list b (fTestNet is always
+#    false in yacoind). Each removes the outcome "fTestNet is true" of the
+#    fTestNet operand; the live outcomes on the same line stay. Some unit
+#    tests set fTestNet on purpose (consensus harness), so a dead outcome
+#    may have run; it is removed either way. Outcome ids are
+#    "<block>,<branch>" from the tracefile (README "Coverage gate"):
+#    verified = the live outcome ran in a unit-test run without the
+#    fTestNet-setting suites, or (kernel.cpp:656) grew with the functional
+#    tests, which never set fTestNet (P0-04 task log). verified = false:
+#    no test reaches the line, the id follows GCC's pattern on the other
+#    lines; while nothing on the line runs the choice does not change the
+#    numbers, and the gate stops once the line runs.
+
+[[exclude]]
+kind = "branches"
+path = "src/chain.cpp"
+match = 'if \(fTestNet \|\| \(GetBlockTime\(\) >= CONSECUTIVE_STAKE_SWITCH_TIME\)\)'
+outcomes = ["0,1"]
+branches_on_line = 6
+reason = "dead-code.md b): GetBlockTrust, fTestNet operand"
+
+[[exclude]]
+kind = "branches"
+path = "src/kernel.cpp"
+match = 'fTestNet\s*\?\s*nModifierTestSwitchTime'
+outcomes = ["0,0"]
+branches_on_line = 2
+verified = false
+reason = "dead-code.md b): IsFixedModifierInterval"
+
+[[exclude]]
+kind = "branches"
+path = "src/kernel.cpp"
+match = 'fTestNet \? mapStakeModifierCheckpointsTestNet'
+outcomes = ["0,0"]
+branches_on_line = 2
+reason = "dead-code.md b): CheckStakeModifierCheckpoints"
+
+[[exclude]]
+kind = "branches"
+path = "src/primitives/block.h"
+match = 'if\( !fTestNet \)'
+outcomes = ["0,1"]
+branches_on_line = 2
+reason = "dead-code.md b): CalculateHash, testnet N-factor"
+
+[[exclude]]
+kind = "lines"
+path = "src/primitives/block.h"
+match = '^\s*else\s*// is TestNet'
+extent = "block"
+reason = "dead-code.md b): CalculateHash, the testnet else arm"
+
+[[exclude]]
+kind = "branches"
+path = "src/consensus/tx_verify.cpp"
+match = 'tx\.nTime > VALIDATION_SWITCH_TIME \|\| fTestNet'
+outcomes = ["0,2"]
+branches_on_line = 5
+verified = false
+reason = "dead-code.md b): coinstake fee size, fTestNet operand"
+
+[[exclude]]
+kind = "branches"
+path = "src/miner.cpp"
+match = '&& !fTestNet\)'
+outcomes = ["0,3"]
+branches_on_line = 7
+verified = false
+reason = "dead-code.md b): YacoinMiner, fTestNet operand"
+
+[[exclude]]
+kind = "branches"
+path = "src/protocol.h"
+match = 'return testnet \? 17688 : 7688;'
+outcomes = ["0,0"]
+branches_on_line = 2
+reason = "dead-code.md b): GetDefaultPort, testnet port"
+
+# c) kernel.cpp debug logging (task P0-04 step 3): every statement guarded
+#    by "if (fDebug ...)", including the -printstakemodifier ones. The
+#    guarded code only writes to debug.log.
+
+[[exclude]]
+kind = "lines"
+path = "src/kernel.cpp"
+match = '^\s*if \(fDebug\b'
+extent = "block"
+all = true
+reason = "debug logging (fDebug / -printstakemodifier)"
+
+# ----------------------------------------------------------------- gates
+# Minimums in percent of the numbers left after the exclusions; branches
+# without exception branches. Final targets: plan 0.10. Set from the
+# merged numbers with the ratchet rule floor(measured - 0.5), 100 stays
+# 100 (README "Coverage gate"), the lower of two runs of 52b220d's code:
+# CI Tests run 37102949023 and a local run (P0-04, 2026-10-03). Raise them
+# in the task that raises the coverage; lower only with a reason.
+#
+# Measured (CI / local) at P0-04:
+#   overall   lines 70.40/70.46  functions 77.49/77.58  branches 48.52/48.57
+#   pow.cpp   89.42 / 83.33 / 62.69      GetBlockTrust  95.24 / - / 83.08
+#   kernel    44.70 / 53.85 / 30.07      rewards        93.65 / - / 54.80
+#   bignum.h  92.83 / 100   / 78.29      crypter 73.43 / 94.12, random 85.80 / 90.91
+
+[[gate]]
+name = "overall"
+min = { lines = 69, functions = 76, branches = 48 }
+
+[[gate]]
+name = "pow.cpp"
+paths = ["src/pow.cpp"]
+min = { lines = 88, functions = 82, branches = 62 }
+
+[[gate]]
+name = "chain.cpp GetBlockTrust"
+paths = ["src/chain.cpp"]
+select_functions = ["CBlockIndex::GetBlockTrust"]
+min = { lines = 94, branches = 82 }
+
+[[gate]]
+name = "kernel.cpp"
+paths = ["src/kernel.cpp"]
+min = { lines = 44, functions = 53, branches = 29 }
+
+[[gate]]
+name = "validation.cpp rewards"
+paths = ["src/validation.cpp"]
+select_functions = ["GetProofOfWorkReward", "LoadBlockRewardAndHighestDiff"]
+min = { lines = 93, branches = 54 }
+
+# The methods dead-code.md c) lists as used (by production code, or inside
+# bignum.h by those); the unused ones run only in bignum_tests.
+[[gate]]
+name = "bignum.h used methods"
+paths = ["src/bignum.h"]
+select_functions = [
+    "CBigNum::CBigNum()",
+    "CBigNum::CBigNum(CBigNum const&)",
+    "CBigNum::operator=(CBigNum const&)",
+    "CBigNum::~CBigNum()",
+    "CBigNum::CBigNum(int)",
+    "CBigNum::CBigNum(long)",
+    "CBigNum::CBigNum(uint256)",
+    "CBigNum::SetCompact",
+    "CBigNum::GetCompact",
+    "CBigNum::setuint256",
+    "CBigNum::getuint256",
+    "CBigNum::getuint64",
+    "CBigNum::ToString",
+    "CBigNum::GetHex",
+    "CBigNum::operator*=",
+    "CBigNum::operator/=",
+    "operator+(CBigNum const&, CBigNum const&)",
+    "operator-(CBigNum const&, CBigNum const&)",
+    "operator*(CBigNum const&, CBigNum const&)",
+    "operator/(CBigNum const&, CBigNum const&)",
+    "operator<<(CBigNum const&, unsigned int)",
+    "operator<(CBigNum const&, CBigNum const&)",
+    "operator<=(CBigNum const&, CBigNum const&)",
+    "operator>(CBigNum const&, CBigNum const&)",
+    "operator>=(CBigNum const&, CBigNum const&)",
+    "CBigNum::setuint32",
+    "CBigNum::setint64",
+    "CBigNum::setuint64",
+    "CBigNum::getuint32",
+    "CAutoBN_CTX::CAutoBN_CTX",
+    "CAutoBN_CTX::~CAutoBN_CTX",
+    "CAutoBN_CTX::operator bignum_ctx*",   # operator BN_CTX*
+]
+min = { lines = 92, functions = 100, branches = 77 }
+
+[[gate]]
+name = "wallet/crypter.cpp"
+paths = ["src/wallet/crypter.cpp"]
+min = { lines = 72, functions = 93 }
+
+[[gate]]
+name = "random.cpp"
+paths = ["src/random.cpp"]
+min = { lines = 85, functions = 90 }

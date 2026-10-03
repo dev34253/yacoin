@@ -66,7 +66,9 @@ because the line numbers are from 651e82e.
      `net.cpp`.
    - Do **not** touch the local `fTestNet` in `chainparamsbase.cpp:93`.
 4. Update `plans/dead-code.md` (mark the parts as removed), the overview
-   inventory, and the P0-04 exclusion list if P0-04 is already done.
+   inventory, and the P0-04 exclusion list (`[[exclude]]` entries in
+   `contrib/testing/coverage-gates.toml`; the coverage gate fails while an
+   entry points at removed code).
 
 ## Checks (every part)
 

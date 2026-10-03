@@ -47,7 +47,7 @@ mainnet values.
 | Build configurations | Mainnet and low-difficulty builds via one script, coverage (`CFLAGS` **and** `CXXFLAGS`) and sanitizer options; out-of-tree. Measure unit-test runtime in the mainnet config before deciding where unit tests run. | P0-01 |
 | `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. Done: the test pins the result per configuration, unit tests 239/239 in both. | P0-02 |
 | CI | Unit, functional, coverage on push; a CI skeleton with schedules, runner, artifact storage and image mirroring. Each later job task adds its own job. P0-03: `.github/workflows/tests.yml` – unit tests in both configurations, functional in lowdiff, coverage of both configurations merged as a union (`contrib/testing/README.md`). | P0-03, P0-44 |
-| Coverage gates | Re-baselined after CI merges both configurations; **branch** coverage for consensus math; dead code and dead `fTestNet` branches excluded from denominators. | P0-04 |
+| Coverage gates | Re-baselined after CI merges both configurations; **branch** coverage for consensus math; dead code and dead `fTestNet` branches excluded from denominators. P0-04: `contrib/testing/coverage_gate.py` with `coverage-gates.toml` (exclusions, minimums, ratchet rule), run by `build.sh --coverage-report` and the CI job `coverage report (merged)` (`contrib/testing/README.md`, "Coverage gate"). | P0-04 |
 | Fixture storage | Small in repo, large external with manifest and checksums; also pre-fetched `depends` sources. | P0-05 |
 | Baseline binaries | Built from the **end of Phase 0 infrastructure** (includes the dump tool and `gettxoutsetinfo`), mainnet and low-diff builds, recorded by commit and image digest. | P0-06 |
 | Old release builds | v1.0.0/v1.1.0 rebuilt with the low-difficulty flag (release binaries can't join the functional-test network). | P0-54 |
@@ -310,6 +310,17 @@ Secondary (coverage, branch coverage for consensus math, dead code excluded):
 | `wallet/crypter.cpp` | 73.4% | ≥ 95% |
 | `random.cpp` | 85.8% | ≥ 90% |
 | Overall | 75.7% | ≥ 80% |
+
+The "Today" column is from before P0-03 (single low-difficulty build,
+other exclusions). The CI gate (P0-04, `contrib/testing/coverage-gates.toml`)
+checks every row on the merged report with dead code, dead `fTestNet`
+outcomes, `kernel.cpp` debug logging and exception branches excluded. At
+P0-04 (2026-10-03, lines / functions / branches): overall 70.4 / 77.5 /
+48.5; `pow.cpp` 89.4 / 83.3 / 62.7; `GetBlockTrust` 95.2 % lines, 83.1 %
+branches; `kernel.cpp` 44.7 / 53.8 / 30.1; reward functions 93.7 % lines,
+54.8 % branches; `bignum.h` used methods 92.8 / 100 / 78.3;
+`wallet/crypter.cpp` 73.4 % lines; `random.cpp` 85.8 % lines. The
+minimums there are ratcheted up towards the targets above.
 
 Plus: benchmark and flakiness baselines recorded; every suspected bug written
 down with its behaviour pinned; accepted residual risks listed (mempool and
