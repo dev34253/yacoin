@@ -5,7 +5,7 @@
 - Size: S
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -18,8 +18,8 @@ Pin SetCompact/GetCompact exactly.
 
 ## Acceptance criteria
 
-- [ ] All cases pass against current code.
-- [ ] Differences from arith_uint256 listed in Log (Phase 4 special cases).
+- [x] All cases pass against current code (314/314 unit in both builds, 46/46 functional).
+- [x] Differences from arith_uint256 listed (section "Differences from `arith_uint256`" below, referenced from the Log; Phase 4 special cases).
 
 ## Notes
 
@@ -171,8 +171,9 @@ print(cnt, 256*len(M))
 - Documentation: this task file (Log with the list of differences from
   `arith_uint256` = Phase 4 special cases), a correction note in the P0-10
   task file and the P0-10 test comment, `project/plans/phase0-test-safety-net.md`
-  0.2a pointer, test counts in `CLAUDE.md`, `contrib/testing/README.md` and
-  the `implement-task` skill.
+  0.2a pointer, a section in `src/test/README.md`, the corrected Q2 entry in
+  `project/open-questions.md`, test counts in `CLAUDE.md`,
+  `contrib/testing/README.md` and the `implement-task` skill.
 - Not in scope: golden vectors (P0-13), `GetNextTargetRequired` (P0-14/15),
   fixing the negative zero or the exponent wrap (Phase 4).
 
@@ -242,7 +243,8 @@ print(cnt, 256*len(M))
 
 - Acceptance "all cases pass against current code": `build.sh --config
   mainnet --unit` and `--config lowdiff --unit --functional` → 306/306 unit
-  each (300 + 6), 45/45 functional, exit 0.
+  each (300 + 6), 45/45 functional, exit 0 (after the merge of P0-20:
+  314/314 = 308 + 6, and 46/46).
 - Acceptance "differences listed": section "Differences from
   `arith_uint256`" (referenced from the Log), each item backed by checks in
   cases 2–6.
@@ -345,3 +347,8 @@ brackets). `arith_uint256` = `arith_uint256::SetCompact(c, &fNegative,
 - 2026-10-03 step 6: implemented `src/test/bignum_compact_tests.cpp` (6 cases) and registered it in `src/Makefile.test.include`. Scratch standalone build of the file (stub fixture, depends Boost/OpenSSL, `-Wall -Wextra -fsanitize=address,undefined -D_GLIBCXX_ASSERTIONS`): no warnings from the file, no sanitizer report, all checks pass. First run found a wrong relation in my sweep (I had characterised a negative zero by `a == 0`, but overflowing negatives also truncate to 0 in arith_uint256); corrected to "sign bit set and no `fNegative`" – the code under test was right, the test's statement was wrong.
 - 2026-10-03 step 7: `code-review` skill (medium) on the staged diff. The reviewer re-derived every literal with its own Python model (175 table rows, 20 GetCompact rows, all sweep counts) – all match. One finding (docs, low), applied: the file comment and description gave 2^2040 as the exactness/no-wrap bound; it is 2^2039 (largest SetCompact value 2^2039 - 2^2016, GetCompact wraps at 2^2039). Static analysis (rule 3): P0-58 not done, n/a.
 - 2026-10-03 step 8 (mainnet): `build.sh --config mainnet --unit` exit 0, **306/306** test cases, 4239925 assertions passed.
+- 2026-10-03: master moved twice (open questions #60, then P0-20 #59); merged with merge commits 04997a3 and 1559232. Count-line conflicts resolved to master's 308 unit / 46 functional + 6 = 314 unit. A lowdiff run started before the second merge was stopped and repeated on the merged tree.
+- 2026-10-03 step 8 (final, merged tree): `build.sh --config mainnet --unit` exit 0, **314/314** test cases; `flock … build.sh --config lowdiff --unit --functional` exit 0, **314/314** unit, functional **46/46** (`ALL … Passed`). (Earlier, before the P0-20 merge: mainnet 306/306.)
+- 2026-10-03 step 9: docs updated – this file (differences section, Notes with the generator script), P0-10 task file correction (negative zero also from `SetCompact`), comment in `bignum_tests.cpp`, plan 0.2a pointer, `src/test/README.md` section, `project/open-questions.md` Q2 bullet corrected, test counts in `CLAUDE.md`, `contrib/testing/README.md`, skill.
+- 2026-10-03 step 10: self-review (no Agent tool) of the docs against the code and the test results. Fixed: case-6 description still described a negative zero by "arith value is 0" (wrong for overflowing negatives; now "no `fNegative`", matching the test); case-2 list missed `0x01808000`; the "how to test" pointer named the Log instead of the differences section; counts updated to the merged baseline. Every compact value and bound quoted in the docs was checked against the test file. Nothing left out.
+- 2026-10-03 step 11: moved to done. Review findings not applied: none. Questions for the owner: none new (the negative-zero correction is folded into the existing Q2).

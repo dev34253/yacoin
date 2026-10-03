@@ -22,9 +22,12 @@ Phase 0, and should P0-59 become a Phase 0 exit criterion?
 - `qt/paymentserver.cpp:230,232,249` select testnet params that do not
   exist (Qt is deferred). (P0-50)
 - `bignum.h`: `getuint64`/`getuint256` on a negative zero write one byte past
-  their buffer; `getBytes()` of zero takes `&v[0]` of an empty vector. Only
-  `setvch`/`Unserialize` can create a negative zero, neither has a production
-  caller. (P0-10)
+  their buffer; `getBytes()` of zero takes `&v[0]` of an empty vector. A
+  negative zero comes from `setvch`/`Unserialize` (no production caller)
+  and, as P0-11 found, from `SetCompact` of a sign-bit `nBits` with zero
+  kept bytes (e.g. `0x01800000`, reachable from block headers); every
+  current production caller tests `<= 0` or multiplies first, so the
+  overflow is not reached. (P0-10, P0-11)
 - `CheckStakeKernelHash` does not reject a negative coin-day weight; on a valid
   chain it cannot occur because `validation.cpp:3205` requires tx time ≤ block
   time. (P0-12)
