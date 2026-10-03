@@ -22,6 +22,18 @@ hard fork or at least a careful, separately reviewed change.
   time. (P0-12, Q2)
 - **PoW trust 0 above powLimit; unreachable `chain.cpp:112`.** Such blocks
   are rejected by `CheckProofOfWork` anyway; leave. (P0-16, Q6)
+- **`GetHash()` cache can return a stale PoW hash.** `CBlockHeader::GetHash()`
+  (`primitives/block.h:235-248`) recomputes only when a header field differs
+  from `previousBlockHeader`. `SerializationOp` (block.h:110-115) also
+  writes `previousBlockHeader`, so changing a field and then serialising the
+  header before `GetHash()` leaves the old hash in the cache; a change of
+  `nFactorAtHardfork` is not part of the key either (a node does not change
+  it after `AppInit`). Impact: only if a code path changes `nNonce`/`nTime`
+  and serialises before hashing (not investigated); fixing it changes hashing
+  code. Pinned by `header_hash_tests/gethash_cache_quirks`. (P0-19)
+- **N-factor table comment.** `block.h:170` says "(Nf) 26" for `nSpanOf25`,
+  but the cap `MAXIMUM_N_FACTOR` gives 25 from 3515474848 on; comment only.
+  Pinned by `header_hash_tests`. (P0-19)
 
 ## CBigNum / OpenSSL (go away with the arith_uint256 replacement, Phase 4)
 

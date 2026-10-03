@@ -38,7 +38,9 @@ port range).
 
 6. (Q10, owner 2026-10-03) `build.sh --unit` also runs the independent
    vector checkers `contrib/testing/bignum_vectors_check.py` (P0-13) and
-   `contrib/testing/reward_vectors.py` (P0-46, check mode); a mismatch fails
+   `contrib/testing/reward_vectors.py` (P0-46, check mode), and
+   `contrib/testing/header_hash_vectors.py` (P0-19, default check: model
+   self-test plus N-factor ≤ 12 in Python, about 4 s); a mismatch fails
    the run. They then run in CI through the existing unit jobs.
 
 ## Acceptance criteria
@@ -47,7 +49,7 @@ port range).
       work dirs both pass (46/46 each).
 - [ ] A single run behaves as before.
 - [ ] A unit run without a Boost summary makes `build.sh` exit non-zero.
-- [ ] `build.sh --unit` runs both vector checkers; a modified vector file fails it.
+- [ ] `build.sh --unit` runs the three vector checkers; a modified vector file fails it.
 
 ## Notes
 
