@@ -169,6 +169,44 @@ hard fork or at least a careful, separately reviewed change.
   the output reads "(9 block  to go)" or "(1 block s to go)". Cosmetic.
   (P0-14)
 
+## Wallet (not consensus)
+
+- **`CCrypter` and empty data.** `Encrypt` of an empty plaintext returns
+  `true` with an empty ciphertext (`crypto/aes.cpp:83` returns 0 for size 0;
+  OpenSSL gives one padding block), and `Decrypt` of a block that holds only
+  padding returns `false` (`wallet/crypter.cpp:106`, 0 bytes written counts
+  as failure; OpenSSL returns an empty plaintext). Both also take `&v[0]` of
+  an empty vector (undefined behaviour; harmless with libstdc++ without
+  `_GLIBCXX_ASSERTIONS`). No wallet path encrypts empty data (secrets and
+  the master key are 32 bytes). Pinned by `wallet_crypto/aes_cbc_vectors`
+  and `decrypt_vectors`. (P0-22)
+- **`SetKeyFromPassphrase` on an already keyed `CCrypter`.** With 0 rounds or
+  a salt that is not 8 bytes it returns `false` and keeps the old key; with an
+  unknown derivation method it returns `false`, zeroes key and IV but leaves
+  `fKeySet` true, so a later `Encrypt` would use an all-zero key
+  (`wallet/crypter.cpp:44-61`). Harmless today: `CWallet::Unlock` and
+  `ChangeWalletPassphrase` reuse one crypter across master keys but return
+  when a derivation fails; the two timing derivations in
+  `ChangeWalletPassphrase` (`wallet/wallet.cpp:429,433`) ignore the return
+  value, but `:441` repeats the derivation, checks it and returns false
+  before anything is encrypted. Pinned by
+  `wallet_crypto/kdf_invalid_arguments`. (P0-22)
+- **`CCryptoKeyStore::DecryptKeys` loses the keys; `DecryptWallet` has no
+  caller.** `DecryptKeys` (`wallet/crypter.cpp:302-329`) puts each decrypted
+  key back with `CBasicKeyStore::AddKey`, which calls the virtual
+  `AddKeyPubKey` – `CCryptoKeyStore`'s, because `fUseCrypto` is still true
+  (private, never cleared). On a locked store that fails (`DecryptKeys`
+  returns false after the first key); on an unlocked store it encrypts the
+  key again into `mapCryptedKeys`, which `DecryptKeys` then clears: it
+  returns true and the keys are in neither map. Its only caller,
+  `CWallet::DecryptWallet` (`wallet/wallet.cpp:764`), unlocks first, then
+  rewrites only the keys in `mapKeys` (now none) and erases all master keys,
+  so the crypted keys would stay in the file without a master key to open
+  them. Nothing calls `DecryptWallet` (no RPC, no Qt), so there is no user
+  impact today; enabling it as is would make the wallet unusable.
+  Candidate for the dead-code list (P0-59). Pinned by
+  `wallet_crypto/keystore_decrypt_keys`. (P0-22)
+
 ## Qt (deferred)
 
 - **`qt/paymentserver.cpp:230,232,249`** select testnet params that do not
