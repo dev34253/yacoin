@@ -21,6 +21,16 @@
 
 #include "test/consensus_harness.h"
 
+#include <boost/version.hpp>
+
+// BOOST_TEST_CONTEXT exists from Boost 1.59. The release workflow's
+// build-ubuntu-1604-functional-test job builds with Ubuntu 16.04's system
+// Boost 1.58, so fall back to logging the context as a test message and
+// running the block once.
+#if BOOST_VERSION < 105900
+#define BOOST_TEST_CONTEXT(msg) if (([&] { BOOST_TEST_MESSAGE(msg); }(), true))
+#endif
+
 #include "amount.h"
 #include "arith_uint256.h"
 #include "chain.h"
