@@ -20,8 +20,8 @@ Pin the CBigNum API behaviour used by the code (temporary tests, retired in Phas
 
 ## Acceptance criteria
 
-- [ ] src/test/bignum_tests.cpp passes.
-- [ ] bignum.h (used methods) ≥ 90% line coverage from unit tests.
+- [x] src/test/bignum_tests.cpp passes (19 cases, mainnet and lowdiff builds).
+- [x] bignum.h (used methods) ≥ 90% line coverage from unit tests (93.3 %, measured with a scratch gcov build of the suite, see Log).
 
 ## Notes
 
@@ -128,7 +128,7 @@ the same table.
    2^64-1; `setvch` with redundant leading zero bytes, empty vector, and the
    negative-zero cases.
 8. `bytes_big_endian` – `setBytes`/`getBytes` (big-endian magnitude, sign
-   dropped; zero gives an empty vector).
+   dropped, leading zero bytes dropped).
 9. `serialize_roundtrip` – `CDataStream` bytes of `-300`
    (`02 2c 81`) and `0` (`00`), `GetSerializeSize`, unserialize back.
 10. `add_sub_mul` – sign combinations, results crossing zero, values above
@@ -172,6 +172,13 @@ the same table.
   `isxdigit`/`isspace`, which is undefined for negative values other than
   `EOF`; the non-ASCII case therefore uses byte `0xff` only (it becomes
   `-1 == EOF` on x86_64, where `char` is signed, and stops parsing).
+- Found in code review: `getuint64`/`getuint160`/`getuint256`/`GetCompact`
+  of a **negative zero** write one byte past their heap buffer
+  (`BN_bn2mpi` reports 4 bytes for a zero but still sets the sign bit in
+  `d[4]`), and `getBytes()` of zero / `setBytes()` of an empty vector take
+  `&v[0]` of an empty vector. Undefined behaviour – not tested, documented in
+  the test file. Negative zero only arises from `setvch`/`Unserialize`,
+  which have no production caller.
 - Overload resolution: the integer constructors are for the fixed-width
   types only, so e.g. `CBigNum(1LL)` (`long long`, not `int64_t` on
   x86_64 Linux) is ambiguous and does not compile. Tests use fixed-width
@@ -247,3 +254,8 @@ it (no node code changes, so no change is expected).
 - 2026-10-03 step 1–2: task verified against the code (findings in the description: no `CBigNum(uint160)` constructor, negative zero from `setvch`, `getuint32`/`getint32` saturation, `-1 >> 0 = 0`); behaviour confirmed with a scratch probe program in the build image. Detailed description written.
 - 2026-10-03 step 3: description review – self-review (no Agent tool). Applied: compound `+=`/`-=`/`*=` added to case 10; `isxdigit` UB on negative `char` – non-ASCII case restricted to `0xff` (== `EOF`); `long long` constructor ambiguity noted. Not applied: none.
 - 2026-10-03 step 4–5: implementation plan written; plan review – self-review (no Agent tool). Checked feasibility (Boost.Test static lib and `ParseHex`/`HexStr` available), ordering, consensus impact (none). Applied: expected values stated as literals, never computed with `CBigNum`; link list of the scratch coverage build left open. Not applied: none.
+- 2026-10-03 step 6: `src/test/bignum_tests.cpp` (19 test cases, suite `bignum_tests`) added and registered in `src/Makefile.test.include` (after `base64_tests.cpp`, outside #52's hunk). No production code changed.
+- 2026-10-03 step 7: code review with the `code-review` skill (medium) on the staged diff. Two findings, both applied: (1) `getuint64`/`getuint256` of a negative zero write one byte past their buffer (`BN_bn2mpi` sets the sign bit in `d[4]` of a 4-byte buffer) – those checks removed, UB documented in the test and the description; (2) `getBytes()` of zero takes `&v[0]` of an empty vector – check removed, documented. The rest of the expected values were confirmed by the reviewer. Second pass after the fixes (removals and comments only): self-review, no further findings.
+- 2026-10-03 extra check: the suite built standalone (scratch, stub fixture) with `-fsanitize=address,undefined -D_GLIBCXX_ASSERTIONS` runs clean (OpenSSL itself is not instrumented). No compiler warnings from the test file with `-Wall -Wextra`.
+- 2026-10-03 coverage: scratch-only gcov build of `bignum_tests.cpp` alone (same image and `depends`, stub `BasicTestingSetup`; no project coverage build – disk). `bignum.h`: 449/483 instantiated lines = 93.0 %; used methods (ranges listed in the description) 252/270 = **93.3 %**. Missed lines are all OpenSSL failure `throw`s (allocation failure, not reachable without fault injection) and the dead `nSize < 4` returns of `getuint64`/`getuint160`/`getuint256`. gcov does not count inline functions that are never called (`randBignum`, `RandKBitBigum`, `generatePrime`) and the `setuint64` MPI branch for 32-bit `BN_ULONG` is compiled out on x86_64. The project-wide figure belongs to P0-03/P0-04.
+- 2026-10-03 step 8 tests (`contrib/testing/build.sh … --jobs 2`): mainnet `--unit` exit 0, **258/258** (239 + 19 new). lowdiff `--unit --functional` exit 1 as expected: unit **257/258**, the only failure is the known `pow_tests/get_next_work_pow_limit` (P0-02); functional **45/45**, `ALL … Passed`. `bignum_tests` 19/19 in both builds.
