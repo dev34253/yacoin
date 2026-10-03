@@ -88,12 +88,12 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13 and P0-27)
+## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27 and P0-08)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 341/341 | – (not supported) |
-| `lowdiff` | 341/341 | 46/46 |
+| `mainnet` | 348/348 | – (not supported) |
+| `lowdiff` | 348/348 | 47/47 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to

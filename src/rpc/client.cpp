@@ -121,6 +121,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "gettxout", 2, "include_mempool" },
     { "verifychain", 0, "checklevel" },
     { "verifychain", 1, "nblocks" },
+    { "dumpconsensusvalues", 1, "start_height" },
+    { "dumpconsensusvalues", 2, "end_height" },
     { "getrawmempool", 0, "verbose" },
     { "getmempoolancestors", 1, "verbose" },
     { "getmempooldescendants", 1, "verbose" },

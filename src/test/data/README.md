@@ -10,7 +10,13 @@ embedded as strings (`*.json.xz.h`), see `src/Makefile.test.include`.
 format and regeneration in `src/test/README.md`); never edit it by hand.
 `reward_vectors.json` is the reward and block-size golden table (task
 P0-46), written by `contrib/testing/reward_vectors.py`; never edit it by
-hand either.
+hand either. `*.csv` files are embedded as strings (`*.csv.h`).
+`consensus_dump_mainnet_{early,pos,fork}.csv` are three ranges of the
+mainnet consensus value dump (task P0-08; heights 1–60, 500,040–500,099 and
+1,889,990–1,890,010), written by the RPC `dumpconsensusvalues` on the
+P0-08 snapshot (the `client=` line names a `-dirty` build of the P0-08
+branch); format in `src/test/README.md`. Regenerate them only with the RPC,
+never by hand.
 
 License
 --------
