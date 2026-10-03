@@ -28,6 +28,8 @@ Write the tool that records, for every block, everything later phases must repro
 
 Review: B7, C1.
 
+- P0-47 defines the index-chain CSV format and loader used by the unit tests (`src/test/README.md`, *Index-chain CSV*: `height,hash,prev_hash,time,bits,version,nonce,merkle_root,flags,stake_modifier,hash_proof_of_stake,prevout_stake,stake_time`). Emit these column names (extra columns are ignored by the loader) or extend the loader.
+
 ## Log
 
 -

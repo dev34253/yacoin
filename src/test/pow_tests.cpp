@@ -8,6 +8,7 @@
 #include "random.h"
 #include "util.h"
 #include "validation.h"
+#include "test/consensus_harness.h"
 #include "test/test_bitcoin.h"
 
 #include <boost/test/unit_test.hpp>
@@ -150,6 +151,69 @@ BOOST_AUTO_TEST_CASE(get_next_work_one_third_highest_difficulty)
     BOOST_CHECK_EQUAL(nextWork, 0xe2ffffd);
     BOOST_CHECK_EQUAL(nextWork, maximumWork);
     BOOST_CHECK(nextWork < retargetWork);
+}
+
+// ---------------------------------------------------------------------------
+// Tests using the consensus harness (P0-47). They pin current behaviour; the
+// full difficulty coverage is task P0-14.
+// ---------------------------------------------------------------------------
+
+/* Post-fork retarget at an epoch boundary: GetNextTargetRequired reads the
+ * genesis block from disk (pow.cpp:174-176), and CalculateNextWorkRequired
+ * scans chainActive and mapBlockIndex for nMinEase (pow.cpp:40-68). */
+BOOST_FIXTURE_TEST_CASE(harness_post_fork_epoch_retarget, ConsensusTestingSetup)
+{
+    globals.UseUnitTestGlobals();   // fork at height 0: post-fork logic everywhere
+    globals.SetEpochInterval(10);   // as in the functional tests
+    const unsigned int nBits = 0x1d00ffff;
+    CBlockIndex* genesis = chain.StartOnExistingGenesis();
+    // Heights 1..9, 60 s apart: 540 s for a nominal 10 * 60 = 600 s.
+    CBlockIndex* tip = chain.AppendMany(9, 60, nBits);
+    chain.SetActiveTip(tip);
+    BOOST_REQUIRE_EQUAL(tip->nHeight, 9);
+
+    // Expected: target * 540 / 600; the 1/3-highest-difficulty cap
+    // (3 * target of nMinEase = nBits) and powLimit do not apply.
+    CBigNum bnExpected = CBigNum().SetCompact(nBits);
+    bnExpected *= tip->GetBlockTime() - genesis->GetBlockTime();
+    bnExpected /= 10 * Params().GetConsensus().nPowTargetSpacing;
+    const unsigned int nNext = GetNextTargetRequired(tip, false);
+    BOOST_CHECK_EQUAL(nNext, bnExpected.GetCompact());
+    BOOST_CHECK_EQUAL(nNext, 0x1d00e665U);
+
+    // Within an epoch the target stays (height 6 is not a boundary).
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(chain.AtHeight(5), false), nBits);
+}
+
+/* Pre-fork: with the mainnet fork height the old per-block ppcoin retarget
+ * (pow.cpp:184-203) is used, which unit tests never reach with the default
+ * globals (review A4). */
+BOOST_FIXTURE_TEST_CASE(harness_pre_fork_per_block_retarget, ConsensusTestingSetup)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    const unsigned int nBits = 0x1d00ffff;
+    globals.UseMainnetGlobals();
+    CBlockIndex* genesis = chain.StartOnExistingGenesis();
+    chain.AppendMany(3, 120, nBits);
+    chain.SetActiveTip(chain.Tip());
+
+    // First and second block after genesis: initialHashTarget.
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(genesis, false), params.initialHashTarget.GetCompact());
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(chain.AtHeight(1), false), params.initialHashTarget.GetCompact());
+
+    // Then: target * ((nInterval - 1) * spacing + 2 * actual) / ((nInterval + 1) * spacing)
+    // with spacing 60 s, nInterval = one week / 60 s = 10080 and actual 120 s.
+    CBigNum bnExpected = CBigNum().SetCompact(nBits);
+    bnExpected *= 10079 * 60 + 2 * 120;
+    bnExpected /= 10081 * 60;
+    const unsigned int nNext = GetNextTargetRequired(chain.Tip(), false);
+    BOOST_CHECK_EQUAL(nNext, bnExpected.GetCompact());
+    BOOST_CHECK_EQUAL(nNext, 0x1d01000cU);
+
+    // With the unit-test globals the same chain takes the post-fork branch
+    // and keeps the target (height 4 is not an epoch boundary).
+    globals.UseUnitTestGlobals();
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(chain.Tip(), false), nBits);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

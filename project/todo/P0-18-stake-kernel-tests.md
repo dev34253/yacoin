@@ -26,6 +26,8 @@ Pin CheckStakeKernelHash and CheckProofOfStake behaviour.
 
 Highest-risk area for Phase 4. Review: B10, C3. Primary criterion is the full replay in P0-23.
 
+- Use `src/test/kernel_tests.cpp` and the P0-47 harness (`ConsensusTestingSetup`, `TestChain::AppendBlock(block, true)` for blocks that must be on disk).
+
 ## Log
 
 -

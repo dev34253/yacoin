@@ -15,7 +15,7 @@ Fail CI when coverage of consensus code drops, using meaningful measures.
 
 1. Script reading lcov .info and checking per-file (and per-function-group) minimums from a config file.
 2. Enable branch coverage for pow.cpp, chain.cpp, kernel.cpp and the reward functions in validation.cpp.
-3. Exclude from denominators: dead code listed in P0-50, dead fTestNet branches, and kernel.cpp debug-logging blocks (fDebug / -printstakemodifier).
+3. Exclude from denominators: dead code listed in P0-50 ([plans/dead-code.md](../plans/dead-code.md); its "gcov" column says which items are counted at all), dead fTestNet branches (list b there; they are branch-level), and kernel.cpp debug-logging blocks (fDebug / -printstakemodifier). If P0-59 has removed parts of the list, exclude only what is left.
 4. Re-baseline thresholds from the merged CI numbers (not the single low-diff build); document how to ratchet them.
 
 ## Acceptance criteria
