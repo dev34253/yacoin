@@ -99,16 +99,22 @@ make -j"$(nproc)"
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (277)
-python3 test/functional/test_runner.py -j4            # functional tests (45)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (285)
+python3 test/functional/test_runner.py -j4            # functional tests (46)
 ```
 
-- Expected today: 277/277 unit tests in both builds (mainnet and low
-  difficulty) and 45/45 functional (low-difficulty build); `build.sh` (see
+- Expected today: 285/285 unit tests in both builds (mainnet and low
+  difficulty) and 46/46 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef
   LOW_DIFFICULTY_FOR_DEVELOPMENT` (e.g. `pow_tests/get_next_work_pow_limit`,
   P0-02) – never skip a test in one build.
+- Chain parameters, checkpoints, stake-modifier checkpoints and the fork
+  defaults are pinned (P0-20: `src/test/chainparams_snapshot_tests.cpp`,
+  `test/functional/feature_params_snapshot.py`; table in plan section
+  0.2h). Changing one on purpose means updating the test as well.
+  `test_bitcoin` fails (exit 1) if node code calls `StartShutdown()`, e.g.
+  through a failed release-build `Yassert`.
 - The functional runner reads `test/config.ini` next to its own source dir; for
   out-of-tree builds copy `<builddir>/test/config.ini` to `test/config.ini`.
 - Any stderr output (including Python warnings) fails a functional test.

@@ -36,6 +36,7 @@ BITCOIN_TESTS =\
   test/bloom_tests.cpp \
   test/bswap_tests.cpp \
   test/chain_trust_tests.cpp \
+  test/chainparams_snapshot_tests.cpp \
   test/checkqueue_tests.cpp \
   test/coins_tests.cpp \
   test/compress_tests.cpp \

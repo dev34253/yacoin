@@ -5,7 +5,7 @@
 - Size: S
 - Owner: Claude (subagent of owner session, laptop)
 - Started: 2026-10-02
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -20,7 +20,7 @@ Make accidental parameter changes fail loudly, for all three parameter sets.
 
 ## Acceptance criteria
 
-- [ ] Tests pass in both build configurations; parameter table added to the plan.
+- [x] Tests pass in both build configurations; parameter table added to the plan.
 
 ## Notes
 
@@ -49,7 +49,7 @@ Review: A3, A4.
   `nTokenSupportBlockNumber`, `nFactorAtHardfork`, `nEpochInterval`
   (`util.cpp:575-581`). Unit tests cannot read the `init.cpp` statics; only
   `debug.log` shows the values a node really uses (`init.cpp:861,1146`).
-  `nTokenSupportBlockNumber` is **not logged** at all today.
+  `nTokenSupportBlockNumber` was **not logged** at all before this task.
 - Stake-modifier checkpoints: file-static `mapStakeModifierCheckpoints` in
   `kernel.cpp:33-65` (26 entries; height 0 differs per build:
   `0x0e00670b` / `0xfd11f4e7`), testnet table `kernel.cpp:68-71` (height 0
@@ -78,7 +78,7 @@ Review: A3, A4.
   `nTokenSupportBlockNumber`, `nFactorAtHardfork` 0 (zero-initialised, never
   set without `AppInit`); `nEpochInterval` = `nDifficultyInterval` = 21000;
   `fTestNet` false; `nYac10HardforkTime` 1619048730.
-- The N-factor schedule by time (`primitives/block.h:150-195`) is P0-19, not
+- The N-factor schedule by time (`primitives/block.h:173-202`) is P0-19, not
   this task.
 
 ### Scope
@@ -113,10 +113,10 @@ plan review, see Implementation plan 2a):
      0xffffffff (no checkpoint has either value); with `fTestNet` set, only
      height 0 does. (Extends the spot checks in `kernel_tests.cpp:26-41`.)
    - unit-test globals: already pinned by P0-47
-     (`consensus_harness_tests.cpp:24-35`, `globals_at_defaults_*`), so not
-     duplicated; this task pins the harness constants that copy the
-     `init.cpp` / framework defaults (`MAINNET_*`, `FUNCTIONAL_*`,
-     `DEFAULT_YAC10_HARDFORK_TIME`) with literals.
+     (`consensus_harness_tests.cpp:24-35`, `globals_at_defaults_*`), and
+     the harness copies of the fork/N-factor/epoch defaults are pinned with
+     literals there too (`:100-111`), so not duplicated; this task pins only
+     `nChainStartTime` and `nYac10HardforkTime` (`time_constants`).
 2. New functional test `test/functional/feature_params_snapshot.py` (added to
    `BASE_SCRIPTS`):
    - `setup_clean_chain = True` (only the genesis block: the cached chain
@@ -154,7 +154,8 @@ Any edit to a pinned value – e.g. a checkpoint hash, the port, the powLimit
 shift, a stake-modifier checkpoint, `-epochinterval` default in `init.cpp`,
 `epochinterval=10` in `util.py` – makes a unit or functional test fail with
 a message naming the field. Example: changing `nDefaultPort = 7688` to 7689
-fails `chainparams_snapshot_tests/main_network_identity` in both builds.
+fails `chainparams_snapshot_tests/main_consensus_params` in both builds
+(regtest has its own `nDefaultPort = 7688`, pinned by `regtest_params`).
 
 ### Edge cases
 
@@ -168,16 +169,17 @@ fails `chainparams_snapshot_tests/main_network_identity` in both builds.
   `CreateBaseChainParams()`, also without changing globals.
 - Zero-length `pnSeed6_main` in the low-diff build: the test checks
   `FixedSeeds().empty()` there.
-- Globals: harness `ScopedConsensusGlobals` restores everything; the
-  unit-test-global check reads the values before changing anything; other
-  tests restore via the harness, so the order of test suites does not matter.
+- Globals: harness `ScopedConsensusGlobals` restores everything (also
+  `fTestNet` after the testnet sweep), so the order of test suites does not
+  matter.
   `nMockTime` is not pinned (tests set it).
-- The genesis hash depends on the global `fTestNet` (N-factor 4 instead of
-  the time schedule, `primitives/block.h:172-203`), and in release builds a
-  failed `Yassert` only logs and calls `StartShutdown()` (`Yassert.h`,
-  `main.cpp:138-160`) – silently. So params are only built while `fTestNet`
-  is false, the test checks `!ShutdownRequested()` after building them, and
-  the hashes are compared explicitly (the `Yassert` is not fail-loud).
+- In release builds a failed genesis `Yassert` only logs and calls
+  `StartShutdown()` (`Yassert.h`, `main.cpp:138-160`), which the test stub
+  turned into exit code 0 – so the hashes are compared explicitly and the
+  stub now fails the run (plan step 2a). (The description review suspected
+  the genesis hash depends on `fTestNet`; the code review showed it does
+  not: the time schedule also gives N-factor 4 at the genesis time,
+  `primitives/block.h:173-202`.)
 - `CheckStakeModifierCheckpoints` uses `chainActive.Tip()`: with
   `ConsensusTestingSetup` the test sets it explicitly
   (`chain.StartOnExistingGenesis(); chain.SetActiveTip(...)`, as
@@ -190,15 +192,16 @@ fails `chainparams_snapshot_tests/main_network_identity` in both builds.
   `stop_node` requires empty stderr. Python 3.12. The functional genesis
   check exists only in the low-diff build because functional tests only run
   there (the unit test pins both).
-- `uint256` vs `uint256S`: one checkpoint (1,911,210) is written without
-  `0x`; the test uses literal hex strings and compares with `uint256S`.
+- One checkpoint (1,911,210) is written without `0x` in the source; the
+  test compares `GetHex()` strings with literal hex, so the notation does
+  not matter.
 
 ### How to test
 
 | Acceptance criterion | Test / command | Expected |
 |---|---|---|
-| Tests pass in both builds | `build.sh --config mainnet --unit` | exit 0, 277 + new cases passed |
-| | `build.sh --config lowdiff --unit --functional` | exit 0, 277 + new unit cases, `ALL` 46/46 functional |
+| Tests pass in both builds | `build.sh --config mainnet --unit` | exit 0, 285/285 (277 + 8 new) |
+| | `build.sh --config lowdiff --unit --functional` | exit 0, 285/285 unit, `ALL` 46/46 functional |
 | Snapshot fails loudly | manual mutation check (local only, not committed): change one checkpoint hash, the port and a stake checkpoint, run the new suite | the named cases fail; revert |
 | Parameter table in the plan | `project/plans/phase0-test-safety-net.md` 0.2h | table with all three sets + regtest |
 
@@ -225,16 +228,18 @@ Test levels: unit (both builds), functional (low-diff).
    `BITCOIN_TESTS` in `src/Makefile.test.include`. Test cases:
    - `main_consensus_params` – every `Consensus::Params` field,
      `DifficultyAdjustmentInterval()`, both deployments.
+     Shared with regtest (`CheckSharedFields`): message start, P2P port,
+     prune height, base58 prefixes, fixed seeds (bytes + ports per build),
+     DNS seeds empty, flags, stake ages, deployments.
    - `main_genesis` – hash, merkle root, nTime, nBits, nNonce, nVersion,
-     vtx size, tx nTime, `nChainStartTime`; `!ShutdownRequested()`.
-   - `main_network_identity` – network id, message start, P2P port, prune
-     height, base58 prefixes, fixed seeds (bytes + ports per build), DNS
-     seeds empty, flags, `chainTxData`.
+     vtx size, tx nTime/version/hash.
+   - `main_network_flags_and_tx_data` – `fMiningRequiresPeers`,
+     `chainTxData`.
    - `main_checkpoints` – full table of 51 (height → hash), height 0 equals
      the build's genesis.
    - `regtest_params` – all of the above for regtest, including "same message
      start and P2P port as main".
-   - `base_params` – RPC port and data dir for main/test/regtest;
+   - `base_params_and_chain_names` – RPC port and data dir for main/test/regtest;
      `CreateChainParams("test")` and `("foo")` throw.
    - `stake_modifier_checkpoints` – 26 pinned values (accept v, reject v^1)
      with mainnet globals; sweep 0…2,000,000 finds exactly those heights;
@@ -243,7 +248,7 @@ Test levels: unit (both builds), functional (low-diff).
      `nYac10HardforkTime` 1619048730 as literals (the harness constants for
      fork height, token height, N-factor and epoch are already pinned with
      literals in `consensus_harness_tests.cpp:100-111`).
-   Params are built with `BOOST_REQUIRE(!fTestNet)` first. The sweep collects
+   The sweep collects
    the rejecting heights into a vector and checks once. Hashes are compared
    as `GetHex()` strings (readable failures). Fixed seeds are compared with
    literal bytes (the test does not include `chainparamsseeds.h`). Values
@@ -308,3 +313,52 @@ Test levels: unit (both builds), functional (low-diff).
   suggested) – the stub fix closes the hole for `StartShutdown`; left as an
   open point for P0-01/P0-03 owners. The harness-constant case was reduced
   to the two time constants, the rest is pinned by P0-47.
+- 2026-10-02 Step 6: implemented (unit test file, stub, log line,
+  functional test, runner entry).
+- 2026-10-02 Step 7: the `code-review` skill ran in the wrong checkout (the
+  session's primary directory; read-only, its findings were about an
+  unrelated runbook and were discarded), so the staged diff was reviewed by
+  a reviewer subagent instead. It verified every literal by script
+  (checkpoints, stake checksums, seeds, compact/hex values) and found no
+  correctness bug. Applied: wrong `fTestNet` comment and guard removed (the
+  genesis hash does not depend on `fTestNet`); header comment lists all
+  sources; duplicate `nChainStartTime` check removed; `main` variable
+  renamed; bare `assert` in Python replaced; task-file names aligned with
+  the code. Docs/counts follow in step 9.
+- 2026-10-03 Step 8: `build.sh` (`--jobs 2`, shared work dir):
+  mainnet `--unit` exit 0, 285/285 (277 + 8 new); lowdiff `--unit
+  --functional` exit 0, 285/285 and functional `ALL` 46/46 (45 + 1). Local
+  mutation checks (not committed): (i) checkpoint 15000 hash, main P2P port
+  7689, stake checkpoint 30000, `-epochinterval` default 21001 → unit
+  `main_consensus_params`, `main_checkpoints`, `stake_modifier_checkpoints`
+  (and the existing `net_tests/cnode_listen_port`) failed, and
+  `feature_params_snapshot.py` failed on the epoch line; (ii) low-diff
+  genesis nonce 127359 → `test_bitcoin` stops in the first fixture with
+  "StartShutdown() called" and exit 1 (before the stub change: exit 0, no
+  summary). The mainnet run above was repeated after reverting the
+  mutations (exit 0, 285/285); the final lowdiff run is logged below.
+- 2026-10-03 Step 9: docs – plan 0.2h parameter table (+ 0.1 cache epoch),
+  `src/test/README.md`, CLAUDE.md (counts, snapshot note),
+  `contrib/testing/README.md` and the skill's expected counts, task file.
+- 2026-10-03 Final runs on the committed code (mutations reverted): mainnet
+  `--unit` exit 0, 285/285; lowdiff `--unit --functional` exit 0, 285/285,
+  functional `ALL` 46/46 (`feature_params_snapshot.py` passed).
+- 2026-10-03 Step 10: docs reviewed by a reviewer subagent; every row of the
+  0.2h table matched the code. Applied: stale task-file statements (port
+  mutation fails only `main_consensus_params`; harness constants; globals
+  edge case; "not logged" now past tense; one `block.h` range; How-to-test
+  counts; final runs logged); table: regtest header, initialHashTarget
+  compacts, network ids/prune/flags/deployments row, precise
+  stake-checkpoint condition, `nYac10HardforkTime` has no option, cache
+  epoch wording; README wording and testnet checks; "release-build Yassert".
+  Not applied: reflowing one ~110-character comment line in
+  `chainparams_snapshot_tests.cpp:8` (cosmetic; avoids a code change after
+  the final test runs).
+- Open points: (1) `build.sh` does not fail when `unit.log` lacks the Boost
+  summary – suggested for P0-01/P0-03; (2) the `Shutdown(void*)` stub in
+  `test_bitcoin_main.cpp` still exits 0 (nothing calls it in tests);
+  (3) recorded, not changed: `-testnet` has base params but no chain params
+  (node start would throw "Unknown chain test"); checkpoint 1,750,000 has no
+  leading zeros; the functional cache chain is mined with epochinterval 20;
+  the code-review skill reviewed the session's primary directory instead of
+  this checkout (tooling).

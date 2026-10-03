@@ -161,3 +161,32 @@ height,hash,prev_hash,time,bits,version,nonce,merkle_root,flags,stake_modifier,h
   hash is already in `mapBlockIndex` (e.g. the genesis), otherwise it starts
   a segment; for later rows a given `prev_hash` must match the previous row.
 - Any error throws `std::runtime_error` with `<name>:<line>: <reason>`.
+
+### Chain parameter snapshot (P0-20)
+
+`chainparams_snapshot_tests.cpp` pins the chain parameters by value, so an
+accidental change fails loudly. A deliberate change must update the test too.
+It covers:
+
+- `CMainParams` for each build, using `#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT`
+  where the two differ: consensus params, the genesis block, message start,
+  ports, base58 prefixes, fixed and DNS seeds, flags, `chainTxData` and all
+  51 checkpoints.
+- `CRegTestParams`.
+- The base params, plus the fact that `-testnet` has base params but no
+  chain params (`CreateChainParams("test")` throws).
+- `nChainStartTime` and `nYac10HardforkTime`.
+- The 26 stake-modifier checkpoints. They are read through
+  `CheckStakeModifierCheckpoints` with the mainnet globals of the harness. A
+  sweep over heights 0 to 2,000,000 also pins how many there are. With
+  `fTestNet` the testnet table is used, which has height 0 only.
+
+The unit-test globals are pinned in `consensus_harness_tests`. What a node
+actually runs with (the framework values and the compiled-in `AppInit`
+defaults) is only visible in `debug.log`;
+`test/functional/feature_params_snapshot.py` pins it. The full table is in `project/plans/phase0-test-safety-net.md`,
+section 0.2h.
+
+`test_bitcoin_main.cpp`: the `StartShutdown()` stub now prints a message and
+exits with failure. It used to exit 0, which meant a failed genesis `Yassert`
+in a release build (without `_DEBUG`; with it, `Yassert` is `assert`) ended the run "successfully" with no test summary.
