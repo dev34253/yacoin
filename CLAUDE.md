@@ -48,7 +48,9 @@ reviews as separate, logged self-review passes.
 6. **Documentation.** Add or update documentation for everything new or
    changed in the same commit/PR: `doc/` for builds and user-facing behaviour,
    RPC help text for RPCs, `project/` for plans, tasks and runbooks, code
-   comments for non-obvious logic. **Documentation is reviewed like code** –
+   comments for non-obvious logic. Keep `doc/functional-specification.md`
+   (behaviour), `doc/architecture.md` (structure) and
+   `doc/design-decisions.md` (one entry per significant decision) current. **Documentation is reviewed like code** –
    include it in the review in rule 4 and check it against what was actually
    built and run.
 7. **Task board.** Move task files with `git mv` (todo → inprogress → done),
