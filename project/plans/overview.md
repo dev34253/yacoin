@@ -9,6 +9,12 @@ oddities found on the way are not fixed as part of this work unless they
 block that goal: they are recorded in
 [`../known-issues.md`](../known-issues.md) for later (owner, 2026-10-03).
 
+Yacoin's future is **proof-of-work only** (owner, 2026-10-03). Proof-of-stake
+code and tests matter only as far as the existing chain must still validate
+(sync, reindex, historical reorgs); new PoS behaviour is out of scope. PoS
+tests therefore target the historical rules and the real mainnet PoS blocks
+(P0-08 dump, P0-17/P0-18/P0-23), not future PoS scenarios.
+
 ## Why
 
 Yacoin only builds against library versions from around 2016–2018. On a

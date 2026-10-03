@@ -6,7 +6,9 @@ stable build on Ubuntu 24.04 with current libraries, OpenSSL removed first.
 Phase 0 pins today's behaviour, bugs included (CLAUDE.md rule 1). Everything
 below is for later, after the modernisation, unless it blocks that goal.
 
-Each entry: what, where, impact, found by. Consensus-relevant entries need a
+Each entry: what, where, impact, found by. Yacoin is proof-of-work only in the
+future (owner, 2026-10-03): PoS entries matter only as far as the existing
+chain must still validate. Consensus-relevant entries need a
 hard fork or at least a careful, separately reviewed change.
 
 ## Consensus behaviour (pinned by tests; changing it needs a fork)
