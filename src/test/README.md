@@ -695,3 +695,81 @@ YACOIN_HEADER_HASH_MAX_NFACTOR=25 src/test/test_bitcoin --run_test=header_hash_t
 Real mainnet headers (task step 3) need the P0-09 dump; P0-23 adds them
 by extending the case list in `header_hash_vectors.py` (the checker
 compares the file with that list) and regenerating the file.
+
+### Wallet crypter (P0-22)
+
+The new cases in `wallet/test/crypto_tests.cpp` (suite `wallet_crypto`)
+pin the wallet encryption of `wallet/crypter.cpp` with fixed known answers
+(plan 0.2j, review A1). The crypter has used the node's own
+`crypto/aes.h`/`crypto/sha512.h` for a long time; the older cases in the
+same file (`passphrase`, `encrypt`, `decrypt`, helpers `Old*`) compare it
+with OpenSSL's `EVP_BytesToKey`/`EVP_*crypt*` on random input. The new
+cases use no OpenSSL, so that oracle can be removed (Phase 5) without
+losing coverage. The key derivation is the one of v1.0.0/v1.1.0
+(`EVP_BytesToKey` with SHA-512 and AES-256-CBC), so the vectors also pin
+that old encrypted wallets stay readable (owner decision P0-00 #4; the
+end-to-end test with real old wallet files is P0-30).
+
+**Vectors** `data/crypter_vectors.json` (embedded as
+`test/data/crypter_vectors.json.h`), written and checked by
+`contrib/testing/crypter_vectors.py`; never edit by hand. One object
+`{"format": "yacoin-crypter-vectors", "version": "1", ...}`, all byte
+strings as hex:
+
+| Field | Meaning |
+|---|---|
+| `kdf[]` | `comment`, `passphrase`, `salt`, `rounds`, expected `key` (32 bytes) and `iv` (16 bytes) of `BytesToKeySHA512AES`: rounds 1, 2, 3, 7, 500, 1000, 25000, 123457; empty, UTF-8, 100-byte and embedded-NUL passphrases; one empty salt |
+| `aes_cbc` | `key`, `iv` and `vectors[]` of `plaintext`, `ciphertext` (AES-256-CBC, PKCS#7) and `padding` (bytes added): plaintext lengths 0, 1, 15, 16, 17, 31, 32, 33, 48 |
+| `decrypt[]` | `comment`, `ciphertext`, optional `key`/`iv` (default: those of `aes_cbc`), `ok` and `plaintext` as `CCrypter::Decrypt` returns them: valid, damaged first/last byte, wrong key, wrong IV, truncated, empty, padding byte 0 / 17 / inconsistent, a block of only padding, a full padding block |
+| `masterkey` | `passphrase`, `salt`, `rounds`, `derivation_method`, `master_key`, `crypted_key` (the master key encrypted with the derived key), `serialized` (`CMasterKey` as in the wallet's `mkey` record), `wrong_passphrase` and `wrong_passphrase_ok` (the Decrypt result with it) |
+| `keys[]` | `secret`, `compressed`, `pubkey`, `pubkey_hash` (SHA256d of `pubkey`, raw byte order) and `crypted_secret` (the secret encrypted with the master key, IV = first 16 bytes of `pubkey_hash`) |
+| `short_secret` | `pubkey` and `crypted_secret` of a 31-byte secret (rejected by the keystore) |
+
+The Python model uses only the standard library: `hashlib` for SHA-512 /
+SHA-256, AES-256 written from FIPS-197, secp256k1 point arithmetic for the
+public keys. It self-tests against FIPS-197 C.3, SP 800-38A F.2.5/F.2.6,
+1G/2G and the one fixed answer the oracle test already had, before
+anything else. `--cross-check` also compares every AES vector with the
+OpenSSL CLI and, if installed, the `cryptography` package (done when the
+file was written: 53 comparisons, 0 disagree).
+
+**Test cases.**
+- `kdf_vectors`: `BytesToKeySHA512AES` (called directly through the
+  `TestCrypter` friend) and, for 8-byte salts, `SetKeyFromPassphrase` give
+  the expected key and IV; the empty salt is rejected by
+  `SetKeyFromPassphrase`.
+- `kdf_invalid_arguments`: count 0 and null key/IV pointers return 0;
+  0 rounds, salts of 0/7/9 bytes and derivation method 1 are rejected and
+  leave a fresh crypter without a key; `SetKey` checks both sizes;
+  `CleanKey`. Pins the behaviour on an already keyed crypter (old key kept,
+  or zeroed with `fKeySet` still true – `project/known-issues.md`).
+- `aes_cbc_vectors`: `Encrypt` and `Decrypt` for each length. The empty
+  plaintext is pinned as it behaves today, unlike OpenSSL: `Encrypt`
+  returns true with an empty ciphertext, and the standard one-block
+  ciphertext does not decrypt (known issue; no wallet path encrypts empty
+  data).
+- `decrypt_vectors`: the `ok`/`plaintext` of each `decrypt` entry.
+- `masterkey_vectors`: `CMasterKey` serialisation round trip; passphrase →
+  key → master key; encrypting the master key gives `crypted_key`; the
+  wrong passphrase fails.
+- `keystore_encrypt_unlock`: a `CCryptoKeyStore` subclass that exposes
+  `EncryptKeys`/`Unlock`/`DecryptKeys` and records every crypted secret it
+  stores: `EncryptKeys` stores exactly `crypted_secret`, locked/unlocked
+  behaviour of `GetKey`/`GetPubKey`/`AddKeyPubKey`, wrong master key, a
+  31-byte secret, a secret under the wrong public key, `Lock`.
+- `keystore_decrypt_keys`: `DecryptKeys` failures, and what it does with
+  the right key today: on a locked store it fails, on an unlocked one it
+  encrypts every key again and then clears the crypted map, so it returns
+  true with no keys left (known issue; its only caller,
+  `CWallet::DecryptWallet`, is never called).
+
+Not covered (on purpose): `Unlock` with some keys that decrypt and some
+that do not ends in `assert(false)`; a few failure returns cannot be
+reached (`Encrypt`'s short-output check, `AddCryptedKey` failures after
+`SetCrypted` succeeded).
+
+```bash
+src/test/test_bitcoin --run_test=wallet_crypto     # new cases ~0.2 s, suite ~1.6 s (-O2)
+contrib/testing/crypter_vectors.py                 # check the file
+contrib/testing/crypter_vectors.py --cross-check   # + OpenSSL CLI / cryptography
+```

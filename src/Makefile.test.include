@@ -17,7 +17,8 @@ JSON_TEST_FILES = \
   test/data/tx_valid.json \
   test/data/sighash.json \
   test/data/reward_vectors.json \
-  test/data/header_hash_vectors.json
+  test/data/header_hash_vectors.json \
+  test/data/crypter_vectors.json
 
 # xz-compressed JSON, embedded decompressed as a C string (see the
 # %.json.xz.h rule below); too large to commit uncompressed (task P0-13).

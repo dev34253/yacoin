@@ -215,6 +215,12 @@ Globals (`util.cpp`; all but `nYac10HardforkTime` set by `AppInit` from `init.cp
 - The OpenSSL → internal AES/KDF switch has already landed. Known-answer
   vectors for `BytesToKeySHA512AES` and AES-256-CBC replace the OpenSSL test
   oracle; master-key round trip; wrong passphrase, damaged ciphertext.
+- Done (P0-22): `src/test/data/crypter_vectors.json` from an independent
+  Python model (`contrib/testing/crypter_vectors.py`, checked in every
+  `build.sh --unit`), replayed by seven OpenSSL-free cases in
+  `wallet_crypto` incl. `CCryptoKeyStore`; the OpenSSL oracle cases stay
+  until Phase 5 and can then be deleted. Details: `src/test/README.md`,
+  "Wallet crypter".
 
 ## 0.3 Mainnet data and replay (the most important test)
 
