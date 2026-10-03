@@ -15,6 +15,8 @@ compiler) so it builds on current Linux distributions such as Ubuntu 24.04.
 - `done/` – finished tasks.
 - [`open-questions.md`](open-questions.md) – questions and decisions for the
   owner, collected while tasks are implemented; answer them there.
+- [`known-issues.md`](known-issues.md) – findings recorded but deliberately not
+  fixed (for after the modernisation unless they block it).
 
 ## How to process a task
 

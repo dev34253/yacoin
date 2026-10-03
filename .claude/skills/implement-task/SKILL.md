@@ -12,6 +12,12 @@ documentation, task board).
 
 Keep a running log in the task file's `## Log` section (date, step, result).
 
+Findings outside the task (bugs, oddities, inconsistencies) are not fixed
+unless they block the task or the modernisation goal
+(`project/plans/overview.md`, "Scope and priorities"): record them in
+`project/known-issues.md` (what, where, impact, found by). Only questions
+that need an owner decision go into `project/open-questions.md`.
+
 **Reviews (steps 3, 5, 7, 10):** use a reviewer subagent (Agent tool) when you
 have one; give it the files to read and ask for concrete findings with
 file:line evidence. If you are yourself running as a subagent and have no

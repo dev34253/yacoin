@@ -28,6 +28,8 @@ Provide the CI structure other tasks add their jobs to.
 
 Each job task (P0-24, P0-29, P0-37, P0-40, P0-43, P0-53) adds its own job. Review: D3, E5.
 
+- 2026-10-03: deferred while the owner is away – step 1 needs the self-hosted runner on the owner's laptop registered (GitHub settings, `runbooks/mainnet-node-setup.md` section 8) and a decision on mirroring the images to GHCR.
+
 ## Log
 
 -
