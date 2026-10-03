@@ -16,12 +16,6 @@ exit criteria.
 Phase 0, and should P0-59 become a Phase 0 exit criterion?
 *Owner (2026-10-03):* has a question about the dead code – to discuss.
 
-### Q5 – P0-03 was verified in CI, not locally
-The local lowdiff/coverage runs were blocked by the session's permission
-classifier; with your OK the task was finished on the CI results (all five
-jobs green). Nothing open unless you want the local runs repeated.
-*Owner (2026-10-03):* unclear – to discuss.
-
 ### Q6 – Behaviour pinned by P0-16 that looks wrong (from P0-16)
 - `gettimechaininfo` returns `bnChainTrust` as a number holding only the low
   64 bits, while its help text says hex string; a trust of 0 is shown as an
@@ -109,6 +103,12 @@ the workarounds?
 *For now:* all pinned as they are by `reward_tests`; nothing changed.
 
 ## Answered
+
+### Q5 – P0-03 was verified in CI, not locally
+The local lowdiff/coverage runs were blocked by the session's permission
+classifier; with your OK the task was finished on the CI results (all five
+jobs green). Nothing open unless you want the local runs repeated.
+**Answer (owner, 2026-10-03):** fine – verifying P0-03 through the CI runs is accepted; no local re-run needed.
 
 ### Q2 – Latent bugs found while reading code: fix later or record only?
 - `-testnetnewlogicblocknumber` is documented, but the code reads
