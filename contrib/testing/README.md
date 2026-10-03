@@ -92,8 +92,8 @@ are for testing, not release.
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 344/344 | – (not supported) |
-| `lowdiff` | 344/344 | 46/46 |
+| `mainnet` | 345/345 | – (not supported) |
+| `lowdiff` | 345/345 | 46/46 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to

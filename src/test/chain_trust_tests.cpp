@@ -544,21 +544,12 @@ namespace {
 
 /** Regtest (powLimit 2^255 - 1) makes mining in a unit test cheap. No
  *  TestChain entries here: CheckBlockIndex walks mapBlockIndex.
- *  TestingSetup creates no token database, and DisconnectBlock reads token
- *  undo data from it (validation.cpp:1322), so a reorg would dereference
- *  ptokensdb == nullptr; the fixture provides an in-memory one. */
+ *  DisconnectBlock reads token undo data from ptokensdb
+ *  (validation.cpp:1322); TestingSetup provides an in-memory one (P0-62). */
 struct RegtestConsensusSetup : public ConsensusTestingSetup {
-    std::unique_ptr<CTokensDB> tokensdb;
-
     RegtestConsensusSetup() : ConsensusTestingSetup(CBaseChainParams::REGTEST)
     {
-        BOOST_REQUIRE(ptokensdb == nullptr);
-        tokensdb.reset(new CTokensDB(1 << 20, /*fMemory=*/true));
-        ptokensdb = tokensdb.get();
-    }
-    ~RegtestConsensusSetup()
-    {
-        ptokensdb = nullptr;
+        BOOST_REQUIRE(ptokensdb != nullptr);
     }
 
     /** A valid PoW block on parent (any entry, not only the tip): the
@@ -686,6 +677,64 @@ BOOST_FIXTURE_TEST_CASE(fork_choice_by_trust, RegtestConsensusSetup)
     BOOST_CHECK(Tip() == a5);
 }
 
+/* What the regtest cases above and the P2P cases below rely on from
+ * TestingSetup (P0-62): an in-memory token database, fresh for every fixture
+ * and reset to null when the fixture ends, and a test CConnman whose send
+ * buffer limit is the node's default (1000 * DEFAULT_MAXSENDBUFFER bytes),
+ * so queuing a message does not pause the peer. No fixture: the case builds
+ * its own. */
+BOOST_AUTO_TEST_CASE(testingsetup_token_db_and_buffers)
+{
+    const std::pair<char, std::string> key('Z', "P0-62 test key");
+    BOOST_REQUIRE(ptokensdb == nullptr);
+    {
+        TestingSetup setup(CBaseChainParams::REGTEST);
+        BOOST_REQUIRE(ptokensdb != nullptr);
+        BOOST_REQUIRE(g_connman);
+        BOOST_CHECK(!ptokensdb->Exists(key));
+        BOOST_CHECK(ptokensdb->Write(key, 42));
+        int nValue = 0;
+        BOOST_CHECK(ptokensdb->Read(key, nValue));
+        BOOST_CHECK_EQUAL(nValue, 42);
+
+        CNode node(1, ServiceFlags(NODE_NETWORK), 0, INVALID_SOCKET, CAddress(CService(CNetAddr(), Params().GetDefaultPort()), NODE_NONE), 0, 0, CAddress(), "", /*fInboundIn=*/false);
+        node.SetSendVersion(PROTOCOL_VERSION);
+        const CNetMsgMaker msgMaker(PROTOCOL_VERSION);
+        g_connman->PushMessage(&node, msgMaker.Make(NetMsgType::PING, uint64_t(1)));
+        BOOST_CHECK(!node.fPauseSend);
+        // Exactly at the limit the peer is not paused; any further message
+        // pauses it (net.cpp PushMessage: nSendSize > nSendBufferMaxSize).
+        const size_t nLimit = 1000 * DEFAULT_MAXSENDBUFFER;
+        size_t nFill;
+        {
+            LOCK(node.cs_vSend);
+            BOOST_REQUIRE(node.nSendSize + CMessageHeader::HEADER_SIZE < nLimit);
+            nFill = nLimit - node.nSendSize - CMessageHeader::HEADER_SIZE;
+        }
+        CSerializedNetMsg fill;
+        fill.command = NetMsgType::PING;
+        fill.data.assign(nFill, 0);
+        g_connman->PushMessage(&node, std::move(fill));
+        {
+            LOCK(node.cs_vSend);
+            BOOST_CHECK_EQUAL(node.nSendSize, nLimit);
+        }
+        BOOST_CHECK(!node.fPauseSend);
+        CSerializedNetMsg empty;
+        empty.command = NetMsgType::PING;
+        g_connman->PushMessage(&node, std::move(empty));
+        BOOST_CHECK(node.fPauseSend);
+    }
+    BOOST_CHECK(ptokensdb == nullptr);
+    BOOST_CHECK(!g_connman);
+    {
+        TestingSetup setup(CBaseChainParams::REGTEST);
+        BOOST_REQUIRE(ptokensdb != nullptr);
+        BOOST_CHECK(!ptokensdb->Exists(key)); // the previous fixture's data is gone
+    }
+    BOOST_CHECK(ptokensdb == nullptr);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 // ---------------------------------------------------------------------------
@@ -742,10 +791,10 @@ public:
             node.nProcessQueueSize += netmsg.vRecv.size() + CMessageHeader::HEADER_SIZE;
             node.vProcessMsg.push_back(std::move(netmsg));
         }
-        // The test CConnman is not started, so its send buffer limit is 0 and
-        // every queued message sets fPauseSend, which makes ProcessMessages
-        // skip the queue (net.cpp PushMessage).
-        node.fPauseSend = false;
+        // ProcessMessages skips the queue while fPauseSend is set. TestingSetup
+        // gives the test CConnman the node's send buffer limit (P0-62), so
+        // the few messages a test peer queues never set it.
+        BOOST_REQUIRE(!node.fPauseSend);
         std::atomic<bool> interrupt(false);
         logic.ProcessMessages(&node, interrupt);
         BOOST_CHECK(node.vProcessMsg.empty());
@@ -784,6 +833,9 @@ public:
         return n;
     }
 
+    /** Forget the queued outgoing messages, as if the socket had sent them
+     *  (net.cpp SocketSendData/ThreadSocketHandler also recompute
+     *  fPauseSend then). */
     void ClearSent()
     {
         LOCK(node.cs_vSend);
