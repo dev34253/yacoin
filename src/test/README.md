@@ -508,3 +508,76 @@ wrote; it restores both when it ends. Do not call `BOOST_CHECK` while it
 captures. `ScopedArg` sets a `-switch` for a scope (afterwards it is `"0"`,
 `ArgsManager` cannot remove an argument), `ScopedValue` a global such as
 `fDebug` or `fTxIndex`.
+
+### Block-header hash (P0-19)
+
+`header_hash_tests.cpp` pins the proof-of-work hash `CBlockHeader::GetHash()`
+/ `CalculateHash()` (`primitives/block.h`, plan 0.2e, review A2/B4): it
+hashes the raw bytes of `block_header` (v≥7, `#pragma pack(1)`, 84 bytes,
+64-bit `nTime`) or `old_block_header` (v<7, 80 bytes) with `scrypt_hash`,
+i.e. scrypt-jane with Keccak-512 (original Keccak padding, not SHA3-512)
+and ChaCha20/8, password = salt = the header, N = 2^(N-factor+1),
+r = p = 1, 32 bytes. v<7 takes the N-factor from the timestamp table
+(4 … 25, first `nTime` of N-factor 5 is 1368515488, of 25 3247039392; from
+3515474848 the cap `MAXIMUM_N_FACTOR` = 25 applies); v≥7 takes the global
+`nFactorAtHardfork` (21 on a mainnet node, 4 in functional tests, 0 in
+`test_bitcoin`) and ignores the timestamp.
+
+**Vectors** `data/header_hash_vectors.json` (embedded as
+`data/header_hash_vectors.json.h`), written and checked by
+`contrib/testing/header_hash_vectors.py`; never edit by hand. One object
+`{"format": "yacoin-header-hash-vectors", "version": "1", "comment",
+"vectors": [...]}`; each vector has:
+
+| Field | Meaning |
+|---|---|
+| `name` | e.g. `v6_bound_1636426656_minus_1`, `v7_nf21_time_1700000000`, `genesis_mainnet` |
+| `version`, `prev_block`, `merkle_root`, `time`, `bits`, `nonce` | the header fields (hashes in `GetHex()` order, numbers decimal) |
+| `nfactor_at_hardfork` | the `nFactorAtHardfork` the vector needs (v≥7), else `null` |
+| `nfactor` | the N-factor the hash uses |
+| `getnfactor` | `GetNfactor(time, false)` (v<7), else `null` |
+| `header_hex` | the 80/84 hashed bytes = the serialised header (hex in) |
+| `hash` | `uint256::GetHex()` of the 32 output bytes (hex out) |
+| `source` | `python` (pure-Python model) or `reference` (upstream scrypt-jane build) |
+
+`header_hex`, `nfactor` and `hash` are enough to rerun a vector on another
+platform without the node code (P0-53).
+
+59 vectors: `nTime` = 0 and both sides (B−1, B) of each of the 22 table
+bounds for v6; v1, v3 and `nVersion` = −1 at N-factor 4; the mainnet and
+low-difficulty genesis headers (their hashes are the constants in
+`chainparams.cpp`); v7 with `nFactorAtHardfork` 0, 4 and 21, and at 0 and 4
+also a 64-bit `nTime`, an `nTime` in the N-factor-4 era and
+`nVersion` = 0x7fffffff.
+
+**Test cases.** `known_answers` checks, per vector: serialisation and the
+raw struct bytes equal `header_hex`; `GetHash()` (which calls
+`CalculateHash()` once on a fresh header) equals `hash`; `GetNfactor`. For
+N-factors up to 12 it also checks `CalculateHash()` and
+`scrypt_hash(header_hex, nfactor)` directly (higher ones would double the
+runtime). A match also pins which N-factor is used, because the expected
+hash was computed with it. v≥7 vectors
+set `nFactorAtHardfork` with `ScopedConsensusGlobals`. `nfactor_table_coverage`
+checks that every N-factor 4 … 25 has a v<7 vector and that `GetNfactor`
+(display only) agrees with the table. `gethash_cache_quirks` pins the cache
+of `GetHash()`: it is keyed on the header fields only, so it returns a
+stale hash after `nFactorAtHardfork` changes, and after a field change
+followed by a serialisation (`SerializationOp` updates the cache key, not
+the hash); `GetHash(height)` ignores `height`. The `static_assert`s on the
+sizes (84/80) and field offsets are at the top of the file.
+
+**Runtime.** Vectors with an N-factor above `YACOIN_HEADER_HASH_MAX_NFACTOR`
+(default 21, the highest N-factor of real mainnet blocks) are skipped with a
+test message. Memory is N × 128 bytes: 512 MiB at 21, 8 GiB at 25.
+Measured (`-O2` build, 4 cores): the default run of `header_hash_tests`
+takes about 10 s of the 44 s unit suite; with the variable at 25 it takes
+about 210 s. The `-O0` coverage build is slower.
+
+```bash
+src/test/test_bitcoin --run_test=header_hash_tests                       # N-factor ≤ 21
+YACOIN_HEADER_HASH_MAX_NFACTOR=25 src/test/test_bitcoin --run_test=header_hash_tests  # all, 8 GiB
+```
+
+Real mainnet headers (task step 3) need the P0-09 dump; P0-23 adds them
+by extending the case list in `header_hash_vectors.py` (the checker
+compares the file with that list) and regenerating the file.
