@@ -44,7 +44,7 @@ mainnet values.
 |---|---|---|
 | Build image | Ubuntu 24.04 with GCC 11 pinned (same compiler as the 22.04 baseline); Dockerfile in dev34253/yacoin-build-ubuntu (`Dockerfile.ubuntu.24.04-gcc11`); published to Docker Hub as `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`. | P0-57 |
 | Build configurations | Mainnet and low-difficulty builds via one script, coverage (`CFLAGS` **and** `CXXFLAGS`) and sanitizer options; out-of-tree. Measure unit-test runtime in the mainnet config before deciding where unit tests run. | P0-01 |
-| `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. | P0-02 |
+| `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. Done: the test pins the result per configuration, unit tests 239/239 in both. | P0-02 |
 | CI | Unit, functional, coverage on push; a CI skeleton with schedules, runner, artifact storage and image mirroring. Each later job task adds its own job. | P0-03, P0-44 |
 | Coverage gates | Re-baselined after CI merges both configurations; **branch** coverage for consensus math; dead code and dead `fTestNet` branches excluded from denominators. | P0-04 |
 | Fixture storage | Small in repo, large external with manifest and checksums; also pre-fetched `depends` sources. | P0-05 |
