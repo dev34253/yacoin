@@ -23,6 +23,8 @@ Let Phase 4 compare old and new implementations function by function.
 
 ## Notes
 
+Golden vectors and their format: P0-13 (`src/test/data/bignum_vectors.json.xz`, `src/test/README.md`); the `Execute()` dispatcher in `src/test/bignum_vectors_tests.cpp` maps each op to the `CBigNum` code and can be reused for the production side.
+
 Review: E1.
 
 ## Log

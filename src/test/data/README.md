@@ -3,6 +3,12 @@ Description
 
 This directory contains data-driven tests for various aspects of Bitcoin.
 
+`*.json` files are embedded into `test_bitcoin` as byte arrays
+(`*.json.h`); `*.json.xz` files are unpacked with `xz` at build time and
+embedded as strings (`*.json.xz.h`), see `src/Makefile.test.include`.
+`bignum_vectors.json.xz` holds the `CBigNum` golden vectors (task P0-13;
+format and regeneration in `src/test/README.md`); never edit it by hand.
+
 License
 --------
 

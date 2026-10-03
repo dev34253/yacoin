@@ -87,12 +87,12 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20 and P0-11)
+## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11 and P0-13)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 314/314 | – (not supported) |
-| `lowdiff` | 314/314 | 46/46 |
+| `mainnet` | 316/316 | – (not supported) |
+| `lowdiff` | 316/316 | 46/46 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to
@@ -192,6 +192,25 @@ in `$RUNNER_TEMP/yacoin-build`:
   by hand (*Run workflow*), no longer on every push to every branch: its 8
   jobs (15–25 min each) do not run tests, and on task branches they kept
   the runners busy. Its jobs are otherwise unchanged.
+
+## CBigNum golden vectors (P0-13)
+
+`bignum_vectors_check.py` checks the golden vectors
+(`src/test/data/bignum_vectors.json.xz`, format in `src/test/README.md`)
+with an independent Python model – Python integers plus the OpenSSL
+behaviour `CBigNum` exposes, without `CBigNum` or OpenSSL. It needs only
+Python 3 (standard library) and runs on the host, not in the build image:
+
+```bash
+contrib/testing/bignum_vectors_check.py            # the committed file
+contrib/testing/bignum_vectors_check.py FILE.json  # or a regenerated one
+```
+
+It prints the number of vectors per operation and every disagreement, and
+exits 1 if there is one (expected today: 100000 vectors, 0 disagree, under a
+second). It is not run by `build.sh` or CI; run it after regenerating the
+vectors. The `test_bitcoin` replay (`bignum_vectors_tests`) runs in every
+`--unit` run.
 
 ## Restricted networks (proxy and CA)
 

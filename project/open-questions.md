@@ -97,6 +97,20 @@ roughly 9–10 more days at this rate. P0-08/P0-09 (mainnet dump and fixture)
 and everything after them wait for it. *For now:* waiting. Options if this is
 too slow: more CPU for the node, or a second node.
 
+### Q10 – CBigNum golden vectors: CI check, `xz`, size (from P0-13)
+- `contrib/testing/bignum_vectors_check.py` (independent Python model of
+  all 100,000 vectors, < 1 s) is not run in CI; the task may not edit
+  `.github/workflows/`. The `test_bitcoin` replay runs in CI as part of the
+  unit tests. Add the checker as a CI step (or to `build.sh --unit`)?
+- Test builds now need `xz` (`configure` errors without it, like
+  `hexdump`). It is in the build image and on practically every system;
+  documented in `doc/build-unix.md`. Acceptable, or embed differently?
+- The vector file is 0.97 MB (xz; 12.9 MB of JSON embedded in
+  `test_bitcoin`). Each regeneration adds another blob of that size to git
+  history, so regenerate only on format changes.
+*For now:* checker manual (documented in `contrib/testing/README.md`),
+`xz` required, file committed as is.
+
 ## Answered
 
 (none yet)

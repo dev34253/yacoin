@@ -183,6 +183,121 @@ replacement in Phase 4 must handle specially (full list in
 - `GetCompact` of |v| ≥ 2^2039 wraps the exponent byte (2^2040 →
   `0x00010000`).
 
+### CBigNum golden vectors (P0-13)
+
+`data/bignum_vectors.json.xz` holds 100,000 operations on the `CBigNum`
+methods that production code uses (P0-12 audit, `project/plans/dead-code.md`
+c)), with inputs and outputs as text, recorded from today's `CBigNum`
+(OpenSSL 1.0.1k from `depends`, x86_64). It is the durable artefact of plan
+0.2a: whatever replaces `CBigNum` in Phase 4, and the reference oracle of
+P0-51/P0-26, must reproduce every vector; it needs no `CBigNum` to be read.
+`bignum_vectors_tests.cpp` replays it:
+
+- `replay` – runs every vector through `CBigNum` and compares (about 0.3 s
+  in the mainnet build). Inputs are built and outputs formatted with raw
+  OpenSSL calls, not with the methods under test. The first 20 differences
+  are printed in full, then a count.
+- `generator_reproduces_vectors` – the generator in the same file (own
+  splitmix64 PRNG, seed `0x50302d3133`, integer arithmetic only) must give
+  the embedded file byte for byte, so the committed file is exactly the
+  output of the committed generator.
+
+The build unpacks the file with `xz -dc` into
+`<builddir>/src/test/data/bignum_vectors.json.xz.h` (one C string literal
+per line; rule `%.json.xz.h` in `src/Makefile.test.include`), so `xz` is
+needed to build the tests. `contrib/testing/bignum_vectors_check.py` checks
+every vector with an independent Python model (no `CBigNum`, no OpenSSL;
+see `contrib/testing/README.md`).
+
+**Format.** One JSON object, one vector per line:
+
+```
+{"format":"yacoin-bignum-vectors","version":"1",
+"generator":"src/test/bignum_vectors_tests.cpp","seed":"50302d3133",
+"doc":"src/test/README.md",
+"count":"100000",
+"vectors":[
+["int32","0","0"],
+...
+["cmp","-0","0","-1"],
+...
+]}
+```
+
+Every field is a string; a vector is `[op, input..., output]`. Numbers are
+lowercase hex without leading zeros, with an optional `-`: `0`, `1d00ffff`,
+`-80`. `-0` is the **negative zero** (OpenSSL sign flag set on a zero
+magnitude, from `SetCompact`, P0-11); it is a value of its own (`-0 < 0`).
+
+| op | inputs | output | `CBigNum` code |
+|---|---|---|---|
+| `int32` | integer in `int32_t` range | value | `CBigNum(int32_t)` |
+| `int64` | integer in `int64_t` range | value | `CBigNum(int64_t)` |
+| `uint256` | 0 ≤ n < 2^256 | value | `CBigNum(uint256)`, `setuint256` (both checked) |
+| `get_uint256` | value, not `-0` | \|v\| mod 2^256 | `getuint256()` |
+| `get_uint64` | value, not `-0` | \|v\| mod 2^64 | `getuint64()` |
+| `set_compact` | 0 ≤ n < 2^32 | value, may be `-0` | `SetCompact` |
+| `get_compact` | value, not `-0` | 32-bit compact | `GetCompact()` |
+| `to_string` | value, `-0` allowed | decimal text | `ToString()` |
+| `get_hex` | value, `-0` allowed | hex text | `GetHex()` |
+| `add`, `sub` | two values, not `-0` | value | `a + b`, `a - b` |
+| `mul` | two values, `-0` allowed | value | `a * b` and `a *= b` (both checked) |
+| `div` | two values, not `-0` | value, or `error` if b = 0 | `a / b` and `a /= b` (both checked; `bignum_error`) |
+| `shl` | value (not `-0`), 0 ≤ n ≤ 2048 | value | `a << n` |
+| `cmp` | two values, `-0` allowed | `-1`, `0` or `1` | `<`, `<=`, `>`, `>=` (all four checked) |
+
+`-0` is used only where production code can meet it (a `SetCompact` result
+compared with `<= 0` or multiplied in the stake kernel) and in the text
+methods; `GetCompact`/`getuint256`/`getuint64` of `-0` are undefined
+behaviour (P0-10) and never appear. Unused methods (`%`, `>>`, `==`,
+`SetHex`, `getvch`, …) have no vectors.
+
+Behaviour a replacement has to reproduce (all in the vectors, checked by
+the Python model): values are sign and magnitude, not two's complement;
+division truncates toward zero (`-ff / 2 = -7f`); `getuint256`/`getuint64`
+drop the sign and take the magnitude mod 2^n; `a * b` is an ordinary `0`
+when either operand is zero, including `-0`; `ToString`/`GetHex` of `-0` are
+`"0"`; `SetCompact` gives negative values and the negative zero for a set
+sign bit (`0x01800000` → `-0`); `GetCompact` adds a zero byte when the top
+bit is set and wraps the exponent byte for |v| ≥ 2^2039 (2^2047 →
+`1008000`); `a << n` keeps the sign.
+
+**Content.** About 35,500 adversarial vectors: integer-constructor limits;
+every pair of 67 special values (0 and, with both signs: 1, 2, byte and
+word boundaries, 2^k and 2^k − 1 for k = 31, 32, 63, 64, 256, 2^128,
+2^255, `CENT`, `COIN`, 100 `COIN`, `MAX_MONEY`, 86400, the PoS hard limit,
+both `powLimit` values, the compacts `0x1d00ffff` and `0x1e0fffff`,
+2^256 + 1, 2^264) for `add`, `sub`, `mul`, `div`, `cmp`; shifts of them;
+`-0` against all of them for `cmp` and `mul`; `set_compact` for
+every exponent 0–255 with mantissas around the sign bit; `get_compact` of
+±2^k and ±(2^k − 1) for k up to 2056. About 34,000 vectors from chains
+shaped like the production expressions, each step a vector whose inputs are
+the previous outputs: stake kernel (amount × weight / `COIN` / 86400, also
+with negative weights, × target, compared with a hash), block and chain
+trust (legacy `(1 << 256) / (target + 1)`, `powLimit / target`, × 2,
+accumulated), retarget (`SetCompact` → `getuint256` → `uint256` × timespan
+/ timespan, and the `pow.cpp:197` form), and the pre-fork reward bisection
+(`mid^6 * limit > limit^6 * target`, mainnet and low-difficulty limits).
+The remaining 30,400 are random operations on production-shaped operands
+(`int64_t` amounts and times, compact-derived targets, 256-bit hashes,
+products, ±2^k ± small, some random values up to 600 bits) drawn mostly
+from a fixed pool, so that the file compresses (12.9 MB of JSON, 0.97 MB
+with xz).
+
+**Regenerating** (only when the format or the generator changes – the
+vectors are meant to stay fixed; `test_bitcoin` path relative to the build
+directory, the rest relative to the checkout):
+
+```bash
+YACOIN_BIGNUM_VECTORS_OUT=/tmp/bignum_vectors.json \
+  src/test/test_bitcoin --run_test=bignum_vectors_tests/generator_reproduces_vectors
+xz -9e -T1 -c /tmp/bignum_vectors.json > src/test/data/bignum_vectors.json.xz
+contrib/testing/bignum_vectors_check.py src/test/data/bignum_vectors.json.xz
+```
+
+The first command fails its comparison as long as the binary still embeds
+the old file; rebuild and run the suite again afterwards.
+
 ### Chain trust tests (P0-16)
 
 `chain_trust_tests.cpp` pins block trust, chain trust and their uses as they
