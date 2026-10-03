@@ -5,7 +5,7 @@
 - Size: L
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -291,3 +291,4 @@ would make the remaining gap visible as the 11 outcomes above.
   branch. Remaining: final regression (mainnet `--unit`, lowdiff `--unit
   --functional` – was running at handback), then Finished, `git mv` to
   done, open the PR, check CI.
+- 2026-10-03: final regression on 791147b (`build.sh --jobs 2`): mainnet unit 364/364, exit 0; lowdiff unit 364/364 and functional 46/46, exit 0. The implementing subagent stopped at its turn limit while this run was going; the parent session confirmed the result, moved the task to done and opened the PR. The ≥ 95 % branch criterion stays open as an owner decision (gap documented above: 33 LogPrintf format_error branches, 4 null-dereference paths, 7 GCC cleanup branches).
