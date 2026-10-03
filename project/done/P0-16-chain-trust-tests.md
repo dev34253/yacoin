@@ -5,7 +5,7 @@
 - Size: M
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -301,3 +301,8 @@ values with `BOOST_TEST_MESSAGE`.
   code and the test logs. Fixed: "the one-month check never triggers" was
   too strong (legacy PoS trust is large enough) – reworded in README and
   description; line numbers corrected in step 7. Nothing left open.
+- 2026-10-03: step 11 – merged origin/master (P0-12, 4b3d2e0; merge
+  commit, count conflicts resolved to 284 + 16 = 300) and re-ran on the
+  merged tree: mainnet unit 300/300, exit 0; lowdiff unit 300/300 and
+  functional 45/45, exit 0. Moved to done; branch pushed, PR
+  https://github.com/dev34253/yacoin/pull/58.
