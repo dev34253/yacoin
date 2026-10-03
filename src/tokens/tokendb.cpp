@@ -10,6 +10,9 @@
 #include "tokendb.h"
 #include "tokens.h"
 #include "validation.h"
+#include "hash.h"
+#include "streams.h"
+#include "clientversion.h"
 
 #include <boost/thread.hpp>
 #include <memory>
@@ -387,4 +390,28 @@ bool CTokensDB::TokenAddressDir(std::vector<std::pair<std::string, CAmount> >& v
 bool CTokensDB::TokenDir(std::vector<CDatabasedTokenData>& tokens)
 {
     return CTokensDB::TokenDir(tokens, "*", MAX_SIZE, 0);
+}
+
+bool CTokensDB::HashTokenData(CDBIterator& cursor, CHashWriter& ss, uint64_t& nTokens)
+{
+    nTokens = 0;
+    cursor.Seek(std::make_pair(TOKEN_FLAG, std::string()));
+    while (cursor.Valid()) {
+        boost::this_thread::interruption_point();
+        std::pair<char, std::string> key;
+        if (!cursor.GetKey(key) || key.first != TOKEN_FLAG)
+            break;
+        CDatabasedTokenData data;
+        if (!cursor.GetValue(data))
+            return error("%s: failed to read token %s", __func__, key.second);
+        // CNewToken's serializer needs a stream with size()/empty(), so the
+        // record is serialized as stored (SER_DISK) and hashed as a string.
+        CDataStream ssData(SER_DISK, CLIENT_VERSION);
+        ssData << data;
+        ss << key.second;
+        ss << std::string(ssData.begin(), ssData.end());
+        nTokens++;
+        cursor.Next();
+    }
+    return true;
 }

@@ -363,7 +363,7 @@ built.
 
 | Group (file) | Commands | Yacoin-specific |
 |---|---|---|
-| Blockchain (`rpc/blockchain.cpp`) | 23 | `gettimechaininfo` (renamed from `getblockchaininfo`), `getblockbynumber`, `getbestblockhashsha256`, `calculatescrypthash` |
+| Blockchain (`rpc/blockchain.cpp`) | 25 (5 hidden) | `gettimechaininfo` (renamed from `getblockchaininfo`), `getblockbynumber`, `getbestblockhashsha256`, `calculatescrypthash`; `gettxoutsetinfo` with Yacoin's own hash definition (below) |
 | Mining (`rpc/mining.cpp`) | 9 | `getwork`, `getsubsidy`, `gethashespersec`, `getgenerate`, `setgenerate` |
 | Misc (`rpc/misc.cpp`) | 15 | `calculateblockhash`, `getaddressutxos`, `getaddressdeltas`, `getaddresstxids`, `getaddressbalance` |
 | Network (`rpc/net.cpp`) | 13 | `getaddrmaninfo` |
@@ -384,8 +384,38 @@ returns statistics and self-check counters (all 0 on a valid chain except
 Format: `src/test/README.md` ("Consensus value dump"); procedure:
 `project/runbooks/mainnet-dump.md`.
 
+`gettxoutsetinfo` (P0-48, ported from Bitcoin Core 0.16) flushes the
+chainstate and returns statistics and two hashes of the on-disk state, to
+compare nodes (reindex, sync, baseline binaries): `height`, `bestblock`,
+`transactions`, `txouts`, `bogosize`, `hash_serialized`, `disk_size`,
+`total_amount`, `tokens`, `hash_tokens`. Identical chainstates give
+identical results except `disk_size`, independent of options that do not
+change the chainstate, such as `-tokenindex` (covered by the functional
+test `rpc_gettxoutsetinfo`), `-txindex` or `-dbcache`.
+
+- `hash_serialized`: SHA-256d of `bestblock` and, per txid in database
+  order, the txid and for each unspent output `VARINT(n+1)`, `scriptPubKey`,
+  `VARINT(value)`, `VARINT(height*2+coinbase)`, `VARINT(nTime)`, the
+  coinstake flag (1 byte), then `VARINT(0)`. Unlike Bitcoin Core's
+  `hash_serialized_2`, height and coinbase flag are hashed per output and
+  Yacoin's `nTime`/`fCoinStake` are included, so every stored field of a
+  coin is covered; the values are not comparable with Bitcoin Core's. Token
+  outputs are included (the token is in the `scriptPubKey`).
+- `hash_tokens`: SHA-256d of `bestblock` and, per token in database order,
+  the name and its metadata record as stored (amount, units, reissuable,
+  IPFS hash, issue height and block hash; hashed as a length-prefixed byte
+  string). It is separate from `hash_serialized`
+  because token metadata (units, IPFS hash, reissuable, amount after
+  reissues) is chainstate that the UTXO set does not determine, and a
+  separate hash shows which database differs. Per-address token balances
+  (only with `-tokenindex`), token undo data and the mempool reissue state
+  are not included.
+- The scan runs without the chain lock (database snapshots taken together
+  under `cs_main`); on mainnet it can take a while, so use a longer
+  `yacoin-cli -rpcclienttimeout` if needed. Logged with `-debug=rpc`.
+
 Not available: `getblockchaininfo` (use `getinfo` / `gettimechaininfo`),
-`gettxoutsetinfo` (planned, P0-48), REST, ZMQ notifications.
+REST, ZMQ notifications.
 
 ## 8. Configuration options specific to Yacoin
 

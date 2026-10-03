@@ -107,12 +107,12 @@ make -j"$(nproc)"
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (371)
-python3 test/functional/test_runner.py -j4            # functional tests (47)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (377)
+python3 test/functional/test_runner.py -j4            # functional tests (48)
 ```
 
-- Expected today: 371/371 unit tests in both builds (mainnet and low
-  difficulty) and 47/47 functional (low-difficulty build); `build.sh` (see
+- Expected today: 377/377 unit tests in both builds (mainnet and low
+  difficulty) and 48/48 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef
   LOW_DIFFICULTY_FOR_DEVELOPMENT` (e.g. `pow_tests/get_next_work_pow_limit`,
@@ -132,8 +132,9 @@ python3 test/functional/test_runner.py -j4            # functional tests (47)
 - Functional tests do **not** use regtest: they run main params with the
   low-difficulty genesis, `-epochinterval=10`, N-factor 4. Unit tests run with
   the fork globals (`nMainnetNewLogicBlockNumber`, `nFactorAtHardfork`) at 0.
-- RPCs that do not exist here: `getblockchaininfo`, `gettxoutsetinfo` (use
-  `getinfo`; `gettxoutsetinfo` is task P0-48).
+- RPCs that do not exist here: `getblockchaininfo` (use `getinfo` /
+  `gettimechaininfo`). `gettxoutsetinfo` exists (P0-48) but its
+  `hash_serialized` is Yacoin's own definition (doc/functional-specification.md §7).
 
 ## Environment notes
 
