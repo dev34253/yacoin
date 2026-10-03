@@ -3,8 +3,8 @@
 - Plan section: 0.2a
 - Depends on: P0-01
 - Size: M
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-03
 - Finished:
 
 ## Goal
@@ -28,5 +28,7 @@ Pin the CBigNum API behaviour used by the code (temporary tests, retired in Phas
 Review: B10, C9.
 
 ## Log
+
+- 2026-10-03 step 0: picked up; dependency P0-01 is in done/; branch task/P0-10-cbignum-contract-tests.
 
 -
