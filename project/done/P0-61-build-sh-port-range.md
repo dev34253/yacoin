@@ -5,7 +5,7 @@
 - Size: S
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -45,11 +45,11 @@ port range).
 
 ## Acceptance criteria
 
-- [ ] Two concurrent `build.sh --config lowdiff --functional` runs in different
-      work dirs both pass (46/46 each).
-- [ ] A single run behaves as before.
-- [ ] A unit run without a Boost summary makes `build.sh` exit non-zero.
-- [ ] `build.sh --unit` runs the three vector checkers; a modified vector file fails it.
+- [x] Two concurrent `build.sh --config lowdiff --functional` runs in different
+      work dirs both pass (46/46 each; 47/47 after merging master).
+- [x] A single run behaves as before.
+- [x] A unit run without a Boost summary makes `build.sh` exit non-zero.
+- [x] `build.sh --unit` runs the three vector checkers; a modified vector file fails it.
 
 ## Detailed description
 
@@ -235,3 +235,13 @@ with `TEST_RUNNER_PORT_MIN`).
   re-read against `build.sh` and the runs above; fixed "runs on the host,
   not in the build image" for the bignum checker and the header-hash note
   that only the checks above N-factor 12 stay manual.
+- 2026-10-03 merged origin/master (P0-08 #73, P0-63 #74, P0-14 #75; no
+  conflicts), README count "47 today". Re-run: mainnet `--unit` exit 0,
+  **371/371**, checkers ok; then, concurrently under the functional lock,
+  lowdiff `--unit --functional` in the main work dir (slot 5) exit 0,
+  **371/371** unit, checkers ok, **47/47** functional, and lowdiff
+  `--functional` in the second work dir (slot 7) exit 0, **47/47**. Second
+  work dir deleted.
+- Not applied: nothing from the reviews. Open: slot width 1000 limits a
+  run to 83 tests (documented); `TEST_RUNNER_PORT_MIN` set by hand is not
+  coordinated with slots (documented).

@@ -112,7 +112,7 @@ slots** and sets `TEST_RUNNER_PORT_MIN` for it:
 | 5–9 | 21000, 22000, …, 25000 | slot base + 0…999 | slot base + 5000…5999 (26000–30999) |
 
 The slots do not overlap and stay below the Linux ephemeral port range
-(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000; 46 today).
+(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000; 47 today).
 The preferred slot is `cksum(work dir) % 10`; the run holds
 `flock` on `/tmp/yacoin-build-ports/slot-<k>.lock` (`YACOIN_PORT_LOCK_DIR`)
 until it ends. If another run holds the preferred slot, the next free one
