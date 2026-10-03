@@ -10,7 +10,12 @@ What the list is for:
 - **Coverage (P0-04):** dead code is excluded from the coverage
   denominators. The column "gcov" says whether the item is counted at all:
   code that is compiled and linked counts, unused inline header functions do
-  not (the compiler never emits them).
+  not (the compiler never emits them). P0-04 applies a) and b) as the
+  `[[exclude]]` entries of `contrib/testing/coverage-gates.toml` (by file,
+  function name, source-text anchor or dead branch outcome; see
+  `contrib/testing/README.md`, "Coverage gate"). When an item is removed
+  (P0-59) its entry has to go too: the gate fails on exclusions that no
+  longer find their target.
 - **Removal:** proposed in task
   [P0-59](../todo/P0-59-dead-code-removal.md), in three parts with
   different gates (see [Removal proposal](#removal-proposal)).
@@ -56,7 +61,7 @@ claims.
 | `ComputeMinWork`, `ComputeMinStake` | `pow.cpp:275-278,284-287`, `pow.h:29-30` | no callers | yes (`pow.cpp`) | yes | C |
 | `ComputeMaxBits` | `pow.cpp:255-269` | only callers are `ComputeMinWork`/`ComputeMinStake` | yes | yes | C |
 | `GetProofOfStakeLimit` | `pow.cpp:231-234` | only caller is `ComputeMinStake` | yes | yes | C |
-| `bnProofOfStakeLegacyLimit`, `bnProofOfStakeLimit` (globals) | `main.cpp:74-75` | never referenced; they only run their `CBigNum` constructors at start-up | no | yes (2 lines) | C |
+| `bnProofOfStakeLegacyLimit`, `bnProofOfStakeLimit` (globals) | `main.cpp:74-75` | never referenced; they only run their `CBigNum` constructors at start-up | no | no (no line data with lcov 2.0, checked in P0-04) | C |
 
 Only one function in `scrypt.cpp` is live:
 `bool scrypt_hash(const void*, size_t, uint32_t*, unsigned char Nfactor)`
@@ -198,8 +203,10 @@ well. `ToString` and `GetHex` are used, but only for log and RPC text.
 gcov records no lines for them; but `test_bitcoin` now calls most of the
 unused methods (P0-10), so in a coverage build they do appear in
 `bignum.h`'s counts. The plan 0.10 target "`bignum.h` (used methods only)"
-therefore counts only the line ranges of the two "used" lists above
-(P0-04 applies it).
+therefore counts only the two "used" lists above. P0-04 selects them by
+function name (gate `bignum.h used methods` in
+`contrib/testing/coverage-gates.toml`), which covers the same line ranges
+and survives line shifts.
 
 ## d) Leftovers
 
@@ -281,5 +288,5 @@ PRs. It is not a Phase 0 exit criterion and is not in P0-45's dependencies:
 | C | `pow.cpp` dead functions, `main.cpp:74-75`, every `fTestNet` use | P0-14, P0-16, P0-17, P0-18, P0-19, P0-23, P0-46 | gating tests and the P0-23 replay (edited functions, and functions whose code changes through inlining such as the `net.cpp` callers of `GetDefaultPort`, cannot be compared as object code) |
 
 Part C makes the `fTestNet` branches disappear from the branch-coverage
-denominators. If it lands before P0-04, P0-04's exclusion list gets
-shorter.
+denominators. Each part that lands removes the matching entries from
+`contrib/testing/coverage-gates.toml` (P0-04) in the same PR.

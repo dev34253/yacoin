@@ -13,7 +13,8 @@ contrib/testing/build.sh --config mainnet --unit
 # low-difficulty parameters (needed by the functional tests), all tests
 contrib/testing/build.sh --config lowdiff --unit --functional
 
-# coverage of both configurations, then the merged report (see "Coverage")
+# coverage of both configurations, then the merged report and the
+# coverage gate (see "Coverage" and "Coverage gate")
 contrib/testing/build.sh --config mainnet --coverage --unit
 contrib/testing/build.sh --config lowdiff --coverage --unit --functional
 contrib/testing/build.sh --coverage-report
@@ -34,7 +35,7 @@ changed.
 |---|---|
 | `--config mainnet\|lowdiff` | Chain parameters. `lowdiff` adds `--enable-low-difficulty-for-development`. Default `mainnet`. |
 | `--coverage` | `-O0 -g --coverage -fprofile-update=atomic` in `CFLAGS` and `CXXFLAGS` (the scrypt-jane C code is instrumented too), `--coverage` in `LDFLAGS`. With `--unit`/`--functional` also writes an lcov report to `<builddir>/coverage/` (see "Coverage"). |
-| `--coverage-report` | No build and no tests: merges the reports of the mainnet and lowdiff `--coverage` runs in this work dir into `WORK_DIR/coverage-report/`. Rejects `--config`, `--coverage`, `--unit`, `--functional`, `--clean`, `--reconfigure` and `--sanitizers`; `--jobs` (lcov `--parallel`), `--image`, `--work-dir` and `--no-docker` work. |
+| `--coverage-report` | No build and no tests: merges the reports of the mainnet and lowdiff `--coverage` runs in this work dir into `WORK_DIR/coverage-report/`, then runs the coverage gate (exit 1 if a gate fails, see "Coverage gate"). Rejects `--config`, `--coverage`, `--unit`, `--functional`, `--clean`, `--reconfigure` and `--sanitizers`; `--jobs` (lcov `--parallel`), `--image`, `--work-dir` and `--no-docker` work. |
 | `--sanitizers LIST` | `-fsanitize=LIST`, e.g. `address,undefined`. Implemented but not yet validated – sanitizer runs are task P0-29. |
 | `--unit` | Run `src/test/test_bitcoin`. |
 | `--functional` | Run `test/functional/test_runner.py` (requires `--config lowdiff`). |
@@ -120,8 +121,9 @@ clamp from its own `powLimit` (0x201fffff) instead.
 Branch coverage is recorded (`--rc branch_coverage=1`). It includes the
 branches GCC generates for C++ exception handling, which inflate the branch
 count: lcov 2.0's `--rc no_exception_branch=1` would drop them, but with
-GCC 11's gcov output it drops *all* branch data (tested), so filtering is
-left to the coverage gates (P0-04).
+GCC 11's gcov output it drops *all* branch data (tested), so the coverage
+gate leaves them out itself (see "Coverage gate"); `summary.txt` and the
+HTML reports still count them.
 The counters are updated atomically (`-fprofile-update=atomic`): YaCoin and
 its tests are multi-threaded, and with plain counters lcov 2.0 rejected the
 data (a negative branch count in `crypto/sha256.cpp`).
@@ -129,8 +131,8 @@ lcov and genhtml come from the build image (lcov 2.0); with `--no-docker`
 they must be installed, with the same gcov as the compiler.
 
 `--coverage-report` merges the two configurations into
-`WORK_DIR/coverage-report/{merged.info,summary.txt,html/}` and prints all
-three summaries. It needs `build-mainnet-cov/coverage/coverage.info` and
+`WORK_DIR/coverage-report/{merged.info,summary.txt,html/}`, prints all
+three summaries and runs the coverage gate (`gate.txt`). It needs `build-mainnet-cov/coverage/coverage.info` and
 `build-lowdiff-cov/coverage/coverage.info` in the work dir.
 
 **How the two configurations are merged.** gcov records coverage per line
@@ -142,10 +144,102 @@ one build only. The merge (`lcov --add-tracefile` of both files) is the
 at least one build, and it counts as covered if it ran in at least one; hit
 counts are added. The per-configuration reports stay available next to the
 merged one, so it is visible what one configuration alone covers. The
-merged numbers are the ones coverage gates use (P0-04). The paths in the
+merged numbers are the ones the coverage gate uses (P0-04). The paths in the
 `.info` files are absolute (`/work/...` under Docker), so only merge files
 produced the same way (all with Docker, or all with `--no-docker` in the
 same work dir).
+
+## Coverage gate
+
+`--coverage-report` ends with the coverage gate (task P0-04):
+`coverage_gate.py` reads `merged.info`, removes the excluded code from the
+denominators and compares each gate with its minimum from
+`coverage-gates.toml`. The report (`merged.info`, `html/`, summaries) is
+written first; the gate output goes to the console and to
+`coverage-report/gate.txt`, and its exit code becomes the exit code of
+`build.sh`: 0 all checks passed, 1 a check is below its minimum, 2 config
+or data error (for example an exclusion that no longer finds its target).
+In CI this is the `coverage report (merged)` job, so the gate runs where
+the coverage jobs run: on `master` and when the workflow is started by
+hand.
+
+The script also runs on its own, on any merged tracefile made from the
+same commit as the checkout (the exclusions find their lines in the source
+text):
+
+```bash
+contrib/testing/coverage_gate.py WORK_DIR/coverage-report/merged.info \
+    [--verbose] [--suggest] [--config FILE] [--source-root CHECKOUT]
+python3 contrib/testing/test_coverage_gate.py   # its own tests (also in CI)
+```
+
+Requirements: Python ≥ 3.11 (`tomllib`) and `c++filt` (binutils); both
+are in the build image and on the CI runner.
+
+**Numbers.** The gate's numbers differ from lcov's `summary.txt` on
+purpose: excluded code is not counted, and *branches* are only the
+branches of the source code – the branches GCC adds for C++ exception
+handling (marked `e` in the tracefile) are left out
+(`settings.exception_branches`). Both are printed; the gate decides.
+
+**Exclusions** (`[[exclude]]`, each with a `reason`):
+
+| `kind` | Removes | Used for |
+|---|---|---|
+| `file` | the whole file | dead files (`pbkdf2.cpp`, `random_nonce.cpp`, `scrypt-generic.cpp`) |
+| `function` | the lines, branches and function records between a function's first and last line (all overloads, or one signature) | dead functions in `scrypt.cpp` and `pow.cpp` |
+| `lines` | the line matched by `match` (`extent = "line"`), or the whole statement that starts there (`extent = "block"`: up to its `;`, or the `}` closing its first `{`) | the testnet `else` arm in `primitives/block.h`, the `if (fDebug …)` logging blocks in `kernel.cpp` |
+| `branches` | the branch outcomes `outcomes` (`"<block>,<branch>"` ids from the tracefile) on the matched line, whether they ran or not | the dead `fTestNet` operands (one outcome each) |
+
+The list follows [`dead-code.md`](../../project/plans/dead-code.md) a)
+and b) (task P0-50) and the task's kernel debug logging. `match` is a
+regex on the source text, so line shifts do not break it; it must match
+exactly one line, or for `lines` any number with `all = true`. Every exclusion must find its target
+(file, function, line with data, branch outcome), otherwise the gate
+stops with exit code 2. When code on the list is removed (task P0-59) or
+changes, update its entry. A `block` exclusion refuses a statement with an
+`else` arm.
+
+The `fTestNet` outcomes need ids because unit tests set `fTestNet` on
+purpose through the consensus harness to pin the testnet behaviour
+(`chain_trust_tests`, `kernel_tests`, `chainparams_snapshot_tests`,
+`consensus_harness_tests`), so a dead outcome can have run and cannot be
+told apart by its count. The ids were found by a unit-test run without
+those suites (the outcomes that ran there are the live ones) and, for
+`kernel.cpp:656`, by the outcome the functional tests add to; see the
+P0-04 task log. Lines that no test reaches carry `verified = false`: their
+id could not be checked, which does not change the numbers while nothing
+on the line runs, and the gate stops (exit 2) as soon as something does,
+so the id gets checked then. gcov numbers the
+outcomes per line in the order GCC emits them, so they can change with
+the code on that line or with the compiler: `branches_on_line` (the number
+of non-exception outcomes on the line) must match, otherwise the gate
+stops and the ids have to be checked again – for example after the GCC 13
+switch (Phase 1).
+
+**Gates** (`[[gate]]`): `name`, optional `paths` (default: every file),
+optional `select_functions` (one path; the gate then counts only the lines
+and branches between those functions' first and last lines, and those
+functions), and `min` with any of `lines`, `functions`, `branches` in
+percent. Constructor/destructor variants count as one function. The gates
+follow the plan 0.10 table: overall, `pow.cpp`, `GetBlockTrust`,
+`kernel.cpp`, the reward functions in `validation.cpp`
+(`GetProofOfWorkReward`, `LoadBlockRewardAndHighestDiff`), the used
+methods of `bignum.h` (the "used" lists of `dead-code.md` c), selected by
+name), `wallet/crypter.cpp` and `random.cpp`.
+
+**Ratchet.** Minimums are set from the merged numbers with one rule:
+`floor(measured − 0.5)` percent, i.e. 0.5 to 1.5 points below the
+measurement (room for the small run-to-run differences of the
+multi-threaded functional tests – at P0-04 overall functions were 77.49 %
+in CI and 77.58 % locally for the same code); a measured 100 % stays 100. `--suggest`
+prints that value next to each check and marks `<- raise` where it is
+above the config (`build.sh` always passes it, so `gate.txt` has the
+suggestions). A task that raises coverage raises the minimums in the same
+PR, from the merged report of a coverage run of its branch (*Run
+workflow*, or the local commands under "Quick start"). A minimum is only lowered
+with a reason in the PR and the task log (for example code removed that
+was well covered).
 
 ## CI
 
@@ -163,7 +257,7 @@ in `$RUNNER_TEMP/yacoin-build`:
 | unit + functional (lowdiff) | every push | `--config lowdiff --unit --functional` | ~12–14 min |
 | coverage (mainnet) | master, by hand | `--config mainnet --coverage --unit` | ~15 min |
 | coverage (lowdiff) | master, by hand | `--config lowdiff --coverage --unit --functional` | ~16–19 min |
-| coverage report (merged) | master, by hand | `--coverage-report`, after the jobs above (also when a test job failed; it fails itself if a coverage job uploaded no report) | ~1 min |
+| coverage report (merged) | master, by hand | `test_coverage_gate.py`, then `--coverage-report` with the coverage gate, after the jobs above (also when a test job failed; it fails itself if a coverage job uploaded no report or a gate is below its minimum) | ~1 min |
 
 - The `-O2` jobs test the optimised build; the coverage jobs (`-O0`)
   measure coverage. All jobs of a run start in parallel (times above
