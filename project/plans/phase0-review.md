@@ -10,6 +10,21 @@ All findings below have been applied to `overview.md`,
 `phase0-test-safety-net.md` and the task files. Task IDs in the "Applied in"
 column refer to the revised task list.
 
+**Follow-up (P0-50).** The inventory findings were re-checked against the
+source. The tables below are kept as the review recorded them; the results
+are in `overview.md` and [`dead-code.md`](dead-code.md).
+- A1, A8, A10: confirmed.
+- A2: more is dead than listed. Every function in `scrypt.cpp` except
+  `scrypt_hash(..., Nfactor)` is dead, and with them `scrypt-generic.cpp`
+  and the `.S` files.
+- A5/A6: the counts are lines, not call sites. One of the 60 is a comment
+  in dead code. `main.cpp:74-75` are unused globals, not limits.
+- B5: `init.cpp:66` is not a stale include (`SSLeay_version` at
+  `init.cpp:972`). `test/crypto_tests.cpp` has stale OpenSSL includes; it
+  is not an EVP oracle.
+- B11: the full `fTestNet` list is in `dead-code.md` b).
+- Also new: `ComputeMinWork`/`ComputeMinStake` in `pow.cpp` are dead.
+
 ## Summary verdict
 
 The Phase 0 structure (pin behaviour → mainnet replay → differential/fuzz) is
