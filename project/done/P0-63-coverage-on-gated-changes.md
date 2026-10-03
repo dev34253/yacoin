@@ -240,3 +240,4 @@ decision and the matched files to the job log and step summary.
 - Not applied / left as is: `tests.yml` and the `overall` gate are not
   watched (task list, owner answer Q11: other pushes stay fast;
   documented, *Run workflow* for workflow changes).
+- 2026-10-03 PR: https://github.com/dev34253/yacoin/pull/74
