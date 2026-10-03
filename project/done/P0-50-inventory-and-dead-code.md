@@ -378,8 +378,8 @@ Logging (CLAUDE.md rule 5): not applicable, no behaviour changes.
     lists the sections only as a minimum.
   - Cosmetic wording in the overview's CBigNum and wallet-test rows: the
     prose already explains it.
-- 2026-10-02 – Step 11: moved to `done/`; committed, pushed, PR opened (link
-  below).
+- 2026-10-02 – Step 11: moved to `done/`; committed (5708a4da), pushed,
+  PR https://github.com/dev34253/yacoin/pull/54.
 - Open points for the owner:
   - When to do P0-59. Part A could start now. Parts B and C wait for their
     gates. P0-59 is not a Phase 0 exit criterion and is not in P0-45's
