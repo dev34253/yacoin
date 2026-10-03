@@ -90,6 +90,11 @@ format changes.
   logging in `GetProofOfWorkReward` are counted. Exclude them too?
 *For now:* master/by hand, the rule above, exclusions as listed in
 `contrib/testing/coverage-gates.toml`.
+**Answer (owner, 2026-10-03):** (1) yes – coverage and the gate also run on
+pushes that change a gated file or the gate config (path filter); other
+pushes stay fast. (2) keep the rule floor(measured − 0.5), only raised.
+(3) exclude the `fPrintProofOfStake` and `-printcreation` logging blocks too.
+(1) and (3): task `todo/P0-63-coverage-on-gated-changes.md`.
 
 ### Q12 – Reward quirks found while pinning them (from P0-46)
 - Post-fork, `GetProofOfWorkReward` ignores `nFees` (`validation.cpp:932`
