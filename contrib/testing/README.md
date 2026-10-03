@@ -44,10 +44,9 @@ changed.
 | `--work-dir DIR` | Where everything is built. Default `$YACOIN_WORK_DIR` or `~/.cache/yacoin-build`. Must be a dedicated directory: not inside the checkout, not containing it, not `/` or `$HOME`. |
 
 The exit code is non-zero if the build or any requested test run fails.
-**Until P0-02 is done, `--config lowdiff --unit` always exits 1** because of
-the known `pow_tests/get_next_work_pow_limit` case; success there means that
-case is the only failure in `unit.log` and `functional.log` says `ALL ...
-Passed`.
+All unit tests pass in both configurations; tests whose results depend on
+the chain parameters (e.g. `pow_tests/get_next_work_pow_limit`, task P0-02)
+check the exact value for each configuration.
 
 ## What it does
 
@@ -85,12 +84,17 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-02)
+## Expected results (2026-10-03, after P0-02, P0-10 and P0-47)
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 239/239 | – (not supported) |
-| `lowdiff` | 238/239 – `pow_tests/get_next_work_pow_limit` fails because the low-difficulty `powLimit` changes the retarget (known, P0-02) | 45/45 |
+| `mainnet` | 277/277 | – (not supported) |
+| `lowdiff` | 277/277 | 45/45 |
+
+`pow_tests/get_next_work_pow_limit` expects a different result per
+configuration because `powLimit` differs: mainnet clamps the retarget to
+`powLimit` (0x1e0fffff), low difficulty does not (0x1e1a19f8) and checks the
+clamp from its own `powLimit` (0x201fffff) instead.
 
 ## Restricted networks (proxy and CA)
 

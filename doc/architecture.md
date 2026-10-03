@@ -118,10 +118,10 @@ Notes:
 | `src/validation.cpp/.h` | Block and transaction validation, chain activation, block files, reward function, global chain state. |
 | `src/consensus/` | `params.h` (consensus parameters incl. `HeliopolisHardforkHeight`, `powLimit` as `CBigNum`), `consensus.cpp` (`GetMaxSize`, coinbase maturity), `tx_verify.cpp` (input, sequence-lock and token checks). |
 | `src/pow.cpp` | Difficulty (pre- and post-fork), `CheckProofOfWork`, PoS limits and stake reward. |
-| `src/kernel.cpp` | PPCoin stake kernel, stake modifier and its checkpoints. (`kernelrecord.cpp/.h` is an unbuilt minting-view class – dead code, P0-50.) |
+| `src/kernel.cpp` | PPCoin stake kernel, stake modifier and its checkpoints. (`kernelrecord.cpp/.h` is an unbuilt minting-view class – dead code, see the [dead-code list](../project/plans/dead-code.md).) |
 | `src/chain.cpp/.h` | `CBlockIndex`, `CChain`, block trust, `bnChainTrust`. |
 | `src/primitives/` | `CBlockHeader`/`CBlock` (scrypt-jane hash, header versions, PoS classification, block signature), `CTransaction` (`nTime`, normalized txid). |
-| `src/scrypt.cpp`, `scrypt-*.S`, `scrypt-generic.cpp`, `src/scrypt-jane/` | Hash functions. Only `scrypt_hash` + scrypt-jane are live; the rest is dead code (P0-50). |
+| `src/scrypt.cpp`, `scrypt-*.S`, `scrypt-generic.cpp`, `src/scrypt-jane/` | Hash functions. Only `scrypt_hash` + scrypt-jane are live; the rest is dead code ([dead-code list](../project/plans/dead-code.md); removal is task P0-59). |
 | `src/bignum.h` | `CBigNum`, a C++ wrapper that **inherits** from OpenSSL `BIGNUM` (needs OpenSSL 1.0.x). |
 | `src/main.cpp/.h` | Leftovers from the 0.4.x `main.cpp`: PoS limits, display `GetNfactor`, `MAX_MINT_PROOF_OF_WORK`. |
 | `src/timestamps.h` | Historic switch-over times (e.g. `CONSECUTIVE_STAKE_SWITCH_TIME`). |
@@ -158,8 +158,9 @@ Consensus decisions read **process-wide globals** in addition to
 
 Consequences: consensus functions are not pure (they read `chainActive`,
 the block index, block files and `GetAdjustedTime`), and the unit-test
-binary runs them with the globals at 0. The Phase 0 harness (P0-47) makes
-these inputs explicit for tests.
+binary runs them with the globals at 0. The consensus test harness
+(`src/test/consensus_harness.h`, P0-47) makes these inputs explicit for
+tests: it sets and restores the globals and builds block-index chains.
 
 ## 5. Persistent storage
 
@@ -299,7 +300,7 @@ Transaction (P2P / RPC / wallet)
 
 | Level | Where | Notes |
 |---|---|---|
-| Unit | `src/test/*_tests.cpp`, `src/wallet/test/` → `test_bitcoin` (239 cases) | Boost.Test; fixtures `BasicTestingSetup`, `TestingSetup`, `TestChain100Setup`, `WalletTestingSetup`. Run in the **mainnet** build; fork globals are 0. |
+| Unit | `src/test/*_tests.cpp`, `src/wallet/test/` → `test_bitcoin` (277 cases) | Boost.Test; fixtures `BasicTestingSetup`, `TestingSetup`, `TestChain100Setup`, `WalletTestingSetup`; consensus tests use the harness in `src/test/consensus_harness.h` (P0-47). Run in **both** builds; results that depend on the chain parameters are pinned per build with `#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT` (P0-02). Fork globals are 0 unless a test sets them through the harness. |
 | Functional | `test/functional/` (45 tests in `test_runner.py`) | Python framework from Bitcoin Core. Run in the **low-difficulty** build on main params (never `-regtest`), with `epochinterval=10`, `nFactorAtHardfork=4` and a per-test fork height. Yacoin-specific: `feature_hardfork_1_0`, `feature_epoch`, `feature_tokens`, `feature_token_overflow`, `feature_timelock`, `feature_op_cltv`, `feature_op_csv`, `feature_tx_malleability`, `feature_set_min_fee`, `feature_uptime`. |
 | Fuzz | `test_bitcoin_fuzzy` | AFL/stdin only. |
 | Planned (Phase 0) | `project/plans/phase0-test-safety-net.md` | mainnet replay, golden vectors, consensus harness, oracle, fuzzing, sanitizers, static analysis, benchmarks. |

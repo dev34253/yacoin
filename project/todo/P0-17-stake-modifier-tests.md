@@ -25,6 +25,8 @@ Cover stake-modifier computation using real contiguous block sequences.
 
 Review: A4, B7. kernel.cpp:74-386, 628-660.
 
+- `src/test/kernel_tests.cpp` exists (P0-47) with harness tests of `CheckStakeModifierCheckpoints`, the genesis modifier checksum and `ComputeNextStakeModifier` (early return vs. mainnet globals); extend it. Load fixture segments with `LoadIndexChainCsvFile()`.
+
 ## Log
 
 -

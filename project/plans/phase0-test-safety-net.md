@@ -2,7 +2,7 @@
 
 Phase 0 builds a safety net that records exactly how the current code
 behaves, so every later change (compiler, Boost, OpenSSL, `CBigNum`) can be
-proven to behave the same. Tasks are in `../todo/` (`P0-00` … `P0-58`).
+proven to behave the same. Tasks are in `../todo/` (`P0-00` … `P0-59`).
 This version incorporates the [review](phase0-review.md).
 
 ## Guiding rules
@@ -34,7 +34,8 @@ This version incorporates the [review](phase0-review.md).
 | Functional tests | **main params with the low-difficulty genesis** (never `-regtest`) | `epochinterval=10`, `nFactorAtHardfork=4`, fork height set per test | Fast mining; PoW-only chains. |
 | Mainnet node | main | fork at 1,890,000, Nf 21 | The real thing. |
 
-A shared harness (P0-47) lets unit tests set these globals explicitly, so
+A shared harness (P0-47, `src/test/consensus_harness.h`, usage in
+`src/test/README.md`) lets unit tests set these globals explicitly, so
 consensus functions can be tested in pre-fork and post-fork mode with real
 mainnet values.
 
@@ -44,14 +45,15 @@ mainnet values.
 |---|---|---|
 | Build image | Ubuntu 24.04 with GCC 11 pinned (same compiler as the 22.04 baseline); Dockerfile in dev34253/yacoin-build-ubuntu (`Dockerfile.ubuntu.24.04-gcc11`); published to Docker Hub as `dev34253/yacoin-build:ubuntu.24.04-gcc11-1`. | P0-57 |
 | Build configurations | Mainnet and low-difficulty builds via one script, coverage (`CFLAGS` **and** `CXXFLAGS`) and sanitizer options; out-of-tree. Measure unit-test runtime in the mainnet config before deciding where unit tests run. | P0-01 |
-| `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. | P0-02 |
+| `pow_tests` failure | Caused by the low-difficulty `powLimit`; add the mainnet-config run and document. Done: the test pins the result per configuration, unit tests 239/239 in both. | P0-02 |
 | CI | Unit, functional, coverage on push; a CI skeleton with schedules, runner, artifact storage and image mirroring. Each later job task adds its own job. | P0-03, P0-44 |
 | Coverage gates | Re-baselined after CI merges both configurations; **branch** coverage for consensus math; dead code and dead `fTestNet` branches excluded from denominators. | P0-04 |
 | Fixture storage | Small in repo, large external with manifest and checksums; also pre-fetched `depends` sources. | P0-05 |
 | Baseline binaries | Built from the **end of Phase 0 infrastructure** (includes the dump tool and `gettxoutsetinfo`), mainnet and low-diff builds, recorded by commit and image digest. | P0-06 |
 | Old release builds | v1.0.0/v1.1.0 rebuilt with the low-difficulty flag (release binaries can't join the functional-test network). | P0-54 |
 | UTXO hash RPC | Port `gettxoutsetinfo` / `GetUTXOStats` from Bitcoin Core 0.16 – it does not exist in this tree. | P0-48 |
-| Inventory correction | Overview facts, dead-code list and Phase 3/5 scope. | P0-50 |
+| Inventory correction | Overview facts checked against the source; dead-code list in [`dead-code.md`](dead-code.md); Phase 3/5 scope. | P0-50 |
+| Dead-code removal | Removes the [`dead-code.md`](dead-code.md) list in three gated PRs (no consensus file / `scrypt.cpp` after P0-19 / consensus files after their tests and the replay). **Not** a Phase 0 exit criterion. | P0-59 |
 
 ## 0.2 Unit tests (C++, `test_bitcoin`)
 
@@ -73,7 +75,9 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 - Method audit: which methods are used at all (`pow`, `mul_mod`, `pow_mod`,
   `inverse`, `gcd`, `isPrime`, `randBignum`, `RandKBitBigum`,
   `generatePrime`, `bitSize`, `isOne`, `getint32`, `setuint160`, …). Unused
-  methods are excluded from the coverage target and deleted in Phase 4.
+  methods are excluded from the coverage target and deleted in Phase 4. A
+  preliminary grep list is in [`dead-code.md`](dead-code.md) c); being
+  inline and never called, they are not in the gcov counts anyway.
 - Golden vectors (~100k operations, hex in/out) – the durable artefact.
 
 ### b) Difficulty (`pow.cpp`) – P0-14, P0-15
@@ -107,7 +111,10 @@ All consensus unit tests use the shared harness (P0-47): block-index /
   step in the `block.h` table (4…25) and v≥7 at Nf 21 (mainnet), 4
   (functional tests) and 0 (unit tests).
 - `static_assert` on packed header sizes (84 and 80 bytes; only the 84-byte v7 layout is `#pragma pack`ed).
-- Dead `scrypt.cpp` functions are not tested; they go on the deletion list.
+- Dead `scrypt.cpp` functions are not tested; they are on the
+  [deletion list](dead-code.md). The only live one is
+  `scrypt_hash(..., Nfactor)`, which `CalculateHash` calls; these known
+  answers are the gate for removing the rest (P0-59 part B).
 
 ### f) Rewards and block size – P0-46
 
@@ -132,7 +139,7 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 ### i) Randomness – P0-21
 
 - API contracts and a loose statistical check for `random.cpp`.
-- `random_nonce.cpp` recorded as dead code.
+- `random_nonce.cpp` recorded as dead code ([`dead-code.md`](dead-code.md)).
 
 ### j) Wallet encryption – P0-22
 

@@ -374,7 +374,8 @@ exist.
 - A mis-set option on mainnet makes the node follow different rules.
 - Consensus functions read hidden global state. In `test_bitcoin` the
   globals are 0, so unit tests run "post-fork from height 0" (review A4).
-- The Phase 0 harness (P0-47) sets these globals explicitly.
+- The consensus test harness (`src/test/consensus_harness.h`, P0-47) sets
+  these globals explicitly and restores them after each test.
 
 **Evidence.** `src/init.cpp`; `src/util.cpp` (definitions);
 `test/functional/test_framework/util.py`, `test_node.py`.
@@ -604,8 +605,11 @@ port with main, and all fork heights are 0. Mining at the mainnet
 - Pre- and post-fork behaviour, including the transition, can be tested in
   minutes.
 - Two build configurations are needed.
-- One unit test (`pow_tests/get_next_work_pow_limit`) fails in the
-  low-difficulty build because of the different `powLimit` (P0-02).
+- Unit-test results that depend on `powLimit` differ between the two
+  builds. Since P0-02 the tests pin the expected value per build with
+  `#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT` (e.g.
+  `pow_tests/get_next_work_pow_limit`); a test is never skipped in one
+  build.
 - Release (mainnet) binaries cannot join the test network. Old releases
   must be rebuilt with the flag for cross-version tests (P0-54).
 
@@ -742,8 +746,8 @@ configurations (D-17), plus coverage and sanitizer variants.
 **Consequences.**
 
 - Builds are reproducible and the checkout stays clean.
-- Until P0-02 is done, `--config lowdiff --unit` exits 1 because of the one
-  known failure.
+- Until P0-02, `--config lowdiff --unit` exited 1 because of the one
+  known failure; since P0-02 both configurations exit 0.
 
 **Evidence.** `contrib/testing/README.md`;
 `project/done/P0-01-build-configurations.md`.

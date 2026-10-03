@@ -54,9 +54,9 @@ Severity:
 | R8 | Medium | `doc/release-process.txt` | Starts with "TODO – update the rest of these text files for YAC"; describes gitian, `yacoin-qt.pro` and `share/setup.nsi`. There is no current release process. | Open: F2. |
 | R9 | Medium | `doc/readme-qt.rst`, `doc/build-osx.md`, `doc/build-windows.md`, `doc/translation_process.md` | Qt4/qmake, Ubuntu 14.04/17.04, and Bitcoin-specific steps. Qt is deferred (D-15). | Open: F1/F3, when the Qt phase starts. |
 | R10 | Medium | `build-windows-in-docker.sh` | Calls `yacoin-qt-tdm32.pro` and `makefile.mingw`; neither file exists. | Open: F1. |
-| R11 | Medium | `src/init.cpp` help | `-testnetnewlogicblocknumber` is spelled differently from the option that is read (`-testnetNewLogicBlockNumber`). `-epochinterval`, `-nFactorAtHardfork` and `-tokenSupportBlockNumber` have no help entry. `-testnet` and the testnet ports are offered although testnet cannot be selected. | Open: F4. A code change; behaviour must stay the same. Documented in `functional-specification.md` §8 for now. |
+| R11 | Medium | `src/init.cpp` help | `-testnetnewlogicblocknumber` is spelled differently from the option that is read (`-testnetNewLogicBlockNumber`). `-epochinterval`, `-nFactorAtHardfork` and `-tokenSupportBlockNumber` have no help entry. `-testnet` and the testnet ports are offered although testnet cannot be selected. | Open: F4. A code change; behaviour must stay the same. Documented in `functional-specification.md` §8 for now. The [dead-code list](dead-code.md) (P0-50) also records the spelling problem and the `yacoind` testnet help text; removing that help text is part A of P0-59. |
 | R12 | Low | `README.md` | The CI badge points to yacoin/yacoin branch `1.0.0`. | Kept: the fork tracks upstream (D-20). |
-| R13 | Low | Code comments | `init.cpp` still mentions `ThreadImport` (the import runs synchronously). `Makefile.am` has an unused scrypt-jane `-O3 -DUSE_ASM` rule. | Recorded in `architecture.md`. Clean-up belongs to P0-50 (inventory and dead code). |
+| R13 | Low | Code comments | `init.cpp` still mentions `ThreadImport` (the import runs synchronously). `Makefile.am` has an unused scrypt-jane `-O3 -DUSE_ASM` rule. | Recorded in `architecture.md`. The unused scrypt-jane build rule is on the [dead-code list](dead-code.md) (P0-50), removal is P0-59; the `ThreadImport` comment is not on the list yet. |
 | R14 | Low | `CLAUDE.md`, `project/README.md` | Accurate. They did not point to the new documents. | **Fixed:** links added. |
 | R15 | Medium | `project/plans/phase0-test-safety-net.md`, `project/todo/P0-19-header-hash-known-answers.md` | Give the packed header sizes as 88 and 80 bytes. The v7 `struct block_header` is `#pragma pack`ed and is 84 bytes; the 80-byte `old_block_header` is not packed. Found by the reviewer of the functional specification. | **Fixed** in both files. |
 | R16 | Low | `project/plans/phase0-test-safety-net.md` | Says the tasks run from `P0-00` … `P0-56`; they run to `P0-58`. | **Fixed.** |
@@ -94,7 +94,10 @@ specification and D-06 now describe the code.
 ## Checked and found accurate
 
 - `CLAUDE.md`: build commands, test counts (239 unit, 45 functional), the
-  known low-difficulty unit failure, and the parameter sets.
+  known low-difficulty unit failure, and the parameter sets. (Since then
+  P0-02, P0-10 and P0-47 have changed the expected results to 277/277 unit
+  tests in both builds; the new documents were updated when master was
+  merged into this branch.)
 - `project/plans/overview.md`: the inventory figures and file references
   that were sampled.
 - `project/plans/phase0-review.md`: the facts reused in the new documents,
@@ -134,5 +137,5 @@ miners, pools, explorer) are out of scope.
 | F1 | Move obsolete documents to `doc/legacy/` or delete them, after the owner agrees: `doc/README`, `README_windows.txt`, `README_ubuntu.txt`, `build-windows-in-docker.sh`, the 0.4.x parts of `coding.txt`. |
 | F2 | Write a current release process: `depends`, CI artefacts, version bump in `configure.ac`, checksums. |
 | F3 | Update the GUI and macOS/Windows build documents when the Qt phase starts. |
-| F4 | Fix the option help text in `init.cpp` (spelling, missing entries, testnet), with a functional test that the options are still read. |
+| F4 | Fix the option help text in `init.cpp` (spelling, missing entries), with a functional test that the options are still read. The testnet and `-rpcssl*` help text is removed by P0-59 part A. |
 | F5 | Keep the three new documents current. Every consensus-relevant pull request in Phases 1–5 checks `functional-specification.md` and adds a decision entry where one is made. |

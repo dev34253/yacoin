@@ -15,7 +15,7 @@ Pin RNG API contracts before OpenSSL is removed from it.
 
 1. GetRand/GetRandInt ranges; GetStrongRandBytes no repeats across 1M calls; seeded FastRandomContext deterministic; Random_SanityCheck.
 2. Loose chi-square on byte distribution.
-3. Record random_nonce.cpp as dead code (uses rand(), only caller is dead scanhash_scrypt) on the P0-50 list.
+3. Record random_nonce.cpp as dead code (uses rand(), only caller is dead scanhash_scrypt) on the P0-50 list. Done by P0-50: [plans/dead-code.md](../plans/dead-code.md) a).
 
 ## Acceptance criteria
 

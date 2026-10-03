@@ -27,6 +27,8 @@ Produce the golden data for replay, difficulty, kernel and reward tests.
 
 Review: C2.
 
+- Index data for the in-repo fixture: use the P0-47 index-chain CSV format (`src/test/README.md`), loaded with `LoadIndexChainCsvFile()` into a `TestChain`; segments start with `pprev == nullptr` at their first height.
+
 ## Log
 
 -
