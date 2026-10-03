@@ -3,8 +3,8 @@
 - Plan section: 0.1
 - Depends on: P0-01
 - Size: M
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-03
 - Finished:
 
 ## Goal
@@ -27,4 +27,4 @@ Adds an RPC but no consensus change. Review: D1.
 
 ## Log
 
--
+- 2026-10-03: step 0 – picked up (dependency P0-01 done), branch `task/P0-48-gettxoutsetinfo-rpc`.
