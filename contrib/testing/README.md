@@ -13,8 +13,10 @@ contrib/testing/build.sh --config mainnet --unit
 # low-difficulty parameters (needed by the functional tests), all tests
 contrib/testing/build.sh --config lowdiff --unit --functional
 
-# coverage build (C and C++ instrumented, -O0)
+# coverage of both configurations, then the merged report (see "Coverage")
+contrib/testing/build.sh --config mainnet --coverage --unit
 contrib/testing/build.sh --config lowdiff --coverage --unit --functional
+contrib/testing/build.sh --coverage-report
 ```
 
 Requirements: `git`, `bash`, `python3`, `flock` (util-linux) and Docker
@@ -31,13 +33,14 @@ changed.
 | Option | Meaning |
 |---|---|
 | `--config mainnet\|lowdiff` | Chain parameters. `lowdiff` adds `--enable-low-difficulty-for-development`. Default `mainnet`. |
-| `--coverage` | `-O0 -g --coverage` in `CFLAGS` and `CXXFLAGS` (the scrypt-jane C code is instrumented too), `--coverage` in `LDFLAGS`. |
+| `--coverage` | `-O0 -g --coverage -fprofile-update=atomic` in `CFLAGS` and `CXXFLAGS` (the scrypt-jane C code is instrumented too), `--coverage` in `LDFLAGS`. With `--unit`/`--functional` also writes an lcov report to `<builddir>/coverage/` (see "Coverage"). |
+| `--coverage-report` | No build and no tests: merges the reports of the mainnet and lowdiff `--coverage` runs in this work dir into `WORK_DIR/coverage-report/`. Cannot be combined with other build or test options. |
 | `--sanitizers LIST` | `-fsanitize=LIST`, e.g. `address,undefined`. Implemented but not yet validated – sanitizer runs are task P0-29. |
 | `--unit` | Run `src/test/test_bitcoin`. |
 | `--functional` | Run `test/functional/test_runner.py` (requires `--config lowdiff`). |
 | `--functional-args "ARGS"` | Arguments for `test_runner.py`, replacing the default `-j4`; e.g. `"-j4 wallet_dump.py"`. |
 | `--jobs N` | Parallel make jobs (default: CPU count). |
-| `--reconfigure` | Force `configure` to run again (it also re-runs automatically when the configure arguments change). |
+| `--reconfigure` | Force `configure` to run again. It also re-runs automatically when the configure arguments (including `CFLAGS`/`CXXFLAGS`) change; the build dir is then cleaned (`make clean`) so every object is rebuilt with the new flags. |
 | `--clean` | Delete the source copy and this configuration's build directory first; the `depends` cache is kept. Because every file is copied again with a new time, other configurations' build dirs also rebuild completely on their next run. |
 | `--image IMAGE` | Build image. Default: the pinned P0-57 image `dev34253/yacoin-build@sha256:…` (Ubuntu 24.04, GCC 11). Also `YACOIN_BUILD_IMAGE`. |
 | `--no-docker` | Build on the current machine, e.g. when already running inside the build image in CI. |
@@ -95,6 +98,88 @@ are for testing, not release.
 configuration because `powLimit` differs: mainnet clamps the retarget to
 `powLimit` (0x1e0fffff), low difficulty does not (0x1e1a19f8) and checks the
 clamp from its own `powLimit` (0x201fffff) instead.
+
+## Coverage
+
+`--coverage` together with `--unit` and/or `--functional` (task P0-03):
+
+1. Before the tests: `lcov --zerocounters` on the build dir (so repeated
+   runs do not add up) and a zero baseline (`lcov --capture --initial`), so
+   source files that no test runs show up with 0 % instead of being left
+   out.
+2. After the tests – also when they failed; the exit code still reports the
+   failure – capture the counters and add the baseline.
+   Both captures read `<builddir>/src` and leave out what is not YaCoin code
+   under test: `/usr/*`, `*/depends/*`, `*/test/*` (unit-test sources and
+   test data), `src/leveldb`, `src/secp256k1`, `src/univalue`, `src/bench`
+   and files generated in the build dirs.
+3. Write `<builddir>/coverage/coverage.info`, `html/` (genhtml) and
+   `summary.txt` (lines, functions, branches), and print the summary.
+   `lcov.log` has the lcov output.
+
+Branch coverage is recorded (`--rc branch_coverage=1`). It includes the
+branches GCC generates for C++ exception handling, which inflate the branch
+count: lcov 2.0's `--rc no_exception_branch=1` would drop them, but with
+GCC 11's gcov output it drops *all* branch data (tested), so filtering is
+left to the coverage gates (P0-04).
+The counters are updated atomically (`-fprofile-update=atomic`): YaCoin and
+its tests are multi-threaded, and with plain counters lcov 2.0 rejected the
+data (a negative branch count in `crypto/sha256.cpp`).
+lcov and genhtml come from the build image (lcov 2.0); with `--no-docker`
+they must be installed, with the same gcov as the compiler.
+
+`--coverage-report` merges the two configurations into
+`WORK_DIR/coverage-report/{merged.info,summary.txt,html/}` and prints all
+three summaries. It needs `build-mainnet-cov/coverage/coverage.info` and
+`build-lowdiff-cov/coverage/coverage.info` in the work dir.
+
+**How the two configurations are merged.** gcov records coverage per line
+of the *original* source file, not of the preprocessed code, so both builds
+use the same file names and line numbers. Code inside `#ifdef` /
+`#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT` is compiled – and instrumented – in
+one build only. The merge (`lcov --add-tracefile` of both files) is the
+**union**: a line, function or branch is in the denominator if it exists in
+at least one build, and it counts as covered if it ran in at least one; hit
+counts are added. The per-configuration reports stay available next to the
+merged one, so it is visible what one configuration alone covers. The
+merged numbers are the ones coverage gates use (P0-04). The paths in the
+`.info` files are absolute (`/work/...` under Docker), so only merge files
+produced the same way (all with Docker, or all with `--no-docker` in the
+same work dir).
+
+## CI
+
+`.github/workflows/tests.yml` runs on every push to any branch (and by hand
+via *Run workflow*). Each job runs `build.sh` with Docker on a
+GitHub-hosted `ubuntu-24.04` runner, in the pinned image, with the work dir
+in `$RUNNER_TEMP/yacoin-build`:
+
+| Job | Command (`build.sh` options) |
+|---|---|
+| unit (mainnet) | `--config mainnet --unit` |
+| unit + functional (lowdiff) | `--config lowdiff --unit --functional` |
+| coverage (mainnet) | `--config mainnet --coverage --unit` |
+| coverage (lowdiff) | `--config lowdiff --coverage --unit --functional` |
+| coverage report (merged) | `--coverage-report`, after the four jobs above |
+
+- The `-O2` jobs test the optimised build; the coverage jobs (`-O0`)
+  measure coverage. All four run in parallel.
+- Artifacts of each run: `coverage-mainnet`, `coverage-lowdiff` and
+  `coverage-merged` (`.info`, `summary.txt`, `html/` – open
+  `html/index.html`), and `logs-<job>` when a job fails (build and test
+  logs, datadirs of failed functional tests). The coverage summaries are
+  also in the run's summary page and in the job logs.
+- `depends-cache` (downloaded sources and built packages) is cached with
+  `actions/cache`, keyed on the image digest and the contents of
+  `depends/`; the cache is saved by jobs that succeed.
+- The image is pulled from Docker Hub with a few retries; anonymous pulls
+  can hit Docker Hub's rate limit (`429 Too Many Requests`). If all retries
+  fail, re-run the job. Mirroring the image to GHCR is task P0-44, as are
+  schedules, the self-hosted runner and long-running jobs.
+- When the image digest changes, update both `DEFAULT_IMAGE` in `build.sh`
+  and `YACOIN_BUILD_IMAGE` in the workflow.
+- The older workflow `yacoinbuildmultiplatform.yml` (release binaries for
+  all platforms) is unchanged.
 
 ## Restricted networks (proxy and CA)
 
