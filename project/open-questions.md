@@ -67,6 +67,11 @@ P0-59 at the end of Phase 0).
   history, so regenerate only on format changes.
 *For now:* checker manual (documented in `contrib/testing/README.md`),
 `xz` required, file committed as is.
+**Answer (owner, 2026-10-03):** (1) yes – `build.sh --unit` runs
+`bignum_vectors_check.py` and P0-46's `reward_vectors.py` (so locally and in
+CI, no workflow change); added to P0-61. (2) `xz` as a test-build requirement
+is accepted. (3) the size is accepted; regenerate the vectors only when the
+format changes.
 
 ### Q11 – Coverage gate: where it runs, threshold rule (from P0-04)
 - The gate runs only where the coverage jobs run: on `master` and when the
