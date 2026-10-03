@@ -96,6 +96,7 @@ BITCOIN_CORE_H = \
   compressor.h \
   consensus/consensus.h \
   consensus/tx_verify.h \
+  consensusdump.h \
   core_io.h \
   core_memusage.h \
   cuckoocache.h \
@@ -206,6 +207,7 @@ libyacoin_server_a_SOURCES = \
   checkpoints.cpp \
   consensus/consensus.cpp \
   consensus/tx_verify.cpp \
+  consensusdump.cpp \
   dbwrapper.cpp \
   httprpc.cpp \
   httpserver.cpp \
