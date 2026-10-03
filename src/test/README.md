@@ -516,6 +516,85 @@ Current behaviour these tests pin (not fixed in Phase 0):
   `bnChainTrust` as a JSON number holding only the low 64 bits, although
   its help says "string ... hexadecimal".
 
+### Synthetic proof-of-stake blocks (P0-55)
+
+`test/pos_generator.{h,cpp}` builds PoS blocks that the node accepts, for
+tests of PoS branches the real chain does not reach (review A9, C8). No
+coinstake builder exists in the node (no `CreateCoinStake`); the generator
+is test-only and changes no consensus code.
+
+```cpp
+#include "test/pos_generator.h"
+BOOST_FIXTURE_TEST_CASE(my_case, synthetic_pos::PosChainSetup)
+{
+    CBlockIndex* tip = MinePowChain(505);                  // PoW, 6 h apart, from 2020-01-01
+    { LOCK(cs_main); SeedProofOfStakeHistory(chainActive[2], chainActive[3]); }
+    CBlock pos = GeneratePosBlock(tip, CoinbaseOutPoint(1)); // grind, coinstake, sign
+    CBlockIndex* pindex = Submit(pos);                       // ProcessNewBlock
+}
+```
+
+**Fixture `PosChainSetup`** (regtest `ConsensusTestingSetup`): sets the
+fork height `nMainnetNewLogicBlockNumber` to the mainnet value 1,890,000
+(**pre-fork era**: stake modifiers are computed, `AcceptBlock` runs
+`CheckProofOfStake`, PoS `nBits` follow the per-block ppcoin retarget,
+coinbase maturity is 500), mock time to 2020-01-01, a fixed key (blocks,
+signatures and grind counts are the same in every run) and gives the
+genesis entry the stake modifier a pre-fork node computes for it (0,
+generated; it was loaded with the unit-test fork height 0, which skips the
+modifier). The other globals stay at the unit-test values (N-factor 0 keeps
+the version-7 header hash cheap). The harness guard restores everything.
+Do not use the inherited `TestChain`: these chains go through
+`ProcessNewBlock`. Post-fork PoS is not supported (after the fork no kernel
+is checked and no modifiers are computed).
+
+**Methods:** `MinePowBlock`/`MinePowChain` (PoW blocks paying 100 YAC to
+the key's P2PK script), `Submit` (raises mock time to the block time, then
+`ProcessNewBlock`), `CoinbaseOutPoint(h)`, `FindKernel` (grinds the
+coinstake time second by second with a copy of the stake-modifier walk and
+the node's `GetProofOfStakeHash`, then confirms with the node's
+`CheckStakeKernelHash`; throws after `nMaxTries`, default 2^22),
+`CreateCoinstake` (vout[0] empty, vout[1] = stake + reward to the key),
+`CreatePosBlock` (empty coinbase output, coinstake, block signature) and
+`GeneratePosBlock` (all of it with `nBits = GetNextTargetRequired(prev,
+true)`). Progress (kernel time, tries, modifier, hash) is printed with
+`BOOST_TEST_MESSAGE` (`--log_level=message`).
+
+**Why the seed.** A block is PoS by its header: `nTime <=
+nYac10HardforkTime` (2021-04-21 23:45:30 UTC), `nNonce == 0` and `nBits <= 0x1d03ffff`
+(the PoS limit `~0 >> 30`), or one of two hard-coded mainnet hashes
+(`primitives/block.h`). `GetNextTargetRequired` gives the first and second
+PoS block of a chain `initialHashTarget` (regtest 0x207fffff, mainnet
+0x1e0fffff), which is not PoS by that rule; on mainnet the two hard-coded
+hashes presumably got past it. `SeedProofOfStakeHistory(a, b)` marks two PoW index
+entries as PoS to stand in for them (their `bnChainTrust` stays as
+computed for PoW); after that the required PoS `nBits` is the PoS limit.
+`pos_generator_tests/first_pos_blocks_need_seed` pins the rejection
+(`bad-diffbits`) without the seed.
+
+**Sizes and cost.** The stake must be 30 days old (minimum age), 120 days
+for the full 90-day weight (9000 coin-days for 100 YAC), and its block must
+be followed by a stake modifier generated one selection interval
+(761,920 s, about 8.8 days) later; `ConnectBlock` also needs it 500 blocks
+deep. Hence `MinePowChain(505)` at 6-hour spacing (126 days) for blocks that
+go through `ProcessNewBlock`, and 130 blocks at one-day spacing when only
+`CheckProofOfStake` is called. With the PoS limit and 9000 coin-days a
+kernel needs about 2^17 hashes on average; with the fixed key the counts
+are fixed (19,342, 37,923 and 217,886 tries in the current cases). Measured
+in the full mainnet unit run (Docker): 0.05-0.07 s for the 130-block cases,
+0.2-0.4 s for the 505-block cases, under 1 s for all four together (the
+whole unit suite takes about 37 s).
+
+**Users:** `pos_generator_tests` (unseeded rejection; acceptance through
+`ProcessNewBlock`/`ConnectBlock`, index and UTXO fields; a PoS block on a
+PoS block has trust 0 and is not activated until a block on top of it adds
+trust), `kernel_tests/synthetic_pos_kernel` (`CheckProofOfStake` accepts;
+time, target, signature and minimum-age mutations fail with DoS 1/100) and
+`chain_trust_fork_choice_tests/fork_choice_with_pos_blocks` (fork choice
+with real PoS blocks, reorg over a coinstake). Kernel overflow and further
+mutation cases (P0-18, P0-25) and PoS trust in the functional test (P0-32)
+can build on it.
+
 ### Chain parameter snapshot (P0-20)
 
 `chainparams_snapshot_tests.cpp` pins the chain parameters by value, so an

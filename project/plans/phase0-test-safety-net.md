@@ -265,7 +265,7 @@ Globals (`util.cpp`; all but `nYac10HardforkTime` set by `AppInit` from `init.cp
 | `rpc_output_snapshots.py` | `getblock`, `getblockheader`, `getdifficulty` (incl. target), `getmininginfo`, `getblocktemplate`, `getsubsidy`, `getwork` (midstate/data), `gettimechaininfo`, `calculatescrypthash`. | P0-33 |
 | `feature_shutdown.py` | Start/stop, `SIGTERM`, shutdown during sync/reindex/mining; Boost filesystem cases (`backupwallet` overwrite, relative/trailing-slash paths). | P0-34 |
 | `p2p_fixture_sync.py` | Sync from a stored chain; compare tip, trust, UTXO hash. | P0-35 |
-| Synthetic PoS | Test-only coinstake grinding on a pre-fork test chain. | P0-55 |
+| Synthetic PoS | Test-only coinstake grinding on a pre-fork test chain (done as a unit-test helper, `src/test/pos_generator.h`; no Python variant – PoS in the functional test of P0-32 is not covered). | P0-55 |
 | Flakiness baseline | Full suite 10×, repeated at exit. | P0-36, P0-45 |
 
 ## 0.6 Cross-version and cross-target

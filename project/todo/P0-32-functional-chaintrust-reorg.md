@@ -16,6 +16,10 @@ Check fork choice by chain trust end to end.
 1. Competing PoW forks with different trust; reconnect; higher trust wins; header sync and peer behaviour (net_processing trust comparisons).
 2. getchaintips, invalidateblock/reconsiderblock; chaintrust vs stored values.
 3. When P0-55 exists: add PoS-after-PoW, PoS-after-PoS and PoW-after-PoS trust cases.
+   (Owner 2026-10-03: Yacoin is PoW-only in the future; PoS matters only for
+   validating the historical chain. P0-55's unit tests already cover these
+   trust cases on synthetic pre-fork PoS blocks; a functional PoS generator is
+   not needed – drop this step unless a historical-chain case requires it.)
 
 ## Acceptance criteria
 

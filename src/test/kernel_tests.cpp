@@ -8,14 +8,23 @@
 // stake-modifier code unreachable with the unit-test globals (review A4).
 
 #include "test/consensus_harness.h"
+#include "test/pos_generator.h"
 
+#include "bignum.h"
 #include "chain.h"
 #include "chainparams.h"
+#include "consensus/validation.h"
 #include "kernel.h"
+#include "sync.h"
+#include "validation.h"
 
 #include <boost/test/unit_test.hpp>
 
 using namespace consensus_harness;
+
+// kernel.cpp, external linkage, no header declaration.
+uint256 GetProofOfStakeHash(uint64_t nStakeModifier, uint32_t nTimeBlockFrom, uint32_t nTxPrevOffset,
+                            uint32_t nTxPrevTime, uint32_t nPrevoutn, uint32_t nTimeTx, uint64_t nCoinDayWeight);
 
 BOOST_FIXTURE_TEST_SUITE(kernel_tests, ConsensusTestingSetup)
 
@@ -131,6 +140,83 @@ BOOST_AUTO_TEST_CASE(harness_compute_next_stake_modifier)
     BOOST_CHECK(ComputeNextStakeModifier(b4, nModifier, fGenerated));
     BOOST_CHECK_EQUAL(nModifier, 0xfU);
     BOOST_CHECK(fGenerated);
+}
+
+/* CheckProofOfStake (kernel.cpp:573-625) on a coinstake from the synthetic
+ * PoS generator (P0-55): pre-fork regtest chain, 130 PoW blocks one day
+ * apart, stake = block 1's coinbase (100 YAC, > 120 days old, so the full
+ * 90-day weight: 9000 coin-days), nBits = the PoS limit 0x1d03ffff. The
+ * kernel is accepted with target = 9000 * target(nBits); changing the time,
+ * the target or the signature, or staking before the 30-day minimum age,
+ * fails with the DoS score of the failing check (kernel 1, signature 100). */
+BOOST_FIXTURE_TEST_CASE(synthetic_pos_kernel, synthetic_pos::PosChainSetup)
+{
+    using namespace synthetic_pos;
+    const int64_t nMinAge = Params().GetConsensus().nStakeMinAge;
+    CBlockIndex* tip = MinePowChain(130, 24 * 60 * 60);
+    const COutPoint stake = CoinbaseOutPoint(1);
+    const Kernel k = FindKernel(tip, stake, POS_LIMIT_BITS);
+    BOOST_REQUIRE(k.nTime - k.txPrev.nTime >= nMinAge + Params().GetConsensus().nStakeMaxAge);
+    BOOST_REQUIRE_EQUAL(k.txPrev.vout[0].nValue, 100 * COIN);
+    CBigNum bnLimit;
+    bnLimit.SetCompact(POS_LIMIT_BITS);
+    const CBigNum bnTarget = bnLimit * 9000;
+
+    LOCK(cs_main);
+    auto check = [&](const CTransaction& tx, unsigned int nBits, int& nDoS, uint256& hashProof) {
+        CValidationState state;
+        uint256 target;
+        const bool fOk = CheckProofOfStake(state, tip, tx, nBits, hashProof, target);
+        nDoS = 0;
+        state.IsInvalid(nDoS); // sets nDoS only for an invalid state
+        if (fOk) BOOST_CHECK(CBigNum(target) == bnTarget);
+        return fOk;
+    };
+    int nDoS;
+    uint256 hashProof;
+
+    // The generated coinstake.
+    BOOST_CHECK(check(CreateCoinstake(k), POS_LIMIT_BITS, nDoS, hashProof));
+    BOOST_CHECK(hashProof == k.hashProofOfStake);
+    BOOST_CHECK(CBigNum(hashProof) <= bnTarget);
+    BOOST_CHECK(CBigNum(k.targetProofOfStake) == bnTarget);
+
+    // Later time whose kernel hash misses the target (chosen with the
+    // node's hash function, so the case cannot pass by luck).
+    Kernel late = k;
+    for (late.nTime = k.nTime + 1;; ++late.nTime) {
+        const uint256 h = GetProofOfStakeHash(k.nStakeModifier, (uint32_t)k.headerFrom.GetBlockTime(), k.nTxPrevOffset,
+                                              (uint32_t)k.txPrev.nTime, stake.n, (uint32_t)late.nTime, 9000);
+        if (CBigNum(h) > bnTarget) break;
+    }
+    BOOST_CHECK(!check(CreateCoinstake(late), POS_LIMIT_BITS, nDoS, hashProof));
+    BOOST_CHECK_EQUAL(nDoS, 1);
+
+    // Harder target: half of what the found hash needs.
+    const unsigned int nBitsHard = (CBigNum(k.hashProofOfStake) / 9000 / 2).GetCompact();
+    CBigNum bnHard;
+    bnHard.SetCompact(nBitsHard);
+    BOOST_REQUIRE(bnHard * 9000 < CBigNum(k.hashProofOfStake));
+    BOOST_CHECK(!check(CreateCoinstake(k), nBitsHard, nDoS, hashProof));
+    BOOST_CHECK_EQUAL(nDoS, 1);
+
+    // Signature that does not verify.
+    CTransaction badSig = CreateCoinstake(k);
+    badSig.vin[0].scriptSig = CScript() << std::vector<unsigned char>(71, 0x30);
+    BOOST_CHECK(!check(badSig, POS_LIMIT_BITS, nDoS, hashProof));
+    BOOST_CHECK_EQUAL(nDoS, 100);
+
+    // One second before the minimum age of the stake's block.
+    Kernel young = k;
+    young.nTime = k.headerFrom.GetBlockTime() + nMinAge - 1;
+    BOOST_CHECK(!check(CreateCoinstake(young), POS_LIMIT_BITS, nDoS, hashProof));
+    BOOST_CHECK_EQUAL(nDoS, 1);
+
+    // Not a coinstake: no DoS score, just false.
+    CTransaction notStake = CreateCoinstake(k);
+    notStake.vout[0] = notStake.vout[1];
+    BOOST_CHECK(!check(notStake, POS_LIMIT_BITS, nDoS, hashProof));
+    BOOST_CHECK_EQUAL(nDoS, 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

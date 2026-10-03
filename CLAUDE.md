@@ -7,6 +7,12 @@ Linux. Work is organised in `project/` – read `project/README.md` first; plans
 are in `project/plans/`, tasks in `project/{todo,inprogress,done}/`, operational
 guides in `project/runbooks/`.
 
+**Yacoin's future is proof-of-work only** (owner, 2026-10-03). Proof-of-stake
+matters only so that the existing chain still validates (initial sync,
+reindex, reorgs over historical blocks); there will be no new PoS. Keep PoS
+work to what reproducing the historical chain needs – do not add PoS features,
+PoS mining/staking support or tests of hypothetical future PoS behaviour.
+
 ## Implementing a task
 
 To implement a task from the project board (e.g. "do P0-14"), **spawn a
@@ -107,11 +113,11 @@ make -j"$(nproc)"
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (384)
+src/test/test_bitcoin --log_level=test_suite          # unit tests (388)
 python3 test/functional/test_runner.py -j4            # functional tests (48)
 ```
 
-- Expected today: 384/384 unit tests in both builds (mainnet and low
+- Expected today: 388/388 unit tests in both builds (mainnet and low
   difficulty) and 48/48 functional (low-difficulty build); `build.sh` (see
   *Building*) exits 0 for both configurations. Tests whose results depend on
   the chain parameters pin the expected value per build with `#ifdef
@@ -126,6 +132,10 @@ python3 test/functional/test_runner.py -j4            # functional tests (48)
 - The functional runner reads `test/config.ini` next to its own source dir; for
   out-of-tree builds copy `<builddir>/test/config.ini` to `test/config.ini`.
 - Any stderr output (including Python warnings) fails a functional test.
+- Test code must also compile with Boost 1.58: the release workflow's
+  `build-ubuntu-1604-functional-test` job builds with Ubuntu 16.04's system
+  Boost (no `BOOST_TEST_CONTEXT`, `BOOST_TEST(...)` or data-driven test
+  cases unless guarded by `BOOST_VERSION`; see `reward_tests.cpp`).
 - Consensus unit tests use the harness in `src/test/consensus_harness.h`
   (P0-47; usage in `src/test/README.md`): explicit, restored globals,
   block-index chains, blocks on disk, index-chain CSV loader.

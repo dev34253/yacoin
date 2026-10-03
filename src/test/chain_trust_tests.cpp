@@ -19,6 +19,7 @@
 // to the functional test of P0-32. Mainnet trust values are checked by P0-23.
 
 #include "test/consensus_harness.h"
+#include "test/pos_generator.h"
 
 #include "arith_uint256.h"
 #include "bignum.h"
@@ -675,6 +676,65 @@ BOOST_FIXTURE_TEST_CASE(fork_choice_by_trust, RegtestConsensusSetup)
     BOOST_CHECK(fNewBlock);
     BOOST_CHECK(b5->nStatus & BLOCK_HAVE_DATA);
     BOOST_CHECK(Tip() == a5);
+}
+
+/* Fork choice with real PoS blocks (review C8), made by the synthetic PoS
+ * generator (P0-55) on a pre-fork regtest chain (PoW trust T = 1 there:
+ * powLimit 2^255 - 1 over target 0x207fffff). A PoS block on the fork point
+ * has the PoW sibling's trust + 1 (chain.cpp:96-97), so it wins although
+ * it arrived later; PoW on top of it is doubled, giving T + 1 more than the
+ * PoW-only fork. The PoW fork needs three more blocks to take over: at
+ * equal trust the current tip stays, one more reorganises back and
+ * disconnects the PoS block (its stake is unspent again). */
+BOOST_FIXTURE_TEST_CASE(fork_choice_with_pos_blocks, synthetic_pos::PosChainSetup)
+{
+    CBlockIndex* base = MinePowChain(505);
+    {
+        LOCK(cs_main);
+        SeedProofOfStakeHistory(chainActive[2], chainActive[3]);
+    }
+    const CBigNum T = PowLimit() / Target(base->nBits);
+    BOOST_CHECK(T == 1);
+    BOOST_CHECK(base->GetBlockTrust() == T);
+    auto Tip = []() { LOCK(cs_main); return chainActive.Tip(); };
+
+    CBlockIndex* a1 = Submit(MinePowBlock(base, base->GetBlockTime() + 60, 0xa));
+    BOOST_REQUIRE(a1 != nullptr);
+    BOOST_CHECK(Tip() == a1);
+
+    const COutPoint stake = CoinbaseOutPoint(1);
+    const CBlock blockB1 = GeneratePosBlock(base, stake, 0xb);
+    CBlockIndex* b1 = Submit(blockB1);
+    BOOST_REQUIRE(b1 != nullptr);
+    BOOST_CHECK(b1->IsProofOfStake());
+    BOOST_CHECK(b1->bnChainTrust - a1->bnChainTrust == 1);
+    BOOST_CHECK(a1->nSequenceId < b1->nSequenceId);
+    BOOST_CHECK(Tip() == b1); // reorg to the PoS fork
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(!pcoinsTip->HaveCoin(stake));
+    }
+
+    CBlockIndex* a2 = Submit(MinePowBlock(a1, a1->GetBlockTime() + 60, 0xa));
+    CBlockIndex* b2 = Submit(MinePowBlock(b1, b1->GetBlockTime() + 60, 0xb));
+    BOOST_REQUIRE(a2 != nullptr && b2 != nullptr);
+    BOOST_CHECK(b2->GetBlockTrust() == T * 2);
+    BOOST_CHECK(b2->bnChainTrust - a2->bnChainTrust == T + 1);
+    BOOST_CHECK(Tip() == b2);
+
+    CBlockIndex* a3 = Submit(MinePowBlock(a2, a2->GetBlockTime() + 60, 0xa));
+    CBlockIndex* a4 = Submit(MinePowBlock(a3, a3->GetBlockTime() + 60, 0xa));
+    BOOST_REQUIRE(a4 != nullptr);
+    BOOST_CHECK(a4->bnChainTrust == b2->bnChainTrust);
+    BOOST_CHECK(Tip() == b2); // equal trust: the earlier block stays
+
+    CBlockIndex* a5 = Submit(MinePowBlock(a4, a4->GetBlockTime() + 60, 0xa));
+    BOOST_REQUIRE(a5 != nullptr);
+    BOOST_CHECK(Tip() == a5);
+    LOCK(cs_main);
+    BOOST_CHECK(!chainActive.Contains(b1));
+    BOOST_CHECK(pcoinsTip->HaveCoin(stake));
+    BOOST_CHECK(!pcoinsTip->HaveCoin(COutPoint(blockB1.vtx[1].GetHash(), 1)));
 }
 
 /* What the regtest cases above and the P2P cases below rely on from

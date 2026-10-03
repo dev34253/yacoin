@@ -6,7 +6,9 @@ stable build on Ubuntu 24.04 with current libraries, OpenSSL removed first.
 Phase 0 pins today's behaviour, bugs included (CLAUDE.md rule 1). Everything
 below is for later, after the modernisation, unless it blocks that goal.
 
-Each entry: what, where, impact, found by. Consensus-relevant entries need a
+Each entry: what, where, impact, found by. Yacoin is proof-of-work only in the
+future (owner, 2026-10-03): PoS entries matter only as far as the existing
+chain must still validate. Consensus-relevant entries need a
 hard fork or at least a careful, separately reviewed change.
 
 ## Consensus behaviour (pinned by tests; changing it needs a fork)
@@ -87,6 +89,32 @@ hard fork or at least a careful, separately reviewed change.
   (`main.cpp:138-160`), then dereferences null (`pow.cpp:179-181`). All
   callers pass index entries of a full chain, so not reachable in a node;
   not testable. (P0-14)
+- **A new chain cannot start proof-of-stake.** `GetNextTargetRequired044`
+  (`pow.cpp:108-127`) requires `initialHashTarget` (mainnet 0x1e0fffff,
+  low difficulty `~0>>8`, regtest 0x207fffff) for the first and second PoS
+  block of a chain, but the header rule `IsProofOfStake`
+  (`primitives/block.h:271-288`) counts a block as PoS only with `nBits <=
+  0x1d03ffff`, apart from two hard-coded mainnet hashes (presumably the first two
+  mainnet PoS blocks; not checked against the chain – the committed dump
+  starts at height 500,040). Any other chain (regtest, a functional
+  test chain, a new testnet) can never get a PoS block accepted. Harmless
+  for mainnet; synthetic PoS tests work around it by marking two index
+  entries as PoS (`SeedProofOfStakeHistory`). Pinned by
+  `pos_generator_tests/first_pos_blocks_need_seed`. (P0-55)
+- **A PoS block on a PoS block is not activated on its own.** Since
+  `CONSECUTIVE_STAKE_SWITCH_TIME` its trust is 0 (`chain.cpp:92-93`), so
+  its chain trust equals its parent's and `CBlockIndexWorkComparator`
+  (`validation.cpp:112-131`) keeps the parent (received earlier) as the
+  tip; the block is stored and connected only when a block on top of it
+  adds trust. Pinned by `pos_generator_tests/generated_pos_blocks_connect`.
+  (P0-55)
+- **Kernel stake modifier can come from blocks above the block's parent.**
+  `GetKernelStakeModifier` (`kernel.cpp:335-384`) walks with
+  `chainActive.Next` when `pindexPrev` is on the active chain, also past
+  `pindexPrev` if the modifier is not found below it, so the kernel check
+  of a block could depend on later active blocks. Not reachable with sane
+  timestamps: the minimum stake age (30 days) exceeds the selection
+  interval (761,920 s, 8.8 days). Found by the P0-55 code review. (P0-55)
 
 ## CBigNum / OpenSSL (go away with the arith_uint256 replacement, Phase 4)
 
@@ -209,5 +237,7 @@ hard fork or at least a careful, separately reviewed change.
   made `build.sh` exit 141 (SIGPIPE) after printing 30 lines of Boost
   "required from" notes, without the "build failed" message; the real
   errors were only in `<builddir>/make.log`. Probably `grep … | head -n 30`
-  under `set -o pipefail` (`contrib/testing/build.sh:377-378`). Use
-  `grep ' error:' <builddir>/make.log` meanwhile. (P0-14)
+  under `set -o pipefail` (`contrib/testing/build.sh:455-456`). Use
+  `grep ' error:' <builddir>/make.log` meanwhile. (P0-14; seen again in
+  P0-55: the `***` in the Boost notes also match the grep pattern, so the
+  30 lines are all notes)
