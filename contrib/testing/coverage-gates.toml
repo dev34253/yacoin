@@ -185,7 +185,7 @@ min = { lines = 94, branches = 82 }
 [[gate]]
 name = "kernel.cpp"
 paths = ["src/kernel.cpp"]
-min = { lines = 45, functions = 53, branches = 29 }  # TEMPORARY: P0-04 failing-gate demonstration, reverted in the next commit
+min = { lines = 44, functions = 53, branches = 29 }
 
 [[gate]]
 name = "validation.cpp rewards"
