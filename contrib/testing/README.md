@@ -47,7 +47,16 @@ changed.
 | `--no-docker` | Build on the current machine, e.g. when already running inside the build image in CI. |
 | `--work-dir DIR` | Where everything is built. Default `$YACOIN_WORK_DIR` or `~/.cache/yacoin-build`. Must be a dedicated directory: not inside the checkout, not containing it, not `/` or `$HOME`. |
 
-The exit code is non-zero if the build or any requested test run fails.
+Environment variables (besides `YACOIN_WORK_DIR`, `YACOIN_BUILD_IMAGE`
+and the proxy settings): `TEST_RUNNER_PORT_MIN` – port base for the
+functional tests instead of a port slot (1024–55535, no slot lock; see
+"Concurrent runs"); `YACOIN_PORT_LOCK_DIR` – directory of the port slot
+locks (default `/tmp/yacoin-build-ports`).
+
+The exit code is non-zero if the build or any requested test run fails,
+if `unit.log` has no Boost summary `N test cases out of N passed` (e.g.
+`test_bitcoin` ended early with status 0, or a test case was skipped), or
+if a vector checker reports a mismatch (see step 6 below).
 All unit tests pass in both configurations; tests whose results depend on
 the chain parameters (e.g. `pow_tests/get_next_work_pow_limit`, task P0-02)
 check the exact value for each configuration.
@@ -55,7 +64,8 @@ check the exact value for each configuration.
 ## What it does
 
 1. Takes a lock on `WORK_DIR/.lock` – only one run per work directory at a
-   time; use different work directories for parallel runs.
+   time; use different work directories for parallel runs. With
+   `--functional` it also claims a port slot (see "Concurrent runs").
 2. Mirrors the checkout (tracked and untracked, non-ignored files, so
    uncommitted changes are included) to `WORK_DIR/src` with
    `sync_tree.py`: files changed in the checkout since the last run are
@@ -74,11 +84,50 @@ check the exact value for each configuration.
    `--prefix=<src>/depends/x86_64-pc-linux-gnu`, so automatic `configure`
    re-runs keep using the `depends` libraries. Different configurations can
    coexist; `configure` re-runs when its arguments change.
-6. Builds, then runs the requested tests. Logs: `WORK_DIR/depends.log`,
-   `WORK_DIR/autogen.log`, `<builddir>/{configure,make,unit,functional}.log`.
+6. Builds, then runs the requested tests. `--unit` runs `test_bitcoin`,
+   checks its summary, then the three independent vector checkers
+   `bignum_vectors_check.py`, `reward_vectors.py --check` and
+   `header_hash_vectors.py --check` (P0-13, P0-46, P0-19; about 5 s
+   together, in both configurations, so CI runs them in its unit jobs).
+   Logs: `WORK_DIR/depends.log`, `WORK_DIR/autogen.log`,
+   `<builddir>/{configure,make,unit,vectors,functional}.log`.
    Datadirs and node logs of **failed** functional tests are kept in
    `<builddir>/functional-tmp/` (the test framework deletes those of passing
    tests; the directory is emptied at the start of each functional run).
+
+### Concurrent runs
+
+Runs in different work directories can build and test at the same time,
+also the functional tests (task P0-61). The functional tests bind fixed
+ports derived from `TEST_RUNNER_PORT_MIN` (`test_framework/util.py`:
+p2p `PORT_MIN + 12 * seed + node`, rpc 5000 higher; `test_runner.py`
+gives the tests the seeds 0…N−1 and the cache step the seed N), and with
+`--network host` (whenever `HTTPS_PROXY` is set) all containers share the
+machine's ports. So each `--functional` run claims one of 10 **port
+slots** and sets `TEST_RUNNER_PORT_MIN` for it:
+
+| Slots | `TEST_RUNNER_PORT_MIN` | p2p ports | rpc ports |
+|---|---|---|---|
+| 0–4 | 11000, 12000, …, 15000 | slot base + 0…999 | slot base + 5000…5999 (16000–20999) |
+| 5–9 | 21000, 22000, …, 25000 | slot base + 0…999 | slot base + 5000…5999 (26000–30999) |
+
+The slots do not overlap and stay below the Linux ephemeral port range
+(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000; 46 today).
+The preferred slot is `cksum(work dir) % 10`; the run holds
+`flock` on `/tmp/yacoin-build-ports/slot-<k>.lock` (`YACOIN_PORT_LOCK_DIR`)
+until it ends. If another run holds the preferred slot, the next free one
+is used; if all ten are held, the run waits for its preferred slot. The
+log shows the choice, e.g.
+
+```
+== 13:05:52 port slot 8 is in use by another run; using slot 9
+== 13:05:52 functional test ports: slot 9, p2p 25000-25999, rpc 30000-30999 (lock /tmp/yacoin-build-ports/slot-9.lock)
+```
+
+No external lock around functional runs is needed any more. Setting
+`TEST_RUNNER_PORT_MIN` yourself skips the slot (no lock; you keep runs
+apart). A `test_runner.py` started by hand uses 11000 (slot 0's ports)
+unless `TEST_RUNNER_PORT_MIN` is set.
 
 The work directory must not be inside another git work tree (e.g. a
 dotfiles repository in `$HOME`): `share/genbuild.sh` would then pick up that
@@ -294,7 +343,8 @@ in `$RUNNER_TEMP/yacoin-build`:
 (`src/test/data/bignum_vectors.json.xz`, format in `src/test/README.md`)
 with an independent Python model – Python integers plus the OpenSSL
 behaviour `CBigNum` exposes, without `CBigNum` or OpenSSL. It needs only
-Python 3 (standard library) and runs on the host, not in the build image:
+Python 3 (standard library), so it runs on the host as well (no build
+image needed; `build.sh --unit` runs it in the image):
 
 ```bash
 contrib/testing/bignum_vectors_check.py            # the committed file
@@ -303,9 +353,9 @@ contrib/testing/bignum_vectors_check.py FILE.json  # or a regenerated one
 
 It prints the number of vectors per operation and every disagreement, and
 exits 1 if there is one (expected today: 100000 vectors, 0 disagree, under a
-second). It is not run by `build.sh` or CI; run it after regenerating the
-vectors. The `test_bitcoin` replay (`bignum_vectors_tests`) runs in every
-`--unit` run.
+second). Every `build.sh --unit` run (so also CI's unit jobs) runs it after
+`test_bitcoin` and fails on a mismatch (P0-61); the `test_bitcoin` replay
+(`bignum_vectors_tests`) runs in the same `--unit` run.
 
 ## Reward golden table (P0-46)
 
@@ -326,8 +376,9 @@ contrib/testing/reward_vectors.py --write --mainnet-nbits LIST   # add mainnet n
 prints the first 20 differing lines; expected today: 226 pre-fork, 79
 post-fork, 60 epoch, 18 PoS rows agree. `LIST` has one hex `nBits` per line
 (`#` comments allowed); P0-23 adds the pre-fork `nBits` of the mainnet dump
-this way. Not run by `build.sh` or CI; `reward_tests` in every `--unit` run
-replays the file through the node code.
+this way. `build.sh --unit` runs the check (P0-61; a mismatch fails the
+run), and `reward_tests` in the same run replays the file through the node
+code.
 
 ## Block-header hash vectors (P0-19)
 
@@ -356,14 +407,17 @@ checks N-factors up to `--max-nfactor` (default 12) with Python, higher
 ones with `--reference BIN` if given, and lists the rest as not checked
 (not a failure). `--check` also compares every field except `hash` and
 `source` with the case list. Exit code 1 on any disagreement.
+`build.sh --unit` runs the default check (self-test plus N-factor ≤ 12,
+about 4 s; P0-61), so a mismatch fails the run.
 
 `BIN` is `scrypt_jane_refhash.c` built against the **upstream**
 scrypt-jane (floodyberry, commit 0ab6125), a second implementation
 independent of `src/scrypt-jane`; the build commands are in the file's
 header comment. In the committed file N-factors 0-21 have `source`
 `python` and 22-25 `reference`; the upstream build agrees with Python on
-every vector up to 21. Not run by `build.sh` or CI; `header_hash_tests`
-in every `--unit` run replays the file through the node code.
+every vector up to 21. The checks above N-factor 12 (`--max-nfactor`,
+`--reference`) are not run by `build.sh` or CI; `header_hash_tests` in
+every `--unit` run replays the file through the node code.
 
 ## Restricted networks (proxy and CA)
 
