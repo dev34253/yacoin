@@ -58,6 +58,7 @@ harness in `consensus_harness.h`. It gives every test the same way to set the
 consensus globals, build block-index chains and put blocks on disk, and it
 restores everything when the test ends. Tests using it today:
 `consensus_harness_tests` (the harness itself), `pow_tests/harness_*`,
+`pow_chain_tests` (every function in `pow.cpp`, pre- and post-fork, P0-14),
 `chain_trust_tests` (and `chain_trust_fork_choice_tests`,
 `chain_trust_p2p_tests`, see below), `kernel_tests`, `reward_tests`.
 

@@ -155,7 +155,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_one_third_highest_difficulty)
 
 // ---------------------------------------------------------------------------
 // Tests using the consensus harness (P0-47). They pin current behaviour; the
-// full difficulty coverage is task P0-14.
+// full difficulty coverage is in pow_chain_tests.cpp (P0-14).
 // ---------------------------------------------------------------------------
 
 /* Post-fork retarget at an epoch boundary: GetNextTargetRequired reads the
