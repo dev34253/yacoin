@@ -5,7 +5,7 @@
 - Size: S
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -32,8 +32,8 @@ by the owner on 2026-10-03).
 
 ## Acceptance criteria
 
-- [ ] A unit test that reorganises the chain passes without its own token DB.
-- [ ] P0-16's tests pass without the workarounds; all unit and functional tests pass.
+- [x] A unit test that reorganises the chain passes without its own token DB.
+- [x] P0-16's tests pass without the workarounds; all unit and functional tests pass.
 
 ## Notes
 
@@ -198,3 +198,9 @@ the full unit suite in both builds.
 - 2026-10-03 step 10 (self-review, no Agent tool) of the docs: checked
   `src/test/README.md` against the code; added that the P2P test peer now
   requires a clear `fPauseSend`. Counts updated to the measured 342.
+- 2026-10-03: merged origin/master (P0-19, +3 unit tests) into the branch;
+  count lines resolved to 344 + 1 = 345. Re-run after the merge:
+  `build.sh --config mainnet --unit` exit 0, 345/345 unit;
+  `build.sh --config lowdiff --unit --functional` exit 0, 345/345 unit,
+  46/46 functional.
+- 2026-10-03 step 11: task moved to done; PR https://github.com/dev34253/yacoin/pull/72.
