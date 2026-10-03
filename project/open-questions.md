@@ -7,15 +7,6 @@ decision.
 
 ## Open
 
-### Q1 – When to schedule P0-59 (dead-code removal)? (from P0-50)
-P0-50 proposed removing dead code in three gated PRs: A (no consensus files,
-could start now), B (`scrypt.cpp`, after P0-19), C (consensus files, after
-P0-14/16/17/18/19/23/46). P0-59 is not in P0-45's dependencies or the Phase 0
-exit criteria.
-*For now:* not scheduled; it stays in `todo/`. Should part A be done during
-Phase 0, and should P0-59 become a Phase 0 exit criterion?
-*Owner (2026-10-03):* has a question about the dead code – to discuss.
-
 ### Q6 – Behaviour pinned by P0-16 that looks wrong (from P0-16)
 - `gettimechaininfo` returns `bnChainTrust` as a number holding only the low
   64 bits, while its help text says hex string; a trust of 0 is shown as an
@@ -103,6 +94,15 @@ the workarounds?
 *For now:* all pinned as they are by `reward_tests`; nothing changed.
 
 ## Answered
+
+### Q1 – When to schedule P0-59 (dead-code removal)? (from P0-50)
+P0-50 proposed removing dead code in three gated PRs: A (no consensus files,
+could start now), B (`scrypt.cpp`, after P0-19), C (consensus files, after
+P0-14/16/17/18/19/23/46). P0-59 is not in P0-45's dependencies or the Phase 0
+exit criteria.
+*For now:* not scheduled; it stays in `todo/`. Should part A be done during
+Phase 0, and should P0-59 become a Phase 0 exit criterion?
+**Answer (owner, 2026-10-03):** do the dead-code removal (all three parts) at the very end of Phase 0, once all other Phase 0 tasks are done, for the largest safety net. P0-59 now depends on every other Phase 0 task; P0-45 (exit review) depends on P0-59 (and on the new P0-60/P0-61).
 
 ### Q5 – P0-03 was verified in CI, not locally
 The local lowdiff/coverage runs were blocked by the session's permission

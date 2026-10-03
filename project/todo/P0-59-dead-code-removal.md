@@ -1,7 +1,7 @@
 # P0-59: Dead-code removal
 
 - Plan section: 0.1
-- Depends on: P0-50 (part A); P0-19 (part B); P0-14, P0-16, P0-17, P0-18, P0-19, P0-23, P0-46 (part C)
+- Depends on: P0-00, P0-01, P0-02, P0-03, P0-04, P0-05, P0-06, P0-07, P0-08, P0-09, P0-10, P0-11, P0-12, P0-13, P0-14, P0-15, P0-16, P0-17, P0-18, P0-19, P0-20, P0-21, P0-22, P0-23, P0-24, P0-25, P0-26, P0-27, P0-28, P0-29, P0-30, P0-31, P0-32, P0-33, P0-34, P0-35, P0-36, P0-37, P0-38, P0-39, P0-40, P0-41, P0-42, P0-43, P0-44, P0-46, P0-47, P0-48, P0-49, P0-50, P0-51, P0-52, P0-53, P0-54, P0-55, P0-56, P0-57, P0-58, P0-60, P0-61 (owner decision 2026-10-03: after all other Phase 0 tasks except the exit review P0-45)
 - Size: M
 - Owner:
 - Started:
@@ -106,10 +106,13 @@ because the line numbers are from 651e82e.
 
 ## Notes
 
-- Not a Phase 0 exit criterion and not in P0-45's dependencies. Phase 3 of
-  the overview also plans to delete the dead `pbkdf2.cpp`/`scrypt.cpp`
-  code; this task is that work, pulled forward where its gates allow. When
-  to do it is the owner's decision.
+- Owner decision (2026-10-03, open question Q1): do the dead-code removal at
+  the very end of Phase 0, once all other Phase 0 tasks are done, so that it
+  has the largest possible safety net. It is the last task before the exit
+  review P0-45, which now depends on it. The parts A/B/C and their checks
+  stay as described; their individual gates are all met by then. Phase 3 of
+  the overview also plans to delete the dead `pbkdf2.cpp`/`scrypt.cpp` code;
+  this task is that work.
 - Unused `CBigNum` methods (`dead-code.md` c) are not part of this task:
   they are deleted in Phase 4 after the P0-12 audit (plan 0.2a).
 - Created by P0-50.
