@@ -827,7 +827,11 @@ waited in the queue for a long time (owner feedback, 2026-10-03).
   and unit + functional tests in the low-difficulty build, run with
   `contrib/testing/build.sh` in the pinned image (D-19, D-21). On `master`
   and by hand it also measures coverage of both builds and merges the
-  reports.
+  reports. *Update (P0-63, owner answer Q11):* also on branches that
+  change a file the coverage gate watches (gated or excluded files in
+  `contrib/testing/coverage-gates.toml`, the gate's own files), so the gate
+  checks consensus changes before the merge; a first job decides this
+  from the branch's changes since its merge base with `master`.
 - `yacoinbuildmultiplatform.yml` runs only on pushes to `master`, on tags
   and by hand.
 - Both workflows have a `concurrency` group per workflow and branch with

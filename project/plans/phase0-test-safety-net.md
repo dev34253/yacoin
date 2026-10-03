@@ -288,7 +288,7 @@ Globals (`util.cpp`; all but `nYac10HardforkTime` set by `AppInit` from `init.cp
 
 | Trigger | Jobs |
 |---|---|
-| Every push | Both builds; unit (both configs if affordable); functional; sampled replay; coverage gates. Done by P0-03 (`tests.yml`): unit in both configs and functional on every push; coverage per config and merged on master and by hand |
+| Every push | Both builds; unit (both configs if affordable); functional; sampled replay; coverage gates. Done by P0-03 (`tests.yml`): unit in both configs and functional on every push; coverage per config and merged (with the gate, P0-04) on master, by hand and on branches that change a file the gate watches (P0-63) |
 | Nightly | Sanitizers; fuzzers; benchmarks; functional 3×; Windows/macOS test runs |
 | Weekly / manual | Full replay and reindex (self-hosted, 24–48 h); cross-version network; soak |
 

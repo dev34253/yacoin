@@ -98,7 +98,9 @@ make -j"$(nproc)"
   "Coverage gate", `coverage_gate.py --suggest`).
 - **CI:** `.github/workflows/tests.yml` runs unit tests (both configs) and
   functional tests (lowdiff) on every push to any branch; coverage (HTML as
-  a run artifact) and the coverage gate on `master` and via *Run workflow*. The release builds
+  a run artifact) and the coverage gate on `master`, via *Run workflow*, and
+  on branches that change a file the gate watches (gated/excluded files in
+  `coverage-gates.toml`, the gate's own files; P0-63). The release builds
   (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 

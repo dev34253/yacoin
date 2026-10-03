@@ -1,5 +1,6 @@
 # Unit and functional tests on every push; coverage and the coverage gate
-# on master and by hand (tasks P0-03, P0-04).
+# on master, by hand, and on branches that change a file the coverage
+# gate watches (tasks P0-03, P0-04, P0-63).
 #
 # Every job runs contrib/testing/build.sh on a GitHub-hosted runner, which
 # runs the build in the pinned build image with Docker – the same command a
@@ -30,18 +31,83 @@ env:
   YACOIN_BUILD_IMAGE: dev34253/yacoin-build@sha256:b7365321bd98ce7297c30bc2eb555f56407548d4cea1836cfbd4b806ba934f7a
 
 jobs:
+  # Decides whether the coverage jobs and the gate run (P0-63): always on
+  # master and by hand (Run workflow); otherwise when the branch - all its
+  # commits since the merge base with master, not only the latest push, so
+  # that a newer push cancelling an older run cannot skip the check -
+  # changes a watched file: a path of a [[gate]] or [[exclude]] in
+  # contrib/testing/coverage-gates.toml, or the gate's own files. On any
+  # error it answers "true" (fail safe).
+  changes:
+    name: changes (coverage needed?)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      coverage: ${{ steps.decide.outputs.coverage }}
+    steps:
+      # Full history for the merge base; blob:none skips file contents of
+      # older commits (git diff --name-only needs only trees).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Decide whether the coverage jobs run
+        id: decide
+        env:
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          say() { echo "$1"; echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          watched="$RUNNER_TEMP/watched.txt" changed="$RUNNER_TEMP/changed.txt" hits="$RUNNER_TEMP/hits.txt"
+          echo "### Coverage jobs" >> "$GITHUB_STEP_SUMMARY"
+          coverage=true
+          if [ "$REF" = refs/heads/master ] || [ "$EVENT" = workflow_dispatch ]; then
+            say "Run: master or Run workflow."
+          elif ! base=$(git merge-base origin/master HEAD); then
+            say "Run: no merge base with origin/master (fail safe)."
+          elif ! python3 - > "$watched" <<'EOF'
+          import tomllib
+          with open("contrib/testing/coverage-gates.toml", "rb") as fh:
+              cfg = tomllib.load(fh)
+          paths = {"contrib/testing/coverage-gates.toml", "contrib/testing/coverage_gate.py",
+                   "contrib/testing/test_coverage_gate.py", "contrib/testing/build.sh"}
+          paths.update(e["path"] for e in cfg.get("exclude", []))
+          paths.update(p for g in cfg.get("gate", []) for p in g.get("paths", []))
+          print("\n".join(sorted(paths)))
+          EOF
+          then
+            say "Run: cannot read the watched files from coverage-gates.toml (fail safe; the gate reports the error)."
+          elif ! git diff --name-only --no-renames "$base" HEAD > "$changed"; then
+            say "Run: git diff against the merge base failed (fail safe)."
+          else
+            rc=0
+            grep -Fx -f "$watched" "$changed" > "$hits" || rc=$?
+            echo "merge base $base; $(wc -l < "$changed") files changed on the branch; watched files:"
+            sed 's/^/  /' "$watched"
+            case $rc in
+              0) say "Run: the branch changes watched files: $(paste -sd ' ' "$hits")" ;;
+              1) coverage=false
+                 say "Skipped: the branch (since merge base ${base:0:10} with master) changes no file the coverage gate watches." ;;
+              *) say "Run: grep failed with exit code $rc (fail safe)." ;;
+            esac
+          fi
+          echo "coverage=$coverage" >> "$GITHUB_OUTPUT"
+
   test:
     name: ${{ matrix.name }}
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
       # The two test jobs run on every push. The two coverage jobs (-O0, about
-      # twice as slow) only run on master and when started by hand (Run
-      # workflow), so task branches get their results sooner.
+      # twice as slow) only run where the changes job says so (master, Run
+      # workflow, branches changing a watched file), so other task branches
+      # get their results sooner.
       matrix:
         include: >-
-          ${{ fromJSON((github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"},{"name":"coverage (mainnet)","id":"mainnet-cov","args":"--config mainnet --coverage --unit","coverage":"mainnet"},{"name":"coverage (lowdiff)","id":"lowdiff-cov","args":"--config lowdiff --coverage --unit --functional","coverage":"lowdiff"}]' || '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"}]') }}
+          ${{ fromJSON(needs.changes.outputs.coverage == 'true' && '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"},{"name":"coverage (mainnet)","id":"mainnet-cov","args":"--config mainnet --coverage --unit","coverage":"mainnet"},{"name":"coverage (lowdiff)","id":"lowdiff-cov","args":"--config lowdiff --coverage --unit --functional","coverage":"lowdiff"}]' || '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"}]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -104,9 +170,9 @@ jobs:
 
   coverage-report:
     name: coverage report (merged)
-    needs: test
+    needs: [changes, test]
     # Only where the coverage jobs ran; also after a failed test job.
-    if: ${{ !cancelled() && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && needs.changes.outputs.coverage == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

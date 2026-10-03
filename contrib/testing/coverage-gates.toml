@@ -143,9 +143,9 @@ outcomes = ["0,0"]
 branches_on_line = 2
 reason = "dead-code.md b): GetDefaultPort, testnet port"
 
-# c) kernel.cpp debug logging (task P0-04 step 3): every statement guarded
-#    by "if (fDebug ...)", including the -printstakemodifier ones. The
-#    guarded code only writes to debug.log.
+# c) Debug logging: code that only writes to debug.log.
+#    kernel.cpp (task P0-04 step 3): every statement guarded by
+#    "if (fDebug ...)", including the -printstakemodifier ones.
 
 [[exclude]]
 kind = "lines"
@@ -154,6 +154,26 @@ match = '^\s*if \(fDebug\b'
 extent = "block"
 all = true
 reason = "debug logging (fDebug / -printstakemodifier)"
+
+# P0-63 (owner answer Q11): the fPrintProofOfStake logging block in
+# CheckStakeKernelHash. Not kernel.cpp's "if (fPrintProofOfStake || ...)"
+# in GetKernelStakeModifier: it chooses the return path, it stays counted.
+[[exclude]]
+kind = "lines"
+path = "src/kernel.cpp"
+match = '^\s*if \(fPrintProofOfStake\)\s*$'
+extent = "block"
+reason = "debug logging (fPrintProofOfStake, CheckStakeKernelHash)"
+
+# P0-63 (owner answer Q11): the two -printcreation statements in
+# GetProofOfWorkReward (pre-fork subsidy search).
+[[exclude]]
+kind = "lines"
+path = "src/validation.cpp"
+match = '^\s*if \(fDebug && gArgs\.GetBoolArg\("-printcreation"\)\)'
+extent = "block"
+all = true
+reason = "debug logging (-printcreation, GetProofOfWorkReward)"
 
 # ----------------------------------------------------------------- gates
 # Minimums in percent of the numbers left after the exclusions; branches
@@ -174,6 +194,10 @@ reason = "debug logging (fDebug / -printstakemodifier)"
 #   GetMaxSize 100 / - / 100. The remaining reward branches are compiler
 #   branches in LogPrintf's format_error handler and in exception cleanup
 #   (project/done/P0-46-reward-and-block-size.md).
+# P0-63 (local run of 1f56719's code; fPrintProofOfStake and -printcreation
+# logging excluded; ratcheted with --suggest):
+#   kernel    45.33 / 53.85 / 33.33      rewards 100 / - / 71.86
+#   overall   lines 70.82  functions 78.03  branches 49.10 (minimums unchanged)
 
 [[gate]]
 name = "overall"
@@ -193,13 +217,13 @@ min = { lines = 94, branches = 82 }
 [[gate]]
 name = "kernel.cpp"
 paths = ["src/kernel.cpp"]
-min = { lines = 44, functions = 53, branches = 29 }
+min = { lines = 44, functions = 53, branches = 32 }
 
 [[gate]]
 name = "validation.cpp rewards"
 paths = ["src/validation.cpp"]
 select_functions = ["GetProofOfWorkReward", "LoadBlockRewardAndHighestDiff", "GetCoinAge"]
-min = { lines = 100, branches = 67 }
+min = { lines = 100, branches = 71 }
 
 [[gate]]
 name = "GetMaxSize"
