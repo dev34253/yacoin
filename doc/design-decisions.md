@@ -850,3 +850,48 @@ waited in the queue for a long time (owner feedback, 2026-10-03).
 `.github/workflows/yacoinbuildmultiplatform.yml`;
 `contrib/testing/README.md` (CI);
 `project/done/P0-03-ci-unit-functional-coverage.md`.
+
+## D-25: Mainnet consensus value dump as a hidden RPC
+
+- **Status:** Accepted.
+- **Date:** 2026-10-03 (P0-08).
+
+**Context.** Phase 0 needs, for every mainnet block, the values later
+phases must reproduce (difficulty, trust, stake modifier, kernel, rewards,
+block size, money supply) and the inputs to recompute them offline (plan
+0.3). The task allowed a hidden RPC or a standalone binary linked against
+`libyacoin_server`. Many of these values are only correct with the node's
+start-up state: chain params, the fork globals (`nMainnetNewLogicBlockNumber`,
+`nFactorAtHardfork`, `-epochinterval`), `fTxIndex`, `mapBlockIndex` with
+chain trust and modifier checksums, `chainActive`, `pblocktree`.
+
+**Decision.** A hidden RPC `dumpconsensusvalues` in `yacoind`
+(`src/consensusdump.cpp`), run on an offline node started on a working
+copy of a datadir snapshot. It calls the node's own consensus functions;
+values that are only computed inline or in file-static functions use small
+copies: the N-factor (checked with one scrypt hash per distinct value) and
+the kernel's stake-modifier walk (re-hashed on every PoS row) are checked
+against the node's results; the undo read verifies the record checksum as
+`UndoReadFromDisk` does. Output: a line-
+oriented CSV (version 1) whose first 13 columns are the P0-47 index-chain
+columns, with comment-line metadata and an end trailer; a strict C++
+reader for tests. The full mainnet dump is stored outside git
+(`/srv/yacoin/dumps/`, zstd, SHA256SUMS); small ranges are committed as
+unit-test data.
+
+**Consequences.**
+
+- No repeated start-up sequence that could drift from `AppInit`; the RPC
+  is covered by a functional test on a real (low-difficulty) chain.
+- The RPC holds `cs_main` for the whole run (about 7.5 minutes on mainnet)
+  and starting a node writes to its datadir, so it must run offline on a
+  copy.
+- Some values are computed on today's chain: `required_bits` at post-fork
+  epoch boundaries depends on the tip (review B7). The dump records it and
+  counts differences instead of reconstructing history.
+- The copies must be kept in sync with the consensus code until Phase 4
+  replaces it; the self-check counters fail loudly if they drift.
+
+**Evidence.** `project/done/P0-08-mainnet-dump-tool.md` (Log: mainnet run,
+counters all 0); `src/test/README.md` ("Consensus value dump");
+`project/runbooks/mainnet-dump.md`; `test/functional/rpc_dumpconsensusvalues.py`.

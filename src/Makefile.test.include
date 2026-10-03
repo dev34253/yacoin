@@ -26,7 +26,14 @@ JSON_XZ_TEST_FILES = \
 
 RAW_TEST_FILES =
 
-GENERATED_TEST_FILES = $(JSON_TEST_FILES:.json=.json.h) $(JSON_XZ_TEST_FILES:.json.xz=.json.xz.h) $(RAW_TEST_FILES:.raw=.raw.h)
+# Text files embedded as a C string (see the %.csv.h rule below): mainnet
+# ranges of the consensus value dump (task P0-08).
+CSV_TEST_FILES = \
+  test/data/consensus_dump_mainnet_early.csv \
+  test/data/consensus_dump_mainnet_pos.csv \
+  test/data/consensus_dump_mainnet_fork.csv
+
+GENERATED_TEST_FILES = $(JSON_TEST_FILES:.json=.json.h) $(JSON_XZ_TEST_FILES:.json.xz=.json.xz.h) $(RAW_TEST_FILES:.raw=.raw.h) $(CSV_TEST_FILES:.csv=.csv.h)
 
 # test_bitcoin binary #
 BITCOIN_TESTS =\
@@ -51,6 +58,9 @@ BITCOIN_TESTS =\
   test/checkqueue_tests.cpp \
   test/coins_tests.cpp \
   test/compress_tests.cpp \
+  test/consensus_dump_reader.cpp \
+  test/consensus_dump_reader.h \
+  test/consensus_dump_tests.cpp \
   test/consensus_harness.cpp \
   test/consensus_harness.h \
   test/consensus_harness_tests.cpp \
@@ -107,7 +117,7 @@ BITCOIN_TESTS += \
   wallet/test/crypto_tests.cpp
 endif
 
-test_test_bitcoin_SOURCES = $(BITCOIN_TESTS) $(JSON_TEST_FILES) $(JSON_XZ_TEST_FILES) $(RAW_TEST_FILES)
+test_test_bitcoin_SOURCES = $(BITCOIN_TESTS) $(JSON_TEST_FILES) $(JSON_XZ_TEST_FILES) $(RAW_TEST_FILES) $(CSV_TEST_FILES)
 test_test_bitcoin_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) -I$(builddir)/test/ $(TESTDEFS) $(EVENT_CFLAGS)
 test_test_bitcoin_LDADD =
 if ENABLE_WALLET
@@ -187,6 +197,17 @@ endif
 	 echo "namespace json_tests{" && \
 	 echo "static const char $(*F)[] =" && \
 	 $(XZ) -dc $< | $(SED) -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$$/\\n"/' && \
+	 echo ";};"; \
+	} > "$@.new" && mv -f "$@.new" "$@"
+	@echo "Generated $@"
+
+# One C string literal per line of the file; \ and " are escaped.
+%.csv.h: %.csv
+	@$(MKDIR_P) $(@D)
+	@{ \
+	 echo "namespace csv_tests{" && \
+	 echo "static const char $(*F)[] =" && \
+	 $(SED) -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$$/\\n"/' $< && \
 	 echo ";};"; \
 	} > "$@.new" && mv -f "$@.new" "$@"
 	@echo "Generated $@"

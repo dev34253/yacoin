@@ -12,6 +12,7 @@
 #include "checkpoints.h"
 #include "coins.h"
 #include "consensus/validation.h"
+#include "consensusdump.h"
 #include "validation.h"
 #include "core_io.h"
 #include "policy/feerate.h"
@@ -1290,6 +1291,103 @@ UniValue calculateScryptHash(const JSONRPCRequest& request)
     return result;
 }
 
+UniValue dumpconsensusvalues(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() < 1 || request.params.size() > 3)
+        throw std::runtime_error(
+            "dumpconsensusvalues \"filename\" ( start_height end_height )\n"
+            "\nWrite the consensus values of every block of the active chain to a CSV file\n"
+            "(task P0-08; format: src/test/README.md, \"Consensus value dump\").\n"
+            "One row per block: index fields, N-factor, required target, running minimum\n"
+            "nBits since the fork, block and chain trust, stake modifier and checksum,\n"
+            "kernel inputs and result, fees, rewards, coin age, block size and sigop\n"
+            "limits, money supply. Reads the block, undo and transaction index files.\n"
+            "Read-only, but holds cs_main for the whole run (under 10 minutes for the\n"
+            "mainnet chain): run it on an offline node, with a long yacoin-cli\n"
+            "-rpcclienttimeout (e.g. 86400; 0 does not disable the timeout in this version).\n"
+            "If the client times out, the dump still completes; see debug.log.\n"
+            "Requires -txindex. The file is written as <filename>.incomplete and renamed\n"
+            "when complete; an existing file is never overwritten.\n"
+            "\nArguments:\n"
+            "1. \"filename\"     (string, required) output file; a relative path is taken relative to the data directory\n"
+            "2. start_height   (numeric, optional, default=0) first height\n"
+            "3. end_height     (numeric, optional, default=tip) last height\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"filename\": \"path\",          (string) the file written\n"
+            "  \"rows\": n,                    (numeric) rows written (end_height - start_height + 1)\n"
+            "  \"start_height\": n,            (numeric)\n"
+            "  \"end_height\": n,              (numeric)\n"
+            "  \"end_hash\": \"hash\",          (string) hash of the block at end_height\n"
+            "  \"pos_blocks\": n,              (numeric) proof-of-stake blocks\n"
+            "  \"kernel_failed\": n,           (numeric) PoS blocks whose kernel check fails today\n"
+            "  \"kernel_hash_mismatch\": n,    (numeric) recomputed kernel hash differs from the stored one\n"
+            "  \"kernel_rehash_mismatch\": n,  (numeric) hash with the walked stake modifier differs from the kernel hash\n"
+            "  \"kernel_modifier_after_prev\": n, (numeric) stake modifier walk went past the block's predecessor\n"
+            "  \"required_bits_mismatch\": n,  (numeric) required target computed today differs from nBits\n"
+            "  \"fees_mismatch\": n,           (numeric) fees from the undo data differ from mint - money supply change\n"
+            "  \"coinbase_over_reward\": n,    (numeric) PoW coinbase value above the computed reward\n"
+            "  \"coinstake_over_limit\": n,    (numeric) coinstake reward above the computed limit\n"
+            "  \"pos_without_coinstake\": n,   (numeric) PoS blocks without a coinstake at vtx[1]\n"
+            "  \"coinstake_in_pow_block\": n,  (numeric) PoW blocks with a coinstake at vtx[1]\n"
+            "  \"nfactor_checked\": n,         (numeric) block hashes recomputed to check the N-factor column\n"
+            "  \"nfactor_mismatch\": n,        (numeric) of those, hashes that did not match\n"
+            "  \"seconds\": x.x                (numeric) run time\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("dumpconsensusvalues", "\"consensus-dump.csv\"")
+            + HelpExampleCli("-rpcclienttimeout=86400 dumpconsensusvalues", "\"/tmp/dump.csv\" 0 1000")
+            + HelpExampleRpc("dumpconsensusvalues", "\"consensus-dump.csv\", 0, 1000")
+        );
+
+    const std::string strFile = request.params[0].get_str();
+    if (strFile.empty())
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "filename must not be empty");
+    fs::path path(strFile);
+    if (!path.is_complete())
+        path = GetDataDir() / path;
+
+    LOCK(cs_main);
+    const int nTip = chainActive.Height();
+    const int nStart = (request.params.size() > 1 && !request.params[1].isNull()) ? request.params[1].get_int() : 0;
+    const int nEnd = (request.params.size() > 2 && !request.params[2].isNull()) ? request.params[2].get_int() : nTip;
+    if (nStart < 0 || nStart > nEnd || nEnd > nTip)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("invalid height range %d..%d (tip %d)", nStart, nEnd, nTip));
+    if (fs::exists(path))
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "file already exists: " + path.string());
+    if (!fTxIndex)
+        throw JSONRPCError(RPC_MISC_ERROR, "dumpconsensusvalues requires -txindex");
+
+    ConsensusDumpResult r;
+    try {
+        r = DumpConsensusValues(path, nStart, nEnd);
+    } catch (const std::runtime_error& e) {
+        throw JSONRPCError(RPC_MISC_ERROR, e.what());
+    }
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("filename", r.strFilename);
+    result.pushKV("rows", (uint64_t)r.nRows);
+    result.pushKV("start_height", r.nStartHeight);
+    result.pushKV("end_height", r.nEndHeight);
+    result.pushKV("end_hash", r.hashEnd.GetHex());
+    result.pushKV("pos_blocks", (uint64_t)r.nPosBlocks);
+    result.pushKV("kernel_failed", (uint64_t)r.nKernelFailed);
+    result.pushKV("kernel_hash_mismatch", (uint64_t)r.nKernelHashMismatch);
+    result.pushKV("kernel_rehash_mismatch", (uint64_t)r.nKernelRehashMismatch);
+    result.pushKV("kernel_modifier_after_prev", (uint64_t)r.nKernelModifierAfterPrev);
+    result.pushKV("required_bits_mismatch", (uint64_t)r.nRequiredBitsMismatch);
+    result.pushKV("fees_mismatch", (uint64_t)r.nFeesMismatch);
+    result.pushKV("coinbase_over_reward", (uint64_t)r.nCoinbaseOverReward);
+    result.pushKV("coinstake_over_limit", (uint64_t)r.nCoinstakeOverLimit);
+    result.pushKV("pos_without_coinstake", (uint64_t)r.nPosWithoutCoinstake);
+    result.pushKV("coinstake_in_pow_block", (uint64_t)r.nCoinstakeInPowBlock);
+    result.pushKV("nfactor_checked", (uint64_t)r.nFactorChecked);
+    result.pushKV("nfactor_mismatch", (uint64_t)r.nFactorMismatch);
+    result.pushKV("seconds", r.nSeconds);
+    return result;
+}
+
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         okSafe argNames
   //  --------------------- ------------------------  -----------------------  ------ ----------
@@ -1317,6 +1415,7 @@ static const CRPCCommand commands[] =
     { "hidden",             "waitfornewblock",        &waitfornewblock,        true,  {"timeout"} },
     { "hidden",             "waitforblock",           &waitforblock,           true,  {"blockhash","timeout"} },
     { "hidden",             "waitforblockheight",     &waitforblockheight,     true,  {"height","timeout"} },
+    { "hidden",             "dumpconsensusvalues",    &dumpconsensusvalues,    true,  {"filename","start_height","end_height"} },
 };
 
 void RegisterBlockchainRPCCommands(CRPCTable &t)
