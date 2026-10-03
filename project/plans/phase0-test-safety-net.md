@@ -2,7 +2,7 @@
 
 Phase 0 builds a safety net that records exactly how the current code
 behaves, so every later change (compiler, Boost, OpenSSL, `CBigNum`) can be
-proven to behave the same. Tasks are in `../todo/` (`P0-00` … `P0-56`).
+proven to behave the same. Tasks are in `../todo/` (`P0-00` … `P0-58`).
 This version incorporates the [review](phase0-review.md).
 
 ## Guiding rules
@@ -106,7 +106,7 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 - `CBlockHeader::GetHash()` known answers for v<7 headers at every N-factor
   step in the `block.h` table (4…25) and v≥7 at Nf 21 (mainnet), 4
   (functional tests) and 0 (unit tests).
-- `static_assert` on packed header sizes (88 and 80 bytes).
+- `static_assert` on packed header sizes (84 and 80 bytes; only the 84-byte v7 layout is `#pragma pack`ed).
 - Dead `scrypt.cpp` functions are not tested; they go on the deletion list.
 
 ### f) Rewards and block size – P0-46

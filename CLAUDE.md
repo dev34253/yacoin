@@ -50,7 +50,8 @@ reviews as separate, logged self-review passes.
    RPC help text for RPCs, `project/` for plans, tasks and runbooks, code
    comments for non-obvious logic. Keep `doc/functional-specification.md`
    (behaviour), `doc/architecture.md` (structure) and
-   `doc/design-decisions.md` (one entry per significant decision) current. **Documentation is reviewed like code** –
+   `doc/design-decisions.md` (one entry per significant decision) current.
+   **Documentation is reviewed like code** –
    include it in the review in rule 4 and check it against what was actually
    built and run.
 7. **Task board.** Move task files with `git mv` (todo → inprogress → done),

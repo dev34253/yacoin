@@ -38,8 +38,8 @@ The chain has two eras:
 | Max block size | 1,000,000 bytes | derived from the reward and the minimum fee |
 | Coinbase maturity | 500 blocks | 6 blocks |
 | Txid | hash of the full transaction | v2: hash with `scriptSig`s blanked (malleability fix) |
-| Timelocks | – | `OP_CHECKLOCKTIMEVERIFY`, `OP_CHECKSEQUENCEVERIFY`, BIP68 |
-| Tokens | – | from height 1,911,210 |
+| Timelock opcodes | – | `OP_CHECKLOCKTIMEVERIFY`, `OP_CHECKSEQUENCEVERIFY` |
+| Tokens | – | once the tip is at height 1,911,210 |
 
 ## 2. Networks and chain parameters
 
@@ -51,7 +51,7 @@ Source: `src/chainparams.cpp`, `src/chainparamsbase.cpp`,
 | Network | Usable? | Notes |
 |---|---|---|
 | **main** | yes | The production network. |
-| **regtest** | starts, but not isolated | Same magic bytes, P2P port, address prefixes and fixed seeds as main. All fork heights are 0. Not used by the tests. |
+| **regtest** | starts, but not isolated | Same magic bytes, P2P port, address prefixes and fixed seeds as main; own genesis, `powLimit` `0x7fff…`, RPC port 17687. The consensus-param heights (`BIP65Height`, `BIP68Height`, `HeliopolisHardforkHeight`) are 0, but the global fork switch (§3.1) stays 1,890,000 unless `-testnetNewLogicBlockNumber` is given, so the rules are a mix (v7 headers required from height 0, most other rules pre-fork). Not used by the tests. |
 | testnet | **no** | `-testnet` is accepted by the argument parser, but `CreateChainParams` has no testnet class and throws "Unknown chain", so `yacoind` exits. The legacy global `fTestNet` still switches some code paths (N-factor 4, trust rules, coinstake fee); these paths are dead. |
 | *low-difficulty main* | build-time variant | Main params from a binary built with `--enable-low-difficulty-for-development`: different `powLimit` (2^253 instead of 2^236), genesis block, money supply, seeds and checkpoints, token fee lock of 10 YAC for 10 blocks. Used by the functional tests and for development mining. The version string ends in `-low-difficulty`. |
 
@@ -91,12 +91,14 @@ set at start-up** in `AppInitParameterInteraction`/`AppInitMain`
 | `nFactorAtHardfork` | 21 | `-nFactorAtHardfork` | N-factor for version-7 headers. |
 | `nTokenSupportBlockNumber` | 1,911,210 | `-tokenSupportBlockNumber` | Token activation height. |
 | `Consensus::Params::HeliopolisHardforkHeight` | 1,890,000 | – | Only the block-version rule and coin/undo serialisation. |
-| `BIP65Height`, `BIP68Height` | 1,890,000 | – | CLTV and CSV/sequence locks (height-based, not BIP9). |
+| `BIP65Height`, `BIP68Height` | 1,890,000 | – | Script flags for CLTV and CSV (height-based, not BIP9). BIP68 sequence locks themselves are **not** gated, see §3.9. |
 
 Changing these options on mainnet makes a node follow different rules – they
-exist for tests. In `test_bitcoin` the first three globals are **0** (they
-are only set in `AppInit`), so unit tests run "post-fork from height 0" with
-N-factor 0.
+exist for tests. In `test_bitcoin`, `nMainnetNewLogicBlockNumber`,
+`nFactorAtHardfork` and `nTokenSupportBlockNumber` are **0** (they are only
+set in `AppInit`), so unit tests run "post-fork from height 0" with
+N-factor 0 and tokens active; the epoch interval keeps its static value
+21,000.
 
 ### 3.2 Block header and PoW hash
 
@@ -106,11 +108,11 @@ Source: `src/primitives/block.h` (`CBlockHeader::CalculateHash`),
 - The block hash **is** the scrypt-jane hash (there is no separate
   SHA-256d block id). `scrypt(header, header, Nfactor, 0, 0, out, 32)`
   with Keccak-512 and ChaCha20/8.
-- Version ≥ 7 headers are hashed in a packed 88-byte layout with a 64-bit
-  `nTime`, using `nFactorAtHardfork` (21 on mainnet; 4 in the functional
+- Version ≥ 7 headers are hashed in a packed 84-byte layout
+  (`struct block_header`) with a 64-bit `nTime`, using `nFactorAtHardfork` (21 on mainnet; 4 in the functional
   tests; 0 in unit tests).
-- Older headers are hashed in the packed 80-byte layout with a 32-bit
-  `nTime`; the N-factor comes from a table indexed by the block timestamp
+- Older headers are hashed in the 80-byte layout (`old_block_header`,
+  naturally aligned, not explicitly packed) with a 32-bit `nTime`; the N-factor comes from a table indexed by the block timestamp
   (4 … 25, `MAXIMUM_N_FACTOR` 25).
 - `GetNfactor()` in `src/main.cpp` is used for display only
   (`getmininginfo`).
@@ -139,16 +141,21 @@ block), one-week timespan), separately for PoW and PoS.
 **From the fork on:**
 
 1. The fork block itself requires `powLimit`.
-2. The target stays the same for a whole epoch; it changes only when
-   `(height + 1) % nDifficultyInterval == 0`.
+2. The target stays the same for a whole epoch; it changes only when the
+   new block's height is a multiple of `nDifficultyInterval`. (Point 1
+   holds because 1,890,000 is itself a multiple of 21,000.)
 3. At an epoch boundary: `new = prev × actual / nominal`, where *actual* is
    the time taken by the last epoch, clamped to ¼ … 4 × *nominal*
    (21,000 × 60 s).
 4. **Floor ("minimum difficulty / max ease")**: the new target may not be
    easier than 3 × the target of the hardest block since the fork, and not
    easier than `powLimit`. The hardest block is the smallest compact `nBits`
-   found by walking all post-fork blocks of `chainActive` and of the block
-   index. (Trello: "Implement minimum difficulty (max ease)".)
+   found by walking all post-fork blocks of `chainActive` (from the tip) and
+   of the branch of the previous block. (Trello: "Implement minimum
+   difficulty (max ease)".) *Known quirk*: because the walk starts at the
+   active tip, the required `nBits` of a header on another branch can
+   depend on the node's current chain; this is why a mismatch only scores
+   DoS 10.
 5. A header with the wrong `nBits` is rejected (`bad-diffbits`, DoS 10).
 
 ### 3.5 Block reward and money supply
@@ -170,7 +177,11 @@ reward     = nMoneySupply(block epochStart − 1) * 0.02 / 525,960
 - 525,960 = blocks per year at 1 block/minute (365.25 days).
 - The reward is constant within an epoch and recomputed each epoch
   (Trello: "Set block reward for the duration of an epoch").
-- Fees are **not** added; the coinbase may not exceed the reward.
+- Fees are **not** added; the coinbase may not exceed the reward. Since
+  `nMoneySupply` = previous supply + outputs − inputs, fees paid after the
+  fork are effectively destroyed and reduce the supply.
+- *Known quirk*: `ConnectBlock` computes the limit for
+  `chainActive.Height() + 1`, not for the block's own height.
 - The arithmetic uses `double` (`nInflation = 0.02`). *Known quirk*:
   floating point in consensus (review B2); it must be preserved bit for bit.
 - `nMoneySupply` is stored in every block index entry.
@@ -200,11 +211,12 @@ Source: `src/kernel.cpp`, `src/validation.cpp`
 (`PoSContextualBlockChecks`).
 
 The node still **validates** the PoS blocks of the first 1,890,000
-heights; it can no longer **create** them (minting code removed in 1.4.0).
+heights; it can no longer **create** them (the minting code was removed;
+the 1.4.0 merge, upstream PR #108, lists "Remove PoS mining logic").
 
 - Kernel: `Hash(stakeModifier, blockFrom.nTime, txOffset, txPrev.nTime,
-  prevout.n, nTimeTx) ≤ target × coin-day weight`; weight =
-  min(age, 90 days) − 30 days.
+  prevout.n, nTimeTx) ≤ target × coin-day weight`; coin-day weight =
+  value × min(age − 30 days, 90 days), in coin-days (`GetWeight`).
 - Stake modifier computed per block (PPCoin v0.3 rules) and checked
   against hard-coded stake-modifier checkpoints up to height 712,177.
 - PoS block rules: empty coinbase, coinstake time equal to block time, a
@@ -231,7 +243,13 @@ by arrival order (`nSequenceId`).
 | PoS after PoS | 0 |
 
 Since the fork every block is PoW, so trust grows with `powLimit / target`.
-Reorganisations below the last hard-coded checkpoint are refused.
+
+Checkpoints (`src/checkpoints.cpp`, which has its own low-difficulty
+variant) are enforced by `CheckHardened`: a header at a checkpoint height
+must have the checkpoint hash (`bad-fork-prior-to-checkpoint`). A competing
+branch is therefore rejected once it reaches a checkpoint height with a
+different hash; there is no general "no reorg below the last checkpoint"
+rule.
 
 ### 3.9 Transactions
 
@@ -249,12 +267,20 @@ Reorganisations below the last hard-coded checkpoint are refused.
 - **Coinstake** outputs follow the same maturity; coinstake transactions are
   not accepted into the mempool.
 - **Lock time.** `nLockTime` is compared with the **block time**, not the
-  median time past (BIP113 is not active). Relative time locks (BIP68) also
-  use block times. Consequence for atomic swaps: a CLTV refund becomes
+  median time past (BIP113 is not active).
+- **Relative lock times (BIP68).** Sequence locks are checked in
+  `ConnectBlock` for every non-coinbase transaction at **every height and
+  for every transaction version** – unlike Bitcoin there is neither a
+  `nVersion >= 2` nor a height check (*Known quirk*). Time-based locks use
+  block times, not median time past. Consequence for atomic swaps: a CLTV refund becomes
   spendable as soon as one block has a timestamp past the lock time
   (Trello "Yacoind improvement points + important notes").
 - **Script flags.** P2SH (since 2012 timestamp), CLTV from `BIP65Height`,
-  CSV from `BIP68Height`. Strict DER (BIP66) is not enforced.
+  the CSV opcode from `BIP68Height`. Strict DER (BIP66) is not enforced.
+- **Script checks below the last checkpoint** are skipped:
+  `ConnectBlock` verifies scripts only from
+  `Checkpoints::GetTotalBlocksEstimate()` (1,911,210 on mainnet) on, and
+  block signatures only after the last checkpoint's time.
 - **Opcodes.** `OP_CHECKLOCKTIMEVERIFY` (NOP2), `OP_CHECKSEQUENCEVERIFY`
   (NOP3), `OP_YAC_TOKEN` (NOP4, token payloads).
 
@@ -265,7 +291,7 @@ Source: `src/policy/fees.h`, `src/policy/fees.cpp`, `src/validation.h`.
 | Constant | Value |
 |---|---|
 | `MIN_TX_FEE` = `MIN_RELAY_TX_FEE` | 0.01 YAC per 1000 bytes |
-| `GetMinFee(tx)` | size in bytes × `MIN_TX_FEE` / 1000 |
+| `GetMinFee(nBytes)` | `nBytes` × `MIN_TX_FEE` / 1000 |
 | Default max fee | 0.1 YAC |
 | P2SH | relaxed standardness, `MAX_P2SH_SIGOPS` 21 |
 
@@ -278,12 +304,14 @@ Source: `src/tokens/`, `src/rpc/tokens.cpp`,
 `src/consensus/tx_verify.cpp` (`CheckTxTokens`). Ported from Ravencoin's
 asset layer and renamed "tokens".
 
-- **Activation:** chain height ≥ 1,911,210. Before that, token scripts are
-  only logged.
+- **Activation:** when the active tip is at height ≥ 1,911,210
+  (`AreTokensDeployed`), i.e. from block 1,911,211 on. Before that, token
+  scripts are only logged.
 - **Types:** `YATOKEN` (root), `SUB` (`ROOT/SUB`), `UNIQUE` (`ROOT#tag`),
   `OWNER` (`ROOT!`), `VOTE` (`ROOT^…`), `REISSUE`. Units 0–6 decimals.
-- **Names:** `^[A-Z0-9._]{3,}$`, at most 30 characters for root and
-  sub-token names (31 with the owner `!`), no leading, trailing or double
+- **Names:** `^[A-Z0-9._]{3,}$`; full names (including the parent path)
+  at most 30 characters for root and sub tokens and 31 for unique and
+  vote tokens and with the owner `!`, no leading, trailing or double
   `.`/`_`; `YAC`, `YACOIN`, `#YAC`, `#YACOIN` are reserved. Unique tags
   allow `A–Z a–z 0–9 @$%&*()[]{}_.?:-`. Validation uses `std::regex`,
   which makes it consensus code that depends on the C++ library
@@ -361,7 +389,8 @@ Standard Bitcoin Core 0.15 options are not repeated here.
 | `-blockhashindex` | on | Store scrypt block hashes in LevelDB. |
 | `-txindex` | **on** | Transaction index (needed to validate historical PoS blocks). |
 | `-tokenindex`, `-addressindex` | off | Extra indexes (section 4). |
-| `-initSyncDownloadTimeout`, `-initSyncMaximumBlocksInDownloadPerPeer`, `-initSyncBlockDownloadWindow`, `-initSyncTriggerGetBlocks` | – | Tuning of initial block download. If headers are more than 10,000 ahead of blocks, the node falls back to legacy `getblocks` once a minute. |
+| `-initSyncDownloadTimeout`, `-initSyncMaximumBlocksInDownloadPerPeer`, `-initSyncBlockDownloadWindow`, `-initSyncTriggerGetBlocks` | – | Tuning of initial block download (*Known quirk*: the help text gives a 600 s default for `-initSyncDownloadTimeout`, the code uses 900 s). If headers are more than 10,000 ahead of blocks, the node falls back to legacy `getblocks` once a minute. |
+| `-hashcalcthreads` | cores − 1 | Threads for parallel block-hash calculation. |
 | `-gen`, `-genproclimit` | off, −1 | Internal miner. |
 | `-memorylog`, `-detachdb`, `-btcyacprovider`, `-rpcssl*` | – | Legacy options. |
 

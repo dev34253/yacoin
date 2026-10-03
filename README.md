@@ -6,8 +6,8 @@ Many thanks to WindMaster for initially setting up this repository to continue d
 ## Current state (since the Heliopolis hard fork, block 1,890,000, April 2021)
 
 - Proof-of-work only (scrypt-jane, Keccak-512 + ChaCha20/8, N-factor fixed at 21), 1-minute blocks.
-- Difficulty and block reward change once per epoch of 21,000 blocks; the reward gives at most 2 % inflation per year, and the maximum block size follows from the reward and the 0.01 YAC/kB minimum fee.
-- 64-bit timestamps, a transaction-malleability fix, `OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` timelocks, and tokens (since block 1,911,210).
+- Difficulty and block reward change once per epoch of 21,000 blocks; the reward gives about 2 % inflation per year, and the maximum block size follows from the reward and the 0.01 YAC/kB minimum fee.
+- 64-bit timestamps, a transaction-malleability fix, `OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` timelocks, and tokens (since block 1,911,211).
 
 ## Documentation
 

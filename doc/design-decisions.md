@@ -4,7 +4,8 @@ A log of the significant design and implementation decisions, in the style
 of architecture decision records (ADRs): context, decision, consequences
 and evidence. It covers the decisions inherited from the history of the
 code (D-01 … D-14) and those of the current modernisation work
-(D-15 … D-22).
+(D-15 … D-22), plus D-23, which is historical and was added after the
+review.
 
 - What the software does: [functional specification](functional-specification.md).
 - How it is organised: [architecture](architecture.md).
@@ -43,8 +44,9 @@ in `project/` that make a decision link to the entry.
 | D-18 | [Modernise in phases behind a test safety net](#d-18-modernise-in-phases-behind-a-test-safety-net) | Accepted | 2026-10-02 |
 | D-19 | [Build image: Ubuntu 24.04 with GCC 11, on Docker Hub](#d-19-build-image-ubuntu-2404-with-gcc-11-on-docker-hub) | Accepted | 2026-10-02 |
 | D-20 | [Project logistics: fork first, own mainnet node, old wallets stay readable](#d-20-project-logistics-fork-first-own-mainnet-node-old-wallets-stay-readable) | Accepted | 2026-10-02 |
-| D-21 | [Scripted out-of-tree builds in two configurations](#d-21-scripted-out-of-tree-builds-in-two-configurations) | Accepted | 2026-10-03 |
+| D-21 | [Scripted out-of-tree builds in two configurations](#d-21-scripted-out-of-tree-builds-in-two-configurations) | Accepted | 2026-10-02 |
 | D-22 | [Documentation set and process](#d-22-documentation-set-and-process) | Accepted | 2026-10-03 |
+| D-23 | [Keep `getwork` next to `getblocktemplate`](#d-23-keep-getwork-next-to-getblocktemplate) | Accepted | 2020–2026 |
 
 ---
 
@@ -158,12 +160,11 @@ checkpoint 1,890,005); `src/consensus/consensus.h` (maturity).
 - **Status:** Accepted.
 - **Date:** 2021-04 (Heliopolis).
 
-**Context.** The PPCoin per-block retarget reacts quickly. That lets an
-attacker drop the difficulty and mine many cheap blocks within seconds,
-which makes reorganisations easier.
-
-Trello card "Implement minimum difficulty (max ease)": target 1 minute over
-the previous epoch of 21,000 blocks, "OR 1/3rd of the highest difficulty in
+**Context.** The PPCoin per-block retarget reacts quickly. The Trello card
+"Implement minimum difficulty (max ease)" gives the reason: "to avoid an
+attack that makes reorgs easier by mining new blocks within seconds" (a
+mitigation, not a complete solution). The rule it asks for: target
+1 minute over the previous epoch of 21,000 blocks, "OR 1/3rd of the highest difficulty in
 ANY of the previous epochs – whichever is greater".
 
 **Decision.**
@@ -218,7 +219,8 @@ Trello cards on this:
 
 - Inflation is at most about 2 % a year, and the block size grows with the
   supply.
-- Both values are computed in `double`. Floating point in consensus has to
+- The reward is computed in `double`, and the block size inherits it
+  (integer arithmetic on the reward). Floating point in consensus has to
   be reproduced exactly on every compiler and target (review B2, P0-46,
   P0-53).
 - `GetMaxSize` without a height uses the tip, which is a latent pitfall
@@ -231,17 +233,23 @@ Trello cards on this:
 ## D-06: Hard-coded checkpoints only
 
 - **Status:** Accepted.
-- **Date:** 2021-03 (upstream PRs #93, #98, #101).
+- **Date:** 2021-03 (upstream PR #93); remnants removed in #98 and #101
+  (2021–2022).
 
 **Context.** PPCoin-style *sync checkpoints* are broadcast and signed
-centrally. That is a trust and maintenance burden.
+centrally. Commit 5a3c808 says only "Not use sync-checkpoint for yacoin
+1.0.0 … Not allow to reorg back to blocks which before last checkpoint".
+Inferred rationale: a central signing key is a trust and maintenance
+burden.
 
 **Decision.**
 
 - Sync checkpoints were removed.
 - Only checkpoints compiled into `checkpoints.cpp` and `chainparams.cpp`
   remain (up to height 1,911,210).
-- Reorganisations below the last checkpoint are refused.
+- A branch that reaches a checkpoint height with a different hash is
+  rejected (`CheckHardened`). Despite the commit message, there is no
+  general check that refuses reorganisations below the last checkpoint.
 - Signature checks are skipped for blocks before the last checkpoint time.
 - Stake-modifier checkpoints stay as they are.
 
@@ -294,7 +302,8 @@ SegWit… since we are enacting a hard fork").
 **Decision.**
 
 - For transaction version ≥ 2, the txid is the hash of the transaction
-  with every `scriptSig` blanked (`GetNormalizedHash`).
+  with every `scriptSig` blanked (`GetNormalizedHash`); coinbase
+  transactions are hashed in full.
 - Signatures stay in the transaction. There is no witness structure.
 - `OP_CHECKTEMPLATEVERIFY` was considered and dropped.
 
@@ -391,6 +400,8 @@ place, and do not rebase onto Bitcoin Core:
 | PR | What was ported |
 |---|---|
 | #100 | `chainActive`, block status, `CValidationState`, headers-first sync |
+| #101 | multithreaded block-hash calculation, sync-stall fixes (see D-12) |
+| #104 | tokens and the `primitives/`/`script/` split (see D-13) |
 | #108 | mempool and block assembly |
 | #109 | net/addrman, `gArgs`, serialize, `arith_uint256`; BDB txdb and alerts removed |
 | #111 | UTXO set (`chainstate/`), `txdb.cpp` |
@@ -403,7 +414,8 @@ place, and do not rebase onto Bitcoin Core:
 - Some 0.4.x leftovers remain (`main.cpp`, `fTestNet`, dead scrypt code,
   the accounts API, synchronous block import at start-up).
 - `PROTOCOL_VERSION` is 70015.
-- `getblockchaininfo` was renamed to `gettimechaininfo`.
+- `getblockchaininfo` does not exist; Yacoin has its own reduced
+  equivalent, `gettimechaininfo` (added in #100).
 
 **Evidence.** git history; `src/version.h`; `src/rpc/blockchain.cpp`.
 
@@ -635,7 +647,7 @@ chain if a single value differs.
 
 **Consequences.**
 
-- Phase 0 is large: 58 tasks.
+- Phase 0 is large: 59 tasks (P0-00 … P0-58).
 - Long-running jobs need a self-hosted machine (D-20).
 - Suspected bugs are written down, not fixed.
 
@@ -667,8 +679,9 @@ same time would mix two sources of behaviour change.
 
 **Consequences.**
 
-- Results match the 22.04 baseline: unit tests 239/239 (mainnet build) and
-  functional tests 45/45.
+- Results match the 22.04 baseline: low-difficulty unit tests 238/239 (the
+  same known failure) and functional tests 45/45. The mainnet build passes
+  239/239 unit tests (a new measurement; the baseline had no mainnet run).
 - Binaries need glibc ≥ 2.38, so this image is for dev and CI only, not for
   releases.
 
@@ -679,6 +692,16 @@ same time would mix two sources of behaviour change.
 
 - **Status:** Accepted.
 - **Date:** 2026-10-02 (P0-00, decisions 1–4 and 6).
+
+**Context.** Phase 0 could not start without answers to some practical
+questions:
+
+- where a fully synced mainnet node runs, given 24–48 h reindexes and no
+  P2P access from cloud sessions;
+- how to find peers without DNS seeds;
+- whether work goes to the fork or straight upstream;
+- whether old encrypted wallets must stay readable;
+- which CI system runs the long jobs.
 
 **Decision.**
 
@@ -702,7 +725,7 @@ P0-44 (CI skeleton) carry these out.
 ## D-21: Scripted out-of-tree builds in two configurations
 
 - **Status:** Accepted.
-- **Date:** 2026-10-03 (P0-01, dev34253/yacoin#50).
+- **Date:** 2026-10-02 (P0-01, dev34253/yacoin#50).
 
 **Context.** The manual build modifies the checkout: `autogen.sh` rewrites
 tracked files and `depends` writes into the tree. Tests need two
@@ -750,3 +773,34 @@ The documentation review and the follow-ups it found are recorded in
 functional specification. New decisions get an entry here.
 
 **Evidence.** this file; `CLAUDE.md`.
+
+## D-23: Keep `getwork` next to `getblocktemplate`
+
+- **Status:** Accepted. Affected by Phase 3 (the `getwork` midstate uses
+  OpenSSL `SHA256_CTX` internals).
+- **Date:** 2020 (64-bit layout, commit c805d1a) to 2026 (v1.11.0: race
+  fix, `getblocktemplate`/`submitblock` aligned with Bitcoin Core 0.15.2).
+
+**Context.** Yacoin's GPU and CPU miners (ccminer and cpuminer forks) and
+pools speak the legacy `getwork` protocol. Bitcoin Core removed `getwork`
+in 0.10. Trello: "Fix getwork rpc command issue", "ccminer fork: handle
+case nTime 64bit after hard fork", "Integrate scrypt-chacha algorithm to
+xmrig" (which asks for getwork, getblocktemplate and Stratum).
+
+**Decision.**
+
+- Keep `getwork`, with both the 32-bit and the 64-bit (`nTime`) header
+  layouts. Blocks found through it are signed by the node's wallet.
+- Offer `getblocktemplate`/`submitblock` (BIP22/23) as well, and
+  `calculatescrypthash` as a helper for miner developers.
+
+**Consequences.**
+
+- External miners keep working, but `getwork` needs a wallet, peers and a
+  synced node.
+- The `getwork` midstate code (`miner.cpp`) writes into OpenSSL
+  `SHA256_CTX` internals. Phase 3 has to replace it without changing the
+  output, which RPC snapshots will pin (P0-33).
+
+**Evidence.** `src/rpc/mining.cpp` (`getwork`, `getblocktemplate`);
+`src/miner.cpp` (`FormatHashBuffers_64bit_nTime`, `SHA256Transform`).

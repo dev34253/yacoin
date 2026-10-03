@@ -58,6 +58,38 @@ Severity:
 | R12 | Low | `README.md` | The CI badge points to yacoin/yacoin branch `1.0.0`. | Kept: the fork tracks upstream (D-20). |
 | R13 | Low | Code comments | `init.cpp` still mentions `ThreadImport` (the import runs synchronously). `Makefile.am` has an unused scrypt-jane `-O3 -DUSE_ASM` rule. | Recorded in `architecture.md`. Clean-up belongs to P0-50 (inventory and dead code). |
 | R14 | Low | `CLAUDE.md`, `project/README.md` | Accurate. They did not point to the new documents. | **Fixed:** links added. |
+| R15 | Medium | `project/plans/phase0-test-safety-net.md`, `project/todo/P0-19-header-hash-known-answers.md` | Give the packed header sizes as 88 and 80 bytes. The v7 `struct block_header` is `#pragma pack`ed and is 84 bytes; the 80-byte `old_block_header` is not packed. Found by the reviewer of the functional specification. | **Fixed** in both files. |
+| R16 | Low | `project/plans/phase0-test-safety-net.md` | Says the tasks run from `P0-00` … `P0-56`; they run to `P0-58`. | **Fixed.** |
+
+## Review of the new documents
+
+Two reviewer subagents checked the new documents against the code, the git
+history and `project/` before the review fixes were committed.
+
+**Functional specification.** The reviewer reported 5 High, 5 Medium and
+4 Low findings. All were applied. The High ones were:
+
+- header size 84, not 88, bytes;
+- BIP68 sequence locks are not gated by height or transaction version;
+- the coin-day weight formula;
+- regtest's mixed fork rules;
+- which globals are 0 in unit tests.
+
+**Architecture and design decisions.** The reviewer reported 4 High,
+9 Medium and 10 Low findings. All were applied. The High ones were:
+
+- `kernelrecord.cpp` is not built;
+- the block signature is checked in `CheckBlock`;
+- `gettimechaininfo` was new, not renamed;
+- OpenSSL also provides the RNG used for keys.
+
+Additions suggested by the reviewer: the `getwork` decision became D-23,
+and the architecture gained a wallet section (§6.5).
+
+**Checkpoints.** The reviewers also showed that "no reorganisation below
+the last checkpoint" (the wording of commit 5a3c808) is not what the code
+does. Only `CheckHardened` enforces checkpoints. The functional
+specification and D-06 now describe the code.
 
 ## Checked and found accurate
 

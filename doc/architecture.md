@@ -20,7 +20,7 @@ where the dependency modernisation (see `project/`) will change things.
                  ▼                                  ▼
  ┌──────────────────────────────────────────────────────────────┐
  │ yacoind                                                      │
- │  P2P (7688) ◄──► other yacoind / legacy 0.4.x-1.x nodes       │
+ │  P2P (7688) ◄──► other yacoind nodes                          │
  │  RPC (7687) ◄──  yacoin-cli                                   │
  │  datadir: blocks/, chainstate/, tokens/, wallet.dat, …        │
  └──────────────────────────────────────────────────────────────┘
@@ -32,6 +32,8 @@ where the dependency modernisation (see `project/`) will change things.
 - External programs in the wider Yacoin ecosystem (ccminer forks, the
   YASwap wallet and atomic agent, the block explorer) talk to it only over
   RPC. They live in other repositories and are out of scope here.
+- Pre-fork 0.4.x nodes cannot follow the chain after block 1,890,000; they
+  are on a different chain.
 - There are no DNS seeds; nodes find each other through 7 fixed seeds,
   `addnode` and address relay.
 
@@ -45,7 +47,7 @@ The code is a layered result of three code bases:
 | Consensus core | PPCoin / NovaCoin / Yacoin 0.4.x (2013–2018) | `kernel.cpp`, `bignum.h` (`CBigNum`), block trust, pre-fork difficulty and reward, block signatures, `nTime` in transactions |
 | Yacoin 1.x additions | Yacoin developers (2020–2026) | Heliopolis fork rules, scrypt-jane at fixed N-factor, 64-bit time, epoch reward/difficulty, timelock RPCs, tokens (from Ravencoin), multithreaded hash calculation |
 
-The structure is roughly Bitcoin Core 0.15 (free functions in
+The structure is that of Bitcoin Core 0.15 with some 0.16 parts (free functions in
 `validation.cpp`, no `CChainState` class), with `PROTOCOL_VERSION`
 70015. The PPCoin consensus code was kept as is and wrapped, not
 rewritten (see [D-01](design-decisions.md#d-01-keep-the-ppcoin-consensus-code)).
@@ -59,7 +61,7 @@ Defined in `src/Makefile.am`, `src/Makefile.test.include`,
 |---|---|---|
 | `yacoind` | yes | the node |
 | `yacoin-cli` | yes | RPC client |
-| `test/test_bitcoin` | yes (`make check`) | Boost.Test unit tests |
+| `test/test_bitcoin` | yes (in `bin_PROGRAMS`; run by `make check`) | Boost.Test unit tests |
 | `test/test_bitcoin_fuzzy` | yes | AFL-style fuzz entry point (stdin) |
 | `qt/yacoin-qt` | only with Qt (deferred) | GUI |
 | `yacoin-tx`, `bench_bitcoin`, `libyacoinconsensus` | **no** | not present / commented out |
@@ -102,9 +104,11 @@ Notes:
 - ZMQ is not built (no `src/zmq/`; `ENABLE_ZMQ` code in `init.cpp` is
   dead), REST is not built (no `rest.cpp`).
 - OpenSSL is still linked into `yacoind` and `yacoin-cli`. Inside the node
-  it provides `CBigNum` (`BIGNUM`), the RNG seeding and locking callbacks,
-  `OPENSSL_cleanse`, and the SHA-256 midstate for `getwork`. Wallet
-  encryption and signatures do **not** use it (in-tree AES, libsecp256k1).
+  it provides `CBigNum` (`BIGNUM`); the RNG (`GetRandBytes` is
+  `RAND_bytes`, mixed into `GetStrongRandBytes`, so key and wallet master-key
+  generation depend on it) and its locking callbacks; `OPENSSL_cleanse`; and
+  the SHA-256 midstate for `getwork`. The wallet cipher and signatures do
+  **not** use it (in-tree AES, libsecp256k1).
 
 ## 4. Source tree
 
@@ -114,7 +118,7 @@ Notes:
 | `src/validation.cpp/.h` | Block and transaction validation, chain activation, block files, reward function, global chain state. |
 | `src/consensus/` | `params.h` (consensus parameters incl. `HeliopolisHardforkHeight`, `powLimit` as `CBigNum`), `consensus.cpp` (`GetMaxSize`, coinbase maturity), `tx_verify.cpp` (input, sequence-lock and token checks). |
 | `src/pow.cpp` | Difficulty (pre- and post-fork), `CheckProofOfWork`, PoS limits and stake reward. |
-| `src/kernel.cpp`, `kernelrecord.cpp` | PPCoin stake kernel, stake modifier and its checkpoints. |
+| `src/kernel.cpp` | PPCoin stake kernel, stake modifier and its checkpoints. (`kernelrecord.cpp/.h` is an unbuilt minting-view class – dead code, P0-50.) |
 | `src/chain.cpp/.h` | `CBlockIndex`, `CChain`, block trust, `bnChainTrust`. |
 | `src/primitives/` | `CBlockHeader`/`CBlock` (scrypt-jane hash, header versions, PoS classification, block signature), `CTransaction` (`nTime`, normalized txid). |
 | `src/scrypt.cpp`, `scrypt-*.S`, `scrypt-generic.cpp`, `src/scrypt-jane/` | Hash functions. Only `scrypt_hash` + scrypt-jane are live; the rest is dead code (P0-50). |
@@ -140,16 +144,16 @@ Notes:
 | `contrib/testing/` | `build.sh`: scripted builds and test runs in the pinned image. |
 | `project/` | Modernisation plans, task board, runbooks. |
 
-## 4a. Global state and fork switches
+### 4.1 Global state and fork switches
 
 Consensus decisions read **process-wide globals** in addition to
 `Params()`:
 
 | Global | Set in | Used by |
 |---|---|---|
-| `cs_main`, `mapBlockIndex`, `chainActive`, `pindexBestHeader`, `setBlockIndexCandidates` | `validation.cpp` | everything |
-| `pcoinsTip`, `pblocktree`, `ptokensdb`, `ptokens`, `mempool` | `init.cpp` (step 7) | validation, RPC, miner |
-| `nMainnetNewLogicBlockNumber`, `nEpochInterval`, `nDifficultyInterval`, `nFactorAtHardfork`, `nTokenSupportBlockNumber` | `init.cpp` from arguments | pow, reward, size, maturity, header hash, tokens |
+| `cs_main`, `mapBlockIndex`, `chainActive`, `pindexBestHeader`, `setBlockIndexCandidates`, `mempool` | `validation.cpp` (static) | everything |
+| `pcoinsTip`, `pblocktree`, `ptokensdb`, `ptokens` | `init.cpp` (Step 7) | validation, RPC, miner |
+| `nMainnetNewLogicBlockNumber`, `nEpochInterval`, `nDifficultyInterval`, `nFactorAtHardfork`, `nTokenSupportBlockNumber` | `init.cpp` from arguments (epoch and N-factor in Step 3, fork and token heights at the start of Step 7) | pow, reward, size, maturity, header hash, tokens |
 | `fTestNet` | `init.cpp` | dead branches (no testnet params) |
 
 Consequences: consensus functions are not pure (they read `chainActive`,
@@ -165,9 +169,9 @@ Default data directory `~/.yacoin` (`%APPDATA%\Yacoin` on Windows).
 |---|---|---|
 | `yacoin.conf`, `yacoind.pid`, `.lock`, `debug.log` | text | configuration, process files, log |
 | `blocks/blk*.dat`, `blocks/rev*.dat` | raw | blocks and undo data, 128 MiB files |
-| `blocks/index/` | LevelDB | block index (`b`), file info (`f`), tx index (`t`, on by default), block-hash cache, address index (`a`/`u`), flags |
-| `chainstate/` | LevelDB | UTXO set, per output (`C`), best block (`B`), Bitcoin Core 0.15 format |
-| `tokens/` | LevelDB | token metadata and balances |
+| `blocks/index/` | LevelDB | block index (`b`), file info (`f`), last file (`l`), reindex flag (`R`), flags (`F`), tx index (`t`, on by default), block-hash cache, address index (`a`/`u`, only with `-addressindex`, which needs a reindex) |
+| `chainstate/` | LevelDB | UTXO set, per output (`C`), best block (`B`), head blocks during a flush (`H`), Bitcoin Core 0.15 format |
+| `tokens/` | LevelDB | token metadata and balances (`-tokenindex` adds lookups; needs a reindex) |
 | `wallet.dat`, `database/` | Berkeley DB 4.8 | wallet(s) and BDB logs |
 | `peers.dat`, `banlist.dat`, `mempool.dat` | Bitcoin serialisation | address manager, bans, mempool snapshot |
 | `bootstrap.dat` | raw blocks | imported at start-up if present |
@@ -181,20 +185,25 @@ the Heliopolis height.
 
 ### 6.1 Start-up (`AppInit` → `init.cpp`)
 
-1. Basic setup, parameter interaction, sanity checks, data-directory lock.
-2. Fork globals from arguments; RPC tables registered.
-3. Threads: script check, **hash calculation**, scheduler; HTTP/RPC server
-   in warm-up mode.
-4. Wallet verification, network set-up.
-5. Load the chain: migrate pre-1.5.0 data directories, open block-tree,
-   coins and token databases, `LoadBlockIndex` (recompute trust, load
-   reward and highest difficulty), `VerifyDB`.
-6. Load wallets.
-7. Import blocks **synchronously** (reindex, `bootstrap.dat`,
+The step numbers are those of the `Step N` comments in `init.cpp`.
+
+1. Steps 1–2: basic setup, parameter interaction.
+2. Step 3: flags; `nEpochInterval`/`nFactorAtHardfork` from arguments; RPC
+   tables registered.
+3. Step 4: sanity checks, data-directory lock. Step 4a (`AppInitMain`):
+   threads for script check, **hash calculation** and the scheduler;
+   HTTP/RPC server in warm-up mode.
+4. Steps 5–6: wallet verification, network set-up.
+5. Step 7: fork and token heights from arguments; load the chain: migrate
+   pre-1.5.0 data directories, open block-tree, coins and token databases,
+   `LoadBlockIndex` (recompute trust, load reward and highest difficulty),
+   `VerifyDB`.
+6. Step 8: load wallets.
+7. Step 10: import blocks **synchronously** (reindex, `bootstrap.dat`,
    `-loadblock`), `ActivateBestChain`, load mempool. (Bitcoin Core does
    this in a background `ThreadImport`; here start-up waits for it.)
-8. Start P2P (`connman.Start`), the optional internal miner, finish RPC
-   warm-up.
+8. Steps 11–12: start P2P (`connman.Start`), the optional internal miner,
+   finish RPC warm-up.
 
 Shutdown is the reverse (`Interrupt`, `Shutdown`), triggered by `stop`,
 SIGTERM or SIGINT.
@@ -203,24 +212,25 @@ SIGTERM or SIGINT.
 
 | Thread | Purpose |
 |---|---|
-| main | start-up, then waits for shutdown |
-| `scheduler` | periodic tasks (wallet DB compaction every 500 ms, …) |
+| main | start-up, then waits for shutdown (renamed `yacoin-shutoff` during shutdown) |
+| `yacoin-scheduler` | periodic tasks (wallet DB compaction every 500 ms, …) |
 | `yacoin-scriptch` × n | parallel script verification (`CCheckQueue`) |
 | `yacoin-hashcalc` × n | parallel scrypt-jane header hashing during sync (Yacoin-specific `CCheckQueue`) |
-| `net` | socket I/O |
-| `msghand` | P2P message processing (takes `cs_main`) |
-| `opencon`, `addcon`, `dnsseed` | outbound connections |
-| `upnp`, `torcontrol` | optional |
+| `yacoin-net` | socket I/O |
+| `yacoin-msghand` | P2P message processing (takes `cs_main`) |
+| `yacoin-opencon`, `yacoin-addcon`, `yacoin-dnsseed` | outbound connections (`dnsseed` starts although there are no DNS seeds, unless `-dnsseed=0`) |
+| `yacoin-upnp`, `yacoin-torcontrol` | optional |
 | `bitcoin-http`, `bitcoin-httpworker` × n | HTTP server and RPC workers |
 | `yacoin-miner` × n | internal PoW miner (`-gen`) |
 
-There is no staking thread. Most state is protected by `cs_main`; the
+`TraceThread` adds the `yacoin-` prefix. There is no staking thread. Most state is protected by `cs_main`; the
 wallet adds `cs_wallet`; the mempool has its own `cs`.
 
 ### 6.3 P2P layer
 
 - Bitcoin Core 0.15 message set, `PROTOCOL_VERSION` 70015; no
-  Yacoin-specific messages; compact blocks disabled.
+  Yacoin-specific messages; compact-block relay disabled (`sendcmpct` is
+  still sent, but `cmpctblock`/`getblocktxn` handling is commented out).
 - **Headers-first** download (`getheaders`/`headers`, `sendheaders`),
   with a Yacoin fallback: if headers are more than 10,000 ahead of blocks
   during initial download, send legacy `getblocks` once a minute.
@@ -235,13 +245,26 @@ wallet adds `cs_wallet`; the mempool has its own `cs`.
 registered from `rpc/register.h` (core and tokens) and the wallet. RPC
 handlers take `cs_main`/`cs_wallet` as needed.
 
-### 6.5 Validation pipeline
+### 6.5 Wallet
+
+- `CWallet` instances (one per `-wallet=`), stored in BDB 4.8
+  (`wallet/db.cpp`, `walletdb.cpp`), reached over RPC at `/wallet/<name>`.
+- Keys: HD (BIP32) by default; keypool; encryption with in-tree AES and
+  `BytesToKeySHA512AES`.
+- Bitcoin Core 0.15 coin selection, plus Yacoin timelocks: CLTV/CSV P2PKH
+  and P2SH templates in `script/standard.cpp`, spendable-balance rules for
+  locked outputs (`getavailablebalance`, `useexpiredtimelockutxo`).
+- The legacy accounts API is still present.
+- Signs `getwork` and internally mined blocks (block signatures).
+
+### 6.6 Validation pipeline
 
 ```
 P2P block / submitblock / miner
   └─ ProcessNewBlock
        ├─ CheckBlock                 size, merkle, coinbase/coinstake shape,
-       │    └─ CheckBlockHeader      PoW (PoW blocks), block signature
+       │    │                        block signature (after last checkpoint time)
+       │    └─ CheckBlockHeader      PoW (PoW blocks), nNonce == 0 (PoS blocks)
        ├─ AcceptBlock  (cs_main)
        │    ├─ AcceptBlockHeader → ContextualCheckBlockHeader
        │    │      nBits == GetNextTargetRequired, checkpoints, time,
