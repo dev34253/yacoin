@@ -197,8 +197,53 @@ it (no node code changes, so no change is expected).
 - Merge conflicts with #51/#52: avoided by not touching the count lines and
   by inserting the Makefile entry away from #52's hunk.
 
+## Implementation plan
+
+1. **Test file skeleton.** Create `src/test/bignum_tests.cpp`: MIT header,
+   file comment (what it pins, that it is temporary per plan rule 3 / C9,
+   pointers to P0-11/12/13), includes (`bignum.h`, `streams.h`,
+   `utilstrencodings.h`, `version.h`, `test/test_bitcoin.h`, Boost.Test),
+   `BOOST_FIXTURE_TEST_SUITE(bignum_tests, BasicTestingSetup)`. Small local
+   helpers: `Vch("hex")` (bytes from hex via `ParseHex`), `HexOf(vch)`
+   (`HexStr`). Expected values are written as decimal/hex string literals
+   and compared with `ToString()`/`GetHex()`, never computed with `CBigNum`.
+   *Verify:* compiles.
+2. **Register** the file in `src/Makefile.test.include` (`BITCOIN_TESTS`,
+   after `test/base64_tests.cpp`, keeping #52's hunk untouched).
+3. **Cases 1–4** (constructors, uint256/uint160, setters, getters).
+4. **Cases 5–9** (SetHex, ToString/GetHex, vch/MPI, bytes, serialization).
+5. **Cases 10–17** (arithmetic, division, modulo, division by zero, shifts,
+   ++/--, comparisons, copy/assign).
+6. **Cases 18–19** (compact smoke, unused math helpers).
+   Every check that pins a known oddity (negative `>>`, non-negative `%`,
+   negative zero, `getuint32`/`getint32` saturation, magnitude mod 2^n)
+   carries a one-line comment "pinned: …" so Phase 4 sees it is deliberate.
+7. **Coverage measurement (scratch only, not committed).** In the build
+   image: compile `bignum_tests.cpp` with `-O0 --coverage`, a stub
+   `test/test_bitcoin.h` (`struct BasicTestingSetup {};`) placed first on
+   the include path, `support/cleanse.cpp`, `utilstrencodings.cpp` (plus
+   whatever else the linker asks for, scratch only) and the
+   Boost.Test `unit_test_framework` library from `depends` plus a
+   `BOOST_TEST_MODULE` main; run it, then `gcov` and count executed lines of
+   `bignum.h` per method; compute the percentage over the used-method lines
+   (list in the description, excluding the dead 32-bit branch of
+   `setuint64`). Output stays in the scratchpad. *Verify:* ≥ 90 %, numbers
+   into the Log.
+8. **Code review** (`code-review` skill on the staged diff), fix findings.
+9. **Full test runs:** `contrib/testing/build.sh --config mainnet --unit
+   --jobs 2 --work-dir /root/.cache/yacoin-build-P0-10` and
+   `--config lowdiff --unit --functional` (same options); additionally
+   `--run_test=bignum_tests` output from both `unit.log`s.
+10. **Documentation:** this task file (acceptance criteria, Log); the test
+    file's header comment is the user documentation of the contract. No
+    `doc/` or RPC change (no user-facing behaviour). `src/test/README.md` is
+    not edited (#52 appends to it; nothing bignum-specific is needed there).
+    Logging (CLAUDE.md rule 5): not applicable, no daemon code changes.
+11. **Doc review**, finish task file, `git mv` to `done/`, commit, push, PR.
+
 ## Log
 
 - 2026-10-03 step 0: picked up; dependency P0-01 is in done/; branch task/P0-10-cbignum-contract-tests.
 - 2026-10-03 step 1–2: task verified against the code (findings in the description: no `CBigNum(uint160)` constructor, negative zero from `setvch`, `getuint32`/`getint32` saturation, `-1 >> 0 = 0`); behaviour confirmed with a scratch probe program in the build image. Detailed description written.
 - 2026-10-03 step 3: description review – self-review (no Agent tool). Applied: compound `+=`/`-=`/`*=` added to case 10; `isxdigit` UB on negative `char` – non-ASCII case restricted to `0xff` (== `EOF`); `long long` constructor ambiguity noted. Not applied: none.
+- 2026-10-03 step 4–5: implementation plan written; plan review – self-review (no Agent tool). Checked feasibility (Boost.Test static lib and `ParseHex`/`HexStr` available), ordering, consensus impact (none). Applied: expected values stated as literals, never computed with `CBigNum`; link list of the scratch coverage build left open. Not applied: none.
