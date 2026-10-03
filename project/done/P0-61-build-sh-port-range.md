@@ -242,6 +242,7 @@ with `TEST_RUNNER_PORT_MIN`).
   **371/371** unit, checkers ok, **47/47** functional, and lowdiff
   `--functional` in the second work dir (slot 7) exit 0, **47/47**. Second
   work dir deleted.
+- PR: https://github.com/dev34253/yacoin/pull/76
 - Not applied: nothing from the reviews. Open: slot width 1000 limits a
   run to 83 tests (documented); `TEST_RUNNER_PORT_MIN` set by hand is not
   coordinated with slots (documented).
