@@ -1,4 +1,5 @@
-# Unit, functional and coverage tests on every push (task P0-03).
+# Unit and functional tests on every push; coverage on master and by hand
+# (task P0-03).
 #
 # Every job runs contrib/testing/build.sh on a GitHub-hosted runner, which
 # runs the build in the pinned build image with Docker – the same command a
@@ -35,22 +36,12 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      # The two test jobs run on every push. The two coverage jobs (-O0, about
+      # twice as slow) only run on master and when started by hand (Run
+      # workflow), so task branches get their results sooner.
       matrix:
-        include:
-          - name: unit (mainnet)
-            id: mainnet
-            args: --config mainnet --unit
-          - name: unit + functional (lowdiff)
-            id: lowdiff
-            args: --config lowdiff --unit --functional
-          - name: coverage (mainnet)
-            id: mainnet-cov
-            args: --config mainnet --coverage --unit
-            coverage: mainnet
-          - name: coverage (lowdiff)
-            id: lowdiff-cov
-            args: --config lowdiff --coverage --unit --functional
-            coverage: lowdiff
+        include: >-
+          ${{ fromJSON((github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') && '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"},{"name":"coverage (mainnet)","id":"mainnet-cov","args":"--config mainnet --coverage --unit","coverage":"mainnet"},{"name":"coverage (lowdiff)","id":"lowdiff-cov","args":"--config lowdiff --coverage --unit --functional","coverage":"lowdiff"}]' || '[{"name":"unit (mainnet)","id":"mainnet","args":"--config mainnet --unit"},{"name":"unit + functional (lowdiff)","id":"lowdiff","args":"--config lowdiff --unit --functional"}]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -114,7 +105,8 @@ jobs:
   coverage-report:
     name: coverage report (merged)
     needs: test
-    if: ${{ !cancelled() }}
+    # Only where the coverage jobs ran; also after a failed test job.
+    if: ${{ !cancelled() && (github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

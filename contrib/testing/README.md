@@ -34,13 +34,13 @@ changed.
 |---|---|
 | `--config mainnet\|lowdiff` | Chain parameters. `lowdiff` adds `--enable-low-difficulty-for-development`. Default `mainnet`. |
 | `--coverage` | `-O0 -g --coverage -fprofile-update=atomic` in `CFLAGS` and `CXXFLAGS` (the scrypt-jane C code is instrumented too), `--coverage` in `LDFLAGS`. With `--unit`/`--functional` also writes an lcov report to `<builddir>/coverage/` (see "Coverage"). |
-| `--coverage-report` | No build and no tests: merges the reports of the mainnet and lowdiff `--coverage` runs in this work dir into `WORK_DIR/coverage-report/`. Cannot be combined with other build or test options. |
+| `--coverage-report` | No build and no tests: merges the reports of the mainnet and lowdiff `--coverage` runs in this work dir into `WORK_DIR/coverage-report/`. Rejects `--config`, `--coverage`, `--unit`, `--functional`, `--clean`, `--reconfigure` and `--sanitizers`; `--jobs` (lcov `--parallel`), `--image`, `--work-dir` and `--no-docker` work. |
 | `--sanitizers LIST` | `-fsanitize=LIST`, e.g. `address,undefined`. Implemented but not yet validated – sanitizer runs are task P0-29. |
 | `--unit` | Run `src/test/test_bitcoin`. |
 | `--functional` | Run `test/functional/test_runner.py` (requires `--config lowdiff`). |
 | `--functional-args "ARGS"` | Arguments for `test_runner.py`, replacing the default `-j4`; e.g. `"-j4 wallet_dump.py"`. |
 | `--jobs N` | Parallel make jobs (default: CPU count). |
-| `--reconfigure` | Force `configure` to run again. It also re-runs automatically when the configure arguments (including `CFLAGS`/`CXXFLAGS`) change; the build dir is then cleaned (`make clean`) so every object is rebuilt with the new flags. |
+| `--reconfigure` | Force `configure` to run again. It also re-runs automatically when the configure arguments (including `CFLAGS`/`CXXFLAGS`) change; the build dir is then cleaned (`make clean`) so every object is rebuilt with the new flags. `--reconfigure` alone does not clean. A build dir created before this behaviour existed has no record of its arguments, so its first run cleans and rebuilds once. |
 | `--clean` | Delete the source copy and this configuration's build directory first; the `depends` cache is kept. Because every file is copied again with a new time, other configurations' build dirs also rebuild completely on their next run. |
 | `--image IMAGE` | Build image. Default: the pinned P0-57 image `dev34253/yacoin-build@sha256:…` (Ubuntu 24.04, GCC 11). Also `YACOIN_BUILD_IMAGE`. |
 | `--no-docker` | Build on the current machine, e.g. when already running inside the build image in CI. |
@@ -150,24 +150,29 @@ same work dir).
 ## CI
 
 `.github/workflows/tests.yml` runs on every push to any branch (and by hand
-via *Run workflow*). Each job runs `build.sh` with Docker on a
+via *Run workflow*). The two test jobs run on every push; the coverage
+jobs and the merged report run only on `master` and when the workflow is
+started by hand (*Run workflow* on any branch), because the `-O0` coverage
+jobs take about twice as long. Each job runs `build.sh` with Docker on a
 GitHub-hosted `ubuntu-24.04` runner, in the pinned image, with the work dir
 in `$RUNNER_TEMP/yacoin-build`:
 
-| Job | Command (`build.sh` options) |
-|---|---|
-| unit (mainnet) | `--config mainnet --unit` |
-| unit + functional (lowdiff) | `--config lowdiff --unit --functional` |
-| coverage (mainnet) | `--config mainnet --coverage --unit` |
-| coverage (lowdiff) | `--config lowdiff --coverage --unit --functional` |
-| coverage report (merged) | `--coverage-report`, after the four jobs above |
+| Job | Runs | Command (`build.sh` options) | Time (2026-10-03) |
+|---|---|---|---|
+| unit (mainnet) | every push | `--config mainnet --unit` | ~8 min |
+| unit + functional (lowdiff) | every push | `--config lowdiff --unit --functional` | ~12–14 min |
+| coverage (mainnet) | master, by hand | `--config mainnet --coverage --unit` | ~15 min |
+| coverage (lowdiff) | master, by hand | `--config lowdiff --coverage --unit --functional` | ~16–19 min |
+| coverage report (merged) | master, by hand | `--coverage-report`, after the jobs above (also when a test job failed; it fails itself if a coverage job uploaded no report) | ~1 min |
 
 - The `-O2` jobs test the optimised build; the coverage jobs (`-O0`)
-  measure coverage. All four run in parallel.
+  measure coverage. All jobs of a run start in parallel (times above
+  exclude waiting for a runner).
 - Artifacts of each run: `coverage-mainnet`, `coverage-lowdiff` and
   `coverage-merged` (`.info`, `summary.txt`, `html/` – open
-  `html/index.html`), and `logs-<job>` when a job fails (build and test
-  logs, datadirs of failed functional tests). The coverage summaries are
+  `html/index.html`), and, when a job fails, `logs-mainnet`, `logs-lowdiff`,
+  `logs-mainnet-cov` or `logs-lowdiff-cov` (build and test logs, datadirs of
+  failed functional tests). The coverage summaries are
   also in the run's summary page and in the job logs.
 - `depends-cache` (downloaded sources and built packages) is cached with
   `actions/cache`, keyed on the image digest and the contents of
@@ -182,8 +187,11 @@ in `$RUNNER_TEMP/yacoin-build`:
   which builds the release binaries for all platforms) have a
   `concurrency` group per workflow and branch with `cancel-in-progress`: a
   newer push to the same branch cancels the older run, so runners are not
-  tied up by superseded commits. Otherwise the release-build workflow is
-  unchanged.
+  tied up by superseded commits.
+- The release-build workflow runs only on pushes to `master`, on tags and
+  by hand (*Run workflow*), no longer on every push to every branch: its 8
+  jobs (15–25 min each) do not run tests, and on task branches they kept
+  the runners busy. Its jobs are otherwise unchanged.
 
 ## Restricted networks (proxy and CA)
 

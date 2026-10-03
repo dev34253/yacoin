@@ -90,9 +90,10 @@ make -j"$(nproc)"
   writes `<builddir>/coverage/` (lcov `.info`, HTML, summary);
   `build.sh --coverage-report` merges mainnet + lowdiff (union; see
   `contrib/testing/README.md`).
-- **CI:** `.github/workflows/tests.yml` runs unit tests (both configs),
-  functional tests (lowdiff) and coverage on every push (P0-03); coverage
-  HTML is a run artifact.
+- **CI:** `.github/workflows/tests.yml` runs unit tests (both configs) and
+  functional tests (lowdiff) on every push to any branch; coverage (HTML as
+  a run artifact) on `master` and via *Run workflow*. The release builds
+  (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 
 ## Testing

@@ -1,6 +1,12 @@
 name: Yacoin multi platform build
 
-on: [push]
+# Release binaries for all platforms: on master, tags and by hand only
+# (task P0-03 – task branches are tested by tests.yml).
+on:
+  push:
+    branches: [master]
+    tags: ['*']
+  workflow_dispatch:
 
 # A newer push to the same branch cancels the older run (task P0-03).
 concurrency:

@@ -5,7 +5,7 @@
 - Size: M
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-03
-- Finished:
+- Finished: 2026-10-03
 
 ## Goal
 
@@ -20,8 +20,8 @@ Run unit and functional tests on every push and publish coverage reports.
 
 ## Acceptance criteria
 
-- [ ] Workflow runs on push and is green apart from known failures tracked in tasks.
-- [ ] Coverage HTML downloadable from each run; merge method documented.
+- [x] Workflow runs on push and is green apart from known failures tracked in tasks. (Run 37088055181, all five jobs green; no known failures left.)
+- [x] Coverage HTML downloadable from each run; merge method documented. (Artifacts `coverage-mainnet`, `coverage-lowdiff`, `coverage-merged`; merge method in `contrib/testing/README.md`. Since the owner decision below, "each run" means each run on `master` or started by hand.)
 
 ## Notes
 
@@ -35,7 +35,8 @@ Will be done:
 
 - A new workflow `.github/workflows/tests.yml` (GitHub Actions, hosted
   `ubuntu-24.04` runners) that runs on every push (and manually via
-  `workflow_dispatch`):
+  `workflow_dispatch`); the coverage jobs and the report only on `master`
+  and `workflow_dispatch` (owner decision 2026-10-03, see Log):
   - `unit (mainnet)`: `build.sh --config mainnet --unit` (`-O2`).
   - `unit + functional (lowdiff)`: `build.sh --config lowdiff --unit
     --functional` (`-O2`, `test_runner.py -j4`).
@@ -59,19 +60,23 @@ Will be done:
   sources `src/test`, `src/wallet/test`), `*/src/leveldb/*`,
   `*/src/secp256k1/*`, `*/src/univalue/*`, `*/src/bench/*`, and generated
   files in the build dir.
-- Branch coverage on (`--rc branch_coverage=1`, exception branches excluded
-  with `--rc no_exception_branch=1`), so P0-04 can gate branches.
+- Branch coverage on (`--rc branch_coverage=1`), so P0-04 can gate branches.
+  Exception branches stay in the numbers (`--rc no_exception_branch=1` drops
+  all branch data with lcov 2.0, see Log); P0-04 may filter them.
 - Caching the depends cache (`WORK_DIR/depends-cache`: downloaded sources and
   built packages) with `actions/cache`, keyed on the image digest and
   `hashFiles('depends/**')`.
 - Documentation: `contrib/testing/README.md` (coverage options, merge
-  method, CI), a short CI section in `doc/` (where to find the reports),
-  plan 0.1/0.9 rows, `CLAUDE.md` testing notes.
+  method, CI), plan 0.1/0.9 rows, `CLAUDE.md` testing notes. (No separate
+  `doc/` section: `doc/` holds the upstream build guides; the test-build
+  and CI documentation lives in `contrib/testing/README.md`, which
+  `CLAUDE.md` points to.)
 
 Will not be done (other tasks): coverage thresholds/gates (P0-04), schedule,
 self-hosted runner, image mirroring to GHCR, artifact storage beyond the
 default retention (P0-44), sanitizers (P0-29), changes to the existing
-release-build workflow `yacoinbuildmultiplatform.yml` (kept unchanged).
+release-build workflow `yacoinbuildmultiplatform.yml` (unchanged apart from
+the concurrency group and its trigger: `master`, tags and by hand).
 
 ### Design choices
 
@@ -99,13 +104,15 @@ release-build workflow `yacoinbuildmultiplatform.yml` (kept unchanged).
 
 ### Behaviour
 
-- A push to any branch starts the `Tests` workflow with five jobs; the run is
-  green when 239/239 unit tests pass in both configurations, 45/45
-  functional tests pass and both coverage jobs and the report succeed.
+- A push to any branch starts the `Tests` workflow with the two test jobs;
+  green when 277/277 unit tests pass in both configurations and 45/45
+  functional tests pass. On `master` and by hand, the two coverage jobs and
+  the report run as well.
 - Artifacts per run: `coverage-mainnet`, `coverage-lowdiff`,
   `coverage-merged` (each `coverage.info`/`merged.info`, `summary.txt`,
-  `html/`), and `logs-<job>` on failure (build and test logs, functional-test
-  datadirs).
+  `html/`), and on failure `logs-mainnet`, `logs-lowdiff`,
+  `logs-mainnet-cov`, `logs-lowdiff-cov` (build and test logs,
+  functional-test datadirs).
 - Locally:
   ```
   build.sh --config mainnet --coverage --unit
@@ -131,8 +138,8 @@ release-build workflow `yacoinbuildmultiplatform.yml` (kept unchanged).
 - Cache: a depends change gives a new key (restore-keys fall back to the
   newest cache for the same image; depends' own hashes decide what is
   rebuilt). Concurrent jobs with the same key: only one saves, harmless.
-- Disk on hosted runners (~14 GB free on the root fs advertised): one
-  `-O0` build is about 2–3 GB; fine.
+- Disk on hosted runners (~14 GB free on the root fs advertised; estimate):
+  one `-O0` build is about 2–3 GB (estimate); the CI coverage jobs passed.
 - Superseded pushes on the same branch cancel the older run (concurrency
   group).
 
@@ -141,26 +148,27 @@ release-build workflow `yacoinbuildmultiplatform.yml` (kept unchanged).
 | Acceptance criterion | Test | Expected |
 |---|---|---|
 | Workflow runs on push and is green | push the branch; inspect run with the GitHub tools | all five jobs succeed; record run URL |
-| Unit both configs, functional lowdiff | job logs | 239/239 mainnet, 239/239 lowdiff, 45/45 functional |
+| Unit both configs, functional lowdiff | job logs | 277/277 mainnet, 277/277 lowdiff, 45/45 functional |
 | Coverage HTML downloadable | run artifacts | `coverage-mainnet`, `coverage-lowdiff`, `coverage-merged` present |
 | Merge method documented | README + task log | section in `contrib/testing/README.md` |
 | Exclusions applied | `lcov --list merged.info` | no `/usr`, depends, test, leveldb, secp256k1, univalue, bench paths |
-| build.sh changes do not break normal runs | local `build.sh --config mainnet --unit`, `--config lowdiff --unit --functional` | 239/239, 239/239, 45/45 |
-| Coverage path locally | local mainnet and lowdiff coverage runs and `--coverage-report` | three summaries; merged lines ≥ each config |
+| build.sh changes do not break normal runs | local `build.sh --config mainnet --unit`, `--config lowdiff --unit --functional` | 277/277, 277/277, 45/45 (done in CI only, see Log) |
+| Coverage path locally | local mainnet and lowdiff coverage runs and `--coverage-report` | three summaries; merged lines ≥ each config (mainnet locally; lowdiff and merge in CI only, see Log) |
 | Counter reset | re-run capture in the same dir | numbers do not grow |
 
 ### Risks
 
 - No consensus code is touched (CI and test scripts only).
-- Hosted-runner runtime of `-O0` unit tests (7–10 min locally) and Docker
+- Hosted-runner runtime of `-O0` unit tests (estimated 7–10 min; the
+  mainnet coverage job took ~15 min in CI including the build) and Docker
   Hub rate limits are the main operational risks; recorded in the log.
 
 ## Implementation plan
 
 1. `build.sh`: add `--coverage-report` option (validation: no build/test
-   options with it; host side forwards it), a `coverage_capture` function
-   (zero counters + baseline before tests, capture/filter/HTML/summary after)
-   and a `coverage_report` function (merge both configs). Common lcov
+   options with it; host side forwards it), `coverage_start` (zero counters
+   + baseline before tests), `coverage_finish` and `coverage_html`
+   (capture/filter/HTML/summary after) and a `coverage_report` function (merge both configs). Common lcov
    options in one variable. Verify: `bash -n`, `shellcheck` if available,
    local mainnet coverage run.
 2. `.github/workflows/tests.yml`: matrix job (4 entries) + report job, image
@@ -171,7 +179,7 @@ release-build workflow `yacoinbuildmultiplatform.yml` (kept unchanged).
    `coverage/`, delete the rest of each `-cov` build dir I created), then
    `--coverage-report`.
 4. Docs: `contrib/testing/README.md` (coverage + CI sections, merge method),
-   `doc/` CI note, plan 0.1/0.9, `CLAUDE.md`.
+   plan 0.1/0.9, `CLAUDE.md` (no `doc/` note, see Scope).
 5. Iterate on CI until green; record run URL, runtimes, coverage summary.
 
 ## Log
@@ -186,3 +194,9 @@ release-build workflow `yacoinbuildmultiplatform.yml` (kept unchanged).
 - 2026-10-03: cancelled this branch's two superseded queued runs (Tests 37085301900, multi-platform 37085301820; their concurrency group predates the change). Current runs for f40295c: Tests 37085971721, multi-platform 37085971696 – queued for runners.
 - 2026-10-03: CLAUDE.md (coverage and CI bullets) and plan 0.1 CI row updated.
 - 2026-10-03: **paused** – waiting on the local lowdiff coverage run (unit + functional) was denied by the session's permission classifier; local lowdiff/merge results and the CI result are still open. Open: local `--config mainnet --unit`, `--config lowdiff --unit --functional`, lowdiff coverage + `--coverage-report`; CI run green; coverage summary; documentation review; move to done.
+- 2026-10-03: CI, first run of `tests.yml` with all jobs (Tests run 37086040249 on 7d6b5d0): unit (mainnet), unit + functional (lowdiff), coverage (mainnet), coverage (lowdiff) green (~8, ~14, ~15, ~19 min incl. build); `coverage report (merged)` failed with "--coverage-report does not build or test": the outer `build.sh` always passed `--config` to the inner run in the container. Fixed in bfbf47e (`--config` only for build runs); tested with two small lcov tracefiles in a scratch work dir (merged, exit 0; `--coverage-report --config lowdiff` still rejected; shellcheck clean). Master merged in (2267f36, now includes P0-02/P0-10/P0-47/P0-50).
+- 2026-10-03: CI, Tests run 37088055181 on 2267f36 (https://github.com/dev34253/yacoin/actions/runs/37088055181): **all five jobs green** – unit (mainnet) 8 min, unit + functional (lowdiff) 12 min, coverage (mainnet) 11 min, coverage (lowdiff) 16.5 min, coverage report (merged) 1 min. Unit tests 277/277 in both configurations, functional 45/45. Coverage (lines / functions / branches): mainnet 41.1 % / 50.0 % / 14.6 %, lowdiff 69.9 % / 76.9 % / 32.0 %, merged 69.9 % (25168 of 36015 lines) / 76.9 % / 32.0 %. (The 75.6 % of the earlier manual measurement used other exclusions; these numbers are the baseline for P0-04.)
+- 2026-10-03: **Local test runs:** only the mainnet coverage run (239/239 at the time) was done locally. The plain mainnet and lowdiff runs, the lowdiff coverage run and `--coverage-report` on real data were not completed locally (waiting on the build log was denied by the session's permission classifier); with the owner's agreement the task was verified through the CI runs above instead.
+- 2026-10-03: documentation review by a reviewer subagent (12 findings). Applied: exception-branch wording, test counts 277, release workflow "unchanged apart from concurrency group/trigger", `doc/` note dropped from scope (test-build docs live in `contrib/testing/README.md`), plan 0.9 row, log of CI results, `logs-*` artifact names, report job runs after failed test jobs, exact options `--coverage-report` rejects, one-time `make clean` of old build dirs, current function names, estimates marked as such, CLAUDE.md "any branch". Nothing left out.
+- 2026-10-03: owner decision (CI took too long: every push ran 5 Tests jobs plus the 8 release-build jobs, ~20 runners shared by all branches): coverage jobs and the merged report run only on `master` and via *Run workflow*; `yacoinbuildmultiplatform.yml` runs only on `master`, tags and *Run workflow*. Task-branch pushes now run the two test jobs (~8–12 min). actionlint clean (apart from the pre-existing `actions/checkout@v3` warnings in the release workflow). ccache in CI left for P0-44.
+- 2026-10-03: done. PR https://github.com/dev34253/yacoin/pull/56.

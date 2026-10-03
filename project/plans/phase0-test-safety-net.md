@@ -219,7 +219,7 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 
 | Trigger | Jobs |
 |---|---|
-| Every push | Both builds; unit (both configs if affordable); functional; sampled replay; coverage gates |
+| Every push | Both builds; unit (both configs if affordable); functional; sampled replay; coverage gates. Done by P0-03 (`tests.yml`): unit in both configs and functional on every push; coverage per config and merged on master and by hand |
 | Nightly | Sanitizers; fuzzers; benchmarks; functional 3×; Windows/macOS test runs |
 | Weekly / manual | Full replay and reindex (self-hosted, 24–48 h); cross-version network; soak |
 
