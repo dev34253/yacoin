@@ -3,8 +3,8 @@
 - Plan section: 0.2i
 - Depends on: P0-01
 - Size: S
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-03
 - Finished:
 
 ## Goal
@@ -27,4 +27,4 @@ Catches broken generators, not weak ones – Phase 3 RNG changes also need revie
 
 ## Log
 
--
+- 2026-10-03 step 0: picked up; dependency P0-01 done; branch `task/P0-21-randomness-tests`.
