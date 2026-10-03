@@ -321,4 +321,4 @@ changes.
   match `unit.log`. No owner questions came up: the new pinned oddity
   (`nz % x == |x|`) is in a method with no production caller and falls
   under the negative-zero entry of open question Q2.
-- 2026-10-03 – step 11: moved to `done/`, committed and pushed.
+- 2026-10-03 – step 11: moved to `done/`, committed (ff2cb92) and pushed; PR https://github.com/dev34253/yacoin/pull/63.
