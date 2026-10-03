@@ -69,7 +69,10 @@ All consensus unit tests use the shared harness (P0-47): block-index /
   ≥ 2^256 are representable.
 - Compact form (`SetCompact`/`GetCompact`): every exponent 0–34, sign bit,
   overflow, zero; Bitcoin's `arith_uint256` compact tests ported, differences
-  listed.
+  listed. Done in P0-11: `src/test/bignum_compact_tests.cpp`; the
+  differences (negative results, negative zero from a sign-bit `nBits`,
+  exact values ≥ 2^256, exponent wrap at 2^2039) are listed in
+  `project/done/P0-11-compact-encoding-tests.md` as Phase 4 special cases.
 - Values over 256 bits: the kernel product, the trust shift, the reward
   bisection products.
 - Method audit: which methods are used at all (`pow`, `mul_mod`, `pow_mod`,

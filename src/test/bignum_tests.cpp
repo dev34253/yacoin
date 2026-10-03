@@ -405,6 +405,8 @@ BOOST_AUTO_TEST_CASE(vch_mpi_format)
         // BN_bn2mpi reports for a zero, but BN_bn2mpi then sets the sign bit
         // in d[4], one byte past the buffer (heap overflow, would abort an
         // ASan build). getvch() is safe: it returns early for size <= 4.
+        // SetCompact also produces negative zeros (P0-11,
+        // bignum_compact_tests.cpp).
         CBigNum nzPlus0 = nz + CBigNum(0);
         BOOST_CHECK(!SignFlag(nzPlus0));
         BOOST_CHECK(nzPlus0 == CBigNum(0));
