@@ -70,6 +70,11 @@ Build requirements:
 
     sudo apt-get install build-essential libtool autotools-dev automake pkg-config libevent-dev bsdmainutils python3
 
+The unit tests (built unless `--disable-tests`) also need `xz` (package
+`xz-utils`, installed on most systems): `configure` stops with "xz is
+required for tests" without it. It unpacks the `CBigNum` golden vectors
+(`src/test/data/bignum_vectors.json.xz`) into the test binary.
+
 Libssl requirement on Ubuntu 16.04:
 
     sudo apt-get install libssl-dev

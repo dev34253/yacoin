@@ -17,9 +17,14 @@ JSON_TEST_FILES = \
   test/data/tx_valid.json \
   test/data/sighash.json
 
+# xz-compressed JSON, embedded decompressed as a C string (see the
+# %.json.xz.h rule below); too large to commit uncompressed (task P0-13).
+JSON_XZ_TEST_FILES = \
+  test/data/bignum_vectors.json.xz
+
 RAW_TEST_FILES =
 
-GENERATED_TEST_FILES = $(JSON_TEST_FILES:.json=.json.h) $(RAW_TEST_FILES:.raw=.raw.h)
+GENERATED_TEST_FILES = $(JSON_TEST_FILES:.json=.json.h) $(JSON_XZ_TEST_FILES:.json.xz=.json.xz.h) $(RAW_TEST_FILES:.raw=.raw.h)
 
 # test_bitcoin binary #
 BITCOIN_TESTS =\
@@ -34,6 +39,7 @@ BITCOIN_TESTS =\
   test/bignum_compact_tests.cpp \
   test/bignum_consensus_tests.cpp \
   test/bignum_tests.cpp \
+  test/bignum_vectors_tests.cpp \
   test/bip32_tests.cpp \
   test/bloom_tests.cpp \
   test/bswap_tests.cpp \
@@ -96,7 +102,7 @@ BITCOIN_TESTS += \
   wallet/test/crypto_tests.cpp
 endif
 
-test_test_bitcoin_SOURCES = $(BITCOIN_TESTS) $(JSON_TEST_FILES) $(RAW_TEST_FILES)
+test_test_bitcoin_SOURCES = $(BITCOIN_TESTS) $(JSON_TEST_FILES) $(JSON_XZ_TEST_FILES) $(RAW_TEST_FILES)
 test_test_bitcoin_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) -I$(builddir)/test/ $(TESTDEFS) $(EVENT_CFLAGS)
 test_test_bitcoin_LDADD =
 if ENABLE_WALLET
@@ -163,5 +169,19 @@ endif
 	 echo "static unsigned const char $(*F)[] = {" && \
 	 $(HEXDUMP) -v -e '8/1 "0x%02x, "' -e '"\n"' $< | $(SED) -e 's/0x  ,//g' && \
 	 echo "};};"; \
+	} > "$@.new" && mv -f "$@.new" "$@"
+	@echo "Generated $@"
+
+# One C string literal per line of the decompressed file; \ and " are
+# escaped. xz -t first, so a corrupt file fails the build instead of giving
+# a truncated header.
+%.json.xz.h: %.json.xz
+	@$(MKDIR_P) $(@D)
+	@$(XZ) -t $<
+	@{ \
+	 echo "namespace json_tests{" && \
+	 echo "static const char $(*F)[] =" && \
+	 $(XZ) -dc $< | $(SED) -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$$/\\n"/' && \
+	 echo ";};"; \
 	} > "$@.new" && mv -f "$@.new" "$@"
 	@echo "Generated $@"

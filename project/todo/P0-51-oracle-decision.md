@@ -24,6 +24,8 @@ Choose an oracle that survives OpenSSL's removal.
 
 ## Notes
 
+The golden vectors (P0-13) are `src/test/data/bignum_vectors.json.xz`, format in `src/test/README.md` (signed hex text, negative zero `-0`, `error` for division by zero). `contrib/testing/bignum_vectors_check.py` is an independent Python model that already reproduces all of them; its op semantics are the spec the oracle must meet.
+
 An OpenSSL-backed CBigNum copy can't compile against OpenSSL ≥ 1.1. Review: E1, B8.
 
 ## Log

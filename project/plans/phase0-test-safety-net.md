@@ -85,6 +85,11 @@ All consensus unit tests use the shared harness (P0-47): block-index /
   `bignum_tests` (P0-10) instantiates most unused methods in coverage builds.
   Large-value expressions: `src/test/bignum_consensus_tests.cpp` (P0-12).
 - Golden vectors (~100k operations, hex in/out) – the durable artefact.
+  Done in P0-13: `src/test/data/bignum_vectors.json.xz` (100,000 vectors,
+  0.97 MB), replayed by `src/test/bignum_vectors_tests.cpp`, format in
+  `src/test/README.md`; `contrib/testing/bignum_vectors_check.py` checks
+  them with an independent Python model (no `CBigNum`), the starting point
+  for validating the P0-51 oracle.
 
 ### b) Difficulty (`pow.cpp`) – P0-14, P0-15
 
