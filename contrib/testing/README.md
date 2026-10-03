@@ -92,8 +92,8 @@ are for testing, not release.
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 327/327 | – (not supported) |
-| `lowdiff` | 327/327 | 46/46 |
+| `mainnet` | 341/341 | – (not supported) |
+| `lowdiff` | 341/341 | 46/46 |
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to
@@ -224,7 +224,8 @@ functions), and `min` with any of `lines`, `functions`, `branches` in
 percent. Constructor/destructor variants count as one function. The gates
 follow the plan 0.10 table: overall, `pow.cpp`, `GetBlockTrust`,
 `kernel.cpp`, the reward functions in `validation.cpp`
-(`GetProofOfWorkReward`, `LoadBlockRewardAndHighestDiff`), the used
+(`GetProofOfWorkReward`, `LoadBlockRewardAndHighestDiff`, `GetCoinAge`;
+P0-46), `GetMaxSize` in `consensus/consensus.cpp` (P0-46), the used
 methods of `bignum.h` (the "used" lists of `dead-code.md` c), selected by
 name), `wallet/crypter.cpp` and `random.cpp`.
 
@@ -305,6 +306,28 @@ exits 1 if there is one (expected today: 100000 vectors, 0 disagree, under a
 second). It is not run by `build.sh` or CI; run it after regenerating the
 vectors. The `test_bitcoin` replay (`bignum_vectors_tests`) runs in every
 `--unit` run.
+
+## Reward golden table (P0-46)
+
+`reward_vectors.py` writes and checks the reward and block-size golden
+table `src/test/data/reward_vectors.json` (format in `src/test/README.md`,
+"Rewards and block size"). It computes every value without `CBigNum` or
+node code (Python integers; IEEE-754 doubles for the post-fork forms;
+`SetCompact` from `bignum_vectors_check.py`). Python 3, standard library,
+on the host:
+
+```bash
+contrib/testing/reward_vectors.py                    # check the committed file
+contrib/testing/reward_vectors.py --write            # rewrite it (keeps mainnet rows)
+contrib/testing/reward_vectors.py --write --mainnet-nbits LIST   # add mainnet nBits
+```
+
+`--check` (the default) compares the file byte for byte with the model and
+prints the first 20 differing lines; expected today: 226 pre-fork, 79
+post-fork, 60 epoch, 18 PoS rows agree. `LIST` has one hex `nBits` per line
+(`#` comments allowed); P0-23 adds the pre-fork `nBits` of the mainnet dump
+this way. Not run by `build.sh` or CI; `reward_tests` in every `--unit` run
+replays the file through the node code.
 
 ## Restricted networks (proxy and CA)
 

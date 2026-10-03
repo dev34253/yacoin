@@ -59,7 +59,7 @@ consensus globals, build block-index chains and put blocks on disk, and it
 restores everything when the test ends. Tests using it today:
 `consensus_harness_tests` (the harness itself), `pow_tests/harness_*`,
 `chain_trust_tests` (and `chain_trust_fork_choice_tests`,
-`chain_trust_p2p_tests`, see below), `kernel_tests`.
+`chain_trust_p2p_tests`, see below), `kernel_tests`, `reward_tests`.
 
 **Why it is needed.** Without `AppInit`, `test_bitcoin` runs with
 `nMainnetNewLogicBlockNumber = 0` and `nFactorAtHardfork = 0`: everything is
@@ -430,3 +430,81 @@ section 0.2h.
 `test_bitcoin_main.cpp`: the `StartShutdown()` stub now prints a message and
 exits with failure. It used to exit 0, which meant a failed genesis `Yassert`
 in a release build (without `_DEBUG`; with it, `Yassert` is `assert`) ended the run "successfully" with no test summary.
+
+### Rewards and block size (P0-46)
+
+`reward_tests.cpp` pins the block rewards and the reward-derived block size
+limit (plan 0.2f, review B1/B2): `GetProofOfWorkReward` (pre-fork `CBigNum`
+bisection on `nBits`, post-fork `double`), `GetMaxSize` (all three modes),
+`GetProofOfStakeReward`, `GetCoinAge` (every path, inputs from a block
+written with `WriteBlockToTestFile` and indexed in `pblocktree`), the
+coinstake limit in `Consensus::CheckTxInputs`, `LoadBlockRewardAndHighestDiff`
+(it only logs; the test captures the log, see below) and `getsubsidy`.
+
+**Golden table** `data/reward_vectors.json` (embedded as
+`data/reward_vectors.json.h`), written and checked by
+`contrib/testing/reward_vectors.py` without `CBigNum` or node code (Python
+integers for the bisection, `SetCompact` from P0-13's model, Python floats
+– IEEE-754 doubles – for the post-fork forms). One JSON object, one row per
+line, every value a string: decimal amounts, `nBits` as 8 hex digits.
+
+| Table | Row | Replayed by |
+|---|---|---|
+| `prefork_pow` | `nBits`, reward with target limit `0x1e0fffff` (mainnet build), reward with `0x201fffff` (low-difficulty build), source, note | `golden_prefork_pow`: `GetProofOfWorkReward(nBits, 0, 0)` and at height 1 below the mainnet fork give the column of the build; the bisection copy of `bignum_consensus_tests.cpp` gives both |
+| `postfork_pow` | money supply, reward, `LoadBlockRewardAndHighestDiff` reward, max size for `MAX_BLOCK_SIZE`, `MAX_BLOCK_SIZE_GEN`, `MAX_BLOCK_SIGOPS`, source, note | `golden_postfork_pow_and_max_size`: supply on the block before an epoch start (epoch 10, fork 10), the real functions and the logged reward |
+| `epochs` | epoch, supply before it, then the same five values as `postfork_pow` (no source/note) | `golden_per_epoch`: 60 epochs on one chain, every height of each epoch |
+| `pos` | coin age (coin-days), reward | `golden_pos`, with several `nBits`/`nTime` (both ignored) |
+
+`source` is `boundary` (edge values), `sweep` (regular grids: exponents
+0x01–0x22 × 4 mantissas, 16 mantissas for each exponent 0x1a–0x1e, 40
+spread supplies) or `mainnet`. There are no `mainnet` rows yet: the mainnet
+dump (P0-09) does not exist. P0-23 adds every distinct pre-fork `nBits` of
+the dump with `reward_vectors.py --write --mainnet-nbits LIST` (one hex
+value per line; added to the `mainnet` rows already in the file, and a
+value that is already a boundary or sweep row becomes a `mainnet` row); the
+test and the checker need no change for that. The
+`epochs` table is a **model** (supply 10^14 plus 21,000 blocks × reward per
+epoch, no PoS, no fees), not mainnet history; real per-epoch supplies come
+with P0-23's replay.
+
+**What the tests pin** (details in the task file
+`project/done/P0-46-reward-and-block-size.md`):
+
+- Pre-fork: target ≤ 0 (zero, negative zero, negative) and target 1 give
+  `CENT`; a target at or above the limit gives 100 YAC; `nFees` is added
+  after the 100 YAC cap.
+- Post-fork: `nMoneySupply * 0.02 / 525960` of the block before the epoch
+  start (first epoch: the block before the fork; a height beyond the tip
+  reads the tip, `FindBlockByHeight`); **`nFees` is ignored**.
+  `nHeight == 0` always means pre-fork, even with fork height 0, so
+  `GetMaxSize(mode)` on an empty `chainActive` in unit tests gives 1000 /
+  500 / 20000.
+- Max size = reward × 1000 / `MIN_TX_FEE` = reward / 10 bytes; `_GEN` half
+  of it; `_SIGOPS` max(size, 10^6) / 50; before the fork 10^6 / 500,000 /
+  20,000.
+- `postfork_double_equals_integer` (B2): on this target both `double`
+  forms (multiply first in `GetProofOfWorkReward`, divide first in
+  `LoadBlockRewardAndHighestDiff`) equal the integer
+  `floor(nMoneySupply / 26,298,000)` for every supply up to `MAX_MONEY`.
+  The forms are monotone, so the test checks every step point and the value
+  below it (76 million steps; 0.3 s in the `-O2` build). A replacement may use the
+  integer form; P0-53 runs this test on the other targets.
+- `GetProofOfStakeReward` = `nCoinAge * 1,650,000 / 12,053` (5 % a year),
+  truncated toward zero; `nBits`/`nTime` unused. Coin age counts per input
+  in cent-seconds (truncated per input), skips inputs younger than 30 days
+  (block time) and inputs missing from the view, fails on a time
+  violation, without `-txindex`, on an index miss, a read error or a txid
+  mismatch. `-printcoinage` prints the sums in hex.
+- `LoadBlockRewardAndHighestDiff` takes the highest epoch block at or
+  above the fork; if the fork is not an epoch multiple and the tip is still
+  in the first epoch it logs "something wrong" and reward 0.
+- `getsubsidy`: the target is used only before the fork; `yacoin-cli`
+  converts the argument as JSON, so the hex must be quoted.
+
+**Log capture.** `LogCapture` (in `reward_tests.cpp`) sets
+`fPrintToConsole` and points the stdout file descriptor at a file in the
+test data directory (`dup`/`dup2`), so a test can check what `LogPrintf`
+wrote; it restores both when it ends. Do not call `BOOST_CHECK` while it
+captures. `ScopedArg` sets a `-switch` for a scope (afterwards it is `"0"`,
+`ArgsManager` cannot remove an argument), `ScopedValue` a global such as
+`fDebug` or `fTxIndex`.

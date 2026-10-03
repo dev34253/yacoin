@@ -121,7 +121,9 @@ path = "src/consensus/tx_verify.cpp"
 match = 'tx\.nTime > VALIDATION_SWITCH_TIME \|\| fTestNet'
 outcomes = ["0,2"]
 branches_on_line = 5
-verified = false
+# verified in P0-46: reward_tests/coinstake_reward_limit (fTestNet false)
+# runs the line; outcomes 0,0 (time not past the switch) and 0,3
+# (fTestNet false) ran, 0,1, 0,2 and 0,4 did not.
 reason = "dead-code.md b): coinstake fee size, fTestNet operand"
 
 [[exclude]]
@@ -166,15 +168,21 @@ reason = "debug logging (fDebug / -printstakemodifier)"
 #   pow.cpp   89.42 / 83.33 / 62.69      GetBlockTrust  95.24 / - / 83.08
 #   kernel    44.70 / 53.85 / 30.07      rewards        93.65 / - / 54.80
 #   bignum.h  92.83 / 100   / 78.29      crypter 73.43 / 94.12, random 85.80 / 90.91
+# P0-46 (local run, reward_tests added; ratcheted with --suggest):
+#   overall   lines 70.77  functions 77.91  branches 48.96
+#   pow.cpp   96.15 / 100 / 70.47   rewards (now with GetCoinAge) 100 / - / 67.57
+#   GetMaxSize 100 / - / 100. The remaining reward branches are compiler
+#   branches in LogPrintf's format_error handler and in exception cleanup
+#   (project/done/P0-46-reward-and-block-size.md).
 
 [[gate]]
 name = "overall"
-min = { lines = 69, functions = 76, branches = 48 }
+min = { lines = 70, functions = 77, branches = 48 }
 
 [[gate]]
 name = "pow.cpp"
 paths = ["src/pow.cpp"]
-min = { lines = 88, functions = 82, branches = 62 }
+min = { lines = 95, functions = 100, branches = 69 }
 
 [[gate]]
 name = "chain.cpp GetBlockTrust"
@@ -190,8 +198,14 @@ min = { lines = 44, functions = 53, branches = 29 }
 [[gate]]
 name = "validation.cpp rewards"
 paths = ["src/validation.cpp"]
-select_functions = ["GetProofOfWorkReward", "LoadBlockRewardAndHighestDiff"]
-min = { lines = 93, branches = 54 }
+select_functions = ["GetProofOfWorkReward", "LoadBlockRewardAndHighestDiff", "GetCoinAge"]
+min = { lines = 100, branches = 67 }
+
+[[gate]]
+name = "GetMaxSize"
+paths = ["src/consensus/consensus.cpp"]
+select_functions = ["GetMaxSize"]
+min = { lines = 100, branches = 100 }
 
 # The methods dead-code.md c) lists as used (by production code, or inside
 # bignum.h by those); the unused ones run only in bignum_tests.
