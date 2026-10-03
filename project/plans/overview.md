@@ -16,23 +16,31 @@ Today the only working build is the `depends` system, which compiles
 OpenSSL 1.0.1k (2015), Boost 1.64 (2017) and BDB 4.8 (2009) from source.
 These versions no longer receive security fixes.
 
-## Inventory (corrected after the [Phase 0 review](phase0-review.md))
+## Inventory (corrected after the [Phase 0 review](phase0-review.md), checked against the source in P0-50)
+
+Code that can never run is listed separately in
+[`dead-code.md`](dead-code.md) and marked "dead" below.
 
 ### `CBigNum` (OpenSSL `BIGNUM`)
 
-About 60 production call sites in 13 files (plus 113 occurrences inside
-`bignum.h` itself and 4 in tests):
+59 production lines in 12 files mention `CBigNum` (60 in 13 counting a
+comment in dead `scrypt.cpp` code), plus 113 lines (158 occurrences) inside
+`bignum.h` itself and 4 lines in tests (`test/pow_tests.cpp`):
 
 | Where | What | Consensus? |
 |---|---|---|
-| `pow.cpp` | difficulty retarget, `CheckProofOfWork`, PoS limit, min work/stake | yes |
+| `pow.cpp` | difficulty retarget, `CheckProofOfWork`, PoS hard limit (`bnProofOfStakeHardLimit`) | yes |
+| `pow.cpp:231-234,255-287` | `GetProofOfStakeLimit`, `ComputeMaxBits`, `ComputeMinWork`, `ComputeMinStake` | dead (no callers) |
 | `kernel.cpp` | stake kernel (`bnCoinDayWeight * bnTargetPerCoinDay` can exceed 2^256, ≈2^263 worst case) | yes (below height 1,890,000) |
 | `validation.cpp:918-979` | **pre-fork PoW block reward**: bisection with ~400-bit products (`mid^6·powLimit`, `limit^6·target`) | yes |
+| `validation.cpp:3760` | `bnChainTrust` sum when loading the block index (`LoadBlockIndexDB`) | yes (fork choice) |
+| `validation.cpp:3703-3706,3727` | minimum-difficulty value in `LoadBlockRewardAndHighestDiff` | log output only |
 | `chain.cpp`/`chain.h` | `GetBlockTrust` (several branches, see below), `bnChainTrust`, `GetBlockProofEquivalentTime` | yes (fork choice) |
 | `consensus/params.h:62,64` | `powLimit` is a `CBigNum` | yes |
-| `chainparams.cpp`, `main.cpp:74-75` | limits | yes |
+| `chainparams.cpp:78-83,237-238` | `powLimit`, `initialHashTarget` | yes |
+| `main.cpp:74-75` | `bnProofOfStakeLegacyLimit`, `bnProofOfStakeLimit` | dead (never referenced) |
 | `net_processing.cpp` | `bnChainTrust` comparisons drive header sync and peer protection | P2P behaviour |
-| `rpc/mining.cpp`, `rpc/blockchain.cpp`, `miner.cpp`, `qt/explorer.cpp` | `getsubsidy`, `getwork`, difficulty target, miner | output only |
+| `rpc/mining.cpp:145,420,860`, `rpc/blockchain.cpp:358`, `miner.cpp:642,801`, `qt/explorer.cpp:1302` | `getsubsidy`, `getwork`, `getblocktemplate`, `getdifficulty`, `CheckWork`, `YacoinMiner`, explorer | output only |
 
 Block trust rules (`chain.cpp:75-115`): genesis = 1; PoW before
 `CONSECUTIVE_STAKE_SWITCH_TIME` = 1; PoW after = `powLimit / target` (×2 if
@@ -45,26 +53,32 @@ computed in memory and not serialised, but `nStakeModifier` and
 
 | Where | What | Notes |
 |---|---|---|
-| `random.cpp`, `util.cpp:120-163` | RNG, locking callbacks, `OPENSSL_no_config`, `RAND_screen` (WIN32, removed in 1.1+) | Phase 3 |
+| `random.cpp:47-48,135,166,276,450-451` | RNG: `RAND_add`, `RAND_bytes` | Phase 3 |
+| `util.cpp:84-86,120-163` | locking callbacks, `OPENSSL_no_config`, `RAND_screen` (WIN32, removed in 1.1+), `RAND_cleanup` | Phase 3 |
 | `support/cleanse.cpp:13` | `OPENSSL_cleanse` behind `memory_cleanse` | Phase 3 |
-| `miner.cpp:93-105` | `SHA256Transform` writing into `SHA256_CTX` internals, used by `getwork` midstate | Phase 3 |
-| `pbkdf2.cpp` | OpenSSL `SHA256_*`; only used by dead `scrypt.cpp` functions | delete |
-| `wallet/test/crypto_tests.cpp`, `test/crypto_tests.cpp` | OpenSSL EVP as a test oracle | replace with fixed vectors |
-| Qt (`paymentserver`, `paymentrequestplus`, `rpcconsole`, `winshutdownmonitor`) | BIP70 TLS etc. | Phase 5 decision |
-| `wallet/wallet.cpp:48`, `init.cpp:66` | stale includes | delete |
-| Build | `SSL_LIBS` linked into `yacoind`/`yacoin-cli`; configure requires libssl | Phase 5 |
+| `miner.cpp:16,93-106` | `SHA256Transform` writing into `SHA256_CTX` internals, used by `getwork` midstate (`miner.cpp:597,634`) | Phase 3 |
+| `init.cpp:66,972` | `SSLeay_version(SSLEAY_VERSION)` in the start-up log line (OpenSSL 1.0 name) | Phase 3/5 |
+| `pbkdf2.cpp` | OpenSSL `SHA256_*`; only used by dead `scrypt.cpp` functions | dead, delete ([P0-59](../todo/P0-59-dead-code-removal.md)) |
+| `wallet/test/crypto_tests.cpp:17-84,143` | OpenSSL EVP as a test oracle, `SSLeay()` | replace with fixed vectors |
+| Qt (`paymentserver`, `paymentrequestplus`: X509; `winshutdownmonitor`: `RAND_event`; Qt tests `paymentservertests`, `test_main`) | BIP70 TLS etc. | Phase 5 decision |
+| `wallet/wallet.cpp:48`, `test/crypto_tests.cpp:20-21`, `qt/rpcconsole.cpp:23`, `qt/explorer.cpp:19` | stale includes (no OpenSSL call) | delete (P0-59; Qt ones in the Qt phase) |
+| Build | `SSL_LIBS` linked into `yacoind`, `yacoin-cli`, `test_bitcoin`, `test_bitcoin_fuzzy`, `yacoin-qt` and the Qt tests (`Makefile.am:407,425`, `Makefile.test.include:100,124`, `Makefile.qt.include:463`, `Makefile.qttest.include:59`); configure requires libssl (`configure.ac:922,937-941`); `RAND_egd` LibreSSL check twice (`configure.ac:958-964,973-985`) | Phase 5 |
 
 Not OpenSSL any more: **wallet encryption** (`wallet/crypter.cpp` already
 uses `crypto/aes.h`, `crypto/sha512.h` and its own `BytesToKeySHA512AES`;
 v1.0.0/v1.1.0 still used `EVP_BytesToKey`), **signatures** (bundled
-libsecp256k1), `random_nonce.cpp` (`rand()`, dead code).
+libsecp256k1), `random_nonce.cpp` (`rand()`/`srand(time)`; dead code, see
+[`dead-code.md`](dead-code.md)).
 
 ### Other consensus code that is sensitive to compiler/library changes
 
-- **Block PoW hash**: `CBlockHeader::CalculateHash` → scrypt-jane
-  (`primitives/block.h:126-218`) with its own N-factor table; SIMD path chosen
-  at compile time (`Makefile.am:186-195`); packed headers hashed raw.
-  (`GetNfactor` in `main.cpp` is display-only; most of `scrypt.cpp` is dead.)
+- **Block PoW hash**: `CBlockHeader::CalculateHash` → `scrypt_hash(...,
+  Nfactor)` in `scrypt.cpp:108-139` → scrypt-jane
+  (`primitives/block.h:126-218`) with its own N-factor table; algorithms and
+  SIMD path chosen at compile time (`DEFS+=` at `Makefile.am:191`; the other
+  lines in `Makefile.am:186-195` are an unused rule); packed headers hashed
+  raw. (`GetNfactor` in `main.cpp` is display-only; every other function in
+  `scrypt.cpp` is dead, see [`dead-code.md`](dead-code.md).)
 - **Post-fork reward and max block size** use `double`
   (`validation.cpp:932`, `consensus/consensus.cpp:26-27`).
 - **Token names** validated with `std::regex` (`tokens/tokens.cpp:67-74`).
@@ -76,9 +90,9 @@ libsecp256k1), `random_nonce.cpp` (`rand()`, dead code).
 | **0 – Safety net** | Characterisation tests, mainnet replay, oracle, fuzzing, benchmarks. See [`phase0-test-safety-net.md`](phase0-test-safety-net.md). | Mainnet data logistics; kernel/reward coverage. |
 | 1 – Newer compilers | Switch the Ubuntu 24.04 build image (P0-57) from GCC 11 to GCC 13; fix missing includes and other GCC 13 errors. | `std::regex`, floating point and scrypt-jane code-path changes (covered by Phase 0 tests). |
 | 2 – Boost upgrade | Placeholders, `filesystem`, `signals2`, `assign`; possibly C++14; bump Boost in `depends`. | Thread shutdown/interruption hangs; path handling. |
-| 3 – OpenSSL out of non-consensus code | RNG (port Bitcoin Core's), `cleanse`, `util.cpp` init, `getwork` SHA256 midstate, test oracles → fixed vectors; delete dead `pbkdf2.cpp`/`scrypt.cpp` functions. | Weaker randomness (review against Bitcoin Core); `getwork` output. |
+| 3 – OpenSSL out of non-consensus code | RNG (port Bitcoin Core's), `cleanse`, `util.cpp` init, `SSLeay_version` log line, `getwork` SHA256 midstate, test oracles → fixed vectors; delete dead `pbkdf2.cpp`/`scrypt.cpp` functions (P0-59 may do this earlier). | Weaker randomness (review against Bitcoin Core); `getwork` output. |
 | 4 – Replace `CBigNum` | Migrate to `arith_uint256` one function at a time; 512-bit intermediates (or rearranged comparisons) for the stake kernel **and the pre-fork reward**; every trust branch preserved. | Chain split. |
-| 5 – Drop OpenSSL | Remove `SSL_LIBS` from non-Qt targets and the libssl requirement; decide Qt BIP70; remove `--with-libressl`/`RAND_egd`; plain `apt install` build docs for 24.04. | Low once 3–4 are done. |
+| 5 – Drop OpenSSL | Remove `SSL_LIBS` from non-Qt targets and the libssl requirement; decide Qt BIP70; remove `--with-libressl` and both `RAND_egd` checks; plain `apt install` build docs for 24.04. | Low once 3–4 are done. |
 | 6 – Berkeley DB (separate decision) | Keep 4.8 or plan a wallet migration. | Wallet compatibility. |
 | Later – Qt GUI (deferred, P0-00) | Qt 5.7.1 in `depends` won't build with GCC 13; BIP70 TLS; `qt/explorer.cpp` uses `CBigNum`. Phase 0 builds with `NO_QT=1`. | GUI-only code paths. |
 
@@ -100,8 +114,8 @@ and coverage instrumentation:
 | File | Lines covered (unit + functional) | Note |
 |---|---|---|
 | `kernel.cpp` | 17.9% | much of the rest is debug logging |
-| `scrypt.cpp` | 7.3% | mostly dead code |
-| `random_nonce.cpp` | 0% | dead code |
+| `scrypt.cpp` | 7.3% | all dead except `scrypt_hash` ([list](dead-code.md)) |
+| `random_nonce.cpp` | 0% | dead code ([list](dead-code.md)) |
 | `bignum.h` | 73.7% | |
 | `pow.cpp` | 76.9% (50% of functions) | |
 | `chain.cpp` | 76.2% | |
