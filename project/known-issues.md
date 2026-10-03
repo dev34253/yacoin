@@ -47,6 +47,46 @@ hard fork or at least a careful, separately reviewed change.
   (`txdb.cpp:487-488`); none of the 1,964,618 mainnet entries has them.
   Harmless (nothing reads them), but anyone expecting the ppcoin values must
   take them from the coinstake (`CBlock::GetProofOfStake()`). (P0-08)
+- **Post-fork next target depends on `chainActive`.** `CalculateNextWorkRequired`
+  takes nMinEase (the cap 3 · target of the lowest nBits) from *both* the
+  active chain and pindexLast's own chain (`pow.cpp:40-68`), so the target
+  required for a side-chain block changes with the active tip; the comment at
+  `validation.cpp:3234` acknowledges it (DoS score lowered to 10). It also
+  scans every post-fork block on each retarget (review B7). Pinned by
+  `pow_chain_tests/calc_min_ease_scans`. (P0-14)
+- **nMinEase includes PoS blocks and compares compact values.** The scan
+  (`pow.cpp:46,62`) takes PoS blocks' nBits like PoW ones and compares the
+  compact numbers, not the targets; a non-normalised nBits (e.g. 0x1e000001,
+  target 2^216) is not seen as harder than 0x1d00ffff. Unreachable for the
+  compact part (a block's nBits must equal `GetNextTargetRequired`, which
+  always normalises, `validation.cpp:3236`); the PoS part matters only if
+  there are post-fork PoS blocks (P0-15 will show). Post-fork PoS requests
+  also use the PoW epoch rule and pindexLast's nBits (`pow.cpp:141-155`).
+  Pinned by `pow_chain_tests/calc_min_ease_quirks`, `post_fork_pos_requests`.
+  (P0-14)
+- **Retarget window off by one at the first epoch.** At a boundary with
+  `pindexLast->nHeight <= nDifficultyInterval + 1` the window starts at the
+  genesis (interval − 1 blocks at the first boundary; with interval ≤ 2 the
+  second boundary measures from the genesis too, e.g. 3 blocks for interval
+  2), later boundaries go back interval blocks (`pow.cpp:167-178`). Unreachable on mainnet (fork at 1,890,000); only
+  functional-test chains (interval 10) take the genesis branch. Pinned by
+  `pow_chain_tests/post_fork_window_off_by_one`. (P0-14)
+- **Pre-fork retarget can produce a negative target.** With an actual
+  spacing below −(nInterval − 1) · spacing / 2 (−302,370 s for PoW at 60 s)
+  the multiplier at `pow.cpp:197` is negative, the result is not clamped and
+  its compact form has the sign bit set (`CheckProofOfWork` rejects it).
+  Needs a block 3.5 days before its parent, which the median-time and
+  future-time rules prevent; pre-fork history only. Pinned by
+  `pow_chain_tests/pre_fork_negative_spacing`. (P0-14)
+- **Crashes instead of errors in the retarget.** A pindexLast whose
+  `phashBlock` is not in mapBlockIndex dereferences `end()`
+  (`pow.cpp:57-58`); the first-epoch retarget with no genesis in
+  `chainActive` passes null to `ReadBlockFromDisk` (`pow.cpp:174-176`, whose
+  result is ignored anyway); a window longer than the chain hits `Yassert`,
+  which in a release build only logs and calls `StartShutdown()`
+  (`main.cpp:138-160`), then dereferences null (`pow.cpp:179-181`). All
+  callers pass index entries of a full chain, so not reachable in a node;
+  not testable. (P0-14)
 
 ## CBigNum / OpenSSL (go away with the arith_uint256 replacement, Phase 4)
 
@@ -95,6 +135,11 @@ hard fork or at least a careful, separately reviewed change.
 - **`LoadBlockRewardAndHighestDiff`** logs reward 0 and "something wrong" when
   the fork height is not a multiple of `-epochinterval` and the tip is in the
   first epoch (only in functional tests). Leave. (P0-46, Q12)
+- **"PoW constant target … to go" plural.** `pow.cpp:150-153` formats
+  `"(%d block %s to go)"` with `nDifficultyInterval - nBlocksToGo` but
+  chooses the "s" by `nBlocksToGo != 1`, and the "s" is a separate word:
+  the output reads "(9 block  to go)" or "(1 block s to go)". Cosmetic.
+  (P0-14)
 
 ## Qt (deferred)
 
@@ -122,3 +167,9 @@ hard fork or at least a careful, separately reviewed change.
 - **`DoS_tests/stale_tip_peer_management`** calls `connman->Init(options)`,
   which sets the test `CConnman`'s send/receive buffer limits back to 0 for
   the rest of that case (harmless: it calls no `ProcessMessages`). (P0-62)
+- **`build.sh` exits 141 on a failed build.** In P0-14 a compile error
+  made `build.sh` exit 141 (SIGPIPE) after printing 30 lines of Boost
+  "required from" notes, without the "build failed" message; the real
+  errors were only in `<builddir>/make.log`. Probably `grep … | head -n 30`
+  under `set -o pipefail` (`contrib/testing/build.sh:377-378`). Use
+  `grep ' error:' <builddir>/make.log` meanwhile. (P0-14)
