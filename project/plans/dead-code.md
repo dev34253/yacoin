@@ -110,39 +110,96 @@ For coverage, the dead branches are single operands or `else` arms, so they
 show up in **branch** coverage (P0-04 step 2), not as whole uncovered
 functions.
 
-## c) Unused `CBigNum` methods (preliminary)
+## c) `CBigNum` methods: used and unused (audited, P0-12)
 
-Found with `git grep` for `.name(`, `->name(` and `CBigNum::name(` outside
-`bignum.h`, plus calls inside `bignum.h`. **Preliminary:** P0-12 does the
-full audit. Generic names that grep cannot attribute to `CBigNum`
-(`ToString`, `GetHex`, `SetHex`, `getvch`/`setvch`, `++`/`--`) are left to
-P0-12. Per plan 0.2a these methods are deleted in Phase 4, not before.
+**Method.** Compile-time audit (P0-12, scratch only): in a copy of the tree
+every member and free operator of `CBigNum` in `bignum.h` was marked
+`__attribute__((deprecated))` and the whole tree as configured by
+`contrib/testing/build.sh` (`yacoind`, `yacoin-cli`, wallet, `test_bitcoin`,
+`test_bitcoin_fuzzy`) was built with `make -k` in the pinned build image,
+once for mainnet and once for `--enable-low-difficulty-for-development`.
+Every resulting warning names the method and the calling file:line, so
+calls through variables (`bnChainTrust`, `powLimit`, …), implicit
+conversions (`CBigNum x = CENT`, `bnTarget <= 0`), templates and generic
+names (`ToString`, `GetHex`, `++`) are all attributed. Both builds give the
+same production call sites (only the `chainparams.cpp` lines of the
+`#ifdef`ed `powLimit` differ). Not compiled here and checked by reading:
+Qt (`qt/explorer.cpp:1302-1306`: default constructor, `SetCompact`,
+`getuint256` – all used anyway); zmq and bench are not configured and do
+not mention `CBigNum`. Every other grep hit for `CBigNum`-like names outside
+`bignum.h` and `src/test` was matched to a warning or is `arith_uint256`
+(`chain.cpp:178`, `validation.cpp:4835-4865`). The destructor and
+`CAutoBN_CTX` were not marked (used by everything). Per plan 0.2a nothing
+is deleted before Phase 4.
 
-| Method | `bignum.h` line | Callers |
+**Used by production code** (callers outside `bignum.h`, `src/test`,
+`src/qt`; line ranges in `bignum.h` at master `45eae1a`):
+
+| Method | `bignum.h` lines | Production callers |
 |---|---|---|
-| `randBignum` | 160 | none |
-| `RandKBitBigum` | 172 | none |
-| `bitSize` | 184 | none |
-| `getint32` | 200 | none |
-| `setuint160`, `getuint160` | 325, 353 | none |
-| `setBytes`, `getBytes` | 411, 416 | none |
-| `pow(int)`, `pow(const CBigNum&)` | 567, 576 | only `pow(int)` → `pow(CBigNum)` |
-| `mul_mod` | 589 | none |
-| `pow_mod` | 603 | none |
-| `inverse` | 625 | only `pow_mod` |
+| `CBigNum()`, copy constructor, `operator=`, destructor | 56-81 | everywhere (`chain.cpp`, `kernel.cpp`, `pow.cpp`, `validation.cpp`, `miner.cpp`, `rpc/*`, `chain.h`, `consensus/params.h`) |
+| `CBigNum(int32_t)` | 101-108 | int literals: `chain.cpp:79-114`, `kernel.cpp:461`, `net_processing.cpp:438,454`, `chain.h:264`, … |
+| `CBigNum(int64_t)` | 110-117 | `kernel.cpp:458,461`, `pow.cpp:81-82,197-198`, `validation.cpp:935,949,951` |
+| `CBigNum(uint256)` | 143-147 | `chainparams.cpp:78-83,237-238`, `kernel.cpp:526`, `main.cpp:74-75`, `pow.cpp:21`, `rpc/mining.cpp:145` |
+| `SetCompact`, `GetCompact` | 457-480 | `chain.cpp:78`, `kernel.cpp:452`, `pow.cpp`, `validation.cpp:938-940,3683,3703`, `chainparams.cpp:126,275`, `miner.cpp:642,801`, `rpc/blockchain.cpp:358`, `rpc/mining.cpp:146,420,860` |
+| `setuint256`, `getuint256` | 368-409 | `pow.cpp`, `validation.cpp:3703,3705,3727`, `chain.cpp:194,197`, `kernel.cpp:568`, `miner.cpp`, `rpc/*` |
+| `getuint64` | 268-288 | `kernel.cpp:482` (hash input), `validation.cpp:957-958,968`, `rpc/blockchain.cpp:945` |
+| `ToString` | 512-536 | log lines only: `validation.cpp:989,997,2331,3882` |
+| `GetHex` | 538-541 | RPC `chaintrust`/`blocktrust`: `rpc/blockchain.cpp:96,126,127` |
+| `operator*=`, `operator/=` | 697-709 | `chain.cpp:108`, `pow.cpp:81-82,88,197-198,259,263`, `validation.cpp:3706` |
+| binary `+`, `-`, `*`, `/` | 786-800, 809-825 | `chain.cpp:97,103,114,193,196`, `kernel.cpp:461,526,568`, `validation.cpp:951-962,2934,3760` |
+| `operator<<(CBigNum, unsigned)` | 836-842 | `chain.cpp:114` only |
+| `<`, `<=`, `>`, `>=` | 853-856 | `chain.cpp`, `kernel.cpp:526`, `pow.cpp`, `net_processing.cpp`, `validation.cpp` (fork choice) |
+
+**Used only inside `bignum.h` by the methods above** (count as used):
+`setuint32` (189-193, integer constructors), `setint64` (215-266, negative
+integer constructors), `setuint64` (290-323, `CBigNum(int64_t)` for n ≥ 0;
+its MPI branch 300-322 is compiled out with 64-bit `BN_ULONG`), `getuint32`
+(195-198, `ToString`), `CAutoBN_CTX` (24-49).
+
+**Unused by production code** (only `src/test`, mostly P0-10's
+`bignum_tests.cpp`, or nothing; no `arith_uint256` replacement needed):
+
+| Method | `bignum.h` line | Callers outside `bignum.h` |
+|---|---|---|
+| `CBigNum(int8_t)`, `(int16_t)`, `(uint8_t)`, `(uint16_t)`, `(uint32_t)`, `(uint64_t)` | 83-99, 119-141 | tests only |
+| `CBigNum(const std::vector<uint8_t>&)` | 149 | none |
+| `randBignum`, `RandKBitBigum` | 160, 172 | none |
+| `bitSize` | 184 | tests only |
+| `getint32` | 200 | tests only |
+| `setuint160`, `getuint160` | 325, 353 | tests only |
+| `setBytes`, `getBytes` | 411, 416 | tests only |
+| `setvch`, `getvch` | 430, 445 | tests only; inside `bignum.h` only from the unused vector constructor, `Serialize`, `Unserialize`, `GetSerializeSize` |
+| `SetHex` | 482 | tests only |
+| `GetSerializeSize`, `Serialize`, `Unserialize` | 543-560 | tests only (`bnChainTrust` is memory-only, never serialized) |
+| `pow(int)`, `pow(const CBigNum&)` | 567, 576 | tests only (`pow(int)` → `pow(CBigNum)`) |
+| `mul_mod`, `pow_mod`, `inverse` | 589, 603, 625 | tests only (`pow_mod` → `inverse`) |
 | `generatePrime` | 639 | none |
-| `gcd` | 651 | none |
-| `isPrime` | 665 | none |
-| `isOne` | 674 | none |
+| `gcd`, `isPrime`, `isOne` | 651, 665, 674 | tests only |
+| `operator!` | 679 | tests only |
+| `+=`, `-=`, `%=` | 684, 691, 711 | tests only (`+=` also used by `SetHex`) |
+| `<<=`, `>>=` | 717, 724 | tests only; inside `bignum.h` only from `SetHex` and `>>` |
+| prefix and postfix `++`, `--` | 742-774 | tests only |
+| unary `-` | 802 | tests only |
+| `%` | 827 | tests only |
+| `>>` | 844 | tests only |
+| `==`, `!=` | 851-852 | tests only |
+| `operator<<(std::ostream&, CBigNum)` | 858 | tests only |
 
-These are inline functions in a header and are never called, so the
-compiler never emits them and gcov records no lines for them. Excluding them
-in P0-04 changes nothing. They matter for Phase 4: these methods do not
-need an `arith_uint256` replacement.
+Corrections to the preliminary list (from P0-50 and the P0-10 task):
+`operator==`, `operator!`, `+=`, `CBigNum(uint64_t)` were thought to be
+used but have no production caller (the reward code's
+`CBigNum x = MAX_MINT_PROOF_OF_WORK` is `CBigNum(int64_t)`); the vector
+constructor, `getvch`/`setvch`, `SetHex`, serialization, `%`, `>>`,
+`++`/`--`, unary `-` and the narrow integer constructors are unused as
+well. `ToString` and `GetHex` are used, but only for log and RPC text.
 
-Used (not dead) although rare: `getuint32` (inside `ToString`), `setint64`
-and `setuint64` (constructors), `getuint64` (reward code, logging),
-`setuint256`/`getuint256`, `SetCompact`/`GetCompact`.
+**Coverage.** Unused inline methods that nothing calls are not emitted, so
+gcov records no lines for them; but `test_bitcoin` now calls most of the
+unused methods (P0-10), so in a coverage build they do appear in
+`bignum.h`'s counts. The plan 0.10 target "`bignum.h` (used methods only)"
+therefore counts only the line ranges of the two "used" lists above
+(P0-04 applies it).
 
 ## d) Leftovers
 

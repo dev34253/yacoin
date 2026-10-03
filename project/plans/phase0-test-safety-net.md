@@ -75,9 +75,12 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 - Method audit: which methods are used at all (`pow`, `mul_mod`, `pow_mod`,
   `inverse`, `gcd`, `isPrime`, `randBignum`, `RandKBitBigum`,
   `generatePrime`, `bitSize`, `isOne`, `getint32`, `setuint160`, …). Unused
-  methods are excluded from the coverage target and deleted in Phase 4. A
-  preliminary grep list is in [`dead-code.md`](dead-code.md) c); being
-  inline and never called, they are not in the gcov counts anyway.
+  methods are excluded from the coverage target and deleted in Phase 4. The
+  audited list (compile-time audit, P0-12) is in [`dead-code.md`](dead-code.md)
+  c), with the `bignum.h` line ranges of the used methods; only those count
+  for the "`bignum.h` (used methods only)" target in 0.10, because
+  `bignum_tests` (P0-10) instantiates most unused methods in coverage builds.
+  Large-value expressions: `src/test/bignum_consensus_tests.cpp` (P0-12).
 - Golden vectors (~100k operations, hex in/out) – the durable artefact.
 
 ### b) Difficulty (`pow.cpp`) – P0-14, P0-15
