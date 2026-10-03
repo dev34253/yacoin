@@ -2,6 +2,14 @@ UNIX BUILD NOTES
 ====================
 Some notes on how to build Yacoin Core in Unix.
 
+> **Supported build (2026):** only the `depends` build in the pinned Docker
+> image is supported and tested – see `CLAUDE.md` (*Building*) and
+> [`contrib/testing/README.md`](../contrib/testing/README.md). Building
+> against distribution packages, as described below, fails on current
+> distributions (OpenSSL 3, Boost 1.83; BDB 5.3 only with
+> `--with-incompatible-bdb`); see
+> [dependencies.md](dependencies.md). ZMQ notifications are not compiled in.
+
 (for OpenBSD specific instructions, see [build-openbsd.md](build-openbsd.md))
 
 Note

@@ -121,7 +121,7 @@ All consensus unit tests use the shared harness (P0-47): block-index /
 - `CBlockHeader::GetHash()` known answers for v<7 headers at every N-factor
   step in the `block.h` table (4…25) and v≥7 at Nf 21 (mainnet), 4
   (functional tests) and 0 (unit tests).
-- `static_assert` on packed header sizes (88 and 80 bytes).
+- `static_assert` on packed header sizes (84 and 80 bytes; only the 84-byte v7 layout is `#pragma pack`ed).
 - Dead `scrypt.cpp` functions are not tested; they are on the
   [deletion list](dead-code.md). The only live one is
   `scrypt_hash(..., Nfactor)`, which `CalculateHash` calls; these known

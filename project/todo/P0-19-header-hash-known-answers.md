@@ -16,7 +16,7 @@ Pin the real proof-of-work hash path.
 1. CBlockHeader::GetHash() known answers for v<7 headers at every N-factor step in the primitives/block.h table (4…25), using timestamps at each step boundary.
 2. v≥7 headers at nFactorAtHardfork 21 (mainnet), 4 (functional tests), 0 (unit tests).
 3. Real mainnet headers from the fixture (after P0-09, via P0-23).
-4. static_assert on packed header sizes (88 and 80 bytes).
+4. static_assert on packed header sizes (84 and 80 bytes; only the 84-byte v7 layout is `#pragma pack`ed).
 
 ## Acceptance criteria
 

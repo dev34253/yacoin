@@ -3,6 +3,24 @@ YACoin Official Development Tree.
 
 Many thanks to WindMaster for initially setting up this repository to continue development and promotion of YACoin after the original developer, GitHub user pocopoco, went paka paka. Due to community feedback and the need for an updated and stable client, this is now the official YACoin Development Tree.
 
+## Current state (since the Heliopolis hard fork, block 1,890,000, April 2021)
+
+- Proof-of-work only (scrypt-jane, Keccak-512 + ChaCha20/8, N-factor fixed at 21), 1-minute blocks.
+- Difficulty and block reward change once per epoch of 21,000 blocks; the reward gives about 2 % inflation per year, and the maximum block size follows from the reward and the 0.01 YAC/kB minimum fee.
+- 64-bit timestamps, a transaction-malleability fix, `OP_CHECKLOCKTIMEVERIFY`/`OP_CHECKSEQUENCEVERIFY` timelocks, and tokens (since block 1,911,211).
+
+## Documentation
+
+- [Functional specification](doc/functional-specification.md) – what the node does: networks, consensus rules before and after the fork, tokens, mining, wallet, RPC.
+- [Architecture](doc/architecture.md) – components, libraries, threads, storage, validation pipeline, build and tests.
+- [Design decisions](doc/design-decisions.md) – why it is built this way.
+- [Dependencies](doc/dependencies.md) and the supported build: see `CLAUDE.md` and [contrib/testing](contrib/testing/README.md).
+- Modernisation project (OpenSSL, Boost, compiler): [project/](project/README.md).
+
+## History
+
+The text below describes the original coin (2013–2021).
+
 YACoin - a hybrid scrypt PoW + PoS based cryptocurrency that uses the scrypt + chacha20/8 (N,1,1) hashing algorithm, with N gradually rising over time to increase memory requirements. This, in theory, makes YACoin one of the very few alt coins that can be mined efficiently on a CPU.
 
 Uses the scrypt + chacha20/8 (N,1,1) hashing algorithm.
