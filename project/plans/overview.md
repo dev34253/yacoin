@@ -1,5 +1,14 @@
 # Dependency modernisation – overview
 
+## Scope and priorities
+
+The goal of this work is a stable, reproducible build on Ubuntu 24.04 with
+current, maintained library versions – or no dependency at all where it can
+be removed. OpenSSL is the main one (Phase 4 replaces `CBigNum`). Bugs and
+oddities found on the way are not fixed as part of this work unless they
+block that goal: they are recorded in
+[`../known-issues.md`](../known-issues.md) for later (owner, 2026-10-03).
+
 ## Why
 
 Yacoin only builds against library versions from around 2016–2018. On a

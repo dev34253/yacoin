@@ -1,11 +1,17 @@
 # Open questions for the owner
 
-Collected while tasks were implemented without the owner present. Each entry:
-where it came from, the question, and what was done for now. Answer inline
+Collected while tasks were implemented without the owner present. Findings
+that are recorded but not fixed are listed in [`known-issues.md`](known-issues.md).
+
+Each entry: where it came from, the question, and what was done for now. Answer inline
 (or in a PR comment) and move answered entries to "Answered" with the
 decision.
 
 ## Open
+
+(none)
+
+## Answered
 
 ### Q6 – Behaviour pinned by P0-16 that looks wrong (from P0-16)
 - `gettimechaininfo` returns `bnChainTrust` as a number holding only the low
@@ -114,8 +120,10 @@ pushes stay fast. (2) keep the rule floor(measured − 0.5), only raised.
   the fork height is not a multiple of `-epochinterval` and the tip is in
   the first epoch (functional tests with such a fork height). Log only.
 *For now:* all pinned as they are by `reward_tests`; nothing changed.
-
-## Answered
+**Answer (owner, 2026-10-03):** the current tasks are about a stable build with
+current libraries on Ubuntu 24.04 (OpenSSL first), not about fixing every
+finding. All four are recorded in [`known-issues.md`](known-issues.md); the
+fees one is consensus and stays as is; `getsubsidy` is left for now.
 
 ### Q1 – When to schedule P0-59 (dead-code removal)? (from P0-50)
 P0-50 proposed removing dead code in three gated PRs: A (no consensus files,
