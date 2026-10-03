@@ -3,8 +3,8 @@
 - Plan section: 0.1, 0.9
 - Depends on: P0-04
 - Size: S
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-03
 - Finished:
 
 ## Goal
@@ -48,4 +48,4 @@ Touches `.github/workflows/`: implement from a session whose token has the
 
 ## Log
 
--
+- 2026-10-03 step 0: picked up, moved to inprogress.
