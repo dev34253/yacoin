@@ -296,7 +296,15 @@ was well covered).
 ## CI
 
 `.github/workflows/tests.yml` runs on every push to any branch (and by hand
-via *Run workflow*). The two test jobs run on every push. The coverage
+via *Run workflow*). The two test jobs run on every push, except on branches
+that change **documentation only** (task P0-64): when every file the branch
+changes since its merge base with `master` matches `*.md`, `doc/**`,
+`project/**` or `.claude/**`, the `changes` job skips all build and test jobs
+and the run takes about a minute. On `master` and with *Run workflow* they
+always run. To skip CI for a single push by hand, put `[skip ci]` in the
+commit message (a GitHub feature; it skips every workflow for that push).
+The release workflow `yacoinbuildmultiplatform.yml` also skips pushes to
+`master` that change documentation only (`paths-ignore`); tags always build. The coverage
 jobs and the merged report with the coverage gate take about twice as
 long (`-O0`), so they run only where they are needed (task P0-63): on
 `master`, when the workflow is started by hand (*Run workflow* on any

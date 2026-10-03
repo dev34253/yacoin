@@ -107,7 +107,9 @@ make -j"$(nproc)"
   a run artifact) and the coverage gate on `master`, via *Run workflow*, and
   on branches that change a file the gate watches (gated/excluded files in
   `coverage-gates.toml`, the gate's own files; P0-63). The release builds
-  (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03).
+  (`yacoinbuildmultiplatform.yml`) run on `master`, tags and by hand (P0-03). Branches that change only
+  documentation (`*.md`, `doc/`, `project/`, `.claude/`) skip the build and
+  test jobs (P0-64); `[skip ci]` in a commit message skips CI for that push.
 - Binaries built on Ubuntu 24.04 need glibc ≥ 2.38 (dev/CI only, not release).
 
 ## Testing

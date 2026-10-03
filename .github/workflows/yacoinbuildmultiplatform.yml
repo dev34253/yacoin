@@ -1,11 +1,18 @@
 name: Yacoin multi platform build
 
 # Release binaries for all platforms: on master, tags and by hand only
-# (task P0-03 – task branches are tested by tests.yml).
+# (task P0-03 – task branches are tested by tests.yml). Pushes to master
+# that change documentation only are skipped (P0-64); path filters do not
+# apply to tags, so tags always build.
 on:
   push:
     branches: [master]
     tags: ['*']
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+      - 'project/**'
+      - '.claude/**'
   workflow_dispatch:
 
 # A newer push to the same branch cancels the older run (task P0-03).
