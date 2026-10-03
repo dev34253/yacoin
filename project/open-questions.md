@@ -75,6 +75,25 @@ its own test file. *For now:* documented in `src/test/README.md`. Should a
 small task fix `TestingSetup` (shared test setup) so later tests do not need
 the workarounds?
 
+### Q8 – Test tooling gaps found by P0-20 (from P0-20)
+- `build.sh` does not fail when `unit.log` has no Boost "test cases" summary
+  (e.g. `test_bitcoin` exits early). P0-20 fixed the known hole (the
+  `StartShutdown()` stub exited 0); the `Shutdown(void*)` stub still exits 0
+  (no test calls it). Add the summary check to `build.sh`?
+- The functional-test cache chain is mined with `-epochinterval=20` (40
+  blocks, `test_framework.py:540`) while the tests run with 10, and the
+  framework docstring says 199 blocks. Recorded only.
+- `-testnet` has base params but no chain params (`CreateChainParams("test")`
+  throws "Unknown chain test"); checkpoint 1,750,000 has no leading zeros.
+  Recorded only.
+
+### Q9 – Mainnet sync speed (P0-07)
+On 2026-10-03 04:00 UTC the laptop node was at block 122,727 (headers ~97 %,
+N-factor 21), about 8,200 blocks/hour: the full sync (~1.96 M blocks) needs
+roughly 9–10 more days at this rate. P0-08/P0-09 (mainnet dump and fixture)
+and everything after them wait for it. *For now:* waiting. Options if this is
+too slow: more CPU for the node, or a second node.
+
 ## Answered
 
 (none yet)
