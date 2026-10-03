@@ -7,6 +7,12 @@ Linux. Work is organised in `project/` – read `project/README.md` first; plans
 are in `project/plans/`, tasks in `project/{todo,inprogress,done}/`, operational
 guides in `project/runbooks/`.
 
+**Yacoin's future is proof-of-work only** (owner, 2026-10-03). Proof-of-stake
+matters only so that the existing chain still validates (initial sync,
+reindex, reorgs over historical blocks); there will be no new PoS. Keep PoS
+work to what reproducing the historical chain needs – do not add PoS features,
+PoS mining/staking support or tests of hypothetical future PoS behaviour.
+
 ## Implementing a task
 
 To implement a task from the project board (e.g. "do P0-14"), **spawn a
