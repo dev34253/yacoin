@@ -1,4 +1,4 @@
-# P0-61: Per-work-dir port range for functional tests in build.sh
+# P0-61: build.sh: per-work-dir port range, unit summary check, vector checkers
 
 - Plan section: 0.1
 - Depends on: P0-01
@@ -27,11 +27,27 @@ port range).
    docs/instructions once concurrent runs work; document the behaviour in
    `contrib/testing/README.md`.
 
+4. (Q8, owner 2026-10-03) `build.sh --unit` fails when `unit.log` has no
+   Boost "N test cases out of N passed" summary (e.g. `test_bitcoin` exited
+   early with status 0); the `Shutdown(void*)` stub in
+   `src/test/test_bitcoin_main.cpp` exits with failure like the
+   `StartShutdown()` stub (P0-20).
+5. (Q8) Fix the functional framework docstring about the cache chain
+   (`test/functional/test_framework/test_framework.py`): 40 blocks mined with
+   `-epochinterval=20`, not 199. Do not change the cache chain itself.
+
+6. (Q10, owner 2026-10-03) `build.sh --unit` also runs the independent
+   vector checkers `contrib/testing/bignum_vectors_check.py` (P0-13) and
+   `contrib/testing/reward_vectors.py` (P0-46, check mode); a mismatch fails
+   the run. They then run in CI through the existing unit jobs.
+
 ## Acceptance criteria
 
 - [ ] Two concurrent `build.sh --config lowdiff --functional` runs in different
       work dirs both pass (46/46 each).
 - [ ] A single run behaves as before.
+- [ ] A unit run without a Boost summary makes `build.sh` exit non-zero.
+- [ ] `build.sh --unit` runs both vector checkers; a modified vector file fails it.
 
 ## Notes
 

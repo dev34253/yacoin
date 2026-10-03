@@ -1,11 +1,17 @@
 # Open questions for the owner
 
-Collected while tasks were implemented without the owner present. Each entry:
-where it came from, the question, and what was done for now. Answer inline
+Collected while tasks were implemented without the owner present. Findings
+that are recorded but not fixed are listed in [`known-issues.md`](known-issues.md).
+
+Each entry: where it came from, the question, and what was done for now. Answer inline
 (or in a PR comment) and move answered entries to "Answered" with the
 decision.
 
 ## Open
+
+(none)
+
+## Answered
 
 ### Q6 – Behaviour pinned by P0-16 that looks wrong (from P0-16)
 - `gettimechaininfo` returns `bnChainTrust` as a number holding only the low
@@ -19,7 +25,11 @@ decision.
   `chain.cpp:112` is unreachable.
 *For now:* pinned in `src/test/chain_trust_tests.cpp`, not changed (rule 1).
 Fix candidates for after Phase 0?
-*Owner (2026-10-03):* to discuss.
+**Answer (owner, 2026-10-03):** (1) RPC output (`gettimechaininfo` chain trust as a
+number with only the low 64 bits; trust 0 as empty string): fix later, after
+Phase 0, as a small RPC task. (2) `GetBlockProofEquivalentTime` / the
+one-month check: leave as is. (3) trust 0 above powLimit and the unreachable
+`chain.cpp:112`: leave as is.
 
 ### Q7 – Unit-test setup gaps (from P0-16)
 `TestingSetup` creates no `ptokensdb`, so any unit test that reorganises the
@@ -28,7 +38,10 @@ injected P2P messages are ignored (`fPauseSend`). P0-16 works around both in
 its own test file. *For now:* documented in `src/test/README.md`. Should a
 small task fix `TestingSetup` (shared test setup) so later tests do not need
 the workarounds?
-*Owner (2026-10-03):* to discuss.
+**Answer (owner, 2026-10-03):** yes – `TestingSetup` creates the in-memory token
+database itself (`ptokensdb`, like `pblocktree`/`pcoinsdbview`); task
+`todo/P0-62-testingsetup-tokensdb.md` (also covers the test `CConnman`
+send-buffer gap and removes P0-16's workarounds).
 
 ### Q8 – Test tooling gaps found by P0-20 (from P0-20)
 - `build.sh` does not fail when `unit.log` has no Boost "test cases" summary
@@ -41,6 +54,11 @@ the workarounds?
 - `-testnet` has base params but no chain params (`CreateChainParams("test")`
   throws "Unknown chain test"); checkpoint 1,750,000 has no leading zeros.
   Recorded only.
+**Answer (owner, 2026-10-03):** (1) yes – `build.sh` fails when `unit.log` has no
+"test cases … passed" summary, and the `Shutdown(void*)` stub exits 1; added to
+P0-61. (2) record only; fix the framework docstring (40 blocks, epoch
+interval 20) – also in P0-61. (3) leave as is (testnet remnants go with
+P0-59 at the end of Phase 0).
 
 ### Q10 – CBigNum golden vectors: CI check, `xz`, size (from P0-13)
 - `contrib/testing/bignum_vectors_check.py` (independent Python model of
@@ -55,6 +73,11 @@ the workarounds?
   history, so regenerate only on format changes.
 *For now:* checker manual (documented in `contrib/testing/README.md`),
 `xz` required, file committed as is.
+**Answer (owner, 2026-10-03):** (1) yes – `build.sh --unit` runs
+`bignum_vectors_check.py` and P0-46's `reward_vectors.py` (so locally and in
+CI, no workflow change); added to P0-61. (2) `xz` as a test-build requirement
+is accepted. (3) the size is accepted; regenerate the vectors only when the
+format changes.
 
 ### Q11 – Coverage gate: where it runs, threshold rule (from P0-04)
 - The gate runs only where the coverage jobs run: on `master` and when the
@@ -73,6 +96,11 @@ the workarounds?
   logging in `GetProofOfWorkReward` are counted. Exclude them too?
 *For now:* master/by hand, the rule above, exclusions as listed in
 `contrib/testing/coverage-gates.toml`.
+**Answer (owner, 2026-10-03):** (1) yes – coverage and the gate also run on
+pushes that change a gated file or the gate config (path filter); other
+pushes stay fast. (2) keep the rule floor(measured − 0.5), only raised.
+(3) exclude the `fPrintProofOfStake` and `-printcreation` logging blocks too.
+(1) and (3): task `todo/P0-63-coverage-on-gated-changes.md`.
 
 ### Q12 – Reward quirks found while pinning them (from P0-46)
 - Post-fork, `GetProofOfWorkReward` ignores `nFees` (`validation.cpp:932`
@@ -92,8 +120,10 @@ the workarounds?
   the fork height is not a multiple of `-epochinterval` and the tip is in
   the first epoch (functional tests with such a fork height). Log only.
 *For now:* all pinned as they are by `reward_tests`; nothing changed.
-
-## Answered
+**Answer (owner, 2026-10-03):** the current tasks are about a stable build with
+current libraries on Ubuntu 24.04 (OpenSSL first), not about fixing every
+finding. All four are recorded in [`known-issues.md`](known-issues.md); the
+fees one is consensus and stays as is; `getsubsidy` is left for now.
 
 ### Q1 – When to schedule P0-59 (dead-code removal)? (from P0-50)
 P0-50 proposed removing dead code in three gated PRs: A (no consensus files,
