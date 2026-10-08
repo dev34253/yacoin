@@ -50,6 +50,7 @@ changed.
 | `--jobs N` | Parallel make jobs (default: CPU count). |
 | `--reconfigure` | Force `configure` to run again. It also re-runs automatically when the configure arguments (including `CFLAGS`/`CXXFLAGS`) change; the build dir is then cleaned (`make clean`) so every object is rebuilt with the new flags. `--reconfigure` alone does not clean. A build dir created before this behaviour existed has no record of its arguments, so its first run cleans and rebuilds once. |
 | `--clean` | Delete the source copy and this configuration's build directory first; the `depends` cache is kept. Because every file is copied again with a new time, other configurations' build dirs also rebuild completely on their next run. |
+| `--no-ccache` | Compile without the compiler cache (sets `CCACHE_DISABLE=1`; no reconfigure needed). See "Compiler cache (ccache)". |
 | `--image IMAGE` | Build image. Default: the pinned P0-57 image `dev34253/yacoin-build@sha256:…` (Ubuntu 24.04, GCC 11). Also `YACOIN_BUILD_IMAGE`. |
 | `--no-docker` | Build on the current machine, e.g. when already running inside the build image in CI. |
 | `--work-dir DIR` | Where everything is built. Default `$YACOIN_WORK_DIR` or `~/.cache/yacoin-build`. Must be a dedicated directory: not inside the checkout, not containing it, not `/` or `$HOME`. |
@@ -58,7 +59,10 @@ Environment variables (besides `YACOIN_WORK_DIR`, `YACOIN_BUILD_IMAGE`
 and the proxy settings): `TEST_RUNNER_PORT_MIN` – port base for the
 functional tests instead of a port slot (1024–55535, no slot lock; see
 "Concurrent runs"); `YACOIN_PORT_LOCK_DIR` – directory of the port slot
-locks (default `/tmp/yacoin-build-ports`).
+locks (default `/tmp/yacoin-build-ports`); `YACOIN_CCACHE_DIR` and
+`YACOIN_CCACHE_MAXSIZE` – location (default `~/.cache/yacoin-ccache`) and
+size limit (default `5G`) of the compiler cache (see "Compiler cache
+(ccache)").
 
 The exit code is non-zero if the build or any requested test run fails,
 if `unit.log` has no Boost summary `N test cases out of N passed` (e.g.
@@ -91,14 +95,15 @@ check the exact value for each configuration.
    `--prefix=<src>/depends/x86_64-pc-linux-gnu`, so automatic `configure`
    re-runs keep using the `depends` libraries. Different configurations can
    coexist; `configure` re-runs when its arguments change.
-6. Builds, then runs the requested tests. `--unit` runs `test_bitcoin`,
+6. Builds with the compiler cache (see "Compiler cache (ccache)"), logs
+   its hit rate, then runs the requested tests. `--unit` runs `test_bitcoin`,
    checks its summary, then the four independent vector checkers
    `bignum_vectors_check.py`, `reward_vectors.py --check`,
    `header_hash_vectors.py --check` and `crypter_vectors.py --check`
    (P0-13, P0-46, P0-19, P0-22; about 5 s together, in both
    configurations, so CI runs them in its unit jobs).
    Logs: `WORK_DIR/depends.log`, `WORK_DIR/autogen.log`,
-   `<builddir>/{configure,make,unit,vectors,functional}.log`.
+   `<builddir>/{configure,make,ccache,unit,vectors,functional}.log`.
    Datadirs and node logs of **failed** functional tests are kept in
    `<builddir>/functional-tmp/` (the test framework deletes those of passing
    tests; the directory is emptied at the start of each functional run).
@@ -144,6 +149,65 @@ repository's commit for the version string.
 Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
+
+## Compiler cache (ccache)
+
+`depends` builds ccache 3.3.4 and `configure` puts it in front of the
+compiler. `build.sh` keeps its cache in one directory shared by all work
+dirs and configurations (task P0-65), so a new work dir, a `--clean` or a
+merge of `master` recompiles only what really changed:
+
+- **Location:** `$YACOIN_CCACHE_DIR`, default `~/.cache/yacoin-ccache`,
+  mounted into the container at `/ccache` (`CCACHE_DIR`). It must be
+  outside the checkout and writable.
+- **Size:** `$YACOIN_CCACHE_MAXSIZE`, default `5G` (ccache syntax, e.g.
+  `500M`, `0` = no limit); ccache removes the oldest entries itself.
+  Entries are compressed (`CCACHE_COMPRESS=1`); one `-O2` configuration
+  takes about 210 MB, so 5G holds all configurations with room for many
+  versions.
+- **Clear it:** `rm -rf ~/.cache/yacoin-ccache` (or your
+  `YACOIN_CCACHE_DIR`) while no build runs. Never needed for correctness.
+- **Off:** `--no-ccache` compiles everything without the cache.
+- **Hit rate:** after `make` the log shows e.g.
+  `== 02:13:31 ccache build-mainnet: 225 hits, 0 misses (100.0 % hit rate), cache 208.9 MB / 5.0 GB`;
+  the full `ccache -s` is in `<builddir>/ccache.log`, the line in
+  `<builddir>/ccache-summary.txt`. It is the difference of the cache's
+  counters before and after `make`, so builds in other work dirs using
+  the cache at the same time are counted too.
+- **Why it is safe:** ccache hashes the compiler command line (so
+  `--coverage`, `--sanitizers`, `-O0`/`-O2` never share objects), the
+  contents of every included header (also `bitcoin-config.h`, which differs
+  between mainnet and lowdiff) and the compiler's `-v` output
+  (`CCACHE_COMPILERCHECK`, so another image's GCC is never mixed in).
+  `src/clientversion.cpp` mentions `__DATE__`/`__TIME__`, so ccache
+  hashes its preprocessed output instead (no direct mode); `genbuild.sh`
+  defines `BUILD_DATE ""`, so no time is compiled in, and the commit id
+  from `obj/build.h` is part of that output – a new commit recompiles it.
+  Coverage builds cache the `.gcno` notes with the object (checked in CI:
+  same instrumented lines as without the cache, gate unchanged).
+- **Across work dirs:** every work dir is mounted at `/work`, so file
+  paths and the compile directory (hashed with `-g`) are the same in all
+  of them, and `__FILE__`, debug info and `.gcno` paths stay absolute
+  (`CCACHE_BASEDIR` is deliberately not set). With `--no-docker` the paths
+  differ per work dir, so only earlier runs in the same work dir give hits.
+- **Concurrent runs** share the cache safely (ccache writes atomically and
+  locks its counters).
+
+Measured (2026-10-08, 4-CPU cloud machine, `--jobs 2`, shared with
+another agent's builds):
+
+| Build | `make` | Hits |
+|---|---|---|
+| mainnet, before P0-65 (no persistent cache) | 13 min 46 s | – |
+| mainnet, new work dir, empty cache | 13 min 41 s | 0 / 225 |
+| mainnet, second new work dir, same commit | 19 s (whole run 62 s) | 225 / 225 |
+| mainnet, after merging `master` (build dir deleted) | 24 s | 224 / 225 |
+| lowdiff, after merging `master` (incremental) | 8 s | 0 / 1 |
+
+mainnet and lowdiff share no objects (every file includes
+`bitcoin-config.h`), so the first build of each configuration fills the
+cache (about 210 MB each, coverage builds about 150 MB). The one miss
+after a new commit is `clientversion.cpp` (commit id).
 
 ## Expected results
 
@@ -376,6 +440,23 @@ under a minute). Each build job runs `build.sh` with Docker on a GitHub-hosted
 - `depends-cache` (downloaded sources and built packages) is cached with
   `actions/cache`, keyed on the image digest and the contents of
   `depends/`; the cache is saved by jobs that succeed.
+- The compiler cache (P0-65, see "Compiler cache (ccache)") is in
+  `$RUNNER_TEMP/yacoin-ccache`, limited to 1G per job. Each job restores
+  the newest cache of the same job (key `ccache-<image>-<matrix id>-sha-<commit>-<attempt>`, restored by the prefix up to `-sha-`;
+  the coverage jobs have their own) from its branch or from `master`, and
+  saves it after the build – also when tests failed, not when `make` did
+  not finish or the run was cancelled. The hit rate is in the job's
+  summary ("Compiler cache"). GitHub keeps 10 GB of caches per
+  repository and evicts the least recently used ones, so a branch that
+  has not run for a while starts from `master`'s cache.
+  Measured (2026-10-08, "Build and test" step, master 9e5809be without
+  the cache → P0-65 branch with a warm cache; `make` itself 11–14 s with
+  225/225 hits in every job): unit (mainnet) 407 s → 75 s, unit +
+  functional (lowdiff) 746 s → 317 s, coverage (mainnet) 819 s → 519 s;
+  coverage (lowdiff) 1061 s → 1279 s – it spends its time in the `-O0`
+  tests (unit 639 s, functional 405 s, capture 110 s), not compiling, and
+  varies between runners. A run with an empty cache takes as long as
+  before.
 - The image is pulled from Docker Hub with a few retries; anonymous pulls
   can hit Docker Hub's rate limit (`429 Too Many Requests`). If all retries
   fail, re-run the job. Mirroring the image to GHCR is task P0-44, as are

@@ -96,6 +96,12 @@ make -j"$(nproc)"
 - **Two configurations:** *mainnet* (no extra flag) for unit tests and
   anything mainnet-related; *low difficulty*
   (`--enable-low-difficulty-for-development`) for functional tests.
+- **Compiler cache:** `build.sh` keeps a ccache cache shared by all work
+  dirs in `$YACOIN_CCACHE_DIR` (default `~/.cache/yacoin-ccache`, limit
+  `$YACOIN_CCACHE_MAXSIZE`, default 5G), so a new work dir or a merge of
+  master recompiles only what changed; the log shows the hit rate.
+  `--no-ccache` turns it off; clear it with `rm -rf` on the directory. CI
+  caches it per job (P0-65; `contrib/testing/README.md`).
 - **Coverage:** `build.sh --config <cfg> --coverage --unit [--functional]`
   writes `<builddir>/coverage/` (lcov `.info`, HTML, summary);
   `build.sh --coverage-report` merges mainnet + lowdiff (union; see
