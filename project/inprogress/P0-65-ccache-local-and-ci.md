@@ -265,3 +265,38 @@ observable output (CLAUDE.md rule 5 applies to `debug.log` only).
   real ccache 3.3.4 `-s` output, `hashFiles` only seeing the workspace
   (the save step now uses a step output instead). shellcheck: only the
   SC2015 infos the file already had.
+- 2026-10-08 – CI run 37716925834 (commit c49016ef), attempt 1 (empty
+  caches) vs attempt 2 (re-run, caches of attempt 1), "Build and test"
+  step; master 9e5809be (run 37713759102) for comparison:
+
+  | Job | master | attempt 1 | attempt 2 | hits attempt 2 |
+  |---|---|---|---|---|
+  | unit (mainnet) | 407 s | 414 s | 530 s | 0 / 225 |
+  | unit + functional (lowdiff) | 746 s | 748 s | 744 s | 0 / 225 |
+  | coverage (mainnet) | 819 s | 828 s | **523 s** | 225 / 225 |
+  | coverage (lowdiff) | 1061 s | 1051 s | 1119 s | 225 / 225 |
+
+  **Bug found:** the `-O2` jobs restored the wrong cache – restore prefix
+  `ccache-<image>-mainnet-` also matches `ccache-<image>-mainnet-cov-…`
+  (the log shows the cache growing from 149.8 MB, the coverage cache, to
+  358.5 MB). Fixed: keys are now `ccache-<image>-<id>-sha-<sha>-<attempt>`
+  with restore prefix `…-<id>-sha-`. The coverage jobs (no prefix clash)
+  show the effect: 100 % hits, compile part of coverage (mainnet) down by
+  about 5 min; coverage (lowdiff) is dominated by the -O0 functional tests
+  and runner variance. Coverage with cached objects and `.gcno` files:
+  merged report of attempt 2 vs master has the identical set of 36614
+  instrumented lines; 10 lines differ in hit/not hit (net.cpp,
+  httpserver.cpp, wallet.cpp, … – timing-dependent functional test
+  paths, in both directions), gate result unchanged (all ok, overall
+  73.69 % vs 73.68 % lines).
+- 2026-10-08 – Merged origin/master (P0-66, 0f104a60): conflicts in
+  `build.sh` (`--unit-args` next to the ccache options) and the Priority
+  list (now empty) resolved.
+- 2026-10-08 – Final local runs after the merge (`--jobs 2`):
+  mainnet `--unit`: 397/397 unit test cases, vector checkers ok, exit 0;
+  `make` 24 s with the build dir deleted (224/225 hits). lowdiff
+  `--unit --functional`: 397/397 unit, 48/48 functional (ALL Passed),
+  exit 0; incremental `make` 8 s (1 miss: `clientversion.cpp`). Before the
+  merge the cold lowdiff build took 13 min 35 s (0/225 hits; mainnet and
+  lowdiff share no objects because every file includes
+  `bitcoin-config.h`).

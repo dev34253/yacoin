@@ -172,15 +172,16 @@ jobs:
 
       # Compiler cache (P0-65): the newest cache of the same job (same
       # image and matrix id, so coverage builds have their own) from this
-      # branch or master. ccache hashes the compiler, flags and headers
+      # branch or master. "-sha-" ends the id in the restore prefix:
+      # without it "…-mainnet-" would also match the "mainnet-cov" caches. ccache hashes the compiler, flags and headers
       # itself, so an older cache never gives stale objects.
       - name: Restore compiler cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/yacoin-ccache
-          key: ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-${{ github.sha }}-${{ github.run_attempt }}
+          key: ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-sha-${{ github.sha }}-${{ github.run_attempt }}
           restore-keys: |
-            ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-
+            ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-sha-
 
       - name: Build and test
         env:
@@ -213,7 +214,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/yacoin-ccache
-          key: ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-${{ github.sha }}-${{ github.run_attempt }}
+          key: ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-sha-${{ github.sha }}-${{ github.run_attempt }}
 
       - name: Coverage summary
         if: ${{ always() && matrix.coverage }}

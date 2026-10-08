@@ -183,7 +183,22 @@ merge of `master` recompiles only what really changed:
 - **Concurrent runs** share the cache safely (ccache writes atomically and
   locks its counters).
 
-TIMINGS_TBD
+Measured (2026-10-08, 4-CPU cloud machine, `--jobs 2`, shared with
+another agent's builds):
+
+| Build | `make` | Hits |
+|---|---|---|
+| mainnet, before P0-65 (no persistent cache) | 13 min 46 s | – |
+| mainnet, new work dir, empty cache | 13 min 41 s | 0 / 225 |
+| mainnet, second new work dir, same commit | 19 s (whole run 62 s) | 225 / 225 |
+| mainnet, after merging `master` (build dir deleted) | 24 s | 224 / 225 |
+| lowdiff, after merging `master` (incremental) | 8 s | 0 / 1 |
+
+mainnet and lowdiff share no objects (every file includes
+`bitcoin-config.h`), so the first build of each configuration fills the
+cache (about 210 MB each, coverage builds about 150 MB). The one miss
+after a new commit is `clientversion.cpp` (commit id).
+
 
 The work directory must not be inside another git work tree (e.g. a
 dotfiles repository in `$HOME`): `share/genbuild.sh` would then pick up that
@@ -426,7 +441,7 @@ under a minute). Each build job runs `build.sh` with Docker on a GitHub-hosted
   `depends/`; the cache is saved by jobs that succeed.
 - The compiler cache (P0-65, see "Compiler cache (ccache)") is in
   `$RUNNER_TEMP/yacoin-ccache`, limited to 1G per job. Each job restores
-  the newest cache of the same job (key `ccache-<image>-<matrix id>-…`;
+  the newest cache of the same job (key `ccache-<image>-<matrix id>-sha-<commit>-<attempt>`, restored by the prefix up to `-sha-`;
   the coverage jobs have their own) from its branch or from `master`, and
   saves it after the build – also when tests failed, not when `make` did
   not finish or the run was cancelled. The hit rate is in the job's
