@@ -13,8 +13,14 @@ contrib/testing/build.sh --config mainnet --unit
 # low-difficulty parameters (needed by the functional tests), all tests
 contrib/testing/build.sh --config lowdiff --unit --functional
 
+# while developing: only the affected unit suite / functional test
+contrib/testing/build.sh --config mainnet --unit --unit-args "--run_test=random_tests"
+contrib/testing/build.sh --config lowdiff --functional --functional-args "-j2 wallet_dump.py"
+
 # coverage of both configurations, then the merged report and the
-# coverage gate (see "Coverage" and "Coverage gate")
+# coverage gate (see "Coverage" and "Coverage gate"); CI runs these on
+# master and on branches that change a gated file (P0-63), so locally they
+# are only needed for `coverage_gate.py --suggest` or to debug a gate failure
 contrib/testing/build.sh --config mainnet --coverage --unit
 contrib/testing/build.sh --config lowdiff --coverage --unit --functional
 contrib/testing/build.sh --coverage-report
@@ -38,6 +44,7 @@ changed.
 | `--coverage-report` | No build and no tests: merges the reports of the mainnet and lowdiff `--coverage` runs in this work dir into `WORK_DIR/coverage-report/`, then runs the coverage gate (exit 1 if a gate fails, see "Coverage gate"). Rejects `--config`, `--coverage`, `--unit`, `--functional`, `--clean`, `--reconfigure` and `--sanitizers`; `--jobs` (lcov `--parallel`), `--image`, `--work-dir` and `--no-docker` work. |
 | `--sanitizers LIST` | `-fsanitize=LIST`, e.g. `address,undefined`. Implemented but not yet validated – sanitizer runs are task P0-29. |
 | `--unit` | Run `src/test/test_bitcoin`. |
+| `--unit-args "ARGS"` | Extra arguments for `test_bitcoin`, appended to the fixed `--log_level=test_suite --report_level=short` (do not repeat those two); needs `--unit`. E.g. `"--run_test=random_tests"`, `"--run_test=pow_tests/*"` or `"--run_test=random_tests,util_tests"`. Split on whitespace and not glob-expanded. The build log and the first line of `unit.log` mark such a run as filtered (not a full run); the summary check still applies, so a filter that matches nothing or an unknown argument fails the run (exit 1). The vector checkers still run. Rejected together with `--coverage` (the report and the gate would cover only the selected tests). |
 | `--functional` | Run `test/functional/test_runner.py` (requires `--config lowdiff`). |
 | `--functional-args "ARGS"` | Arguments for `test_runner.py`, replacing the default `-j4`; e.g. `"-j4 wallet_dump.py"`. |
 | `--jobs N` | Parallel make jobs (default: CPU count). |
@@ -113,7 +120,7 @@ slots** and sets `TEST_RUNNER_PORT_MIN` for it:
 | 5–9 | 21000, 22000, …, 25000 | slot base + 0…999 | slot base + 5000…5999 (26000–30999) |
 
 The slots do not overlap and stay below the Linux ephemeral port range
-(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000; 48 today).
+(32768). A slot holds runs of up to 83 tests (12 × 83 < 1000).
 The preferred slot is `cksum(work dir) % 10`; the run holds
 `flock` on `/tmp/yacoin-build-ports/slot-<k>.lock` (`YACOIN_PORT_LOCK_DIR`)
 until it ends. If another run holds the preferred slot, the next free one
@@ -138,12 +145,16 @@ Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
 `test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
 are for testing, not release.
 
-## Expected results (2026-10-03, after P0-02, P0-10, P0-47, P0-12, P0-16, P0-20, P0-11, P0-13, P0-27, P0-46, P0-19, P0-62, P0-08, P0-14, P0-48, P0-55, P0-22 and P0-21)
+## Expected results
 
 | Configuration | Unit tests | Functional tests |
 |---|---|---|
-| `mainnet` | 397/397 | – (not supported) |
-| `lowdiff` | 397/397 | 48/48 |
+| `mainnet` | all pass | – (not supported) |
+| `lowdiff` | all pass | all pass |
+
+The exact counts are not written down here on purpose (they change with
+every task, P0-66): `unit.log` and `functional.log` print them, and the PR
+and task Log record them.
 
 `pow_tests/get_next_work_pow_limit` expects a different result per
 configuration because `powLimit` differs: mainnet clamps the retarget to

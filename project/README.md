@@ -25,8 +25,6 @@ every later task faster:
 
 1. [P0-65](todo/P0-65-ccache-local-and-ci.md) – persistent compiler cache
    (ccache) for local builds and CI.
-2. [P0-66](inprogress/P0-66-faster-task-workflow.md) – faster task workflow: local
-   test scope, no fixed sleeps, single-source test counts.
 
 Remove an entry here when its task is done.
 
@@ -41,9 +39,16 @@ reviews, tests, documentation and pull request.
 2. Move it to `inprogress/` with `git mv` and commit that move on its own, so
    everyone can see the task is taken. Fill in `Owner` and `Started`.
 3. Do the work on a branch. Keep one task per pull request where possible.
+   While developing, run only the affected tests; merge `master` once,
+   right before the final full test run (mainnet unit, lowdiff unit +
+   functional) and the pull request. Coverage runs in CI; wait for builds
+   and CI on their completion, never with a fixed `sleep` (CLAUDE.md
+   "Testing").
 4. When every acceptance criterion is met, fill in `Finished`, add a short
    note under `Log` (what was done, PR link, anything surprising), and
    `git mv` the file to `done/` in the same pull request as the work.
+   Record the actual test counts there and in the PR – they are not kept
+   in any other document. The pull request is merged only when CI is green.
 5. If a task turns out to be too big, split it: create new task files in
    `todo/` with the next free numbers and link them from the original.
 

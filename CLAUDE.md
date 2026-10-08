@@ -36,6 +36,7 @@ reviews as separate, logged self-review passes.
    the unit tests; the functional suite for anything touching node, wallet,
    RPC, P2P or consensus code. Paste the results (pass counts) into the PR or
    task log. Never commit with new failures; never skip or disable a test.
+   A pull request is merged only when its CI run is green.
 3. **Static analysis** (once P0-58 lands): run it on the changed files before
    committing; CI fails on findings that are not in the recorded baseline.
 4. **Review the code before every commit.** Run the `code-review` skill (or a
@@ -115,16 +116,41 @@ make -j"$(nproc)"
 ## Testing
 
 ```bash
-src/test/test_bitcoin --log_level=test_suite          # unit tests (397)
-python3 test/functional/test_runner.py -j4            # functional tests (48)
+src/test/test_bitcoin --log_level=test_suite          # unit tests
+python3 test/functional/test_runner.py -j4            # functional tests
 ```
 
-- Expected today: 397/397 unit tests in both builds (mainnet and low
-  difficulty) and 48/48 functional (low-difficulty build); `build.sh` (see
-  *Building*) exits 0 for both configurations. Tests whose results depend on
-  the chain parameters pin the expected value per build with `#ifdef
-  LOW_DIFFICULTY_FOR_DEVELOPMENT` (e.g. `pow_tests/get_next_work_pow_limit`,
-  P0-02) – never skip a test in one build.
+- Expected: every unit test passes in both builds (mainnet and low
+  difficulty) and every functional test in the low-difficulty build;
+  `build.sh` (see *Building*) exits 0 for both configurations. The exact
+  counts are deliberately not written down here (they change with every
+  task and made every PR conflict): take them from `unit.log` /
+  `functional.log` or the CI run, and record them in the PR and task Log.
+  Tests whose results depend on the chain parameters pin the expected value
+  per build with `#ifdef LOW_DIFFICULTY_FOR_DEVELOPMENT` (e.g.
+  `pow_tests/get_next_work_pow_limit`, P0-02) – never skip a test in one
+  build.
+- **Local test scope** (P0-66). While developing, build the affected
+  configuration and run only the affected tests:
+  `build.sh --config <mainnet|lowdiff> --unit --unit-args "--run_test=<suite>"`,
+  `build.sh --config lowdiff --functional --functional-args "-j2 <test>.py"`.
+  These targeted runs are for the edit–build loop and never replace
+  rule 2: before every commit run the full unit suite (and the functional
+  suite where rule 2 requires it), and before the pull request run both
+  `--config mainnet --unit` and `--config lowdiff --unit --functional`
+  in full.
+  Coverage and the coverage gate run in CI (P0-63: on `master` and on
+  branches that change a watched file); run `--coverage` locally only to
+  get `--suggest` values when raising a gate minimum, or to debug a gate
+  failure. CI on the PR runs the unit tests (both configurations) and the
+  functional tests again, plus coverage and the gate when a watched file
+  changed (branches that change only documentation skip the build and
+  test jobs, P0-64); paste its result into the PR and merge only when it
+  is green.
+- **Waiting** for a background build or a CI run: wait on a completion
+  marker (the background command's exit, a `build.sh exit N` line appended
+  to its log, the CI run's `completed` status) – never a fixed `sleep N`.
+  Ready-made snippets are in the implement-task skill ("Waiting").
 - Chain parameters, checkpoints, stake-modifier checkpoints and the fork
   defaults are pinned (P0-20: `src/test/chainparams_snapshot_tests.cpp`,
   `test/functional/feature_params_snapshot.py`; table in plan section
