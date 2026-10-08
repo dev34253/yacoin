@@ -6,7 +6,7 @@
 - Priority: top – do before all other open tasks (owner, 2026-10-08)
 - Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
 - Started: 2026-10-08
-- Finished:
+- Finished: 2026-10-08
 
 ## Goal
 
@@ -51,13 +51,13 @@ master and every CI run currently compiles all ~300 files again.
 
 ## Acceptance criteria
 
-- A second build of the same commit in a new work dir compiles from cache
+- [x] A second build of the same commit in a new work dir compiles from cache
   (ccache hit rate > 90 %, `make` well under 2 min) – measured and logged.
-- CI "Build and test" for unit (mainnet) and unit + functional (lowdiff) is
+- [x] CI "Build and test" for unit (mainnet) and unit + functional (lowdiff) is
   clearly faster on a second run of the same branch (numbers in the Log).
-- Results identical: unit and functional pass counts unchanged in both
+- [x] Results identical: unit and functional pass counts unchanged in both
   configurations; coverage report and gate unchanged on master.
-- `--no-ccache` works; docs (`contrib/testing/README.md`, CLAUDE.md
+- [x] `--no-ccache` works; docs (`contrib/testing/README.md`, CLAUDE.md
   "Building") describe the cache, its location, size and how to clear it.
 
 ## Notes
@@ -300,3 +300,32 @@ observable output (CLAUDE.md rule 5 applies to `debug.log` only).
   merge the cold lowdiff build took 13 min 35 s (0/225 hits; mainnet and
   lowdiff share no objects because every file includes
   `bitcoin-config.h`).
+- 2026-10-08 – CI run 37720935819 (commit e50ed62d, prefix fix), attempt 1
+  (new keys, so empty caches) vs attempt 2 (re-run), "Build and test":
+
+  | Job | master 9e5809be | attempt 1 | attempt 2 (warm) | hits attempt 2 |
+  |---|---|---|---|---|
+  | unit (mainnet) | 407 s | 510 s | **75 s** | 225 / 225 |
+  | unit + functional (lowdiff) | 746 s | 584 s | **317 s** | 225 / 225 |
+  | coverage (mainnet) | 819 s | 752 s | **519 s** | 225 / 225 |
+  | coverage (lowdiff) | 1061 s | 1066 s | 1279 s | 225 / 225 |
+
+  `make` took 11–14 s in every warm job. coverage (lowdiff) is bound by
+  the `-O0` tests (unit 639 s, functional 405 s, lcov capture 110 s in
+  attempt 2) and runner variance, not by compiling. Coverage of attempt 2
+  vs master: same 36614 instrumented lines, 8 lines differ in hit/not hit
+  (timing-dependent), gate all ok. Cache sizes: 209 MB per -O2 job,
+  150 MB per coverage job (limit 1G).
+- 2026-10-08 – Documentation self-review (no Agent tool): the ccache text
+  had ended up under "Concurrent runs" and swallowed the paragraphs on
+  work-dir location and binaries – moved to its own section "Compiler
+  cache (ccache)"; placeholder example line replaced by a real one; the
+  `.gcno` claim now cites the CI check; no test counts in the docs (P0-66
+  rule). Checked against `build.sh` (option, variables, defaults, log
+  line, files) and the workflow (keys, limit, save condition).
+- 2026-10-08 – Open points: (1) mainnet and lowdiff share no objects
+  (every file includes `bitcoin-config.h`); moving the low-difficulty
+  switch out of the config header would double the hits but touches
+  chain params – not done. (2) coverage (lowdiff) CI time is test time;
+  a faster -O0 test run would be its own task. (3) `--no-docker` builds
+  get hits only within the same work dir path.

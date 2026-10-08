@@ -142,7 +142,15 @@ No external lock around functional runs is needed any more. Setting
 apart). A `test_runner.py` started by hand uses 11000 (slot 0's ports)
 unless `TEST_RUNNER_PORT_MIN` is set.
 
-### Compiler cache (ccache)
+The work directory must not be inside another git work tree (e.g. a
+dotfiles repository in `$HOME`): `share/genbuild.sh` would then pick up that
+repository's commit for the version string.
+
+Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
+`test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
+are for testing, not release.
+
+## Compiler cache (ccache)
 
 `depends` builds ccache 3.3.4 and `configure` puts it in front of the
 compiler. `build.sh` keeps its cache in one directory shared by all work
@@ -174,7 +182,9 @@ merge of `master` recompiles only what really changed:
   `src/clientversion.cpp` mentions `__DATE__`/`__TIME__`, so ccache
   hashes its preprocessed output instead (no direct mode); `genbuild.sh`
   defines `BUILD_DATE ""`, so no time is compiled in, and the commit id
-  from `obj/build.h` is part of that output – a new commit recompiles it. Coverage builds cache the `.gcno` notes with the object.
+  from `obj/build.h` is part of that output – a new commit recompiles it.
+  Coverage builds cache the `.gcno` notes with the object (checked in CI:
+  same instrumented lines as without the cache, gate unchanged).
 - **Across work dirs:** every work dir is mounted at `/work`, so file
   paths and the compile directory (hashed with `-g`) are the same in all
   of them, and `__FILE__`, debug info and `.gcno` paths stay absolute
@@ -198,15 +208,6 @@ mainnet and lowdiff share no objects (every file includes
 `bitcoin-config.h`), so the first build of each configuration fills the
 cache (about 210 MB each, coverage builds about 150 MB). The one miss
 after a new commit is `clientversion.cpp` (commit id).
-
-
-The work directory must not be inside another git work tree (e.g. a
-dotfiles repository in `$HOME`): `share/genbuild.sh` would then pick up that
-repository's commit for the version string.
-
-Binaries end up in `<builddir>/src/` (`yacoind`, `yacoin-cli`,
-`test/test_bitcoin`). They need glibc ≥ 2.38 (Ubuntu 24.04 or newer), so they
-are for testing, not release.
 
 ## Expected results
 
@@ -448,6 +449,14 @@ under a minute). Each build job runs `build.sh` with Docker on a GitHub-hosted
   summary ("Compiler cache"). GitHub keeps 10 GB of caches per
   repository and evicts the least recently used ones, so a branch that
   has not run for a while starts from `master`'s cache.
+  Measured (2026-10-08, "Build and test" step, master 9e5809be without
+  the cache → P0-65 branch with a warm cache; `make` itself 11–14 s with
+  225/225 hits in every job): unit (mainnet) 407 s → 75 s, unit +
+  functional (lowdiff) 746 s → 317 s, coverage (mainnet) 819 s → 519 s;
+  coverage (lowdiff) 1061 s → 1279 s – it spends its time in the `-O0`
+  tests (unit 639 s, functional 405 s, capture 110 s), not compiling, and
+  varies between runners. A run with an empty cache takes as long as
+  before.
 - The image is pulled from Docker Hub with a few retries; anonymous pulls
   can hit Docker Hub's rate limit (`429 Too Many Requests`). If all retries
   fail, re-run the job. Mirroring the image to GHCR is task P0-44, as are
