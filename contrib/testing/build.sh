@@ -41,6 +41,13 @@ Build options:
 
 Test options:
   --unit                    Run the unit tests (src/test/test_bitcoin).
+  --unit-args "ARGS"        Extra arguments for test_bitcoin (needs --unit),
+                            e.g. "--run_test=random_tests" or
+                            "--run_test=pow_tests/*" to run only the affected
+                            suites while developing. Split on whitespace, not
+                            glob-expanded; do not repeat --log_level or
+                            --report_level (build.sh sets them). Not with
+                            --coverage.
   --functional              Run the functional tests (needs --config lowdiff).
   --functional-args "ARGS"  Arguments for test_runner.py, replacing the
                             default -j4 (e.g. "-j4 wallet_dump.py").
@@ -90,6 +97,7 @@ CLEAN=0
 RUN_UNIT=0
 RUN_FUNCTIONAL=0
 FUNCTIONAL_ARGS="-j4"
+UNIT_ARGS=""
 IMAGE="${YACOIN_BUILD_IMAGE:-$DEFAULT_IMAGE}"
 USE_DOCKER=1
 IN_CONTAINER=0
@@ -110,6 +118,7 @@ while [ $# -gt 0 ]; do
         --no-ccache) USE_CCACHE=0; shift ;;
         --unit) RUN_UNIT=1; shift ;;
         --functional) RUN_FUNCTIONAL=1; shift ;;
+        --unit-args) [ $# -ge 2 ] || die "$1 needs a value"; UNIT_ARGS="$2"; shift 2 ;;
         --functional-args) [ $# -ge 2 ] || die "$1 needs a value"; FUNCTIONAL_ARGS="$2"; shift 2 ;;
         --image) need_arg "$1" "${2:-}"; IMAGE="$2"; shift 2 ;;
         --no-docker) USE_DOCKER=0; shift ;;
@@ -128,6 +137,12 @@ case "$CONFIG" in
 esac
 if [ "$RUN_FUNCTIONAL" = 1 ] && [ "$CONFIG" != lowdiff ]; then
     die "--functional needs --config lowdiff (functional tests use the low-difficulty genesis)"
+fi
+if [ -n "$UNIT_ARGS" ] && [ "$RUN_UNIT" != 1 ]; then
+    die "--unit-args needs --unit"
+fi
+if [ -n "$UNIT_ARGS" ] && [ "$COVERAGE" = 1 ]; then
+    die "--unit-args cannot be combined with --coverage (the report, and --coverage-report and its gate, would cover only the selected tests)"
 fi
 CCACHE_MAXSIZE="${YACOIN_CCACHE_MAXSIZE:-5G}"
 [[ "$CCACHE_MAXSIZE" =~ ^[0-9]+(\.[0-9]+)?([kMGT]i?)?$ ]] ||
@@ -250,7 +265,7 @@ if [ "$IN_CONTAINER" = 0 ]; then
     log "syncing checkout $REPO ($BUILD_GIT_COMMIT) to $WORK_DIR/src"
     python3 "$REPO/contrib/testing/sync_tree.py" "$REPO" "$WORK_DIR/src"
 
-    INNER_ARGS=(--in-container --functional-args "$FUNCTIONAL_ARGS")
+    INNER_ARGS=(--in-container --functional-args "$FUNCTIONAL_ARGS" --unit-args "$UNIT_ARGS")
     [ "$USE_CCACHE" = 1 ] || INNER_ARGS+=(--no-ccache)
     if [ "$RUN_FUNCTIONAL" = 1 ]; then
         PORT_SLOT=""
@@ -565,15 +580,27 @@ if [ "$COVERAGE" = 1 ] && [ "$RUN_UNIT$RUN_FUNCTIONAL" != 00 ]; then
 fi
 
 if [ "$RUN_UNIT" = 1 ]; then
-    log "unit tests"
+    # --unit-args: split on any whitespace (newlines too), no globbing
+    # (Boost filters contain '*'); read -d '' returns 1 at the end.
+    UNIT_ARGV=()
+    read -r -d '' -a UNIT_ARGV <<< "$UNIT_ARGS" || true
+    : > unit.log
+    if [ -n "$UNIT_ARGS" ]; then
+        log "unit tests (filtered: --unit-args \"$UNIT_ARGS\"; not a full run)"
+        # Also in unit.log, so its pass count is not taken for a full run.
+        echo "build.sh: FILTERED unit test run (--unit-args \"$UNIT_ARGS\"), not a full run" > unit.log
+    else
+        log "unit tests"
+    fi
     start=$(date +%s)
-    if (cd src && ./test/test_bitcoin --log_level=test_suite --report_level=short) > unit.log 2>&1; then
+    if (cd src && ./test/test_bitcoin --log_level=test_suite --report_level=short ${UNIT_ARGV[@]+"${UNIT_ARGV[@]}"}) >> unit.log 2>&1; then
         rc=0
     else
         rc=$?
     fi
     log "unit tests finished in $(( $(date +%s) - start )) s (exit $rc, log: $BUILD/unit.log)"
-    grep -E "test cases? out of|assertions out of|error: in" unit.log | head -n 20 || true
+    # "setup error" / "unrecognized parameter": a bad --unit-args filter.
+    grep -E "test cases? out of|assertions out of|error: in|Test setup error|unrecognized parameter" unit.log | head -n 20 || true
     [ "$rc" = 0 ] || STATUS=1
     # test_bitcoin can end early with status 0 (e.g. exit() in node code):
     # require Boost's summary with every test case passed (task P0-61, Q8).
