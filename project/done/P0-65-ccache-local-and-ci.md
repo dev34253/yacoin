@@ -329,3 +329,4 @@ observable output (CLAUDE.md rule 5 applies to `debug.log` only).
   chain params – not done. (2) coverage (lowdiff) CI time is test time;
   a faster -O0 test run would be its own task. (3) `--no-docker` builds
   get hits only within the same work dir path.
+- 2026-10-08 – PR: https://github.com/dev34253/yacoin/pull/86
