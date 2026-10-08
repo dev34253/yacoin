@@ -170,9 +170,50 @@ jobs:
           restore-keys: |
             depends-${{ env.YACOIN_BUILD_IMAGE }}-
 
+      # Compiler cache (P0-65): the newest cache of the same job (same
+      # image and matrix id, so coverage builds have their own) from this
+      # branch or master. ccache hashes the compiler, flags and headers
+      # itself, so an older cache never gives stale objects.
+      - name: Restore compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/yacoin-ccache
+          key: ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-${{ github.sha }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-
+
       - name: Build and test
+        env:
+          YACOIN_CCACHE_DIR: ${{ runner.temp }}/yacoin-ccache
+          # One -O2 configuration needs about 210 MB (compressed); the
+          # limit keeps old objects from piling up in the saved cache.
+          YACOIN_CCACHE_MAXSIZE: 1G
         run: |
           contrib/testing/build.sh ${{ matrix.args }} --work-dir "$RUNNER_TEMP/yacoin-build"
+
+      # Hit rate of this build (written by build.sh after make); "built"
+      # tells the save step that make finished.
+      - name: Compiler cache summary
+        id: ccache
+        if: ${{ always() }}
+        run: |
+          built=false
+          for f in "$RUNNER_TEMP"/yacoin-build/build-*/ccache-summary.txt; do
+            if [ -f "$f" ]; then
+              built=true
+              { echo "### Compiler cache"; cat "$f"; } | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          echo "built=$built" >> "$GITHUB_OUTPUT"
+
+      # Saved also when tests failed (the objects are still good), but only
+      # when make finished, so an aborted build does not replace a full cache.
+      - name: Save compiler cache
+        if: ${{ always() && !cancelled() && steps.ccache.outputs.built == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/yacoin-ccache
+          key: ccache-${{ env.YACOIN_BUILD_IMAGE }}-${{ matrix.id }}-${{ github.sha }}-${{ github.run_attempt }}
 
       - name: Coverage summary
         if: ${{ always() && matrix.coverage }}

@@ -37,6 +37,7 @@ Build options:
   --reconfigure             Re-run configure even if the build dir exists.
   --clean                   Delete the source copy and build dir first
                             (the depends cache is kept).
+  --no-ccache               Compile without the compiler cache (task P0-65).
 
 Test options:
   --unit                    Run the unit tests (src/test/test_bitcoin).
@@ -49,6 +50,9 @@ Environment variables:
                             instead of a port slot (1024-55535).
   YACOIN_PORT_LOCK_DIR      Directory of the port slot locks (default
                             /tmp/yacoin-build-ports).
+  YACOIN_CCACHE_DIR         Compiler cache shared by all work dirs (default
+                            ~/.cache/yacoin-ccache).
+  YACOIN_CCACHE_MAXSIZE     Size limit of the compiler cache (default 5G).
 
 Environment options:
   --image IMAGE             Build image (default: pinned P0-57 image).
@@ -91,6 +95,8 @@ USE_DOCKER=1
 IN_CONTAINER=0
 WORK_DIR="${YACOIN_WORK_DIR:-$HOME/.cache/yacoin-build}"
 PORT_MIN=""
+USE_CCACHE=1
+CCACHE_DIR_ARG=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -101,6 +107,7 @@ while [ $# -gt 0 ]; do
         --jobs) need_arg "$1" "${2:-}"; JOBS="$2"; shift 2 ;;
         --reconfigure) RECONFIGURE=1; shift ;;
         --clean) CLEAN=1; shift ;;
+        --no-ccache) USE_CCACHE=0; shift ;;
         --unit) RUN_UNIT=1; shift ;;
         --functional) RUN_FUNCTIONAL=1; shift ;;
         --functional-args) [ $# -ge 2 ] || die "$1 needs a value"; FUNCTIONAL_ARGS="$2"; shift 2 ;;
@@ -109,6 +116,7 @@ while [ $# -gt 0 ]; do
         --work-dir) need_arg "$1" "${2:-}"; WORK_DIR="$2"; shift 2 ;;
         --in-container) IN_CONTAINER=1; USE_DOCKER=0; shift ;;
         --port-min) need_arg "$1" "${2:-}"; PORT_MIN="$2"; shift 2 ;;  # internal
+        --ccache-dir) need_arg "$1" "${2:-}"; CCACHE_DIR_ARG="$2"; shift 2 ;;  # internal
         -h|--help) usage; exit 0 ;;
         *) usage >&2; die "unknown option: $1" ;;
     esac
@@ -121,6 +129,9 @@ esac
 if [ "$RUN_FUNCTIONAL" = 1 ] && [ "$CONFIG" != lowdiff ]; then
     die "--functional needs --config lowdiff (functional tests use the low-difficulty genesis)"
 fi
+CCACHE_MAXSIZE="${YACOIN_CCACHE_MAXSIZE:-5G}"
+[[ "$CCACHE_MAXSIZE" =~ ^[0-9]+(\.[0-9]+)?([kMGT]i?)?$ ]] ||
+    die "YACOIN_CCACHE_MAXSIZE must be a size such as 5G, 500M or 0 (no limit), not '$CCACHE_MAXSIZE'"
 case "$SANITIZERS" in
     ""|*[!a-z,]*) [ -z "$SANITIZERS" ] || die "--sanitizers takes a comma-separated list such as address,undefined" ;;
 esac
@@ -202,6 +213,18 @@ if [ "$IN_CONTAINER" = 0 ]; then
     [ "$WORK_DIR" != / ] && [ "$WORK_DIR" != "$HOME_REAL" ] || die "--work-dir must be a dedicated directory, not $WORK_DIR"
     mkdir -p "$WORK_DIR"
 
+    # Compiler cache (task P0-65), shared by all work dirs: every work dir
+    # is mounted at /work, so the paths ccache hashes are the same in all
+    # of them. Inside the checkout it would be mirrored into the work dir.
+    if [ "$USE_CCACHE" = 1 ]; then
+        CCACHE_HOST_DIR="$(realpath -m "${YACOIN_CCACHE_DIR:-$HOME/.cache/yacoin-ccache}")"
+        case "$CCACHE_HOST_DIR/" in
+            "$REPO"/*) die "YACOIN_CCACHE_DIR must be outside the checkout ($REPO)" ;;
+        esac
+        mkdir -p "$CCACHE_HOST_DIR" && [ -w "$CCACHE_HOST_DIR" ] ||
+            die "compiler cache $CCACHE_HOST_DIR (YACOIN_CCACHE_DIR) is not writable; use --no-ccache or another dir"
+    fi
+
     # 5: one run per work dir at a time (the lock is held until this script,
     # or the docker client it execs, exits).
     exec 9>"$WORK_DIR/.lock"
@@ -228,6 +251,7 @@ if [ "$IN_CONTAINER" = 0 ]; then
     python3 "$REPO/contrib/testing/sync_tree.py" "$REPO" "$WORK_DIR/src"
 
     INNER_ARGS=(--in-container --functional-args "$FUNCTIONAL_ARGS")
+    [ "$USE_CCACHE" = 1 ] || INNER_ARGS+=(--no-ccache)
     if [ "$RUN_FUNCTIONAL" = 1 ]; then
         PORT_SLOT=""
         if [ -n "${TEST_RUNNER_PORT_MIN:-}" ]; then
@@ -258,6 +282,7 @@ if [ "$IN_CONTAINER" = 0 ]; then
     [ "$RUN_FUNCTIONAL" = 1 ] && INNER_ARGS+=(--functional)
 
     if [ "$USE_DOCKER" = 0 ]; then
+        [ "$USE_CCACHE" = 1 ] && INNER_ARGS+=(--ccache-dir "$CCACHE_HOST_DIR")
         exec "$WORK_DIR/src/contrib/testing/build.sh" "${INNER_ARGS[@]}" --work-dir "$WORK_DIR"
     fi
 
@@ -266,6 +291,10 @@ if [ "$IN_CONTAINER" = 0 ]; then
     # this script (and the lock is not released while the build still runs).
     DOCKER_ARGS=(run --rm --init -v "$WORK_DIR:/work" -w /work -e BUILD_GIT_COMMIT
                  --user "$(id -u):$(id -g)" -e HOME=/tmp --entrypoint /bin/bash)
+    if [ "$USE_CCACHE" = 1 ]; then
+        DOCKER_ARGS+=(-v "$CCACHE_HOST_DIR:/ccache" -e YACOIN_CCACHE_MAXSIZE="$CCACHE_MAXSIZE")
+        INNER_ARGS+=(--ccache-dir /ccache)
+    fi
     # Restricted networks (e.g. cloud sessions): pass the proxy and CA bundle.
     if [ -n "${HTTPS_PROXY:-}${https_proxy:-}" ]; then
         DOCKER_ARGS+=(--network host -e HTTPS_PROXY -e https_proxy -e NO_PROXY -e no_proxy)
@@ -396,6 +425,23 @@ if [ "$COVERAGE_REPORT" = 1 ]; then
 fi
 
 log "compiler: $(g++ --version | head -n1)"
+
+# Compiler cache (task P0-65). configure puts the ccache from depends in
+# front of CC/CXX; these settings apply to configure's compile tests and
+# make. The compiler's -v output (version and configuration) is part of
+# every hash, so objects of another GCC are never reused; headers are
+# hashed by content. No CCACHE_BASEDIR: it would rewrite the paths given to
+# the compiler (__FILE__, debug info, .gcno) – the fixed /work mount makes
+# the paths equal in every work dir instead.
+if [ "$USE_CCACHE" = 1 ] && [ -n "$CCACHE_DIR_ARG" ]; then
+    export CCACHE_DIR="$CCACHE_DIR_ARG" CCACHE_MAXSIZE CCACHE_COMPRESS=1
+    export CCACHE_COMPILERCHECK='%compiler% -v'
+    unset CCACHE_DISABLE
+    log "ccache: dir $CCACHE_DIR, max size $CCACHE_MAXSIZE, compressed"
+else
+    export CCACHE_DISABLE=1
+    log "ccache: off"
+fi
 log "depends (NO_QT=1, cache $CACHE)"
 mkdir -p "$CACHE/sources" "$CACHE/built"
 make -C depends -j"$JOBS" HOST="$HOST_TRIPLET" NO_QT=1 \
@@ -451,9 +497,42 @@ if [ "$RECONFIGURE" = 1 ] || [ ! -f Makefile ] || [ "$PREVIOUS_ID" != "$CONFIGUR
     echo "$CONFIGURE_ID" > .configure-args
 fi
 
+# ccache_stats: "hits misses" summed over ccache -s (3.3 format: "cache
+# hit (direct)", "cache hit (preprocessed)", "cache miss").
+ccache_stats() {
+    "$CCACHE_BIN" -s 2>/dev/null | awk '
+        /^cache hit \((direct|preprocessed)\)/ { h += $NF }
+        /^cache miss/ { m += $NF }
+        END { print h + 0, m + 0 }'
+}
+CCACHE_BIN=""
+rm -f ccache.log ccache-summary.txt
+if [ -z "${CCACHE_DISABLE:-}" ]; then
+    CCACHE_BIN="$(sed -n 's/^CCACHE = //p' Makefile | head -n 1)"
+    if [ -z "$CCACHE_BIN" ] || [ ! -x "$CCACHE_BIN" ]; then
+        log "ccache: not used by configure (no CCACHE in the Makefile)"
+        CCACHE_BIN=""
+    fi
+fi
+[ -n "$CCACHE_BIN" ] && read -r CC_HITS0 CC_MISSES0 < <(ccache_stats)
+
 log "make -j$JOBS"
 make -j"$JOBS" > make.log 2>&1 ||
     { grep -E " error:|\*\*\*" make.log | head -n 30; die "build failed (log: $BUILD/make.log)"; }
+if [ -n "$CCACHE_BIN" ]; then
+    # The difference of the shared counters: compiles of other runs using
+    # the same cache at the same time are counted too.
+    "$CCACHE_BIN" -s > ccache.log 2>&1 || true
+    read -r CC_HITS1 CC_MISSES1 < <(ccache_stats)
+    CC_HITS=$(( CC_HITS1 - CC_HITS0 )) CC_MISSES=$(( CC_MISSES1 - CC_MISSES0 ))
+    CC_RATE="n/a"
+    [ $(( CC_HITS + CC_MISSES )) -gt 0 ] &&
+        CC_RATE="$(awk -v h="$CC_HITS" -v m="$CC_MISSES" 'BEGIN { printf "%.1f %%", 100 * h / (h + m) }')"
+    CC_SIZE="$(sed -n 's/^cache size *//p; s/^max cache size *//p' ccache.log | paste -sd/ | sed 's|/| / |')"
+    CC_SUMMARY="ccache $BUILD_NAME: $CC_HITS hits, $CC_MISSES misses ($CC_RATE hit rate), cache $CC_SIZE"
+    echo "$CC_SUMMARY" > ccache-summary.txt
+    log "$CC_SUMMARY (log: $BUILD/ccache.log)"
+fi
 log "built: $BUILD/src/yacoind, yacoin-cli, test/test_bitcoin ($(grep -c ' warning:' make.log) compiler warnings)"
 
 # run_vector_checkers: the independent Python models of the golden vector

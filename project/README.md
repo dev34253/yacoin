@@ -23,9 +23,7 @@ compiler) so it builds on current Linux distributions such as Ubuntu 24.04.
 Do these first, before any other open task (owner, 2026-10-08) – they make
 every later task faster:
 
-1. [P0-65](todo/P0-65-ccache-local-and-ci.md) – persistent compiler cache
-   (ccache) for local builds and CI.
-2. [P0-66](todo/P0-66-faster-task-workflow.md) – faster task workflow: local
+1. [P0-66](todo/P0-66-faster-task-workflow.md) – faster task workflow: local
    test scope, no fixed sleeps, single-source test counts.
 
 Remove an entry here when its task is done.
