@@ -4,8 +4,8 @@
 - Depends on: P0-64
 - Size: S
 - Priority: top – do before all other open tasks (owner, 2026-10-08)
-- Owner:
-- Started:
+- Owner: Claude (subagent of session_01WsmJnB8GRWou3iWwRMffgf)
+- Started: 2026-10-08
 - Finished:
 
 ## Goal
