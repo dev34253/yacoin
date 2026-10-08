@@ -235,3 +235,5 @@ the agreed lines.
 - Open point: no machine check of the test counts any more (review
   finding 9); a CI step comparing the branch's counts with `master`'s
   would be a possible follow-up task.
+- 2026-10-08, step 11: commit c4dc7220, PR
+  https://github.com/dev34253/yacoin/pull/85. CI result in the PR.
