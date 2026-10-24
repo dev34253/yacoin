@@ -14,6 +14,8 @@ Always develop test-first (TDD): write a failing test, make it pass, then clean 
    after the third, stop and ask the owner.
 4. **Test with a QA subagent:** build, run the unit and functional tests, and check every acceptance criterion end to end.
 5. **Push and create the pull request** to `dev34253/yacoin` `master`, using the template.
+6. **Pull request review:** by another agent, which may run additional tests, or by a human. Merge only after it approves, and after the
+   owner's approval where the task or the rules require it.
 
 ## Build and test
 
