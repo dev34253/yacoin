@@ -3,14 +3,6 @@
 YACoin node: a Bitcoin Core 0.15-era C++11 code base with YACoin's own consensus (scrypt-jane proof of work at N-factor 21, `nTime` in transactions, a
 token layer). It is being modernised in phases.
 
-## Where the plan is
-
-Plan, tasks and documentation live in the private repository `dev34253/yacoin-modernization-plan-agile`:
-
-- `plan/working-agreement.md`: how work is done; binding.
-- `project/todo/`, `inprogress/`, `done/`: one file per task. Every change here belongs to a task; read its file before starting.
-- `docs/`: how this code works at commit `6d72383`, the gap register (`MG-nnn`) and the security findings (`S-nn`).
-
 ## Build and test
 
 - `./dev.sh` without arguments lists the commands: `depends`, `build dev|release`, `unit`, `ftest`, `asan`, `cov`.
@@ -19,8 +11,6 @@ Plan, tasks and documentation live in the private repository `dev34253/yacoin-mo
 
 ## Rules
 
-- **Safety net first:** no defect fixes and no changes to product code (anything compiled into `yacoind`, `yacoin-cli`, `yacoin-qt`) until the Phase 1
-  coverage work is done.
 - **Consensus-critical code** (`src/consensus/`, `src/validation.cpp`, `src/pow.*`, `src/kernel.*`, `src/script/`, `src/primitives/`,
   `src/chainparams*`, `src/scrypt*`, `src/bignum.h`, `src/arith_uint256.*`, token validation, serialisation of blocks, transactions and coins): never
   mixed with refactoring or formatting; say whether a change is neutral or a rule change; needs the owner's approval.

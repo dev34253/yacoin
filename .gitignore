@@ -114,3 +114,6 @@ build-aux/test-driver
 /functional_test.coverage/
 /*.capture-failed
 /*.info.parts/
+
+# Local Claude Code instructions
+CLAUDE.local.md

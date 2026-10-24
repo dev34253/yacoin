@@ -1,4 +1,4 @@
-Task: `<id>` (task file in `dev34253/yacoin-modernization-plan-agile`: `project/inprogress/<id>-<slug>.md`)
+Task: `<id>`
 
 ## What changed
 
