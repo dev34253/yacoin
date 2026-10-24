@@ -16,6 +16,13 @@ Always develop test-first (TDD): write a failing test, make it pass, then clean 
 5. **Push and create the pull request** to `dev34253/yacoin` `master`, using the template.
 6. **Pull request review:** by another agent, which may run additional tests, or by a human. Merge only after it approves, and after the
    owner's approval where the task or the rules require it.
+7. **Compound engineering:** once the task is merged, look at what made it harder than it needed to be and fix that for the next task: update
+   this file, test helpers, scripts or the subagent instructions. Record what changed in the task's `## Outcome`.
+
+Throughout, keep two lists in the task file:
+
+- `## Log`: what was done, findings, surprises and decisions, newest last.
+- `## Improvements`: potential improvements that surfaced but are outside the task. Do not do them now; they become new tasks.
 
 ## Build and test
 
