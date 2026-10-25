@@ -15,10 +15,13 @@
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
-#   cache   slow (two release builds per image): build a clean clone of HEAD
-#           twice with one cache dir, cleaning the tree in between; the second
-#           build must take every depends package from the cache and get
-#           ccache hits (the "cross" job of docker-check.yml)
+#   cache   slow (two release builds per image, any image): build a clean
+#           clone of HEAD twice with one cache dir and CI's CCACHE_COMPRESS=1
+#           CCACHE_MAXSIZE=1G, cleaning the tree in between. The first starts
+#           on an empty cache; the second must report the cache, take every
+#           depends package from it, compile src/ through the depends ccache
+#           with at least 90% hits, and take at most half the time ("cross"
+#           job of docker-check.yml, extended)
 #
 # The shellcheck binary comes from the host if installed, otherwise from Ubuntu 22.04's
 # package in a throwaway container. CHECK_WORKDIR keeps the work files.
@@ -181,41 +184,70 @@ step_ccache() {
     docker run --rm -v "$work:/w" --entrypoint rm "$LOCAL_REPO:${images[0]}" -rf /w/ccache-stub /w/ccache-cache
 }
 
+# One release build (the default mode) with CI's ccache settings; prints how
+# long it took. run_build <image> <src> <cache> <n>
+run_build() {
+    local start=$SECONDS
+    echo "== cache: $1, build $4 =="
+    CCACHE_COMPRESS=1 CCACHE_MAXSIZE=1G "$HERE/run.sh" --no-image-build --src "$2" --cache "$3" \
+        --name "yacoin-check-$1-$4" "$1" > "$work/cache-$1-run$4.log" 2>&1 || return 1
+    echo "$(( SECONDS - start ))" > "$work/cache-$1-run$4.seconds"
+}
+
+# Two release builds of a clean clone of HEAD with one cache dir, the tree
+# cleaned in between (CI's master and pull request runs). The first starts on
+# an empty cache, so it also exercises the ccache config race. The second must
+# report the cache, take every depends package from it, compile through the
+# depends ccache with nearly only hits, and take at most half the time.
 step_cache() {
-    local image src="$work/cache-src" cache b hits misses
+    local image src="$work/cache-src" cache b hits misses t1 t2 tag log log1 ok ext ccache_bin
     for image in "${images[@]}"; do
-        cache="$work/cache-$image"
-        rm -rf "$src"; git clone -q --no-local "$ROOT" "$src"
+        cache="$work/cache-$image" tag="$LOCAL_REPO:$image"
+        log1="$work/cache-$image-run1.log" log="$work/cache-$image-run2.log"
+        if [[ -e "$cache" ]]; then docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${cache##*/}"; fi
+        if [[ -e "$src" ]]; then docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf /w/cache-src; fi
+        git clone -q --no-local "$ROOT" "$src"
         git -C "$src" checkout -q --detach "$(git -C "$ROOT" rev-parse HEAD)"
-        echo "== cache: $image, first build (empty cache) =="
-        if ! "$HERE/run.sh" --no-image-build --src "$src" --cache "$cache" --name "yacoin-check-$image-1" \
-                "$image" > "$work/cache-$image-run1.log" 2>&1; then
-            tail -n 30 "$work/cache-$image-run1.log"; fail "cache: $image: first build"; continue
-        fi
+        run_build "$image" "$src" "$cache" 1 || { tail -n 30 "$log1"; fail "cache: $image: first build (empty cache)"; continue; }
+        pass "cache: $image: first build on an empty cache ($(cat "$work/cache-$image-run1.seconds") s)"
         git -C "$src" clean -xdfq
         [[ -z "$(git -C "$src" status --porcelain)" ]] || { fail "cache: $image: tree not clean"; continue; }
-        echo "== cache: $image, second build (warm cache) =="
-        if ! "$HERE/run.sh" --no-image-build --src "$src" --cache "$cache" --name "yacoin-check-$image-2" \
-                "$image" > "$work/cache-$image-run2.log" 2>&1; then
-            tail -n 30 "$work/cache-$image-run2.log"; fail "cache: $image: second build"; continue
-        fi
-        local log="$work/cache-$image-run2.log" ok=1 ext=""
+        run_build "$image" "$src" "$cache" 2 || { tail -n 30 "$log"; fail "cache: $image: second build"; continue; }
+        t1=$(cat "$work/cache-$image-run1.seconds") t2=$(cat "$work/cache-$image-run2.seconds") ok=1 ext=""
         [[ "$image" != windows ]] || ext=.exe
-        for b in yacoind yacoin-cli yacoin-qt; do [[ -s "$src/release-root/bin/$b$ext" ]] || ok=0; done
-        grep -q "^== Using cache in /cache/$image ==" "$log" || ok=0
+        for b in yacoind yacoin-cli yacoin-qt; do
+            [[ -s "$src/release-root/bin/$b$ext" ]] || { echo "  missing release-root/bin/$b$ext"; ok=0; }
+        done
+        grep -q "^== Using cache in /cache/$image ==" "$log" || { echo "  no 'Using cache in /cache/$image'"; ok=0; }
         # depends prints these only when it builds or downloads a package; a
         # run from the cache only copies the packages.
-        if grep -E '^(Fetching|Extracting|Building) [A-Za-z0-9_+.-]+' "$log"; then ok=0; fi
-        grep -q '^copying packages:' "$log" || ok=0
-        if grep -q 'Checksum mismatch' "$log"; then ok=0; fi
+        if grep -E '^(Fetching|Extracting|Building) [A-Za-z0-9_+.-]+' "$log"; then echo "  depends rebuilt packages"; ok=0; fi
+        grep -q '^copying packages:' "$log" || { echo "  depends copied no packages from the cache"; ok=0; }
+        if grep -q 'Checksum mismatch' "$log"; then echo "  a cached depends package failed its checksum"; ok=0; fi
+        [[ -n "$(ls -A "$cache/$image/depends-built" 2>/dev/null)" ]] || { echo "  no depends packages in /cache/$image/depends-built"; ok=0; }
+        # src/ compiles through the ccache that depends built.
+        grep -qE '^CCACHE = /src/depends/[^ ]*/native/bin/ccache$' "$src/src/Makefile" ||
+            { echo "  src/ is not built with the depends ccache"; ok=0; }
+        # CCACHE_COMPRESS=1 reached ccache: its cached objects are gzip files.
+        local obj
+        obj=$(find "$cache/$image/ccache" -name '*.o' -type f -print -quit 2>/dev/null)
+        [[ -n "$obj" && "$(head -c 2 "$obj" | od -An -tx1 | tr -d ' ')" == 1f8b ]] ||
+            { echo "  no compressed objects in /cache/$image/ccache"; ok=0; }
+        ccache_bin=$(sed -n 's/^CCACHE = //p' "$src/src/Makefile")
+        echo "  ccache -s after the second build (CCACHE_DIR=/cache/$image/ccache, CCACHE_MAXSIZE=1G):"
+        docker run --rm -v "$src:/src" -v "$cache:/cache" -e CCACHE_DIR="/cache/$image/ccache" -e CCACHE_MAXSIZE=1G \
+            --entrypoint "$ccache_bin" "$tag" -s | sed 's/^/    /'
         # ccache prints running totals, so compare the two runs.
         tot() { awk -v re="$1" '$0 ~ re {s += $NF} END {print s + 0}' "$2"; }
-        hits=$(( $(tot '^cache hit \\((direct|preprocessed)\\)' "$log") - $(tot '^cache hit \\((direct|preprocessed)\\)' "$work/cache-$image-run1.log") ))
-        misses=$(( $(tot '^cache miss' "$log") - $(tot '^cache miss' "$work/cache-$image-run1.log") ))
-        echo "  second build: $hits ccache hits, $misses misses"
+        hits=$(( $(tot '^cache hit \\((direct|preprocessed)\\)' "$log") - $(tot '^cache hit \\((direct|preprocessed)\\)' "$log1") ))
+        misses=$(( $(tot '^cache miss' "$log") - $(tot '^cache miss' "$log1") ))
+        echo "  first build: $(tot '^cache hit \\((direct|preprocessed)\\)' "$log1") hits, $(tot '^cache miss' "$log1") misses, $t1 s"
+        echo "  second build: $hits hits, $misses misses, $t2 s"
         # A few misses are expected (e.g. clientversion.cpp uses __DATE__).
-        (( hits > 0 && hits * 10 >= (hits + misses) * 9 )) || ok=0
-        if (( ok )); then pass "cache: $image: second build used the cache"; else fail "cache: $image: second build did not use the cache"; fi
+        (( hits > 0 && hits * 10 >= (hits + misses) * 9 )) || { echo "  too few ccache hits"; ok=0; }
+        (( t2 * 2 <= t1 )) || { echo "  the second build was not at least twice as fast"; ok=0; }
+        if (( ok )); then pass "cache: $image: second build used the depends and ccache caches ($hits hits, $misses misses, $t1 s -> $t2 s)"
+        else fail "cache: $image: second build did not use the cache as expected"; fi
     done
 }
 
