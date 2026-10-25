@@ -11,6 +11,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Not HOST: some shells (e.g. tcsh) export HOST as the machine's hostname.
 DEFAULT_HOST=x86_64-pc-linux-gnu
 DEV_HOST="${DEV_HOST:-$DEFAULT_HOST}"
+# What the caller set, before the defaults below: "container" passes only
+# these on, so the images keep their own (CI's) defaults.
+CALLER_JOBS="${JOBS:-}" CALLER_CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-}"
 JOBS="${JOBS:-$(nproc)}"
 DEPENDS_PREFIX="$ROOT/depends/$DEV_HOST"
 # Builds for other hosts get their own directories, so a variant is never
@@ -54,9 +57,10 @@ Usage: ./dev.sh <command> [args]
   all                     dev build, unit, ftest and release build; runs every
                           step and prints a summary
   ccache-stats            Show ccache statistics
-  container [image] [mode]
+  container [options] [image] [mode]
                           Build a CI image from ci/containers/ and run a mode
-                          in it on this checkout (default: ubuntu.22.04 build)
+                          in it on this checkout (default: ubuntu.22.04 build;
+                          options: ci/containers/run.sh --help)
 
 Variants: dev (mainnet consensus, no GUI, -O1 -g), func (dev + low difficulty),
           release (default optimisation),
@@ -266,14 +270,25 @@ cmd_cov() {
 
 # Builds a CI image from ci/containers/ and runs one of its modes on this
 # checkout, with the cache in .devbuild/container-cache (ci/containers/run.sh).
-# The image can be left out: a first argument that is a mode is a mode.
+# Options go to run.sh. The image can be left out: a first argument that is
+# a mode is a mode. JOBS and CCACHE_MAXSIZE are passed on only if the caller
+# set them, not dev.sh's own defaults.
 cmd_container() {
-    local image=ubuntu.22.04
+    local opts=() image=ubuntu.22.04
+    while [[ "${1:-}" == -* ]]; do
+        case "$1" in
+            --src|--cache|--name) opts+=("$1" "${2:?$1 needs a value}"); shift 2 ;;
+            *) opts+=("$1"); shift ;;
+        esac
+    done
     case "${1:-}" in
         ""|build|unit-tests|functional-tests|cov-unit) ;;
         *) image="$1"; shift ;;
     esac
-    "$ROOT/ci/containers/run.sh" "$image" "$@"
+    local env_args=(-u JOBS -u CCACHE_MAXSIZE)
+    [[ -z "$CALLER_JOBS" ]] || env_args+=("JOBS=$CALLER_JOBS")
+    [[ -z "$CALLER_CCACHE_MAXSIZE" ]] || env_args+=("CCACHE_MAXSIZE=$CALLER_CCACHE_MAXSIZE")
+    env "${env_args[@]}" "$ROOT/ci/containers/run.sh" ${opts[@]+"${opts[@]}"} "$image" "$@"
 }
 
 # Runs every step even if an earlier one fails, then prints a summary. Each

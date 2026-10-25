@@ -68,10 +68,12 @@ Ubuntu images: `build` (default), `unit-tests`, `functional-tests`, `cov-unit` (
 - Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
   builds depends. Measured on 8 cores with other builds running: the first `./dev.sh container unit-tests` took 40 minutes, the second
   2 minutes (all compiles from ccache).
-- The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you. Run one container per
-  checkout at a time.
-- `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `BUILDVERSION`, `CCACHE_MAXSIZE` and `CCACHE_COMPRESS`
-  are passed on as well. `ci/containers/run.sh --help` lists more options, for example `--src` for another tree.
+- The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
+  Podman they are yours already). Run one container per checkout at a time.
+- `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `BUILDVERSION`, `CCACHE_MAXSIZE` (default 5G) and
+  `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own defaults for its host builds.
+- Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
+  `--src <dir>` for another tree.
 - `ci/containers/README.md` describes the images, the image checks (`check.sh`) and the comparison with the published images
   (`parity.sh`).
 
