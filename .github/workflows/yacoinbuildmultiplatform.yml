@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # publishes the image
+      packages: write  # logs in to ghcr.io; publishes the image on master
     timeout-minutes: 60
     env:
       IMAGE: ubuntu.16.04
@@ -30,6 +30,7 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
+          registry-login: 'true'
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
@@ -287,7 +288,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # publishes the image
+      packages: write  # logs in to ghcr.io; publishes the image on master
     timeout-minutes: 60
     env:
       IMAGE: ubuntu.22.04
@@ -298,6 +299,7 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
+          registry-login: 'true'
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
@@ -367,7 +369,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # publishes the image
+      packages: write  # logs in to ghcr.io; publishes the image on master
     timeout-minutes: 60
     env:
       IMAGE: windows
@@ -378,6 +380,7 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
+          registry-login: 'true'
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
@@ -447,7 +450,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # publishes the image
+      packages: write  # logs in to ghcr.io; publishes the image on master
     timeout-minutes: 60
     env:
       IMAGE: macos
@@ -458,6 +461,7 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
+          registry-login: 'true'
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}

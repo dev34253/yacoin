@@ -3,15 +3,21 @@ description: >
   Provides the yacoin-build image <image> defined in ci/containers/, tagged
   ghcr.io/<owner>/yacoin-build:<image>-<hash> by ci/containers/image-tag.sh
   (the hash covers every file that goes into the image). Pulls the tag if the
-  registry has it; otherwise builds the image with a layer cache in the
-  GitHub Actions cache (one scope per image) and, if publish is 'true',
-  pushes the tag. Needs the repository checked out.
+  registry has it; otherwise builds the image with the registry layer cache
+  ghcr.io/<owner>/yacoin-build:<image>-buildcache. With publish 'true'
+  (pushes to master) a failed registry check fails the job instead of
+  building, a built image is pushed if the tag is still missing right before
+  the push, and the layer cache is written. Needs the repository checked out.
 inputs:
   image:
     description: Image name, the suffix of ci/containers/Dockerfile.<image>
     required: true
+  registry-login:
+    description: "'true' to log in to ghcr.io with the job's token (needs packages: write)"
+    required: false
+    default: 'false'
   publish:
-    description: "'true' to push a newly built image (needs packages: write)"
+    description: "'true' to push a newly built image; needs registry-login 'true'"
     required: false
     default: 'false'
 outputs:
@@ -22,7 +28,7 @@ runs:
   using: composite
   steps:
     - id: tag
-      name: image tag, pull
+      name: image tag
       shell: bash
       env:
         IMAGE: ${{ inputs.image }}
@@ -32,17 +38,49 @@ runs:
         echo "tag=$tag" >> "$GITHUB_OUTPUT"
         echo "$tag, from:"
         "$tags" --inputs "$IMAGE" | sed 's|^|  ci/containers/|'
-        if docker pull "$tag"; then
-          echo "pulled=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "$tag is not in the registry: building it from ci/containers/"
-          echo "pulled=false" >> "$GITHUB_OUTPUT"
+    - id: registry
+      name: pull the image if the registry has it
+      shell: bash
+      env:
+        TAG: ${{ steps.tag.outputs.tag }}
+        IMAGE: ${{ inputs.image }}
+        LOGIN: ${{ inputs.registry-login }}
+        PUBLISH: ${{ inputs.publish }}
+        REGISTRY_TOKEN: ${{ github.token }}
+      run: |
+        echo "cache=${TAG%:*}:$IMAGE-buildcache" >> "$GITHUB_OUTPUT"
+        # Off master a registry problem only costs a local build; on master
+        # it must not lead to pushing over a tag that may already exist.
+        problem() {
+          if [ "$PUBLISH" = true ]; then echo "::error::$1"; exit 1; fi
+          echo "$1: building the image locally"
+          echo "pulled=false" >> "$GITHUB_OUTPUT"; exit 0
+        }
+        if [ "$PUBLISH" = true ] && [ "$LOGIN" != true ]; then
+          echo "::error::publish needs registry-login"; exit 1
         fi
-    - if: steps.tag.outputs.pulled != 'true'
-      uses: docker/setup-buildx-action@v4
-    - if: steps.tag.outputs.pulled != 'true'
+        if [ "$LOGIN" = true ]; then
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin ||
+            problem "docker login ghcr.io failed"
+          export REGISTRY_USER="$GITHUB_ACTOR" REGISTRY_PASSWORD="$REGISTRY_TOKEN" REGISTRY_PUSH=1
+        fi
+        state=$("$GITHUB_ACTION_PATH/registry-state.sh" "$TAG")
+        echo "registry: $TAG: $state"
+        case "$state" in
+          exists)
+            docker pull "$TAG" || problem "$TAG is in the registry, but docker pull failed"
+            echo "pulled=true" >> "$GITHUB_OUTPUT" ;;
+          missing)
+            echo "$TAG is not in the registry: building it from ci/containers/"
+            echo "pulled=false" >> "$GITHUB_OUTPUT" ;;
+          *)
+            problem "cannot tell whether $TAG is in the registry ($state)" ;;
+        esac
+    - if: steps.registry.outputs.pulled != 'true'
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+    - if: steps.registry.outputs.pulled != 'true'
       name: build the image
-      uses: docker/build-push-action@v7
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
       env:
         # No build record artifact next to the job's own artifacts.
         DOCKER_BUILD_RECORD_UPLOAD: 'false'
@@ -53,18 +91,31 @@ runs:
         labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
         load: true
         provenance: false
-        cache-from: type=gha,scope=yacoin-build-${{ inputs.image }}
-        # A failed cache upload only makes the next build slower.
-        cache-to: type=gha,mode=max,scope=yacoin-build-${{ inputs.image }},ignore-error=true
-    - if: steps.tag.outputs.pulled != 'true' && inputs.publish == 'true'
-      uses: docker/login-action@v4
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
-    - if: steps.tag.outputs.pulled != 'true' && inputs.publish == 'true'
+        # The layer cache is the tag <image>-buildcache in the image's own
+        # registry repository. An import that fails (no cache yet, or an
+        # anonymous pull while the package is private) shows as "ERROR:
+        # failed to configure registry cache importer" and only means a
+        # build without cache. Only the publishing run (logged in, master)
+        # writes it; a failed upload only makes the next build slower.
+        cache-from: type=registry,ref=${{ steps.registry.outputs.cache }}
+        cache-to: ${{ inputs.publish == 'true' && format('type=registry,ref={0},mode=max,ignore-error=true', steps.registry.outputs.cache) || '' }}
+    - if: steps.registry.outputs.pulled != 'true' && inputs.publish == 'true'
       name: publish the image
       shell: bash
       env:
         TAG: ${{ steps.tag.outputs.tag }}
-      run: docker push "$TAG"
+        REGISTRY_USER: ${{ github.actor }}
+        REGISTRY_PASSWORD: ${{ github.token }}
+        REGISTRY_PUSH: '1'
+      run: |
+        # Checked again right before the push: another master run may have
+        # published the tag while this one was building.
+        state=$("$GITHUB_ACTION_PATH/registry-state.sh" "$TAG")
+        echo "registry: $TAG: $state"
+        case "$state" in
+          missing) docker push "$TAG" ;;
+          exists)
+            echo "$TAG was published meanwhile: not pushing; running the published image"
+            docker pull "$TAG" ;;
+          *) echo "::error::cannot tell whether $TAG is in the registry ($state)"; exit 1 ;;
+        esac

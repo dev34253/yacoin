@@ -131,19 +131,28 @@ Every job of `.github/workflows/yacoinbuildmultiplatform.yml` runs an image buil
 `.github/actions/yacoin-build-image` provides it:
 
 1. `image-tag.sh` computes the tag `ghcr.io/<owner>/yacoin-build:<image>-<hash>` (`<owner>`: the repository owner, `dev34253`). `<hash>`
-   is the first 12 hex digits of a SHA-256 over `Dockerfile.<image>` and every file it COPYs or ADDs (the entrypoint);
+   is the first 12 hex digits of a SHA-256 over `Dockerfile.<image>` and every file it COPYs or ADDs (the entrypoint), their contents
+   and their mode as git records it;
    `image-tag.sh --inputs <image>` lists them, and the job log shows them. Any change to these files gives a new tag; other files here
    (the scripts, this README) do not.
-2. The job pulls that tag from the GitHub Container Registry if it is there (without logging in, so the package must be public).
-3. If not, it builds the image with `docker buildx`, with a layer cache in the GitHub Actions cache (scope `yacoin-build-<image>`), so
-   a rebuild of unchanged layers takes little time. A pull request that changes an image therefore builds and tests that image.
-4. On a push to `master`, the release job of each image (`build-ubuntu-1604`, `build-ubuntu-2204`, `build-windows`,
-   `build-macos`) then pushes the tag it built; only these jobs have `packages: write`. Other branches, tags and pull requests never
-   publish, so the registry only holds images built from `master`.
+2. The job asks the GitHub Container Registry whether the tag exists (`registry-state.sh` in the action: the registry API, so "missing"
+   and "error" are told apart) and pulls it if so. The release job of each image (`build-ubuntu-1604`, `build-ubuntu-2204`,
+   `build-windows`, `build-macos`) logs in first with the job's token (`packages: write`); the other jobs ask anonymously, which needs
+   the package to be public.
+3. If the tag is missing, the job builds the image with `docker buildx`. The layer cache is the tag `<image>-buildcache` in the same
+   registry repository (`ghcr.io/<owner>/yacoin-build:<image>-buildcache`, `mode=max`); every build reads it, and a failed read (no cache
+   yet, or an anonymous read of a private package) only means a build without cache. A pull request that changes an image therefore
+   builds and tests that image.
+4. On a push to `master`, the release job of each image then checks again that the tag is still missing and pushes it, and writes
+   the layer cache. On `master` any registry error fails the job instead of leading to a build and a push over an existing tag. Other
+   branches, tags and pull requests never write to the registry and fall back to a local build on a registry error (the log says why),
+   so the registry only holds images and caches built from `master`.
+
+The action pins `docker/setup-buildx-action` and `docker/build-push-action` by commit; the registry login is `docker login`.
 
 Nothing outside this repository changes what CI builds with: a tag names the files it was built from, and a new image definition is a
-reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own) checks the tags and that every `docker run` in the
-workflow runs a tagged image of this directory.
+reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own, which `build-ubuntu-1604` runs first) checks the tags
+and that every `docker run` in the workflow runs a tagged image of this directory.
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache, one per job kind and image
 (`release-<image>-…`, `low-difficulty-<image>-…`, `unit-tests-<image>-…`, `functional-tests-<image>-…`, keyed by the depends
