@@ -55,9 +55,8 @@ with this checkout mounted:
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
-Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the
-Ubuntu images: `build` (default), `build-low-difficulty`, `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos`
-only build.
+Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
+`unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
