@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Image checks, run locally. Derived from docker-check.yml of
-# dev34253/yacoin-build-ubuntu (copy in source-workflows/), which ran them on
-# pull requests there.
+# Image checks, run locally.
 #
 # Usage: ci/containers/check.sh [--steps LIST] [image...]
 #

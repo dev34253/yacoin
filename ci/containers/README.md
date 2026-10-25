@@ -1,9 +1,8 @@
 # YaCoin Build Environment
 
-This directory holds the Docker build images that CI uses (`dev34253/yacoin-build:<image>-2` on Docker Hub). It was moved here from
-`dev34253/yacoin-build-ubuntu` at commit `1cc1214`; since then the base images are pinned by digest, the macOS toolchain inputs are pinned
-and checked, and the entrypoints create the ccache config before the build. CI still runs the published images until it is switched to
-these files.
+This directory holds the definitions of the Docker build images that CI uses (published on Docker Hub as `dev34253/yacoin-build:<image>-2`).
+The base images are pinned by digest, the macOS toolchain inputs are pinned and checked, and the entrypoints create the ccache config before
+the build.
 
 | File | What it is |
 |---|---|
@@ -12,7 +11,6 @@ these files.
 | `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
 | `check.sh` | The image checks: lint, digest pins, `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
 | `parity.sh` | Compares an image built from here with the published one and runs its modes on a clean clone |
-| `source-workflows/` | The image check and publish workflows of `dev34253/yacoin-build-ubuntu`, kept for reference; they do not run here |
 
 ```bash
 ./dev.sh container unit-tests                  # ubuntu.22.04 image, unit-tests mode, on this checkout
@@ -27,8 +25,6 @@ leftover images can be removed with `docker image prune -a --filter label=org.ya
 `yacoin-build-local:*` images). It mounts the source tree at `/src` and a
 cache directory at `/cache` (default `<src>/.devbuild/container-cache`), runs the container as root as CI does, and (except under rootless
 Docker or Podman) gives the files it wrote back to the caller afterwards.
-
-The sections below are the README of `dev34253/yacoin-build-ubuntu`; the commands in them run from this directory.
 
 ## Available Build Environments
 
@@ -78,19 +74,18 @@ docker run -v /path/to/yacoin:/src dev34253/yacoin-build:ubuntu.22.04-2 unit-tes
 docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache dev34253/yacoin-build:ubuntu.22.04-2 cov-unit
 ```
 
-- The test modes need a YaCoin tree that contains PR #114 (`contrib/devtools/`
-  and the `cov-unit` target). They build out of tree in
+- The test modes build out of tree in
   `/src/build/docker-<image>/<mode>`, which is recreated on every run, and
   refuse a tree that was configured in place (run `make distclean` there).
 - The test modes install depends without Qt into their own prefix,
   `/src/build/docker-<image>/depends`, so they never replace the depends a
   host build (`dev.sh`) or another image uses. The `build` mode installs into
-  the usual `/src/depends/x86_64-pc-linux-gnu`, as before.
+  the usual `/src/depends/x86_64-pc-linux-gnu`.
 - Run one container per source tree at a time: modes share the tree's
   `autogen.sh` output, and `build` configures it in place.
 - `JOBS` sets the parallelism (default: the CPUs available to the container,
-  including a `--cpus` limit), e.g. `-e JOBS=4`. The `-1` images always used
-  4; on hosts with many cores but little memory, set `JOBS` to stay safe.
+  including a `--cpus` limit), e.g. `-e JOBS=4`. On hosts with many cores but
+  little memory, set `JOBS` to stay safe.
 - The test modes give their depends packages separate ids (`HOST_ID_SALT`),
   because built packages contain their install prefix. So they never reuse
   cache entries or work dirs of the release build, and vice versa.
@@ -117,12 +112,10 @@ docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache dev34253/yacoin-buil
 ```
 
 Image tags: the images are published as `-2` (e.g. `ubuntu.22.04-2`,
-`windows-2`, `macos-2`); the `-1` images stay as they were, so existing CI
-jobs keep working until they switch.
+`windows-2`, `macos-2`).
 
 Ubuntu 16.04 and 18.04 are end of life (and the Windows and macOS images are
-based on 18.04). They are still built, because the release matrix uses them;
-dropping them needs a separate decision.
+based on 18.04). They are built because the release matrix uses them.
 
 ## macOS Build Notes
 
@@ -132,6 +125,5 @@ against the hash of the one in that image.
 
 ## GitHub Actions
 
-In `dev34253/yacoin-build-ubuntu`, `dockerpush.yml` built and pushed the images on pushes to `master`, and `docker-check.yml` built the
-images on pull requests and ran the checks. Copies are in `source-workflows/`; here the checks are `check.sh`. Publishing from this
-repository and switching CI to these files is task P0-03.
+The CI workflow `.github/workflows/yacoinbuildmultiplatform.yml` runs the published `-2` images. No workflow builds the images from these
+files; `check.sh` runs the image checks locally.

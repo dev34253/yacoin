@@ -1,9 +1,7 @@
 # Ubuntu 24.04 build environment with GCC 11 pinned.
 #
 # GCC 11 is the compiler of the Ubuntu 22.04 image, so builds stay comparable
-# with the existing test baseline (Phase 0 of the dependency modernisation in
-# dev34253/yacoin, task P0-57). Ubuntu 24.04's default GCC 13 is used by
-# Dockerfile.ubuntu.24.04 instead.
+# with the 22.04 test baseline.
 #
 # Needs a YaCoin source tree that contains the glibc >= 2.36/2.38 build fixes
 # (libevent arc4random patch, unused strlcpy.h include removed).
