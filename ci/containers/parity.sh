@@ -110,6 +110,12 @@ workdir={{.Config.WorkingDir}}
 user={{.Config.User}}'
 }
 
+# inspect_into <image> <dir> <suffix>: config, tools and packages into <dir>/*.<suffix>.
+inspect_into() {
+    config "$1" > "$2/config.$3" && probe "$1" > "$2/tools.$3" && packages "$1" > "$2/packages.$3" ||
+        { echo "  ERROR: inspecting $1 failed"; return 1; }
+}
+
 # compare <what> <reference file> <local file>: prints the result, returns 1 on a difference.
 compare() {
     if diff -u --label "reference $1" --label "local $1" "$2" "$3" > "$2.diff"; then
@@ -122,12 +128,15 @@ compare() {
 compare_image() {
     local image="$1" ref="$REFERENCE_REPO:$1$REFERENCE_SUFFIX" loc="$LOCAL_REPO:$1" d="$2" ok=0
     echo "== $image: $loc against $ref =="
-    docker image inspect "$ref" >/dev/null 2>&1 || docker pull -q "$ref" >/dev/null
-    config "$ref" > "$d/config.ref"; config "$loc" > "$d/config.local"
+    # Callers run this inside "if", where set -e is off, so check each step:
+    # a failed pull or probe must not show up as a difference.
+    if ! docker image inspect "$ref" >/dev/null 2>&1 && ! docker pull -q "$ref" >/dev/null; then
+        echo "  ERROR: cannot pull the reference image $ref"; return 1
+    fi
+    docker image inspect "$loc" >/dev/null 2>&1 || { echo "  ERROR: no local image $loc"; return 1; }
+    inspect_into "$ref" "$d" ref && inspect_into "$loc" "$d" local || return 1
     compare config "$d/config.ref" "$d/config.local" || ok=1
-    probe "$ref" > "$d/tools.ref"; probe "$loc" > "$d/tools.local"
     compare tools "$d/tools.ref" "$d/tools.local" || ok=1
-    packages "$ref" > "$d/packages.ref"; packages "$loc" > "$d/packages.local"
     cut -d' ' -f1 "$d/packages.ref" > "$d/names.ref"; cut -d' ' -f1 "$d/packages.local" > "$d/names.local"
     compare "package names" "$d/names.ref" "$d/names.local" || ok=1
     # Versions of the packages both images have.
