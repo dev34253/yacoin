@@ -1,4 +1,6 @@
-FROM ubuntu:18.04  
+# ubuntu:18.04 as published on 2023-05-30, the base of the published image. Pinned by
+# digest so the base cannot change without a change here.
+FROM ubuntu:18.04@sha256:152dc042452c496007f07ca9127571cb9c29697f42acbfad72324b2bb2e43c98
 ENV DEBIAN_FRONTEND=noninteractive
 # Used by entrypoint.sh to keep caches and build dirs separate per image.
 ENV YACOIN_BUILD_IMAGE=ubuntu.18.04

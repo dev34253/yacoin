@@ -7,7 +7,9 @@
 #
 # Needs a YaCoin source tree that contains the glibc >= 2.36/2.38 build fixes
 # (libevent arc4random patch, unused strlcpy.h include removed).
-FROM ubuntu:24.04
+# ubuntu:24.04 as published on 2026-10-02, the base of the published image. Pinned by
+# digest so the base cannot change without a change here.
+FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 
 ENV DEBIAN_FRONTEND=noninteractive
 # Used by entrypoint.sh to keep caches and build dirs separate per image.
