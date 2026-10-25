@@ -87,6 +87,18 @@ done
 image=${images[0]}
 sed -i '1s/^./X/' "$mutable/Dockerfile.$image"
 check "$image: an edit that keeps the size changes the tag" test "$(tag_of "$mutable" "$image")" != "${before[$image]}"
+cp -a "$HERE/Dockerfile.$image" "$mutable/Dockerfile.$image"
+# The file mode as git records it (executable or not) is hashed; the bits a
+# umask changes are not, so a checkout gives the same tag everywhere.
+entry=$("$TAG" --inputs "$image" | sed -n 2p)
+cp -a "$mutable/$entry" "$work/saved"
+if [[ -x "$mutable/$entry" ]]; then chmod a-x "$mutable/$entry"; else chmod a+x "$mutable/$entry"; fi
+check "$image: switching the executable bit of its input $entry changes the tag" \
+    test "$(tag_of "$mutable" "$image")" != "${before[$image]}"
+cp -a "$work/saved" "$mutable/$entry"; chmod g+w,o+w "$mutable/$entry"
+check "$image: group and other write bits on $entry keep the tag" \
+    test "$(tag_of "$mutable" "$image")" = "${before[$image]}"
+cp -a "$work/saved" "$mutable/$entry"
 
 echo "== Dockerfiles image-tag.sh must parse or reject =="
 synth="$work/synth"
@@ -105,6 +117,22 @@ COPY a.sh /again
 EOF
 check "multi: options, lower case, indentation, comments, RUN continuations and duplicates" \
     test "$("$synth/image-tag.sh" --inputs multi | tr '\n' ' ')" = "Dockerfile.multi a.sh b.sh c.txt sub/d "
+# A comment never continues onto the next line, even if it ends in a
+# backslash; inside a continued instruction a comment line is dropped and the
+# instruction goes on (as docker build parses it).
+cat > "$synth/Dockerfile.comments" <<'END'
+FROM scratch
+# a comment that ends in a backslash \
+COPY a.sh /a
+RUN echo one \
+# a comment inside the RUN \
+
+  COPY nosuch.sh /not-a-copy
+  # indented comment \
+COPY b.sh /b
+END
+check "comments: a comment ending in a backslash does not hide the next COPY" \
+    test "$("$synth/image-tag.sh" --inputs comments 2>&1 | tr '\n' ' ')" = "Dockerfile.comments a.sh b.sh "
 reject() {
     local name="$1" line="$2" status=0
     printf 'FROM scratch\n%s\n' "$line" > "$synth/Dockerfile.$name"
@@ -122,6 +150,7 @@ reject absolute 'COPY /etc/passwd /x'
 reject continuation 'COPY a.sh \'
 reject heredoc 'COPY <<EOF /x'
 reject json 'COPY ["a.sh", "/x"]'
+reject escape '# escape=`'
 reject nodest 'COPY a.sh'
 status=0; "$TAG" no-such-image > /dev/null 2>&1 || status=$?
 check "an unknown image exits with status 2" test "$status" = 2

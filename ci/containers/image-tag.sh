@@ -13,18 +13,19 @@
 #                line, relative to this directory: Dockerfile.<image> first,
 #                then the copied files sorted
 #
-# <hash>: the first 12 hex digits of the SHA-256 of the "sha256sum" lines
-# (hash and name) of the inputs, in the order --inputs prints them.
+# <hash>: the first 12 hex digits of the SHA-256 of one line per input, in
+# the order --inputs prints them: its mode as git records it (100755 or
+# 100644), and its "sha256sum" line (hash and name).
 # COPY and ADD sources must be plain file names in this directory; globs,
-# URLs, directories, --from, heredocs and the JSON form are rejected, so that
-# no input can be missed.
+# URLs, directories, --from, heredocs, the JSON form and the escape directive
+# are rejected, so that no input can be missed.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO=ghcr.io/dev34253/yacoin-build
 
 die() { echo "error: $*" >&2; exit 1; }
-usage() { sed -n '9,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '8,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 sha256() {
     if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
@@ -35,6 +36,13 @@ image_inputs() {
     local df="Dockerfile.$1" line kw n prev_continues=0 continues src
     local -a words sources=()
     while IFS= read -r line || [[ -n "$line" ]]; do
+        # The escape directive would change the continuation character.
+        [[ ! "$line" =~ ^[[:space:]]*#[[:space:]]*escape[[:space:]]*= ]] ||
+            die "$df: the escape parser directive is not supported: $line"
+        # Comment lines and empty lines are dropped before continuations are
+        # joined: they never continue an instruction, and inside a continued
+        # instruction they do not end it.
+        [[ ! "$line" =~ ^[[:space:]]*(#|$) ]] || continue
         # A line ending in a backslash continues the instruction on the next.
         continues=0; [[ "$line" =~ \\[[:space:]]*$ ]] && continues=1
         if (( prev_continues )); then prev_continues=$continues; continue; fi
@@ -88,7 +96,14 @@ main() {
     out=$(image_inputs "$image")
     mapfile -t inputs <<< "$out"
     if (( list )); then printf '%s\n' "${inputs[@]}"; return; fi
-    hash=$(cd "$HERE" && sha256 -- "${inputs[@]}" | sha256 | cut -c1-12)
+    # One line per input: its mode as git records it (100755 if executable,
+    # else 100644; not the bits a umask changes), its SHA-256 and its name.
+    local f mode lines=""
+    for f in "${inputs[@]}"; do
+        mode=100644; [[ ! -x "$HERE/$f" ]] || mode=100755
+        lines+="$mode $(cd "$HERE" && sha256 -- "$f")"$'\n'
+    done
+    hash=$(printf '%s' "$lines" | sha256 | cut -c1-12)
     echo "$REPO:$image-$hash"
 }
 
