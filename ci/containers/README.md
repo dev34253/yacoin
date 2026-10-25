@@ -1,6 +1,33 @@
 # YaCoin Build Environment
 
-This repository contains Docker configurations for building YaCoin on multiple platforms.
+This directory holds the Docker build images that CI uses (`dev34253/yacoin-build:<image>-2` on Docker Hub). It was moved here from
+`dev34253/yacoin-build-ubuntu` at commit `1cc1214`; since then the base images are pinned by digest, the macOS toolchain inputs are pinned
+and checked, and the entrypoints create the ccache config before the build. CI still runs the published images until it is switched to
+these files.
+
+| File | What it is |
+|---|---|
+| `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.18.04`, `ubuntu.20.04`, `ubuntu.22.04`, `ubuntu.24.04-gcc11`, `windows`, `macos` |
+| `entrypoint.sh`, `entrypoint.windows.sh`, `entrypoint.macos.sh` | What the images run: the Linux modes, and the Windows and macOS release builds |
+| `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
+| `check.sh` | The image checks: lint, digest pins, `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
+| `parity.sh` | Compares an image built from here with the published one and runs its modes on a clean clone |
+| `source-workflows/` | The image check and publish workflows of `dev34253/yacoin-build-ubuntu`, kept for reference; they do not run here |
+
+```bash
+./dev.sh container unit-tests                  # ubuntu.22.04 image, unit-tests mode, on this checkout
+ci/containers/run.sh windows                    # the Windows release build
+ci/containers/check.sh                          # all images: lint, static, build, smoke, ccache
+ci/containers/check.sh --steps cache windows    # slow: two builds with one cache
+ci/containers/parity.sh ubuntu.22.04            # image parity, then build, unit-tests and functional-tests
+```
+
+`run.sh` tags the images `yacoin-build-local:<image>` (`LOCAL_REPO` changes the name) and labels them `org.yacoin.build-local=1`, so
+leftover images can be removed with `docker image prune --filter label=org.yacoin.build-local=1`. It mounts the source tree at `/src` and
+a cache directory at `/cache` (default `<src>/.devbuild/container-cache`), runs the container as root as CI does, and gives the files it
+wrote back to the caller afterwards.
+
+The sections below are the README of `dev34253/yacoin-build-ubuntu`; the commands in them run from this directory.
 
 ## Available Build Environments
 
@@ -98,10 +125,12 @@ dropping them needs a separate decision.
 
 ## macOS Build Notes
 
-The macOS build uses the osxcross toolchain to cross-compile from Ubuntu 18.04. It downloads the macOS 10.11 SDK and builds binaries compatible with macOS 10.8+. For detailed instructions, see `instructions-macos.md`.
+The macOS build uses the osxcross toolchain to cross-compile from Ubuntu 18.04. It downloads the macOS 10.11 SDK and builds binaries compatible
+with macOS 10.8+. osxcross is pinned to the commit of the published `macos-2` image (`OSXCROSS_COMMIT`), and the SDK tarball is checked
+against the hash of the one in that image.
 
 ## GitHub Actions
 
-The repository includes a GitHub Actions workflow (`dockerpush.yml`) that builds and pushes the Docker images for all supported platforms when changes are pushed to `master` (or when started manually from the Actions tab). Pushes to other branches do not publish images.
-
-`docker-check.yml` builds the Linux images on pull requests that change a Linux Dockerfile or `entrypoint.sh`, without pushing. It also runs shellcheck on the entrypoint and a short smoke test of each image.
+In `dev34253/yacoin-build-ubuntu`, `dockerpush.yml` built and pushed the images on pushes to `master`, and `docker-check.yml` built the
+images on pull requests and ran the checks. Copies are in `source-workflows/`; here the checks are `check.sh`. Publishing from this
+repository and switching CI to these files is task P0-03.
