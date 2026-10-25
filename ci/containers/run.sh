@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a yacoin-build image from the Dockerfiles in this directory and runs
-# one mode of it on a YaCoin source tree, the way CI runs the published
-# dev34253/yacoin-build images. See ci/containers/README.md.
+# one mode of it on a YaCoin source tree, the way CI runs these images.
+# See ci/containers/README.md.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,7 +13,8 @@ Usage: ci/containers/run.sh [options] <image> [mode]
        ./dev.sh container [options] [image] [mode]   (image defaults to ubuntu.22.04)
 
   image   $(cd "$HERE" && ls Dockerfile.* | sed 's/^Dockerfile\.//' | tr '\n' ' ')
-  mode    Linux images: build (default), unit-tests, functional-tests, cov-unit
+  mode    Linux images: build (default), build-low-difficulty, unit-tests,
+          functional-tests, cov-unit
           windows, macos: build (the only mode)
 
 Options:

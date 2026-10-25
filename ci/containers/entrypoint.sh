@@ -7,6 +7,8 @@
 # Modes:
 #   build             release build (default): depends, configure with glibc
 #                     back-compat, make, make install into /src/release-root
+#   build-low-difficulty
+#                     the release build with --enable-low-difficulty-for-development
 #   unit-tests        build test_bitcoin (mainnet consensus) and run all unit
 #                     test suites in parallel
 #   functional-tests  low-difficulty build, then the functional tests serially
@@ -52,16 +54,21 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|unit-tests|functional-tests|cov-unit) ;;
-    *) echo "unknown mode '$MODE' (build, unit-tests, functional-tests, cov-unit)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|functional-tests|cov-unit) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, functional-tests, cov-unit)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 
 cd "$SRC"
 echo "== yacoin-build ($IMAGE): $MODE in $SRC with $JOBS jobs =="
 
+# The release build modes configure in the source tree and install into
+# /src/release-root; the others build out of tree.
+release=0
+[[ "$MODE" != build && "$MODE" != build-low-difficulty ]] || release=1
+
 # Checks before the long depends build.
-if [[ "$MODE" != build ]]; then
+if (( ! release )); then
     # Out-of-tree configure refuses a source tree that was configured in place.
     [[ ! -f "$SRC/config.status" ]] ||
         die "$SRC was configured in place (e.g. by the build mode); run 'make distclean' in it first"
@@ -81,15 +88,15 @@ fi
 git config --global --get-all safe.directory 2>/dev/null | grep -qx "$SRC" ||
     git config --global --add safe.directory "$SRC"
 
-# The release build installs depends into the tree's usual prefix, as before.
-# The test modes install a no-Qt depends into a prefix of their own, per
+# The release builds install depends into the tree's usual prefix. The test
+# modes install a no-Qt depends into a prefix of their own, per
 # image, so they never replace the libraries a host build (dev.sh) or another
 # image's build is linked against. (x86_64_linux_prefix is the depends make
 # variable for this host's install prefix.)
 depends_args=(-C depends -j"$JOBS" HOST="$HOST_TRIPLET")
 # depends keeps one cached tarball per package and deletes the others when it
 # caches a new one, so the release and test builds get separate cache dirs.
-if [[ "$MODE" == build ]]; then
+if (( release )); then
     DEPENDS_PREFIX="$SRC/depends/$HOST_TRIPLET"
     cache_kind=depends-built
 else
@@ -149,9 +156,11 @@ echo "== Generating the build system =="
 # Exported so that configure re-runs started by make also find the depends.
 export CONFIG_SITE="$DEPENDS_PREFIX/share/config.site"
 
-if [[ "$MODE" == build ]]; then
+if (( release )); then
     echo "== Building yacoin =="
-    ./configure --enable-glibc-back-compat --enable-reduce-exports LDFLAGS=-static-libstdc++ --prefix=/
+    flags=(--enable-glibc-back-compat --enable-reduce-exports LDFLAGS=-static-libstdc++ --prefix=/)
+    [[ "$MODE" != build-low-difficulty ]] || flags+=(--enable-low-difficulty-for-development)
+    ./configure "${flags[@]}"
     make -j"$JOBS"
     make install DESTDIR="$SRC/release-root"
 else

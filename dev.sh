@@ -282,7 +282,7 @@ cmd_container() {
         esac
     done
     case "${1:-}" in
-        ""|build|unit-tests|functional-tests|cov-unit) ;;
+        ""|build|build-low-difficulty|unit-tests|functional-tests|cov-unit) ;;
         *) image="$1"; shift ;;
     esac
     local env_args=(-u JOBS -u CCACHE_MAXSIZE)

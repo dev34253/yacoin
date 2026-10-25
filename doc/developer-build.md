@@ -55,8 +55,9 @@ with this checkout mounted:
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
-Images: `ubuntu.16.04`, `ubuntu.18.04`, `ubuntu.20.04`, `ubuntu.22.04` (default), `ubuntu.24.04-gcc11`, `windows`, `macos`. Modes of the
-Ubuntu images: `build` (default), `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos` only build.
+Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `ubuntu.24.04-gcc11`, `windows`, `macos`. Modes of the
+Ubuntu images: `build` (default), `build-low-difficulty`, `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos`
+only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
@@ -74,8 +75,12 @@ Ubuntu images: `build` (default), `unit-tests`, `functional-tests`, `cov-unit` (
   `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own defaults for its host builds.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
   `--src <dir>` for another tree.
-- `ci/containers/README.md` describes the images, the image checks (`check.sh`) and the comparison with the published images
-  (`parity.sh`).
+- CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:
+  `ci/containers/image-tag.sh <image>` prints the tag (`ghcr.io/dev34253/yacoin-build:<image>-<hash>`). Images built on `master` are
+  published under it, so `docker pull "$(ci/containers/image-tag.sh ubuntu.22.04)"` gets the image CI uses for this checkout once
+  `master` has it; `./dev.sh container` builds it locally instead.
+- `ci/containers/README.md` describes the images, how CI builds and publishes them, the image checks (`check.sh`) and the comparison
+  with the images on Docker Hub (`parity.sh`).
 
 ## Build variants
 
