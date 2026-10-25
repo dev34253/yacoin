@@ -1,0 +1,22 @@
+FROM ubuntu:18.04  
+ENV DEBIAN_FRONTEND=noninteractive
+ENV YACOIN_BUILD_IMAGE=windows
+
+RUN apt-get update && \
+    apt install -y build-essential libtool \
+    autotools-dev automake pkg-config bsdmainutils \
+    curl git ca-certificates \
+    python3 g++ gperf zip unzip \
+    qtbase5-dev qttools5-dev-tools qttools5-dev \
+    g++-multilib python3-setuptools python3-distutils \
+    g++-mingw-w64-x86-64 mingw-w64-x86-64-dev
+    
+COPY entrypoint.windows.sh /entrypoint.windows.sh
+
+RUN chmod +x /entrypoint.windows.sh
+
+RUN mkdir -p /src
+
+WORKDIR "/src"
+
+ENTRYPOINT ["/entrypoint.windows.sh"]

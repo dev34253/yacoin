@@ -1,0 +1,43 @@
+# Ubuntu 24.04 build environment with GCC 11 pinned.
+#
+# GCC 11 is the compiler of the Ubuntu 22.04 image, so builds stay comparable
+# with the existing test baseline (Phase 0 of the dependency modernisation in
+# dev34253/yacoin, task P0-57). Ubuntu 24.04's default GCC 13 is used by
+# Dockerfile.ubuntu.24.04 instead.
+#
+# Needs a YaCoin source tree that contains the glibc >= 2.36/2.38 build fixes
+# (libevent arc4random patch, unused strlcpy.h include removed).
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+# Used by entrypoint.sh to keep caches and build dirs separate per image.
+ENV YACOIN_BUILD_IMAGE=ubuntu.24.04-gcc11
+
+# g++-multilib is left out on purpose: on 24.04 it pulls in GCC 13 multilib.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential libtool autotools-dev automake pkg-config bsdmainutils bison \
+      curl git ca-certificates \
+      python3 python3-setuptools gperf zip unzip \
+      qtbase5-dev qttools5-dev-tools qttools5-dev \
+      gcc-11 g++-11 lcov zstd && \
+    rm -rf /var/lib/apt/lists/*
+
+# Point the unversioned compiler names at GCC 11 (depends and configure call
+# gcc/g++/cpp/gcov by these names) and fail the build if that did not work.
+RUN for t in gcc g++ cpp gcov gcov-dump gcov-tool gcc-ar gcc-nm gcc-ranlib; do \
+      ln -sf "/usr/bin/${t}-11" "/usr/bin/${t}"; \
+      ln -sf "/usr/bin/x86_64-linux-gnu-${t}-11" "/usr/bin/x86_64-linux-gnu-${t}"; \
+    done && \
+    gcc --version | head -1 && g++ --version | head -1 && \
+    g++ --version | grep -q ' 11\.' && cc --version | grep -q ' 11\.' && c++ --version | grep -q ' 11\.'
+
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+RUN mkdir -p /src
+
+WORKDIR "/src"
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,46 @@
+FROM ubuntu:18.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV YACOIN_BUILD_IMAGE=macos
+
+# Install necessary packages for macOS cross-compilation
+RUN apt-get update && \
+    apt-get install -y build-essential bison flex autotools-dev automake pkg-config bsdmainutils \
+    ca-certificates g++ gperf libtool libssl-dev libbz2-dev zlib1g-dev libtinfo-dev curl git \
+    python3 unzip patch wget qtbase5-dev qttools5-dev-tools qttools5-dev g++-multilib \
+    python3-setuptools python3-distutils python3-pip python-pip libcap-dev clang make \
+    libssl-dev liblzma-dev libxml2-dev cpio software-properties-common
+
+# Install cmake
+RUN wget https://apt.kitware.com/keys/kitware-archive-latest.asc && \
+    apt-key add kitware-archive-latest.asc && \
+    apt-add-repository 'https://apt.kitware.com/ubuntu/' && \
+    apt-get update && \
+    apt-get install -y cmake
+
+# Get osxcross source code and setup toolchain
+WORKDIR /opt
+RUN git clone https://github.com/tpoechtrager/osxcross
+
+# Get MacOSX 10.11 SDK
+WORKDIR /opt/osxcross/tarballs
+RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.11.sdk.tar.xz
+
+# Build toolchain
+WORKDIR /opt/osxcross
+RUN UNATTENDED=1 OSX_VERSION_MIN=10.8 ./build.sh
+
+# Set environment variables for cross-compilation
+ENV PATH="/opt/osxcross/target/bin:${PATH}"
+ENV OSXCROSS_NO_INCLUDE_PATH_WARNINGS=1
+ENV SDK_VERSION=10.11
+ENV SDK_PATH=/opt/osxcross/target/SDK
+
+# Copy entrypoint script
+COPY entrypoint.macos.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+RUN mkdir -p /src
+WORKDIR "/src"
+
+ENTRYPOINT ["/entrypoint.sh"]

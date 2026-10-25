@@ -1,0 +1,22 @@
+FROM ubuntu:16.04  
+ENV DEBIAN_FRONTEND=noninteractive
+# Used by entrypoint.sh to keep caches and build dirs separate per image.
+ENV YACOIN_BUILD_IMAGE=ubuntu.16.04
+
+RUN apt-get update && \
+    apt install -y build-essential libtool \
+    autotools-dev automake pkg-config bsdmainutils bison \
+    curl git ca-certificates \
+    python3 g++ gperf zip unzip \
+    qtbase5-dev qttools5-dev-tools qttools5-dev \
+    g++-multilib python3-setuptools
+    
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+RUN mkdir -p /src 
+
+WORKDIR "/src"
+
+ENTRYPOINT ["/entrypoint.sh"]
