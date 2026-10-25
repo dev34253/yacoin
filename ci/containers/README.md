@@ -6,7 +6,7 @@ the build.
 
 | File | What it is |
 |---|---|
-| `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.18.04`, `ubuntu.20.04`, `ubuntu.22.04`, `ubuntu.24.04-gcc11`, `windows`, `macos` |
+| `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.22.04`, `ubuntu.24.04-gcc11`, `windows`, `macos` |
 | `entrypoint.sh`, `entrypoint.windows.sh`, `entrypoint.macos.sh` | What the images run: the Linux modes, and the Windows and macOS release builds |
 | `image-tag.sh` | Prints an image's tag, or with `--inputs` the files its hash covers |
 | `test-image-tag.sh` | Tests of `image-tag.sh` and of the workflow's use of the tags |
@@ -33,8 +33,6 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 
 ### Ubuntu Builds
 - `Dockerfile.ubuntu.16.04` - Ubuntu 16.04 build environment
-- `Dockerfile.ubuntu.18.04` - Ubuntu 18.04 build environment  
-- `Dockerfile.ubuntu.20.04` - Ubuntu 20.04 build environment
 - `Dockerfile.ubuntu.22.04` - Ubuntu 22.04 build environment
 - `Dockerfile.ubuntu.24.04-gcc11` - Ubuntu 24.04 build environment with GCC 11 pinned (same compiler as 22.04; needs a YaCoin source tree with the glibc 2.36/2.38 build fixes). No CI job uses it.
 
@@ -47,9 +45,9 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 To build YaCoin for a specific platform:
 
 ```bash
-# For Ubuntu 20.04
-docker build -f Dockerfile.ubuntu.20.04 -t yacoin-build:ubuntu20.04 .
-docker run -v /path/to/yacoin/source:/src yacoin-build:ubuntu20.04
+# For Ubuntu 22.04
+docker build -f Dockerfile.ubuntu.22.04 -t yacoin-build:ubuntu22.04 .
+docker run -v /path/to/yacoin/source:/src yacoin-build:ubuntu22.04
 
 # For macOS cross-compilation
 docker build -f Dockerfile.macos -t yacoin-build:macos .
@@ -118,8 +116,8 @@ at the first failing step. `JOBS` sets the parallelism (default 4).
 docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$(ci/containers/image-tag.sh windows)"
 ```
 
-Ubuntu 16.04 and 18.04 are end of life (and the Windows and macOS images are
-based on 18.04). They are built because the release matrix uses them.
+Ubuntu 16.04 and 18.04 are end of life. The 16.04 image is built because the
+release matrix uses it; the Windows and macOS images are based on 18.04.
 
 ## macOS Build Notes
 
@@ -139,7 +137,7 @@ Every job of `.github/workflows/yacoinbuildmultiplatform.yml` runs an image buil
 2. The job pulls that tag from the GitHub Container Registry if it is there (without logging in, so the package must be public).
 3. If not, it builds the image with `docker buildx`, with a layer cache in the GitHub Actions cache (scope `yacoin-build-<image>`), so
    a rebuild of unchanged layers takes little time. A pull request that changes an image therefore builds and tests that image.
-4. On a push to `master`, the release job of each image (`build-ubuntu-1604`, `-1804`, `-2004`, `-2204`, `build-windows`,
+4. On a push to `master`, the release job of each image (`build-ubuntu-1604`, `build-ubuntu-2204`, `build-windows`,
    `build-macos`) then pushes the tag it built; only these jobs have `packages: write`. Other branches, tags and pull requests never
    publish, so the registry only holds images built from `master`.
 

@@ -55,7 +55,7 @@ with this checkout mounted:
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
-Images: `ubuntu.16.04`, `ubuntu.18.04`, `ubuntu.20.04`, `ubuntu.22.04` (default), `ubuntu.24.04-gcc11`, `windows`, `macos`. Modes of the
+Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `ubuntu.24.04-gcc11`, `windows`, `macos`. Modes of the
 Ubuntu images: `build` (default), `build-low-difficulty`, `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos`
 only build.
 
