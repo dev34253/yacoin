@@ -19,12 +19,15 @@ Options:
   --src DIR         source tree mounted at /src (default: $ROOT)
   --cache DIR       cache mounted at /cache (default: <src>/.devbuild/container-cache)
   --no-cache        mount no cache
-  --name NAME       container name (default: yacoin-build-<image>-<mode>)
+  --name NAME       container name (default: yacoin-build-<image>-<mode>-<id>,
+                    unique per run)
   --no-image-build  run the existing local image instead of building it first
 
 The image is tagged $LOCAL_REPO:<image>. JOBS, BUILDVERSION, CCACHE_MAXSIZE
 and CCACHE_COMPRESS are passed to the container if set. The container runs as
-root, as in CI; afterwards the files it wrote are given back to the caller.
+root, as in CI; afterwards the files it wrote are given back to the caller
+(not needed and not done with rootless Docker or Podman, where container root
+already is the caller).
 EOF
 }
 
@@ -39,14 +42,25 @@ build_image() {
 }
 
 # Globals, not locals of main: the EXIT trap reads them after main is gone.
-src="" cache="" no_cache=0 name="" image="" owner=""
+src="" cache="" no_cache=0 name="" image="" owner="" cidfile=""
 
-# On any exit, including Ctrl-C: remove the container (docker run may be
-# killed without stopping it) and give the root-owned files back.
+# True if root in a container is the calling user on the host (rootless
+# Docker, Podman): then the files the container writes already belong to the
+# caller, and a chown would hand them to a subordinate uid instead.
+container_root_is_caller() {
+    docker --version 2>/dev/null | grep -qi podman && return 0
+    docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -q rootless
+}
+
+# On any exit, including Ctrl-C: remove the container this run started
+# (docker run may be killed without stopping it), by the id docker wrote to
+# the cidfile, so a container of another run is never touched. Then give the
+# root-owned files back.
 cleanup() {
     local status=$?
-    docker rm -f "$name" >/dev/null 2>&1 || true
-    if [[ "$owner" != 0:0 ]]; then
+    if [[ -s "$cidfile" ]]; then docker rm -f "$(cat "$cidfile")" >/dev/null 2>&1 || true; fi
+    rm -f "$cidfile"
+    if [[ -n "$owner" && "$owner" != 0:0 ]] && ! container_root_is_caller; then
         local mounts=(-v "$src:/src") dirs=(/src)
         [[ $no_cache -eq 1 ]] || { mounts+=(-v "$cache:/cache"); dirs+=(/cache); }
         docker run --rm "${mounts[@]}" --entrypoint chown "$LOCAL_REPO:$image" -R "$owner" "${dirs[@]}" || true
@@ -80,13 +94,18 @@ main() {
             [[ "$mode" == build ]] || { echo "the $image image only has the build mode" >&2; exit 2; } ;;
         *) args=("$mode") ;;
     esac
+    command -v docker >/dev/null 2>&1 ||
+        { echo "docker is not installed or not on PATH; see doc/developer-build.md" >&2; exit 1; }
     src="$(cd "$src" && pwd)"
     [[ $no_cache -eq 1 || -n "$cache" ]] || cache="$src/.devbuild/container-cache"
-    name="${name:-yacoin-build-$image-$mode}"
+    # Unique per run, so two trees (or two runs) never share a name.
+    name="${name:-yacoin-build-$image-$mode-$(printf '%s' "$src" | cksum | cut -d' ' -f1)-$$}"
 
     (( image_build == 0 )) || build_image "$image"
 
-    local run=(docker run --rm --init --name "$name" -v "$src:/src")
+    mkdir -p "${TMPDIR:-/tmp}"
+    cidfile="$(mktemp -u "${TMPDIR:-/tmp}/yacoin-build-cid.XXXXXX")"
+    local run=(docker run --rm --init --name "$name" --cidfile "$cidfile" -v "$src:/src")
     if [[ $no_cache -eq 0 ]]; then
         mkdir -p "$cache"
         cache="$(cd "$cache" && pwd)"
@@ -99,7 +118,8 @@ main() {
 
     owner="$(id -u):$(id -g)"
     trap cleanup EXIT
-    "${run[@]}" "$LOCAL_REPO:$image" "${args[@]}"
+    # ${args[@]+...}: an empty array is "unbound" under set -u in bash < 4.4.
+    "${run[@]}" "$LOCAL_REPO:$image" ${args[@]+"${args[@]}"}
 }
 
 # Only run when executed, so that other scripts can source build_image.
