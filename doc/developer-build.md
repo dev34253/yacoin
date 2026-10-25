@@ -75,8 +75,12 @@ only build.
   `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own defaults for its host builds.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
   `--src <dir>` for another tree.
-- `ci/containers/README.md` describes the images, the image checks (`check.sh`) and the comparison with the published images
-  (`parity.sh`).
+- CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:
+  `ci/containers/image-tag.sh <image>` prints the tag (`ghcr.io/dev34253/yacoin-build:<image>-<hash>`). Images built on `master` are
+  published under it, so `docker pull "$(ci/containers/image-tag.sh ubuntu.22.04)"` gets the image CI uses for this checkout once
+  `master` has it; `./dev.sh container` builds it locally instead.
+- `ci/containers/README.md` describes the images, how CI builds and publishes them, the image checks (`check.sh`) and the comparison
+  with the images on Docker Hub (`parity.sh`).
 
 ## Build variants
 
