@@ -19,10 +19,10 @@ Always develop test-first (TDD): write a failing test, make it pass, then clean 
 7. **Compound engineering:** once the task is merged, look at what made it harder than it needed to be and fix that for the next task: update
    this file, test helpers, scripts or the subagent instructions. Record what changed in the task's `## Outcome`.
 
-Throughout, keep two lists in the task file:
+Throughout, keep the task's two log files (where: `CLAUDE.local.md`):
 
-- `## Log`: what was done, findings, surprises and decisions, newest last.
-- `## Improvements`: potential improvements that surfaced but are outside the task. Do not do them now; they become new tasks.
+- the processing log: what was done, findings, review rounds, QA and decisions, newest last;
+- the outside log: ideas, defects and improvements that surfaced but are outside the task. Do not do them now; they become new tasks.
 
 ## Build and test
 
@@ -38,3 +38,5 @@ Throughout, keep two lists in the task file:
 - Work on branch `task/<id>-<slug>`. Pull requests go to `dev34253/yacoin` `master`, never to `yacoin/yacoin`. No direct pushes to `master`.
 - No new or upgraded dependency without the owner's approval.
 - This repository is public: do not describe security findings in commits, pull requests or code comments.
+- Files here (code, comments, READMEs, docs) describe only the current state: no task ids, no planned work, and no history of where files came
+  from. That belongs in commit messages and the task logs.
