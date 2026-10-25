@@ -56,7 +56,8 @@ with this checkout mounted:
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.18.04`, `ubuntu.20.04`, `ubuntu.22.04` (default), `ubuntu.24.04-gcc11`, `windows`, `macos`. Modes of the
-Ubuntu images: `build` (default), `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos` only build.
+Ubuntu images: `build` (default), `build-low-difficulty`, `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos`
+only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in

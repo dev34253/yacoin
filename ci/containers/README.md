@@ -65,6 +65,7 @@ optional mode as its argument:
 | Mode | What it does |
 |---|---|
 | `build` (default) | Release build: depends, configure with glibc back-compat, make, `make install` into `/src/release-root` |
+| `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests) |
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
 | `functional-tests` | Low-difficulty build, then the functional tests serially (`test_runner.py -j 1`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 1.x, so it only works in the Ubuntu 22.04 image |
@@ -79,10 +80,12 @@ docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache dev34253/yacoin-buil
   refuse a tree that was configured in place (run `make distclean` there).
 - The test modes install depends without Qt into their own prefix,
   `/src/build/docker-<image>/depends`, so they never replace the depends a
-  host build (`dev.sh`) or another image uses. The `build` mode installs into
-  the usual `/src/depends/x86_64-pc-linux-gnu`.
+  host build (`dev.sh`) or another image uses. The release build modes
+  (`build`, `build-low-difficulty`) install into the usual
+  `/src/depends/x86_64-pc-linux-gnu` and share their depends packages and
+  ccache directory in `/cache`.
 - Run one container per source tree at a time: modes share the tree's
-  `autogen.sh` output, and `build` configures it in place.
+  `autogen.sh` output, and the release build modes configure it in place.
 - `JOBS` sets the parallelism (default: the CPUs available to the container,
   including a `--cpus` limit), e.g. `-e JOBS=4`. On hosts with many cores but
   little memory, set `JOBS` to stay safe.

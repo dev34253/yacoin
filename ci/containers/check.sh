@@ -11,7 +11,9 @@
 #           YACOIN_BUILD_IMAGE to its own name
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, test modes
-#           stop early on a tree without the scripts and targets they need
+#           stop early on a tree without the scripts and targets they need,
+#           the Linux release build modes (build, build-low-difficulty)
+#           configure with their flags
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -144,7 +146,38 @@ step_smoke() {
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
         done
+        # The release build modes configure in place with these flags (a
+        # stub tree whose configure records its arguments and stops).
+        local args stub="$work/configure-stub" want_low has_low
+        for mode in build build-low-difficulty; do
+            make_configure_stub "$stub" "$tag"
+            docker run --rm -v "$stub:/src" "$tag" "$mode" > "$work/out.txt" 2>&1 || true
+            args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+            want_low=0 has_low=0
+            [[ $mode != build-low-difficulty ]] || want_low=1
+            [[ " $args " != *" --enable-low-difficulty-for-development "* ]] || has_low=1
+            if [[ " $args " == *" --enable-glibc-back-compat "* && " $args " == *" LDFLAGS=-static-libstdc++ "* &&
+                  $want_low == "$has_low" ]]; then
+                pass "smoke: $image: $mode configures with: $args"
+            else
+                tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
+            fi
+        done
     done
+}
+
+# A stub source tree for the release build modes: depends and autogen.sh are
+# no-ops, configure records its arguments in /src/configure-args and fails.
+make_configure_stub() {
+    local d="$1" tag="$2"
+    # Written as root by the previous run.
+    [[ ! -e "$d" ]] || docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${d##*/}"
+    mkdir -p "$d/depends"
+    printf 'all:\n\t@true\n' > "$d/depends/Makefile"
+    printf '#!/bin/sh\nexit 0\n' > "$d/autogen.sh"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'exit 1' > "$d/configure"
+    chmod +x "$d/autogen.sh" "$d/configure"
 }
 
 # A stub source tree: depends is a no-op and autogen.sh, the step after it and
