@@ -6,7 +6,7 @@ the build.
 
 | File | What it is |
 |---|---|
-| `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.22.04`, `ubuntu.24.04-gcc11`, `windows`, `macos` |
+| `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.22.04`, `windows`, `macos` |
 | `entrypoint.sh`, `entrypoint.windows.sh`, `entrypoint.macos.sh` | What the images run: the Linux modes, and the Windows and macOS release builds |
 | `image-tag.sh` | Prints an image's tag, or with `--inputs` the files its hash covers |
 | `test-image-tag.sh` | Tests of `image-tag.sh` and of the workflow's use of the tags |
@@ -34,7 +34,6 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 ### Ubuntu Builds
 - `Dockerfile.ubuntu.16.04` - Ubuntu 16.04 build environment
 - `Dockerfile.ubuntu.22.04` - Ubuntu 22.04 build environment
-- `Dockerfile.ubuntu.24.04-gcc11` - Ubuntu 24.04 build environment with GCC 11 pinned (same compiler as 22.04; needs a YaCoin source tree with the glibc 2.36/2.38 build fixes). No CI job uses it.
 
 ### Cross-Platform Builds
 - `Dockerfile.windows` - Windows cross-compilation environment
