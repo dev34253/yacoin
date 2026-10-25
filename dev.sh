@@ -54,6 +54,9 @@ Usage: ./dev.sh <command> [args]
   all                     dev build, unit, ftest and release build; runs every
                           step and prints a summary
   ccache-stats            Show ccache statistics
+  container [image] [mode]
+                          Build a CI image from ci/containers/ and run a mode
+                          in it on this checkout (default: ubuntu.22.04 build)
 
 Variants: dev (mainnet consensus, no GUI, -O1 -g), func (dev + low difficulty),
           release (default optimisation),
@@ -261,6 +264,18 @@ cmd_cov() {
     [[ "$status" -eq 0 ]] || { echo "Tests failed or a report is missing; see ${BUILD_ROOT#"$ROOT"/}/cov-*/*.log" >&2; return 1; }
 }
 
+# Builds a CI image from ci/containers/ and runs one of its modes on this
+# checkout, with the cache in .devbuild/container-cache (ci/containers/run.sh).
+# The image can be left out: a first argument that is a mode is a mode.
+cmd_container() {
+    local image=ubuntu.22.04
+    case "${1:-}" in
+        ""|build|unit-tests|functional-tests|cov-unit) ;;
+        *) image="$1"; shift ;;
+    esac
+    "$ROOT/ci/containers/run.sh" "$image" "$@"
+}
+
 # Runs every step even if an earlier one fails, then prints a summary. Each
 # step runs as its own dev.sh process: inside an "if", bash ignores set -e in
 # functions, so calling the functions directly would hide failures.
@@ -280,7 +295,7 @@ cmd_all() {
 }
 
 case "${1:-}" in
-    depends|configure|build|unit|check|ftest|asan|cov|all)
+    depends|configure|build|unit|check|ftest|asan|cov|all|container)
         c="$1"; shift; timed "cmd_$c" "$@" ;;
     # configure picks up the pinned ccache built by depends, so query that one.
     ccache-stats) "$DEPENDS_PREFIX/native/bin/ccache" -s ;;
