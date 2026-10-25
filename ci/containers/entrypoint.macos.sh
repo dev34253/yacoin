@@ -42,6 +42,15 @@ fi
 # stay the same as long as that package comes from the same cache.
 export CCACHE_BASEDIR="$SRC" CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-5G}"
 
+# ccache 3.3.4 (built by depends) creates its config file on first use, and
+# the compilers make starts in parallel on an empty cache race for it: one
+# fails to open the file, another creates it, and the first then stops with
+# "ccache: error: <dir>/ccache.conf: No such file or directory". Create the
+# file before anything runs ccache; an empty file means the defaults.
+ccache_conf="${CCACHE_CONFIGPATH:-${CCACHE_DIR:-$HOME/.ccache}/ccache.conf}"
+mkdir -p "$(dirname "$ccache_conf")"
+[[ -e "$ccache_conf" ]] || : > "$ccache_conf"
+
 # Cache statistics on every exit, including failed runs, to show whether a
 # slow run used the cache.
 print_cache_stats() {
