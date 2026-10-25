@@ -1,0 +1,24 @@
+# ubuntu:16.04 as published on 2021-08-31, the base of the published image. Pinned by
+# digest so the base cannot change without a change here.
+FROM ubuntu:16.04@sha256:1f1a2d56de1d604801a9671f301190704c25d604a416f59e03c04f5c6ffee0d6
+ENV DEBIAN_FRONTEND=noninteractive
+# Used by entrypoint.sh to keep caches and build dirs separate per image.
+ENV YACOIN_BUILD_IMAGE=ubuntu.16.04
+
+RUN apt-get update && \
+    apt install -y build-essential libtool \
+    autotools-dev automake pkg-config bsdmainutils bison \
+    curl git ca-certificates \
+    python3 g++ gperf zip unzip \
+    qtbase5-dev qttools5-dev-tools qttools5-dev \
+    g++-multilib python3-setuptools
+    
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+RUN mkdir -p /src 
+
+WORKDIR "/src"
+
+ENTRYPOINT ["/entrypoint.sh"]

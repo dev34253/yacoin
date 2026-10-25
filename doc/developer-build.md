@@ -41,6 +41,42 @@ curl -fL -o depends/sources/ccache-3.3.4.tar.bz2 \
     https://bitcoincore.org/depends-sources/ccache-3.3.4.tar.bz2
 ```
 
+## Building in the CI containers
+
+`depends/` does not build with gcc 14 or newer (Boost 1.64). On such a host, or to run what a CI job runs, use the CI build images. They need
+only Docker; `./dev.sh container` builds the image from `ci/containers/` (Docker caches it after the first time) and runs one mode of it
+with this checkout mounted:
+
+```sh
+./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel
+./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, functional tests serially
+./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
+./dev.sh container build                     # release build, as the CI release jobs (see below)
+./dev.sh container windows                   # Windows release build; macos for macOS
+```
+
+Images: `ubuntu.16.04`, `ubuntu.18.04`, `ubuntu.20.04`, `ubuntu.22.04` (default), `ubuntu.24.04-gcc11`, `windows`, `macos`. Modes of the
+Ubuntu images: `build` (default), `unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos` only build.
+
+- The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
+  in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
+  `build/docker-<image>/functional-tests/test/tmp/`.
+- The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` (for Linux the prefix `./dev.sh depends` uses),
+  configure in the source tree, and `make install` into `release-root/`. Because it configures in place, out-of-tree builds (`dev.sh`
+  and the test modes) refuse the tree afterwards until `make distclean`. Run release builds in a separate clone, for example
+  `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
+- Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
+  builds depends. Measured on 8 cores: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine (40 with
+  other builds running), the second 1-2 minutes (all compiles from ccache).
+- The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
+  Podman they are yours already). Run one container per checkout at a time.
+- `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `BUILDVERSION`, `CCACHE_MAXSIZE` (default 5G) and
+  `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own defaults for its host builds.
+- Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
+  `--src <dir>` for another tree.
+- `ci/containers/README.md` describes the images, the image checks (`check.sh`) and the comparison with the published images
+  (`parity.sh`).
+
 ## Build variants
 
 | Variant | Purpose | Configuration |
