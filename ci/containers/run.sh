@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a yacoin-build image from the Dockerfiles in this directory and runs
-# one mode of it on a YaCoin source tree, the way CI runs the published
-# dev34253/yacoin-build images. See ci/containers/README.md.
+# one mode of it on a YaCoin source tree, the way CI runs these images.
+# See ci/containers/README.md.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
