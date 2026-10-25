@@ -22,7 +22,8 @@ jobs:
       IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -101,7 +102,8 @@ jobs:
       IMAGE: ubuntu.22.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -160,7 +162,8 @@ jobs:
       IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -219,7 +222,8 @@ jobs:
       IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -286,7 +290,8 @@ jobs:
       IMAGE: ubuntu.18.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -365,7 +370,8 @@ jobs:
       IMAGE: ubuntu.20.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -444,7 +450,8 @@ jobs:
       IMAGE: ubuntu.22.04
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -523,7 +530,8 @@ jobs:
       IMAGE: windows
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
@@ -602,7 +610,8 @@ jobs:
       IMAGE: macos
     steps:
       - uses: actions/checkout@v6
-      - id: image
+      - name: image
+        id: image
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
