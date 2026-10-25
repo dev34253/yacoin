@@ -10,6 +10,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 usage() {
     cat <<EOF
 Usage: ci/containers/run.sh [options] <image> [mode]
+       ./dev.sh container [options] [image] [mode]   (image defaults to ubuntu.22.04)
 
   image   $(cd "$HERE" && ls Dockerfile.* | sed 's/^Dockerfile\.//' | tr '\n' ' ')
   mode    Linux images: build (default), unit-tests, functional-tests, cov-unit

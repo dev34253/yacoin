@@ -23,7 +23,8 @@ ci/containers/parity.sh ubuntu.22.04            # image parity, then build, unit
 ```
 
 `run.sh` tags the images `yacoin-build-local:<image>` (`LOCAL_REPO` changes the name) and labels them `org.yacoin.build-local=1`, so
-leftover images can be removed with `docker image prune --filter label=org.yacoin.build-local=1`. It mounts the source tree at `/src` and a
+leftover images can be removed with `docker image prune -a --filter label=org.yacoin.build-local=1` (`-a` also removes the tagged
+`yacoin-build-local:*` images). It mounts the source tree at `/src` and a
 cache directory at `/cache` (default `<src>/.devbuild/container-cache`), runs the container as root as CI does, and (except under rootless
 Docker or Podman) gives the files it wrote back to the caller afterwards.
 
