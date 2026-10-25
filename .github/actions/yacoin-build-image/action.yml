@@ -1,0 +1,70 @@
+name: yacoin-build image
+description: >
+  Provides the yacoin-build image <image> defined in ci/containers/, tagged
+  ghcr.io/<owner>/yacoin-build:<image>-<hash> by ci/containers/image-tag.sh
+  (the hash covers every file that goes into the image). Pulls the tag if the
+  registry has it; otherwise builds the image with a layer cache in the
+  GitHub Actions cache (one scope per image) and, if publish is 'true',
+  pushes the tag. Needs the repository checked out.
+inputs:
+  image:
+    description: Image name, the suffix of ci/containers/Dockerfile.<image>
+    required: true
+  publish:
+    description: "'true' to push a newly built image (needs packages: write)"
+    required: false
+    default: 'false'
+outputs:
+  tag:
+    description: The image tag, present in the local Docker daemon
+    value: ${{ steps.tag.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - id: tag
+      name: image tag, pull
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        tags="$GITHUB_WORKSPACE/ci/containers/image-tag.sh"
+        tag=$("$tags" --repo "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/yacoin-build" "$IMAGE")
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        echo "$tag, from:"
+        "$tags" --inputs "$IMAGE" | sed 's|^|  ci/containers/|'
+        if docker pull "$tag"; then
+          echo "pulled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "$tag is not in the registry: building it from ci/containers/"
+          echo "pulled=false" >> "$GITHUB_OUTPUT"
+        fi
+    - if: steps.tag.outputs.pulled != 'true'
+      uses: docker/setup-buildx-action@v4
+    - if: steps.tag.outputs.pulled != 'true'
+      name: build the image
+      uses: docker/build-push-action@v7
+      env:
+        # No build record artifact next to the job's own artifacts.
+        DOCKER_BUILD_RECORD_UPLOAD: 'false'
+      with:
+        context: ci/containers
+        file: ci/containers/Dockerfile.${{ inputs.image }}
+        tags: ${{ steps.tag.outputs.tag }}
+        labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        load: true
+        provenance: false
+        cache-from: type=gha,scope=yacoin-build-${{ inputs.image }}
+        # A failed cache upload only makes the next build slower.
+        cache-to: type=gha,mode=max,scope=yacoin-build-${{ inputs.image }},ignore-error=true
+    - if: steps.tag.outputs.pulled != 'true' && inputs.publish == 'true'
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    - if: steps.tag.outputs.pulled != 'true' && inputs.publish == 'true'
+      name: publish the image
+      shell: bash
+      env:
+        TAG: ${{ steps.tag.outputs.tag }}
+      run: docker push "$TAG"

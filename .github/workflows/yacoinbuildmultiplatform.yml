@@ -13,16 +13,26 @@ concurrency:
 
 jobs:
   build-ubuntu-1604:
-    runs-on: ubuntu-latest  
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # publishes the image
     timeout-minutes: 60
     env:
-      IMAGE: ubuntu.16.04-2
+      IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+          # Only master publishes; branches and pull requests build what
+          # the registry lacks and keep it local.
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: cache dir and key
         run: |
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           # Pushes to master and release tags build from scratch; only master
           # saves the cache. Branches and PRs reuse it.
           clean=false; save=false
@@ -41,18 +51,20 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
+            release-${{ env.IMAGE }}-
       - name: build
         # Below the job timeout. Pushes to master and tags build from scratch
         # (nothing restored); other runs reuse the cached depends packages and
         # the ccache of the last master build (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name release-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER "dev34253/yacoin-build:$IMAGE"
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
@@ -86,9 +98,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      IMAGE: ubuntu.22.04-2
+      IMAGE: ubuntu.22.04
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
       - name: cache dir and key
         run: |
           echo "FUNC_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
@@ -104,11 +120,13 @@ jobs:
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
         timeout-minutes: 45
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$FUNC_CACHE"
           docker run --rm --init --name functional-tests -v "$GITHUB_WORKSPACE":/src -v "$FUNC_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=2G \
-            "dev34253/yacoin-build:$IMAGE" functional-tests
+            "$IMAGE_TAG" functional-tests
       - name: stop the container and make the cache and logs readable
         if: always()
         run: |
@@ -139,9 +157,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      IMAGE: ubuntu.16.04-2
+      IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
       - name: cache dir and key
         run: |
           echo "UNIT_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
@@ -157,11 +179,13 @@ jobs:
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$UNIT_CACHE"
           docker run --rm --init --name unit-tests -v "$GITHUB_WORKSPACE":/src -v "$UNIT_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=2G \
-            "dev34253/yacoin-build:$IMAGE" unit-tests
+            "$IMAGE_TAG" unit-tests
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
@@ -182,16 +206,27 @@ jobs:
             build/docker-*/unit-tests/config.log
           retention-days: 14
   build-ubuntu-1604-low-difficulty:
+    # The 16.04 release build (depends, glibc back-compat, static libstdc++,
+    # so the binary runs on Ubuntu 16.04 and later) with
+    # --enable-low-difficulty-for-development, which relaxes the mainnet
+    # proof-of-work limits for miner end-to-end tests: the
+    # build-low-difficulty mode of the image. Cached and saved like the
+    # release jobs, under its own key; without a cache of its own it starts
+    # from the 16.04 release job's (same depends packages).
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      IMAGE: ubuntu.16.04-2
+      IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
       - name: cache dir and key
         run: |
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=low-difficulty-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           # Pushes to master and release tags build from scratch; only master
           # saves the cache. Branches and PRs reuse it.
           clean=false; save=false
@@ -210,75 +245,90 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
-      - name: build
-        # Build a low-difficulty yacoind using the depends system, mirroring
-        # build-ubuntu-1604 (depends, glibc-back-compat, static-libstdc++) so
-        # the resulting binary is portable to Ubuntu 16.04 and later — but with
-        # --enable-low-difficulty-for-development added to the configure step
-        # so mainnet PoW limits are relaxed enough for miner end-to-end testing.
-        # See doc/cross-compilation-with-depends-system.md for the source of
-        # the depends + configure commands chained here.
-        # The depends packages come from the 16.04 release job's cache (same
-        # image, same packages; the entrypoint keeps them under
-        # /cache/ubuntu.16.04, without the -2 suffix). This job never saves a
-        # cache. Pushes to master and tags restore nothing and build from scratch.
-        timeout-minutes: 50
-        run: |
-          mkdir -p "$REL_CACHE"
-          docker run --rm --init --name low-difficulty-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER --entrypoint /bin/bash "dev34253/yacoin-build:$IMAGE" -c "cd /src/depends && make -j 4 HOST=x86_64-pc-linux-gnu BASE_CACHE=/cache/ubuntu.16.04/depends-built SOURCES_PATH=/cache/depends-sources && cd /src && ./autogen.sh && CONFIG_SITE=/src/depends/x86_64-pc-linux-gnu/share/config.site ./configure --enable-glibc-back-compat --enable-reduce-exports --enable-low-difficulty-for-development LDFLAGS=-static-libstdc++ --prefix=/ && make -j 4 && make install DESTDIR=/src/release-root"
-      - name: stop the container
-        if: always()
-        run: |
-          # A step timeout may kill docker run without stopping the container.
-          docker rm -f low-difficulty-build 2>/dev/null || true
-      - uses: actions/upload-artifact@v6
-        with:
-          name: yacoind-low-difficulty-16.04
-          path: ${{ github.workspace }}/release-root/bin/yacoind
-          if-no-files-found: error
-  build-ubuntu-1804:
-    runs-on: ubuntu-latest  
-    timeout-minutes: 60
-    env:
-      IMAGE: ubuntu.18.04-2
-    steps:
-      - uses: actions/checkout@v6
-      - name: cache dir and key
-        run: |
-          echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-          # Pushes to master and release tags build from scratch; only master
-          # saves the cache. Branches and PRs reuse it.
-          clean=false; save=false
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            case "$GITHUB_REF" in
-              refs/heads/master) clean=true; save=true ;;
-              refs/tags/*) clean=true ;;
-            esac
-          fi
-          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
-          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
-        if: env.CLEAN_BUILD != 'true'
-        with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
+            low-difficulty-${{ env.IMAGE }}-
+            release-${{ env.IMAGE }}-
       - name: build
         # Below the job timeout. Pushes to master and tags build from scratch
         # (nothing restored); other runs reuse the cached depends packages and
         # the ccache of the last master build (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$REL_CACHE"
+          docker run --rm --init --name low-difficulty-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG" build-low-difficulty
+      - name: stop the container and make the cache readable for saving
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f low-difficulty-build 2>/dev/null || true
+          if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
+      - uses: actions/cache/save@v5
+        if: success() && env.SAVE_CACHE == 'true'
+        with:
+          path: ${{ env.REL_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: yacoind-low-difficulty-16.04
+          path: ${{ github.workspace }}/release-root/bin/yacoind
+          if-no-files-found: error
+  build-ubuntu-1804:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # publishes the image
+    timeout-minutes: 60
+    env:
+      IMAGE: ubuntu.18.04
+    steps:
+      - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+          # Only master publishes; branches and pull requests build what
+          # the registry lacks and keep it local.
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      - name: cache dir and key
+        run: |
+          echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          # Pushes to master and release tags build from scratch; only master
+          # saves the cache. Branches and PRs reuse it.
+          clean=false; save=false
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            case "$GITHUB_REF" in
+              refs/heads/master) clean=true; save=true ;;
+              refs/tags/*) clean=true ;;
+            esac
+          fi
+          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
+          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        if: env.CLEAN_BUILD != 'true'
+        with:
+          path: ${{ env.REL_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            release-${{ env.IMAGE }}-
+      - name: build
+        # Below the job timeout. Pushes to master and tags build from scratch
+        # (nothing restored); other runs reuse the cached depends packages and
+        # the ccache of the last master build (the entrypoint keeps both in
+        # /cache).
+        timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name release-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER "dev34253/yacoin-build:$IMAGE"
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
@@ -306,16 +356,26 @@ jobs:
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
           if-no-files-found: error
   build-ubuntu-2004:
-    runs-on: ubuntu-latest  
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # publishes the image
     timeout-minutes: 60
     env:
-      IMAGE: ubuntu.20.04-2
+      IMAGE: ubuntu.20.04
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+          # Only master publishes; branches and pull requests build what
+          # the registry lacks and keep it local.
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: cache dir and key
         run: |
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           # Pushes to master and release tags build from scratch; only master
           # saves the cache. Branches and PRs reuse it.
           clean=false; save=false
@@ -334,18 +394,20 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
+            release-${{ env.IMAGE }}-
       - name: build
         # Below the job timeout. Pushes to master and tags build from scratch
         # (nothing restored); other runs reuse the cached depends packages and
         # the ccache of the last master build (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name release-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER "dev34253/yacoin-build:$IMAGE"
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
@@ -373,16 +435,26 @@ jobs:
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
           if-no-files-found: error
   build-ubuntu-2204:
-    runs-on: ubuntu-latest  
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # publishes the image
     timeout-minutes: 60
     env:
-      IMAGE: ubuntu.22.04-2
+      IMAGE: ubuntu.22.04
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+          # Only master publishes; branches and pull requests build what
+          # the registry lacks and keep it local.
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: cache dir and key
         run: |
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           # Pushes to master and release tags build from scratch; only master
           # saves the cache. Branches and PRs reuse it.
           clean=false; save=false
@@ -401,18 +473,20 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
+            release-${{ env.IMAGE }}-
       - name: build
         # Below the job timeout. Pushes to master and tags build from scratch
         # (nothing restored); other runs reuse the cached depends packages and
         # the ccache of the last master build (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name release-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER "dev34253/yacoin-build:$IMAGE"
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
@@ -441,15 +515,25 @@ jobs:
           if-no-files-found: error
   build-windows:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # publishes the image
     timeout-minutes: 60
     env:
-      IMAGE: windows-2
+      IMAGE: windows
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+          # Only master publishes; branches and pull requests build what
+          # the registry lacks and keep it local.
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: cache dir and key
         run: |
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           # Pushes to master and release tags build from scratch; only master
           # saves the cache. Branches and PRs reuse it.
           clean=false; save=false
@@ -468,18 +552,20 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
+            release-${{ env.IMAGE }}-
       - name: build
         # Below the job timeout. Pushes to master and tags build from scratch
         # (nothing restored); other runs reuse the cached depends packages and
         # the ccache of the last master build (the entrypoint keeps both in
         # /cache/windows).
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name windows-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER "dev34253/yacoin-build:$IMAGE"
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
@@ -508,15 +594,25 @@ jobs:
           if-no-files-found: error
   build-macos:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # publishes the image
     timeout-minutes: 60
     env:
-      IMAGE: macos-2
+      IMAGE: macos
     steps:
       - uses: actions/checkout@v6
+      - id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+          # Only master publishes; branches and pull requests build what
+          # the registry lacks and keep it local.
+          publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: cache dir and key
         run: |
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-v1-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           # Pushes to master and release tags build from scratch; only master
           # saves the cache. Branches and PRs reuse it.
           clean=false; save=false
@@ -535,23 +631,20 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-v1-
+            release-${{ env.IMAGE }}-
       - name: build
         # Below the job timeout. Pushes to master and tags build from scratch
         # (nothing restored); other runs reuse the cached depends packages and
         # the ccache of the last master build (the entrypoint keeps both in
         # /cache/macos).
         timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
           mkdir -p "$REL_CACHE"
-          # With an empty cache, the first parallel compiles of src/ can fail
-          # with "ccache: error: /cache/macos/ccache/ccache.conf: No such file
-          # or directory" (ccache 3.3.4 from depends/). Create both up front.
-          mkdir -p "$REL_CACHE/macos/ccache"
-          touch "$REL_CACHE/macos/ccache/ccache.conf"
           docker run --rm --init --name macos-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
-            -e BUILDVERSION=$GITHUB_RUN_NUMBER "dev34253/yacoin-build:$IMAGE"
+            -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
         run: |
