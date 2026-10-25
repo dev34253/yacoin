@@ -20,13 +20,18 @@ RUN wget https://apt.kitware.com/keys/kitware-archive-latest.asc && \
     apt-get update && \
     apt-get install -y cmake
 
-# Get osxcross source code and setup toolchain
+# Get osxcross source code and setup toolchain. Pinned to the commit of the
+# published macos-2 image (2026-07-24); the default branch moves.
+ARG OSXCROSS_COMMIT=27d21e4977c9751d01199c7a226a6faf494c3dd9
 WORKDIR /opt
-RUN git clone https://github.com/tpoechtrager/osxcross
+RUN git clone https://github.com/tpoechtrager/osxcross && \
+    git -C osxcross checkout --detach "$OSXCROSS_COMMIT"
 
 # Get MacOSX 10.11 SDK
 WORKDIR /opt/osxcross/tarballs
-RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.11.sdk.tar.xz
+# The hash is that of the SDK in the published macos-2 image.
+RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.11.sdk.tar.xz && \
+    echo "d080fc672d94f95eb54651c37ede80f61761ce4c91f87061e11a20222c8d00c8  MacOSX10.11.sdk.tar.xz" | sha256sum -c
 
 # Build toolchain
 WORKDIR /opt/osxcross
