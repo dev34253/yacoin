@@ -22,6 +22,6 @@ Task: `<id>`
 - `known_failure` markers removed: <!-- list or "none" -->
 - New or upgraded dependency: no / yes (upstream signature or hash checked; owner approval)
 - Removes a user-visible feature, option or RPC: no / yes (decision record and release note linked)
-- Docs in the planning repository: not affected / made wrong (listed in the task's `## Outcome`)
+- Documents in the planning repository that this change makes wrong: none / updated in the same task (list them)
 - Owner approval needed: yes / no
 - Independent review: <!-- verdict, and how each finding was answered -->
