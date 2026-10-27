@@ -58,8 +58,8 @@ order:
 5. **Publication.** The disclosure date is agreed with you. The advisory is published after the network has had time to upgrade. It
    credits you if you wish, and the maintainers can request a CVE for it.
 
-For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to the affected `master` branch before the next release,
-and the advisory is published once the fix is merged, on a date agreed with you.
+For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to each affected `master` branch before the next release,
+and the advisory is published after the fix is merged, on a date agreed with you.
 
 ## Scope
 
