@@ -89,10 +89,9 @@ Without a suitable host compiler, `./dev.sh container unit-tests` and `./dev.sh 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): how to contribute.
 - [`CLAUDE.md`](CLAUDE.md): the workflow and the rules of this repository.
 
-The other files in `doc/` are out of date.
+## License
 
-## Licence
-
-YACoin is released under the MIT licence, see [`COPYING`](COPYING). Third-party code in `src/` keeps its own licence, for example
+YACoin is released under the MIT license, see [`COPYING`](COPYING). Third-party code in `src/` keeps its own license, for example
 [`src/leveldb/LICENSE`](src/leveldb/LICENSE), [`src/secp256k1/COPYING`](src/secp256k1/COPYING) and [`src/LibBoolEE.cpp`](src/LibBoolEE.cpp)
-(LGPL version 3 or later, compiled into `libyacoin_consensus.a`, [`src/Makefile.am`](src/Makefile.am)).
+(LGPL version 3 or later, compiled into `libyacoin_consensus.a`, [`src/Makefile.am`](src/Makefile.am)). Attributions for the icons and
+some third-party code are in [`doc/assets-attribution.txt`](doc/assets-attribution.txt).

@@ -68,7 +68,6 @@ Section -Main SEC0000
     SetOverwrite on
     #File ../release/yacoin-qt.exe
     File /oname=license.txt ../COPYING
-    File /oname=readme.txt ../doc/README_windows.txt
     SetOutPath $INSTDIR\daemon
     File ../src/yacoind.exe
     SetOutPath $INSTDIR\src

@@ -3,11 +3,8 @@
 The workflow and the rules of this repository are in [`CLAUDE.md`](CLAUDE.md). They apply to every contributor, human or coding agent.
 This file is a short guide to them.
 
-## Tasks and pull requests
+## Pull requests
 
-- Work is planned in tasks kept outside this repository. Each pull request names its task.
-- Work on a branch `task/<id>-<slug>`. Pull requests go to `master` of `dev34253/yacoin`, not to the upstream repository `yacoin/yacoin`.
-  Nobody pushes to `master` directly.
 - Fill in the pull request template, [`.github/pull_request_template.md`](.github/pull_request_template.md): the task, what changed, how it
   was tested, the acceptance criteria with their evidence, and the checks.
 - A pull request is merged after an independent review approves it, and after the owner's approval where the task or the rules in
