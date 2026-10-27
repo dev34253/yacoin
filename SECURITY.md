@@ -4,17 +4,17 @@ This file explains how to report a vulnerability in YACoin privately, and what t
 
 ## Supported versions
 
-The YACoin network runs the releases of `yacoin/yacoin` (https://github.com/yacoin/yacoin/releases). This repository publishes no
+The YACoin network runs the releases of `yacoin/yacoin` (https://github.com/yacoin/yacoin/releases). `dev34253/yacoin` publishes no
 releases of its own.
 
 | Version | Supported |
 |---|---|
 | The latest release of `yacoin/yacoin` | yes |
-| The `master` branch of this repository and of `yacoin/yacoin` | yes |
+| The `master` branch of `dev34253/yacoin` and of `yacoin/yacoin` | yes |
 | Earlier releases | no |
 
 If you run an earlier release, upgrade first and check whether the issue remains. If it affects only an earlier release that nodes on the
-network still run, report it anyway.
+network still run, report it anyway, to `dev34253/yacoin` as in the second point below.
 
 ## Reporting a vulnerability
 
@@ -60,8 +60,9 @@ order:
    network has had time to upgrade. If no fixed release follows, the maintainers agree with you how and when to publish. The advisory
    credits you if you wish, and the maintainers can request a CVE for it.
 
-For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to the `master` branch of `dev34253/yacoin` and offered to
-`yacoin/yacoin` before its next release, and the advisory is published after the fix is merged.
+For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to the `master` branch of `dev34253/yacoin` where that
+branch has the issue, and offered to `yacoin/yacoin` before its next release. The advisory is published after the fix is merged and the
+`yacoin/yacoin` maintainers have been told, on a date proposed as in step 5.
 
 ## Scope
 
