@@ -27,8 +27,8 @@ that height ([`src/kernel.cpp`](src/kernel.cpp)), and it has no staking code.
 
 ## Build
 
-`dev.sh` builds against the pinned libraries in `depends/`, never against system libraries. `depends/` does not build with gcc 14 or newer
-(Boost 1.64, [`depends/packages/boost.mk`](depends/packages/boost.mk); see [`doc/developer-build.md`](doc/developer-build.md)). On such a
+[`dev.sh`](dev.sh) builds against the pinned libraries in `depends/`, never against system libraries. `depends/` does not build with gcc 14
+or newer (Boost 1.64, [`depends/packages/boost.mk`](depends/packages/boost.mk); see [`doc/developer-build.md`](doc/developer-build.md)). On such a
 host, build in the CI images.
 
 ### In the CI images (needs only Docker)
@@ -42,8 +42,9 @@ host, build in the CI images.
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ```
 
-The release builds (`build`, `windows`, `macos`) configure the source tree in place. Host builds and the test modes refuse such a tree;
-`make distclean` clears it. Run the release builds in separate clones, one per platform:
+The release builds (`build`, `windows`, `macos`) configure the source tree in place ([`ci/containers/entrypoint.sh`](ci/containers/entrypoint.sh),
+[`entrypoint.windows.sh`](ci/containers/entrypoint.windows.sh), [`entrypoint.macos.sh`](ci/containers/entrypoint.macos.sh)). Host builds
+and the test modes refuse such a tree; `make distclean` clears it. Run the release builds in separate clones, one per platform:
 
 ```sh
 git clone . ../yacoin-linux && ../yacoin-linux/dev.sh container build         # yacoind, yacoin-cli, yacoin-qt in ../yacoin-linux/release-root/
