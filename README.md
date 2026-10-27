@@ -2,21 +2,21 @@
 
 [![Yacoin multi platform build](https://github.com/dev34253/yacoin/actions/workflows/yacoinbuildmultiplatform.yml/badge.svg?branch=master)](https://github.com/dev34253/yacoin/actions/workflows/yacoinbuildmultiplatform.yml)
 
-YACoin (YAC) is a proof-of-work cryptocurrency. It started in 2013 as a rename of NovaCoin. This repository holds the YACoin node: the daemon
-`yacoind`, the RPC client `yacoin-cli` and the GUI wallet `yacoin-qt` ([`src/Makefile.am`](src/Makefile.am),
-[`src/Makefile.qt.include`](src/Makefile.qt.include)). The code base is C++11 from the Bitcoin Core 0.15 era, built with autotools, with
-YACoin's own consensus rules.
+YACoin (YAC) is a proof-of-work cryptocurrency. It started in 2013 as a rename of NovaCoin ([`COPYING`](COPYING)). This repository holds
+the YACoin node: the daemon `yacoind`, the RPC client `yacoin-cli` and the GUI wallet `yacoin-qt` ([`src/Makefile.am`](src/Makefile.am),
+[`src/Makefile.qt.include`](src/Makefile.qt.include)). The code base is C++11 ([`configure.ac`](configure.ac)) from the Bitcoin Core 0.15
+era, built with autotools, with YACoin's own consensus rules.
 
 ## The chain
 
 Since the Heliopolis hard fork at block 1890000 every block is a proof-of-work block ([`src/init.cpp`](src/init.cpp),
 [`src/chainparams.cpp`](src/chainparams.cpp)). Proof of stake is historical: the node still validates the older proof-of-stake blocks below
-that height, and it has no staking code ([`src/primitives/block.h`](src/primitives/block.h)).
+that height ([`src/kernel.cpp`](src/kernel.cpp)), and it has no staking code.
 
 | Item | Value | Defined in |
 |---|---|---|
-| Proof of work | scrypt-jane with Keccak-512 and ChaCha20/8; the scrypt hash of the block header is the block hash | [`src/scrypt.cpp`](src/scrypt.cpp), [`src/primitives/block.h`](src/primitives/block.h) |
-| N-factor | fixed at 21 for block version 7, which every block from 1890000 must have: N = 2^22, 512 MiB of memory per hash | [`src/init.cpp`](src/init.cpp), [`src/validation.cpp`](src/validation.cpp), [`src/scrypt-jane/scrypt-jane.c`](src/scrypt-jane/scrypt-jane.c) |
+| Proof of work | scrypt-jane with Keccak-512 and ChaCha20/8; the scrypt hash of the block header is the block hash | [`src/Makefile.am`](src/Makefile.am), [`src/scrypt.cpp`](src/scrypt.cpp), [`src/primitives/block.h`](src/primitives/block.h) |
+| N-factor | fixed at 21 for block version 7 and later, which every block from 1890000 must use: N = 2^22, 512 MiB of memory per hash | [`src/init.cpp`](src/init.cpp), [`src/primitives/block.h`](src/primitives/block.h), [`src/validation.cpp`](src/validation.cpp), [`src/scrypt-jane/scrypt-jane.c`](src/scrypt-jane/scrypt-jane.c) |
 | Block target | 60 seconds | [`src/chainparams.cpp`](src/chainparams.cpp) |
 | Block reward | about 2 % of the money supply a year: money supply before the epoch × 0.02 / 525960, the same for all 21000 blocks of an epoch | [`src/validation.cpp`](src/validation.cpp), [`src/validation.h`](src/validation.h), [`src/init.cpp`](src/init.cpp) |
 | Difficulty | retargets once per 21000-block epoch | [`src/pow.cpp`](src/pow.cpp) |
@@ -28,7 +28,8 @@ that height, and it has no staking code ([`src/primitives/block.h`](src/primitiv
 ## Build
 
 `dev.sh` builds against the pinned libraries in `depends/`, never against system libraries. `depends/` does not build with gcc 14 or newer
-(Boost 1.64). On such a host, build in the CI images.
+(Boost 1.64, [`depends/packages/boost.mk`](depends/packages/boost.mk); see [`doc/developer-build.md`](doc/developer-build.md)). On such a
+host, build in the CI images.
 
 ### In the CI images (needs only Docker)
 
@@ -39,13 +40,17 @@ that height, and it has no staking code ([`src/primitives/block.h`](src/primitiv
 ./dev.sh container unit-tests                # build test_bitcoin and run all unit test suites
 ./dev.sh container functional-tests          # low-difficulty build, then the functional tests
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
-./dev.sh container build                     # release build of yacoind, yacoin-cli and yacoin-qt into release-root/
-./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
-The `build` mode configures the source tree in place. Host builds and the test modes refuse such a tree; `make distclean` clears it. Run
-release builds in a separate clone, for example `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
-`ci/containers/run.sh --help` lists the options.
+The release builds (`build`, `windows`, `macos`) configure the source tree in place. Host builds and the test modes refuse such a tree;
+`make distclean` clears it. Run each release build in a clone of its own:
+
+```sh
+git clone . ../yacoin-release
+../yacoin-release/dev.sh container build     # yacoind, yacoin-cli and yacoin-qt into ../yacoin-release/release-root/
+```
+
+`windows` and `macos` in place of `build` give the Windows and macOS release builds. `ci/containers/run.sh --help` lists the options.
 
 ### On the host (gcc 13 or older)
 
@@ -71,7 +76,7 @@ variants.
 ./dev.sh all                        # build dev, unit, ftest and build release, with a summary
 ```
 
-Without a suitable host compiler, `./dev.sh container unit-tests` and `./dev.sh container functional-tests` run the same tests.
+Without a suitable host compiler, `./dev.sh container unit-tests` and `./dev.sh container functional-tests` run the unit and functional tests.
 
 ## Documentation
 
@@ -83,9 +88,10 @@ Without a suitable host compiler, `./dev.sh container unit-tests` and `./dev.sh 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): how to contribute.
 - [`CLAUDE.md`](CLAUDE.md): the workflow and the rules of this repository.
 
-The other files in `doc/` are older texts inherited from Bitcoin and NovaCoin and are partly out of date.
+The other files in `doc/` are partly out of date.
 
 ## Licence
 
-YACoin is released under the MIT licence, see [`COPYING`](COPYING). Third-party code in `src/` keeps its own licence (for example
-[`src/leveldb/LICENSE`](src/leveldb/LICENSE), [`src/secp256k1/COPYING`](src/secp256k1/COPYING)).
+YACoin is released under the MIT licence, see [`COPYING`](COPYING). Third-party code in `src/` keeps its own licence, for example
+[`src/leveldb/LICENSE`](src/leveldb/LICENSE), [`src/secp256k1/COPYING`](src/secp256k1/COPYING) and [`src/LibBoolEE.cpp`](src/LibBoolEE.cpp)
+(LGPL version 3 or later, compiled into the consensus library, [`src/Makefile.am`](src/Makefile.am)).

@@ -16,8 +16,9 @@ This file is a short guide to them.
 ## Changes
 
 - Develop test-first. Every change adds or extends functional tests in `test/functional/`, not only unit tests.
-- Before opening a pull request, run `./dev.sh all` and `./dev.sh asan` (see [`doc/developer-build.md`](doc/developer-build.md)), or the
-  container modes `./dev.sh container unit-tests` and `./dev.sh container functional-tests`. CI must pass.
+- Before opening a pull request, build and run the unit and functional tests: `./dev.sh all`, or the container modes
+  `./dev.sh container unit-tests` and `./dev.sh container functional-tests` (see [`doc/developer-build.md`](doc/developer-build.md)). CI must
+  pass. `./dev.sh asan` runs the unit tests under the sanitizers as well (optional).
 - Consensus-critical code (the paths are listed in [`CLAUDE.md`](CLAUDE.md)) is never mixed with refactoring or formatting. The pull request
   says whether the change is neutral or a rule change, and it needs the owner's approval.
 - A new or upgraded dependency needs the owner's approval.
