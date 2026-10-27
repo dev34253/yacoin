@@ -43,14 +43,14 @@ host, build in the CI images.
 ```
 
 The release builds (`build`, `windows`, `macos`) configure the source tree in place. Host builds and the test modes refuse such a tree;
-`make distclean` clears it. Run each release build in a clone of its own:
+`make distclean` clears it. Run the release builds in separate clones, one per platform:
 
 ```sh
-git clone . ../yacoin-release
-../yacoin-release/dev.sh container build     # yacoind, yacoin-cli and yacoin-qt into ../yacoin-release/release-root/
+git clone . ../yacoin-linux && ../yacoin-linux/dev.sh container build         # yacoind, yacoin-cli, yacoin-qt in ../yacoin-linux/release-root/
+git clone . ../yacoin-windows && ../yacoin-windows/dev.sh container windows   # likewise macos
 ```
 
-`windows` and `macos` in place of `build` give the Windows and macOS release builds. `ci/containers/run.sh --help` lists the options.
+`ci/containers/run.sh --help` lists the options.
 
 ### On the host (gcc 13 or older)
 
@@ -94,4 +94,4 @@ The other files in `doc/` are partly out of date.
 
 YACoin is released under the MIT licence, see [`COPYING`](COPYING). Third-party code in `src/` keeps its own licence, for example
 [`src/leveldb/LICENSE`](src/leveldb/LICENSE), [`src/secp256k1/COPYING`](src/secp256k1/COPYING) and [`src/LibBoolEE.cpp`](src/LibBoolEE.cpp)
-(LGPL version 3 or later, compiled into the consensus library, [`src/Makefile.am`](src/Makefile.am)).
+(LGPL version 3 or later, compiled into `libyacoin_consensus.a`, [`src/Makefile.am`](src/Makefile.am)).
