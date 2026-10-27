@@ -41,6 +41,9 @@ There is no bug bounty.
 
 ## What happens after a report
 
+These are the steps for a report made here. For a report made to `yacoin/yacoin`, its maintainers decide the steps, and the maintainers here
+help when asked.
+
 There are no fixed response times. The project has few maintainers, and they handle each report as fast as they can. The steps are, in
 order:
 
@@ -48,12 +51,15 @@ order:
 2. **Assessment.** The maintainers confirm the issue, find out which versions it affects and assess its severity. They tell you the
    result. The discussion continues privately in the advisory.
 3. **Fix in private.** The fix and a regression test are written in private, for example in the advisory's temporary private fork.
-   Public commits and pull requests say nothing about it.
+   Public commits and pull requests do not describe the vulnerability until the advisory is published.
 4. **Coordinated release.** The fix goes privately to the `yacoin/yacoin` maintainers, who publish the fixed release. Where possible,
    mining pools, exchanges and other node operators are told in advance to upgrade. The release notes give no details until the advisory
    is published. A change to the consensus rules is coordinated with the miners as well.
 5. **Publication.** The disclosure date is agreed with you. The advisory is published after the network has had time to upgrade. It
    credits you if you wish, and the maintainers can request a CVE for it.
+
+For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to the affected `master` branch before the next release,
+and the advisory is published once the fix is merged, on a date agreed with you.
 
 ## Scope
 
