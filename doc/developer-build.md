@@ -33,8 +33,10 @@ package version changes.
 
 Some upstream download hosts accept the connection but never send data, and
 depends then waits indefinitely (seen with samba.org for ccache). Stop the
-build, download that file from the depends mirror (`FALLBACK_DOWNLOAD_PATH` in `depends/Makefile`, which stores every file under the
-recipe's file name) into `depends/sources/`, and run `./dev.sh depends` again; depends checks the package hash. For example:
+build, download that file from the depends mirror into `depends/sources/`,
+and run `./dev.sh depends` again; depends checks the package hash. The mirror
+is `FALLBACK_DOWNLOAD_PATH` in `depends/Makefile`; it stores every file under
+the recipe's file name. For example:
 
 ```sh
 curl -fL -o depends/sources/ccache-3.3.4.tar.bz2 \
