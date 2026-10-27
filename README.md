@@ -89,6 +89,7 @@ Without a suitable host compiler, `./dev.sh container unit-tests` and `./dev.sh 
 - [`ci/containers/README.md`](ci/containers/README.md): the CI build images and how CI uses them.
 - [`depends/README.md`](depends/README.md): the depends system.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): how to contribute.
+- [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`CLAUDE.md`](CLAUDE.md): the workflow and the rules of this repository.
 
 ## License

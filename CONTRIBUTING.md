@@ -21,4 +21,5 @@ This file is a short guide to them.
 - A new or upgraded dependency needs the owner's approval.
 - Files in this repository describe only the current state: no task ids, no planned work, no history of where files came from. That
   belongs in commit messages.
-- This repository is public: do not describe security findings in commits, pull requests or code comments.
+- This repository is public: do not describe security findings in commits, pull requests or code comments. Report a vulnerability
+  privately, as [`SECURITY.md`](SECURITY.md) describes.
