@@ -25,6 +25,7 @@ Each package is required to define at least these variables:
 
 Every source file must also be on the mirror that `FALLBACK_DOWNLOAD_PATH` names, under the name it gets in `SOURCES_PATH`
 (`$(package)_file_name` and the names in `$(package)_extra_sources`, not `$(package)_download_file`); `ci/depends-sources.sh` checks this.
+The mirror also holds `SHA256SUMS`, the checksums of all its files; the check fetches it first to see that the mirror answers.
 
 These variables are optional:
 
