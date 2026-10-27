@@ -13,7 +13,8 @@ releases of its own.
 | The `master` branch of this repository and of `yacoin/yacoin` | yes |
 | Earlier releases | no |
 
-If you run an earlier release, upgrade first and check whether the issue remains.
+If you run an earlier release, upgrade first and check whether the issue remains. If it affects only an earlier release that nodes on the
+network still run, report it anyway.
 
 ## Reporting a vulnerability
 
@@ -21,10 +22,9 @@ Never report a vulnerability in a public issue, pull request, discussion, commit
 
 - **The issue is in the latest release of `yacoin/yacoin` (whether or not it is also in a `master` branch):** report it to
   `yacoin/yacoin` with GitHub's private vulnerability reporting. Open the Security tab of `yacoin/yacoin` and choose "Report a
-  vulnerability". If `yacoin/yacoin` does not offer private reporting, report it here instead. The maintainers here then add the
-  `yacoin/yacoin` maintainers to the advisory, and tell you when they do.
-- **The issue is not in any release (only in a `master` branch), or you are not sure:** report it here with GitHub's private
-  vulnerability reporting: https://github.com/dev34253/yacoin/security/advisories/new.
+  vulnerability". If `yacoin/yacoin` does not offer private reporting, report it to `dev34253/yacoin` instead, as in the next point.
+- **The issue is not in any release (only in a `master` branch), or you are not sure:** report it to `dev34253/yacoin` with GitHub's
+  private vulnerability reporting: https://github.com/dev34253/yacoin/security/advisories/new.
 
 GitHub's private vulnerability reporting is the only channel. There is no security email address and no OpenPGP key.
 
@@ -41,25 +41,27 @@ There is no bug bounty.
 
 ## What happens after a report
 
-These are the steps for a report made here. For a report made to `yacoin/yacoin`, its maintainers decide the steps, and the maintainers here
-help when asked.
+These are the steps for a report made to `dev34253/yacoin`. For a report made to `yacoin/yacoin`, its maintainers decide the steps, and
+the maintainers of `dev34253/yacoin` help when asked.
 
 There are no fixed response times. The project has few maintainers, and they handle each report as fast as they can. The steps are, in
 order:
 
 1. **Acknowledgement.** A maintainer acknowledges the report as soon as possible.
 2. **Assessment.** The maintainers confirm the issue, find out which versions it affects and assess its severity. They tell you the
-   result. The discussion continues privately in the advisory.
+   result. If the issue is in a release, they add the `yacoin/yacoin` maintainers to the advisory and tell you. The discussion continues
+   privately in the advisory.
 3. **Fix in private.** The fix and a regression test are written in private, for example in the advisory's temporary private fork.
    Public commits and pull requests do not describe the vulnerability until the advisory is published.
-4. **Coordinated release.** The fix goes privately to the `yacoin/yacoin` maintainers, who publish the fixed release. Where possible,
-   mining pools, exchanges and other node operators are told in advance to upgrade. The release notes give no details until the advisory
-   is published. A change to the consensus rules is coordinated with the miners as well.
-5. **Publication.** The disclosure date is agreed with you. The advisory is published after the network has had time to upgrade. It
+4. **Coordinated release.** The maintainers pass the fix privately to the `yacoin/yacoin` maintainers and ask them to publish a fixed
+   release without details in its release notes. Where possible, mining pools, exchanges and other node operators are told in advance to
+   upgrade. A change to the consensus rules is coordinated with the miners as well.
+5. **Publication.** The maintainers propose a disclosure date and agree it with you where possible. The advisory is published after the
+   network has had time to upgrade. If no fixed release follows, the maintainers agree with you how and when to publish. The advisory
    credits you if you wish, and the maintainers can request a CVE for it.
 
-For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to each affected `master` branch before the next release,
-and the advisory is published after the fix is merged, on a date agreed with you.
+For an issue that is in no release, steps 4 and 5 are shorter: the fix is merged to the `master` branch of `dev34253/yacoin` and offered to
+`yacoin/yacoin` before its next release, and the advisory is published after the fix is merged.
 
 ## Scope
 
