@@ -2,10 +2,8 @@ name: Depends sources
 
 # Every depends source file can still be downloaded: from its recipe's host
 # or else from the project mirror (FALLBACK_DOWNLOAD_PATH), and the mirror
-# holds every file. Weekly, because hosts disappear without a change here.
+# holds every file. Runs when the recipes change, and on demand.
 on:
-  schedule:
-    - cron: '23 5 * * 1'
   workflow_dispatch:
   push:
     paths:
