@@ -14,14 +14,18 @@ Each package is required to define at least these variables:
     placeholder such as 1.0 can be used.
 
     $(package)_download_path:
-    Location of the upstream source, without the file-name. Usually http or
-    ftp.
+    Location of the upstream source, without the file-name. An https:// URL;
+    `ci/depends-sources.sh` rejects plain http://.
 
     $(package)_file_name:
     The upstream source filename available at the download path.
 
     $(package)_sha256_hash:
     The sha256 hash of the upstream file
+
+Every source file must also be on the mirror that `FALLBACK_DOWNLOAD_PATH` names, under the name it gets in `SOURCES_PATH`
+(`$(package)_file_name` and the names in `$(package)_extra_sources`, not `$(package)_download_file`); `ci/depends-sources.sh` checks this.
+The mirror also holds `SHA256SUMS`, the checksums of all its files; the check fetches it first to see that the mirror answers.
 
 These variables are optional:
 
