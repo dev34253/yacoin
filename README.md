@@ -1,3 +1,5 @@
+<img src="src/qt/res/icons/yacoin-128.png" alt="YACoin logo" width="128">
+
 # YACoin
 
 [![Yacoin multi platform build](https://github.com/dev34253/yacoin/actions/workflows/yacoinbuildmultiplatform.yml/badge.svg?branch=master)](https://github.com/dev34253/yacoin/actions/workflows/yacoinbuildmultiplatform.yml)
