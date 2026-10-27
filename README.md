@@ -20,8 +20,8 @@ that height ([`src/kernel.cpp`](src/kernel.cpp)), and it has no staking code.
 | Block target | 60 seconds | [`src/chainparams.cpp`](src/chainparams.cpp) |
 | Block reward | about 2 % of the money supply a year: money supply before the epoch × 0.02 / 525960, the same for all 21000 blocks of an epoch | [`src/validation.cpp`](src/validation.cpp), [`src/validation.h`](src/validation.h), [`src/init.cpp`](src/init.cpp) |
 | Difficulty | retargets once per 21000-block epoch | [`src/pow.cpp`](src/pow.cpp) |
-| Tokens | token rules apply from block 1911211: `nTokenSupportBlockNumber` = 1911210 is compared with the height of the chain tip, which is the parent of the block being validated | [`src/init.cpp`](src/init.cpp), [`src/validation.cpp`](src/validation.cpp), [`src/tokens/`](src/tokens/) |
-| Networks | mainnet and regtest (`-regtest`) | [`src/chainparams.cpp`](src/chainparams.cpp) |
+| Tokens | token rules apply from block 1911211 | [`src/init.cpp`](src/init.cpp), [`src/validation.cpp`](src/validation.cpp), [`src/tokens/`](src/tokens/) |
+| Networks | mainnet and regtest (`-regtest`); `-testnet` is not available | [`src/chainparams.cpp`](src/chainparams.cpp) |
 | Ports | P2P 7688; RPC 7687 on mainnet, 17687 on regtest | [`src/protocol.h`](src/protocol.h), [`src/chainparamsbase.cpp`](src/chainparamsbase.cpp) |
 | Version | 1.11.0 | [`configure.ac`](configure.ac) |
 
@@ -42,12 +42,12 @@ host, build in the CI images.
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ```
 
-The release builds (`build`, `windows`, `macos`) configure the source tree in place ([`ci/containers/entrypoint.sh`](ci/containers/entrypoint.sh),
-[`entrypoint.windows.sh`](ci/containers/entrypoint.windows.sh), [`entrypoint.macos.sh`](ci/containers/entrypoint.macos.sh)). Host builds
-and the test modes refuse such a tree; `make distclean` clears it. Run the release builds in separate clones, one per platform:
+The build modes (`build`, `build-low-difficulty`, `windows`, `macos`) configure the source tree in place
+([`ci/containers/entrypoint.sh`](ci/containers/entrypoint.sh), [`entrypoint.windows.sh`](ci/containers/entrypoint.windows.sh),
+[`entrypoint.macos.sh`](ci/containers/entrypoint.macos.sh)). Host builds and the test modes refuse such a tree; `make distclean` clears it. Run the release builds in separate clones, one per platform:
 
 ```sh
-git clone . ../yacoin-linux && ../yacoin-linux/dev.sh container build         # yacoind, yacoin-cli, yacoin-qt in ../yacoin-linux/release-root/
+git clone . ../yacoin-linux && ../yacoin-linux/dev.sh container build         # yacoind, yacoin-cli, yacoin-qt in ../yacoin-linux/release-root/bin/
 git clone . ../yacoin-windows && ../yacoin-windows/dev.sh container windows   # likewise macos
 ```
 
@@ -89,7 +89,7 @@ Without a suitable host compiler, `./dev.sh container unit-tests` and `./dev.sh 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): how to contribute.
 - [`CLAUDE.md`](CLAUDE.md): the workflow and the rules of this repository.
 
-The other files in `doc/` are partly out of date.
+The other files in `doc/` are out of date.
 
 ## Licence
 
