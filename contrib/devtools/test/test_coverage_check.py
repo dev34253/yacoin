@@ -85,6 +85,11 @@ class TracefileTest(TempDirTest):
         files = cc.read_tracefiles([path], "/work/tree/")
         self.assertEqual(sorted(files), ["/usr/include/c++/v.h", "src/a.cpp"])
 
+    def test_relative_root(self):
+        path = self.write("a.info", record(os.path.join(self.dir, "src", "a.cpp"), [(1, 1)]))
+        files = cc.read_tracefiles([path], os.path.relpath(self.dir))
+        self.assertEqual(sorted(files), ["src/a.cpp"])
+
     def test_malformed_lines_are_errors(self):
         path = self.write("a.info", "SF:/src/src/a.cpp\nDA:x,1\nend_of_record\n")
         with self.assertRaises(cc.InputError):
@@ -131,6 +136,13 @@ class NameTest(unittest.TestCase):
             ("Foo::get() const &", "Foo::get"),
             ("Foo::get() &&", "Foo::get"),
             ("f(int) [clone .cold]", "f"),
+            ("CChain::FindEarliestAtLeast(long) const::{lambda(CBlockIndex*)#1}::operator()(CBlockIndex*) const",
+             "CChain::FindEarliestAtLeast(long) const::{lambda(CBlockIndex*)#1}::operator()"),
+            ("int Foo::bar<int>() const volatile::{lambda()#1}::operator()() const",
+             "Foo::bar<int>() const volatile::{lambda()#1}::operator()"),
+            ("Foo::get() &&::{lambda()#1}::operator()() const", "Foo::get() &&::{lambda()#1}::operator()"),
+            ("Foo::get() noexcept::{lambda()#2}::operator()() const", "Foo::get() noexcept::{lambda()#2}::operator()"),
+            ("std::string const& Foo::name() const", "Foo::name"),
             ("__static_initialization_and_destruction_0(int, int)", "__static_initialization_and_destruction_0"),
         ]
         for demangled, want in cases:
@@ -140,6 +152,8 @@ class NameTest(unittest.TestCase):
     def test_display_name_drops_only_the_return_type(self):
         self.assertEqual(cc.display_name("double g<double>(double)"), "g<double>(double)")
         self.assertEqual(cc.display_name("ns::f(int) const"), "ns::f(int) const")
+        self.assertEqual(cc.display_name("CChain::Find(long) const::{lambda(int)#1}::operator()(int) const"),
+                         "CChain::Find(long) const::{lambda(int)#1}::operator()(int) const")
 
 
 class ExtentsTest(TempDirTest):
@@ -185,9 +199,9 @@ class TargetFileTest(TempDirTest):
     def test_valid_file(self):
         t = self.load(targets([
             {"group": "tier-1", "file": "src/a.cpp", "target": "tier-1", "met": False},
-            {"group": "stage-2", "file": "src/a.cpp", "functions": ["f"], "target": {"unit_lines": 90.0},
+            {"group": "prerequisite", "file": "src/a.cpp", "functions": ["f"], "target": {"unit_lines": 90.0},
              "met": True},
-            {"group": "stage-2", "file": "src/a.cpp", "recorded": {"all_lines": 86.8}},
+            {"group": "prerequisite", "file": "src/a.cpp", "recorded": {"all_lines": 86.8}},
         ]))
         self.assertEqual(t.entries[0].target, {"unit_lines": 90.0, "unit_branches": 60.0})
         self.assertEqual(t.entries[0].tier, "tier-1")
@@ -215,6 +229,7 @@ class TargetFileTest(TempDirTest):
             dict(good, functions=["f", ""]),
             {k: v for k, v in good.items() if k != "group"},
             dict(good, file=""),
+            dict(good, group="guarded"),                              # guarded files are met
         ]
         for entry in bad:
             with self.subTest(entry=entry):
@@ -307,6 +322,19 @@ class CheckTest(TempDirTest):
         self.assertTrue(report.rows[0].failed)
         self.assertIn("src/a.cpp", report.failures[0])
 
+    def test_messages_show_two_decimals_and_counts(self):
+        report = self.run_check([], overall={"unit_lines": 80.0})
+        self.assertIn("76.92 % (10/13), recorded 80.00", report.failures[0])
+        # 2249 of 2500 lines: 89.96 %, shown as 90.0 in the table.
+        self.unit["src/big.cpp"] = self.cov({k: 1 if k <= 2249 else 0 for k in range(1, 2501)}, {})
+        self.all["src/big.cpp"] = self.cov({k: 1 for k in range(1, 2501)}, {})
+        report = self.run_check([{"group": "tier-1", "file": "src/big.cpp", "target": {"unit_lines": 90.0},
+                                  "met": True},
+                                 {"group": "tier-1", "file": "src/big.cpp", "recorded": {"unit_lines": 90.1}}])
+        self.assertEqual(len(report.failures), 2)
+        self.assertIn("89.96 % (2249/2500) < 90.00", report.failures[0])
+        self.assertIn("89.96 % (2249/2500), recorded 90.10", report.failures[1])
+
     def test_unmet_target_below_is_reported_without_failing(self):
         report = self.run_check([{"group": "tier-1", "file": "src/b.cpp", "target": "tier-1", "met": False}])
         self.assertEqual(report.failures, [])
@@ -322,16 +350,16 @@ class CheckTest(TempDirTest):
         self.assertIn("record as met", report.notices[0])
 
     def test_nothing_instrumented_counts_as_met(self):
-        report = self.run_check([{"group": "stage-2", "file": "src/nobranch.h", "target": "tier-1", "met": True}])
+        report = self.run_check([{"group": "prerequisite", "file": "src/nobranch.h", "target": "tier-1", "met": True}])
         self.assertEqual(report.failures, [])
         self.assertEqual(self.statuses(report), [("src/nobranch.h", "met")])
 
     def test_recorded_value(self):
-        files = [{"group": "stage-2", "file": "src/a.cpp", "recorded": {"unit_lines": 90.1}}]
+        files = [{"group": "prerequisite", "file": "src/a.cpp", "recorded": {"unit_lines": 90.1}}]
         self.assertEqual(self.run_check(files).failures, [])
-        report = self.run_check([{"group": "stage-2", "file": "src/a.cpp", "recorded": {"unit_lines": 90.2}}])
+        report = self.run_check([{"group": "prerequisite", "file": "src/a.cpp", "recorded": {"unit_lines": 90.2}}])
         self.assertEqual(len(report.failures), 1)
-        report = self.run_check([{"group": "stage-2", "file": "src/a.cpp", "recorded": {"unit_lines": 89.9}}])
+        report = self.run_check([{"group": "prerequisite", "file": "src/a.cpp", "recorded": {"unit_lines": 89.9}}])
         self.assertEqual(report.failures, [])
         self.assertEqual(len(report.notices), 1)
         self.assertEqual(report.rows[0].status, "record the new value")
@@ -342,12 +370,12 @@ class CheckTest(TempDirTest):
 
     def test_function_targets(self):
         # f and its lambda: lines 1-4, all hit; branches at line 1: 2 of 2.
-        report = self.run_check([{"group": "stage-2", "file": "src/a.cpp", "functions": ["ns::f<int>"],
+        report = self.run_check([{"group": "prerequisite", "file": "src/a.cpp", "functions": ["ns::f<int>"],
                                   "target": {"unit_lines": 100.0, "unit_branches": 100.0}, "met": True}])
         self.assertEqual(report.failures, [])
         self.assertEqual(report.rows[0].unit, cc.Stats(4, 4, 2, 2))
         # Both overloads of g: lines 6-8 counted once; the gap (line 5) nowhere.
-        report = self.run_check([{"group": "stage-2", "file": "src/a.cpp", "functions": ["ns::g", "h"],
+        report = self.run_check([{"group": "prerequisite", "file": "src/a.cpp", "functions": ["ns::g", "h"],
                                   "target": {"unit_lines": 100.0}, "met": True}])
         self.assertEqual(report.rows[0].unit, cc.Stats(5, 5, 1, 2))
         self.assertEqual(report.failures, [])
@@ -356,13 +384,13 @@ class CheckTest(TempDirTest):
         for name in ["ns::nothing", "ns::f", "g"]:
             with self.subTest(name=name):
                 with self.assertRaises(cc.InputError):
-                    self.run_check([{"group": "stage-2", "file": "src/a.cpp", "functions": [name],
+                    self.run_check([{"group": "prerequisite", "file": "src/a.cpp", "functions": [name],
                                      "target": {"unit_lines": 90.0}, "met": False}])
 
     def test_function_targets_need_extents(self):
         self.extents = {}
         with self.assertRaises(cc.InputError):
-            self.run_check([{"group": "stage-2", "file": "src/a.cpp", "functions": ["h"],
+            self.run_check([{"group": "prerequisite", "file": "src/a.cpp", "functions": ["h"],
                              "target": {"unit_lines": 90.0}, "met": False}])
 
     def test_per_function(self):
@@ -403,7 +431,7 @@ class CommandLineTest(TempDirTest):
     def targets_file(self, met, overall=66.7):
         return self.write_json("targets.json", targets(
             [{"group": "tier-1", "file": "src/a.cpp", "target": "tier-1", "met": met},
-             {"group": "stage-2", "file": "src/a.cpp", "functions": ["f"], "target": {"unit_lines": 90.0},
+             {"group": "prerequisite", "file": "src/a.cpp", "functions": ["f"], "target": {"unit_lines": 90.0},
               "met": True}],
             overall={"unit_lines": overall}))
 
@@ -464,6 +492,7 @@ class CommittedTargetFileTest(unittest.TestCase):
         groups = {}
         for entry in t.entries:
             groups.setdefault(entry.group, []).append(entry)
+        self.assertEqual(sorted(groups), ["guarded", "prerequisite", "tier-1", "tier-2"])
         self.assertEqual(len([e for e in groups["tier-1"]]), 13)
         self.assertEqual(len([e for e in groups["tier-2"]]), 8)
         self.assertTrue(all(e.met for e in groups["guarded"]))

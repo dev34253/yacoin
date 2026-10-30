@@ -17,7 +17,8 @@ tree is mounted in the build image).
 The target file holds a tolerance, the recorded overall values, the tiers and
 one entry per file (or per named functions of a file). An entry has either a
 target (a tier name or {metric: percent}) and a "met" flag, or recorded values
-({metric: percent}). Metrics: unit_lines, unit_branches, all_lines,
+({metric: percent}). Entries of the group "guarded" are files already at their
+target and must have "met": true. Metrics: unit_lines, unit_branches, all_lines,
 all_branches. A metric with nothing instrumented counts as met.
 
 The check fails (exit status 1) if an entry recorded as met is below its target
@@ -101,7 +102,7 @@ def stats(cov, ranges=None):
 def relative_path(path, root):
     path = os.path.normpath(path)
     if root:
-        root = os.path.normpath(root)
+        root = os.path.abspath(root)
         if os.path.isabs(path) and os.path.commonpath([path, root]) == root:
             return os.path.relpath(path, root)
     return path
@@ -158,6 +159,9 @@ def read_tracefiles(paths, root):
 _OPERATOR_SYMBOLS = set("+-*/%^&|~!=<>,")
 _IDENT = re.compile(r"[A-Za-z0-9_$]")
 _QUALIFIERS = ("const", "volatile", "noexcept", "&&", "&")
+# The qualifiers of an enclosing member function before "::", as in
+# "C::f(long) const::{lambda(int)#1}::operator()": part of the name.
+_ENCLOSING_QUALIFIERS = re.compile(r"(?:(?:const|volatile|noexcept)\b|&&|&)(?: ?(?:(?:const|volatile|noexcept)\b|&&|&))*::")
 
 
 def _strip_qualifiers(s):
@@ -210,7 +214,7 @@ def _split(demangled):
             depth += 1
         elif c in ")>]}":
             depth -= 1
-        elif c == " " and depth == 0:
+        elif c == " " and depth == 0 and not _ENCLOSING_QUALIFIERS.match(head, i + 1):
             starts.append(start)
             start = i + 1
         i += 1
@@ -345,6 +349,8 @@ def load_targets(path):
             if "met" in e:
                 raise InputError("%s: met belongs to an entry with a target" % where)
             recorded = _metrics(e["recorded"], where + ": recorded")
+        if e["group"] == "guarded" and met is not True:
+            raise InputError("%s: a guarded file is at its target: it needs a target and met: true" % where)
         key = (e["file"], tuple(functions or ()), "target" if target else "recorded")
         if key in seen:
             raise InputError("%s: a second %s entry for %s" % (where, key[2], e["file"]))
@@ -396,6 +402,11 @@ def _fmt(value):
     return "%.1f" % value
 
 
+def _exact(hit, found):
+    """For failure and notice lines: two decimals and the counts, so 89.96 never reads as 90.0."""
+    return "%.2f %% (%d/%d)" % (percent(hit, found), hit, found)
+
+
 def check(targets, unit, total, extents):
     rows, failures, notices = [], [], []
     tol = targets.tolerance
@@ -408,9 +419,10 @@ def check(targets, unit, total, extents):
         if e.target is not None:
             below = []
             for metric, want in e.target.items():
-                value = percent(*metric_value(metric, us, as_))
+                counts = metric_value(metric, us, as_)
+                value = percent(*counts)
                 if value is not None and value < want - EPS:
-                    below.append("%s %s < %s" % (METRIC_TEXT[metric], _fmt(value), _fmt(want)))
+                    below.append("%s %s < %.2f" % (METRIC_TEXT[metric], _exact(*counts), want))
             target_text = e.tier or ", ".join("%s >= %s" % (METRIC_TEXT[m], _fmt(v)) for m, v in e.target.items())
             if e.met and below:
                 status, failed = "FAIL: below target", True
@@ -425,13 +437,14 @@ def check(targets, unit, total, extents):
         else:
             fell, rose = [], []
             for metric, rec in e.recorded.items():
-                value = percent(*metric_value(metric, us, as_))
+                counts = metric_value(metric, us, as_)
+                value = percent(*counts)
                 if value is None:
                     continue
                 if value < rec - tol - EPS:
-                    fell.append("%s %s, recorded %s" % (METRIC_TEXT[metric], _fmt(value), _fmt(rec)))
+                    fell.append("%s %s, recorded %.2f" % (METRIC_TEXT[metric], _exact(*counts), rec))
                 elif value >= rec + tol - EPS:
-                    rose.append("%s %s, recorded %s" % (METRIC_TEXT[metric], _fmt(value), _fmt(rec)))
+                    rose.append("%s %s, recorded %.2f" % (METRIC_TEXT[metric], _exact(*counts), rec))
             target_text = ", ".join("%s %s recorded" % (METRIC_TEXT[m], _fmt(v)) for m, v in e.recorded.items())
             if fell:
                 status, failed = "FAIL: fell", True
@@ -455,12 +468,12 @@ def check(targets, unit, total, extents):
             pass
         elif value < rec - tol - EPS:
             status = "FAIL: fell"
-            failures.append("overall %s of src/: %s, more than %s points below the recorded %s"
-                            % (METRIC_TEXT[metric], _fmt(value), _fmt(tol), _fmt(rec)))
+            failures.append("overall %s of src/: %s, recorded %.2f: more than %s points below"
+                            % (METRIC_TEXT[metric], _exact(hit, found), rec, _fmt(tol)))
         elif value >= rec + tol - EPS:
             status = "record the new value"
-            notices.append("overall %s of src/: %s, recorded %s; record the new value"
-                           % (METRIC_TEXT[metric], _fmt(value), _fmt(rec)))
+            notices.append("overall %s of src/: %s, recorded %.2f; record the new value"
+                           % (METRIC_TEXT[metric], _exact(hit, found), rec))
         overall.append(OverallRow(metric, hit, found, rec, status))
     return Report(rows, overall, overall_stats, failures, notices)
 

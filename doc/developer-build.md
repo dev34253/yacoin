@@ -233,7 +233,10 @@ tolerance, the recorded overall unit line coverage of `src/`, the tiers
 (`tier-1`: 90 % of lines and 60 % of branches from unit tests; `tier-2`: 90 %
 of lines from unit and functional tests together and 50 % from unit tests),
 and one entry per file, or per named functions of a file, with a target and a
-`met` flag, or with recorded values. It is strict JSON and holds nothing else.
+`met` flag, or with recorded values. Entries are grouped: `tier-1`, `tier-2`,
+`guarded` (files already at the Tier 1 target; they must be recorded as met)
+and `prerequisite` (further files with their own targets). It is strict JSON
+and holds nothing else.
 `contrib/devtools/coverage-check.py` checks the tracefiles against it:
 
 ```sh
@@ -257,10 +260,11 @@ A function target, and `--per-function`, count the lines and branches inside
 each function's extent as gcov reports it (`*_functions.json`), so a lambda's
 lines count in the enclosing function and in its own row, and the lines
 between functions count nowhere. Names in a target's `functions` list match
-the demangled name without return type, parameter list and qualifiers
-(`CScript::operator<<`, `HelpMessage`); a lambda keeps the enclosing function,
-e.g. `ns::f(int)::{lambda(int)#1}::operator()`. A name that matches nothing is
-an error. The script's own tests:
+the demangled name without return type, parameter list, qualifiers and ABI
+tags (`CScript::operator<<`; `HelpMessage` for
+`HelpMessage[abi:cxx11](HelpMessageMode)`); a lambda keeps the enclosing
+function, e.g. `ns::f(int)::{lambda(int)#1}::operator()`. A name that matches
+nothing is an error. The script's own tests:
 `python3 -I -B -m unittest discover -s contrib/devtools/test`.
 
 CI measures the same in three jobs: `coverage-unit` and `coverage-functional`

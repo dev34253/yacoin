@@ -30,13 +30,13 @@
     {"group": "tier-2", "file": "src/httpserver.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/httprpc.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/net_processing.cpp", "target": "tier-2", "met": false},
-    {"group": "stage-2", "file": "src/coins.h", "target": "tier-1", "met": false},
-    {"group": "stage-2", "file": "src/undo.h", "target": "tier-1", "met": false},
-    {"group": "stage-2", "file": "src/validation.h", "target": "tier-1", "met": true},
-    {"group": "stage-2", "file": "src/chainparams.h", "target": "tier-1", "met": false},
-    {"group": "stage-2", "file": "src/chainparamsbase.cpp", "target": "tier-1", "met": false},
-    {"group": "stage-2", "file": "src/init.cpp", "functions": ["HelpMessage", "InitParameterInteraction", "AppInitParameterInteraction"], "target": {"unit_lines": 90.0}, "met": false},
-    {"group": "stage-2", "file": "src/init.cpp", "target": {"unit_lines": 25.0}, "met": false},
-    {"group": "stage-2", "file": "src/init.cpp", "recorded": {"all_lines": 86.8}}
+    {"group": "prerequisite", "file": "src/coins.h", "target": "tier-1", "met": false},
+    {"group": "prerequisite", "file": "src/undo.h", "target": "tier-1", "met": false},
+    {"group": "prerequisite", "file": "src/validation.h", "target": "tier-1", "met": true},
+    {"group": "prerequisite", "file": "src/chainparams.h", "target": "tier-1", "met": false},
+    {"group": "prerequisite", "file": "src/chainparamsbase.cpp", "target": "tier-1", "met": false},
+    {"group": "prerequisite", "file": "src/init.cpp", "functions": ["HelpMessage", "InitParameterInteraction", "AppInitParameterInteraction"], "target": {"unit_lines": 90.0}, "met": false},
+    {"group": "prerequisite", "file": "src/init.cpp", "target": {"unit_lines": 25.0}, "met": false},
+    {"group": "prerequisite", "file": "src/init.cpp", "recorded": {"all_lines": 86.8}}
   ]
 }
