@@ -28,7 +28,7 @@ Throughout, keep the task's two log files (where: `CLAUDE.local.md`):
 
 - `./dev.sh` without arguments lists the commands: `depends`, `build dev|release`, `unit`, `ftest`, `asan`, `cov`, `cov-check`.
 - `depends/` does not build with gcc 14 or newer (Boost 1.64). Use gcc 13 or older, or the CI image (`./dev.sh container`).
-- CI (`.github/workflows/yacoinbuildmultiplatform.yml`) runs 10 jobs on every push and pull request, about 25 minutes (the longest is
+- CI (`.github/workflows/yacoinbuildmultiplatform.yml`) runs 10 jobs on every push and pull request, about 15 to 20 minutes (the longest is
   `coverage-functional`, then `coverage-report`); `coverage-report` fails when the coverage check fails (`./dev.sh cov-check` locally).
 
 ## Rules

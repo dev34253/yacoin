@@ -533,8 +533,8 @@ def check_tables(report):
         md_name = "`%s`" % r.file + (" (%s)" % ", ".join("`%s`" % f for f in r.functions) if r.functions else "")
         md_status = "**%s**" % r.status if r.failed else r.status
         rows_md.append([r.group, md_name] + stats_cells + [r.target_text, md_status])
-    overall_lines = ["overall %s of src/: %s, recorded %s: %s" % (METRIC_TEXT[o.metric], cell(o.hit, o.found),
-                                                                  _fmt(o.recorded), o.status)
+    overall_lines = ["overall %s of src/: %s, recorded %.2f: %s" % (METRIC_TEXT[o.metric], _exact(o.hit, o.found),
+                                                                    o.recorded, o.status)
                      for o in report.overall]
     text = [text_table(header, rows_text), ""] + overall_lines
     md = ["### Coverage", "", md_table(header, rows_md), ""] + ["- " + line for line in overall_lines]

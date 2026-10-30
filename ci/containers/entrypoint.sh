@@ -141,10 +141,11 @@ mkdir -p "$(dirname "$ccache_conf")"
 [[ -e "$ccache_conf" ]] || : > "$ccache_conf"
 
 # Cache statistics on every exit, including failed runs, to show whether a
-# slow run used the cache.
+# slow run used the cache. With CCACHE_DISABLE set they would only show the
+# restored cache's old counters, so they are left out.
 print_cache_stats() {
     local status=$?
-    if [[ -n "${CCACHE_DIR:-}" && -x "$DEPENDS_PREFIX/native/bin/ccache" ]]; then
+    if [[ -n "${CCACHE_DIR:-}" && -z "${CCACHE_DISABLE:-}" && -x "$DEPENDS_PREFIX/native/bin/ccache" ]]; then
         "$DEPENDS_PREFIX/native/bin/ccache" -s | grep -E 'cache hit|cache miss|cache size' || true
     fi
     (( status == 0 )) || echo "== Failed ($MODE, exit status $status) ==" >&2
