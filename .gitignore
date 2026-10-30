@@ -114,7 +114,10 @@ build-aux/test-driver
 /functional_test.log
 /functional_test.status
 /functional_test.coverage/
+/test_bitcoin_functions.*
+/functional_test_functions.*
 /*.capture-failed
+/*.functions-failed
 /*.info.parts/
 
 # Local Claude Code instructions

@@ -179,11 +179,13 @@ release: all-recursive
 
 COVERAGE_UNIT_FILES = unit_baseline.info test_bitcoin.info test_bitcoin_all.info \
   test_bitcoin_coverage.info test_bitcoin.log test_bitcoin.status unit_baseline.log \
-  test_bitcoin.capture-failed test_bitcoin_functions.json test_bitcoin_functions.log
+  test_bitcoin.capture-failed test_bitcoin_functions.json test_bitcoin_functions.log \
+  test_bitcoin.functions-failed
 COVERAGE_FUNCTIONAL_FILES = functional_baseline.info functional_test.info \
   functional_test_all.info functional_test_coverage.info functional_test.log \
   functional_test.status functional_baseline.log functional_test.capture-failed \
-  functional_test_functions.json functional_test_functions.log
+  functional_test_functions.json functional_test_functions.log \
+  functional_test.functions-failed
 
 if USE_LCOV
 # Coverage of the unit tests (cov-unit) and of the functional tests
@@ -194,10 +196,11 @@ if USE_LCOV
 # Each target zeroes the counters, records a baseline (so files that never run
 # still count), runs the tests, captures, removes vendored and test code, and
 # writes an HTML report plus a summary. Coverage is captured even if tests
-# fail; the target fails afterwards in that case. Each also writes the extents
-# of the functions of src/ (first and last line, from gcov's JSON output) next
-# to its tracefile, for the per-function numbers of
-# contrib/devtools/coverage-check.py.
+# fail; the target fails afterwards in that case. After the tests, each also
+# writes the extents of the functions of src/ (first and last line, from gcov's
+# JSON output) next to its tracefile, for the per-function numbers of
+# contrib/devtools/coverage-check.py; if that fails, the target fails at the
+# end, after the report.
 #
 # Captures run geninfo in parallel (COV_JOBS processes, default: all cores),
 # and the unit test suites run in parallel too. -b points geninfo at the
@@ -229,18 +232,17 @@ cov-unit:
 	@# Build everything, so the baseline has no stale .gcno files.
 	$(MAKE) all
 	$(LCOV) $(LCOV_OPTS) -q -z -d $(abs_builddir)/src
-	@# The baseline and the function extents only read .gcno files, so they are
-	@# made while the tests run. The tests run one process per suite; libgcov
-	@# locks the .gcda files while merging. Most of the test time is
-	@# transaction_tests/test_big_transaction.
+	@# The baseline only reads .gcno files, so it runs while the tests run. The
+	@# tests run one process per suite; libgcov locks the .gcda files while
+	@# merging. Most of the test time is transaction_tests/test_big_transaction.
 	nice -n 10 $(COV_CAPTURE) --initial --out unit_baseline.info > unit_baseline.log 2>&1 & pid=$$!; \
-	  nice -n 10 $(COV_FUNCTIONS) --out test_bitcoin_functions.json > test_bitcoin_functions.log 2>&1 & fpid=$$!; \
-	  trap 'kill $$pid $$fpid 2>/dev/null' INT TERM HUP; \
+	  trap 'kill $$pid 2>/dev/null' INT TERM HUP; \
 	  TMPDIR=$(abs_builddir)/test/tmp; $(MKDIR_P) $$TMPDIR; export TMPDIR; \
 	  $(COV_TOOLS)/run-unit-suites.sh $(abs_builddir)/src/test/test_bitcoin$(EXEEXT) \
 	    test_bitcoin.logs $(COV_JOBS) > test_bitcoin.log 2>&1; echo $$? > test_bitcoin.status; \
-	  wait $$pid || { cat unit_baseline.log >&2; exit 1; }; \
-	  wait $$fpid || { cat test_bitcoin_functions.log >&2; exit 1; }
+	  wait $$pid || { cat unit_baseline.log >&2; exit 1; }
+	$(COV_FUNCTIONS) --out test_bitcoin_functions.json > test_bitcoin_functions.log 2>&1 || \
+	  { cat test_bitcoin_functions.log >&2; echo functions > test_bitcoin.functions-failed; }
 	@# A crashed test run writes no counters, so the capture is empty; that and a
 	@# failed capture fall back to the baseline (0%) so a report is still made.
 	$(COV_CAPTURE) --test-name test_bitcoin --out test_bitcoin.info || \
@@ -251,6 +253,7 @@ cov-unit:
 	$(GENHTML) $(GENHTML_OPTS) -q test_bitcoin_coverage.info -o test_bitcoin.coverage
 	$(LCOV) $(LCOV_OPTS) --summary test_bitcoin_coverage.info
 	@test ! -f test_bitcoin.capture-failed || { echo "capturing the unit test counters failed (see above); the report shows the baseline only" >&2; exit 1; }
+	@test ! -f test_bitcoin.functions-failed || { echo "writing the function extents failed (see test_bitcoin_functions.log)" >&2; exit 1; }
 	@test "$$(cat test_bitcoin.status)" = 0 || { echo "unit tests failed (see test_bitcoin.log and test_bitcoin.logs/); coverage was captured anyway" >&2; exit 1; }
 
 cov-functional:
@@ -263,12 +266,11 @@ cov-functional:
 	if test "$(abs_top_srcdir)" != "$(abs_top_builddir)"; then \
 	  ln -sf $(abs_top_srcdir)/test/functional/test_runner.py test/functional/test_runner.py; fi
 	$(LCOV) $(LCOV_OPTS) -q -z -d $(abs_builddir)/src
-	@# The baseline and the function extents only read .gcno files, so they are
-	@# made while the tests run. The scripts in FTEST_SERIAL run after the
-	@# others, alone, on the cache the first run made.
+	@# The baseline only reads .gcno files, so it runs while the tests run. The
+	@# scripts in FTEST_SERIAL run after the others, alone, on the cache the
+	@# first run made.
 	nice -n 10 $(COV_CAPTURE) --initial --out functional_baseline.info > functional_baseline.log 2>&1 & pid=$$!; \
-	  nice -n 10 $(COV_FUNCTIONS) --out functional_test_functions.json > functional_test_functions.log 2>&1 & fpid=$$!; \
-	  trap 'kill $$pid $$fpid 2>/dev/null' INT TERM HUP; \
+	  trap 'kill $$pid 2>/dev/null' INT TERM HUP; \
 	  status=0; \
 	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_EXCLUDE) --tmpdirprefix=$(abs_builddir)/test/tmp \
 	    > functional_test.log 2>&1 || status=1; \
@@ -277,8 +279,9 @@ cov-functional:
 	      >> functional_test.log 2>&1 || status=1; \
 	  fi; \
 	  echo $$status > functional_test.status; \
-	  wait $$pid || { cat functional_baseline.log >&2; exit 1; }; \
-	  wait $$fpid || { cat functional_test_functions.log >&2; exit 1; }
+	  wait $$pid || { cat functional_baseline.log >&2; exit 1; }
+	$(COV_FUNCTIONS) --out functional_test_functions.json > functional_test_functions.log 2>&1 || \
+	  { cat functional_test_functions.log >&2; echo functions > functional_test.functions-failed; }
 	@# A crashed test run writes no counters, so the capture is empty; that and a
 	@# failed capture fall back to the baseline (0%) so a report is still made.
 	$(COV_CAPTURE) --test-name functional_tests --out functional_test.info || \
@@ -289,6 +292,7 @@ cov-functional:
 	$(GENHTML) $(GENHTML_OPTS) -q functional_test_coverage.info -o functional_test.coverage
 	$(LCOV) $(LCOV_OPTS) --summary functional_test_coverage.info
 	@test ! -f functional_test.capture-failed || { echo "capturing the functional test counters failed (see above); the report shows the baseline only" >&2; exit 1; }
+	@test ! -f functional_test.functions-failed || { echo "writing the function extents failed (see functional_test_functions.log)" >&2; exit 1; }
 	@test "$$(cat functional_test.status)" = 0 || { echo "functional tests failed (see functional_test.log); coverage was captured anyway" >&2; exit 1; }
 
 .PHONY: cov-unit cov-functional
