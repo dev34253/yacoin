@@ -212,15 +212,11 @@ COV_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 # (gcov merges the counters of concurrent processes under a file lock), then
 # the scripts in FTEST_SERIAL one at a time: at -O0 and next to other scripts,
 # p2p_invalid_messages' 2 s ping checks during its junk-message flood fail.
-# The scripts in FTEST_SKIP don't run here: in some -O0 runs mining_setgenerate's
-# miner finds one more block after setgenerate(false) has returned than its
-# checks expect. The functional-tests job of the CI workflow runs them.
 FTEST_JOBS ?= 4
 FTEST_SERIAL ?= p2p_invalid_messages.py
-FTEST_SKIP ?= mining_setgenerate.py
 cov_comma := ,
 cov_space := $(subst ,, )
-FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL) $(FTEST_SKIP)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL) $(FTEST_SKIP))))
+FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
 COV_TOOLS = $(abs_top_srcdir)/contrib/devtools
 COV_CAPTURE = $(COV_TOOLS)/coverage-capture.sh --geninfo "$(GENINFO) $(LCOV_OPTS)" \
   --lcov "$(LCOV) $(LCOV_OPTS)" --dir $(abs_builddir)/src --jobs "$(COV_JOBS)"

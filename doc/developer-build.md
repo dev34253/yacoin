@@ -175,7 +175,7 @@ two coverage builds (`--enable-lcov`, `-O0 -g`):
 | Build | Runs | Make target |
 |---|---|---|
 | `build/cov-unit` | `test_bitcoin` (all unit tests) | `make cov-unit` |
-| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); the scripts in `FTEST_SKIP` (`mining_setgenerate.py`, timing-dependent at `-O0`) are left out | `make cov-functional` |
+| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`) | `make cov-functional` |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests
