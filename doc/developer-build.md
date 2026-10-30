@@ -175,7 +175,7 @@ two coverage builds (`--enable-lcov`, `-O0 -g`):
 | Build | Runs | Make target |
 |---|---|---|
 | `build/cov-unit` | `test_bitcoin` (all unit tests) | `make cov-unit` |
-| `build/cov-func` | All functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py` and `mining_setgenerate.py`, which fail under load at `-O0`) | `make cov-functional` |
+| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); the scripts in `FTEST_SKIP` (`mining_setgenerate.py`, timing-dependent at `-O0`) are left out | `make cov-functional` |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests
@@ -204,7 +204,7 @@ Notes:
   the depends packages cached and without ccache, `cov-unit` takes about 13
   minutes on 8 cores (build about 5, tests about 5, captures about 2) and
   `cov-functional` about 19 (build about 6, the scripts in parallel about 7,
-  the scripts in `FTEST_SERIAL` alone about 3½, captures about 2); with 4 cores
+  `p2p_invalid_messages.py` alone about 3½, captures about 2); with 4 cores
   (`docker run --cpus=4`) about 15 and 20 minutes. The unit test time is
   bounded by `transaction_tests/test_big_transaction` (about 3 minutes).
 - To keep that time down, lcov captures run `geninfo` in parallel

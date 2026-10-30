@@ -69,7 +69,7 @@ optional mode as its argument:
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
 | `functional-tests` | Low-difficulty build, then the functional tests serially (`test_runner.py -j 1`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 1.x, so it only works in the Ubuntu 22.04 image |
-| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then the scripts in `FTEST_SERIAL` (`p2p_invalid_messages.py`, `mining_setgenerate.py`) alone. Needs lcov 1.x (Ubuntu 22.04 image only) |
+| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone; `mining_setgenerate.py` is left out (see `FTEST_SKIP` in `Makefile.am`). Needs lcov 1.x (Ubuntu 22.04 image only) |
 
 ```bash
 image=$(ci/containers/image-tag.sh ubuntu.22.04)    # pullable once CI on master has published it

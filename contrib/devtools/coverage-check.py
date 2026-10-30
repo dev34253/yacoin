@@ -404,7 +404,7 @@ def _fmt(value):
 
 
 def _exact(hit, found):
-    """For failure and notice lines: the counts and two decimals rounded down, so a value below a target never reads as equal to it."""
+    """For failure, notice and overall lines: the counts and two decimals rounded down, so a value below a target never reads as equal to it."""
     return "%.2f %% (%d/%d)" % (math.floor(percent(hit, found) * 100 + 1e-6) / 100, hit, found)
 
 

@@ -117,8 +117,8 @@ BOOST_AUTO_TEST_CASE(manythreads)
 BOOST_AUTO_TEST_CASE(idle_thread_runs_a_later_task)
 {
     // A service thread started on an empty queue takes the idle branch (it
-    // releases the lock while it adds entropy, then waits), runs a task
-    // scheduled after it started, and stops.
+    // releases the lock while it adds entropy, then waits unless a task has
+    // arrived), runs a task scheduled after it started, and stops.
     CScheduler scheduler;
     boost::thread service(boost::bind(&CScheduler::serviceQueue, &scheduler));
     // serviceQueue holds the scheduler's lock from counting itself until it
