@@ -35,9 +35,9 @@ inside its extent, so the lines of a lambda count in the enclosing function as
 well as in the lambda's own row, and lines between functions count nowhere.
 An entry with "functions" counts the lines of every function whose name
 matches one of the names, each line once: the demangled name without return
-type, parameter list and trailing qualifiers (ns::f(int) const -> ns::f,
-double g<double>(double) -> g<double>; a lambda keeps the enclosing function's
-name and parameters, e.g. ns::f(int)::{lambda(int)#1}::operator()).
+type, parameter list, trailing qualifiers and ABI tags (ns::f(int) const ->
+ns::f, double g<double>(double) -> g<double>; a lambda keeps the enclosing
+function's name and parameters, e.g. ns::f(int)::{lambda(int)#1}::operator()).
 
 --per-function SOURCE prints the coverage of every function of SOURCE instead
 of the check. --markdown appends the table as Markdown to FILE (for example
@@ -226,9 +226,9 @@ def _split(demangled):
 
 
 def function_name(demangled):
-    """The name a target's "functions" list matches: no return type, parameters or qualifiers."""
+    """The name a target's "functions" list matches: no return type, parameters, qualifiers or ABI tags."""
     start, end = _split(demangled)
-    return demangled.strip()[start:end]
+    return re.sub(r"\[abi:[^\]]*\]", "", demangled.strip()[start:end])
 
 
 def display_name(demangled):

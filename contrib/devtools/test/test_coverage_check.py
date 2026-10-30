@@ -110,6 +110,8 @@ class NameTest(unittest.TestCase):
             ("double g<double>(double)", "g<double>"),
             ("main", "main"),
             ("HelpMessage(HelpMessageMode)", "HelpMessage"),
+            ("HelpMessage[abi:cxx11](HelpMessageMode)", "HelpMessage"),
+            ("CFoo::ToString[abi:cxx11]() const", "CFoo::ToString"),
             ("AppInitParameterInteraction()", "AppInitParameterInteraction"),
             ("ns::f(int)::{lambda(int)#1}::operator()(int) const", "ns::f(int)::{lambda(int)#1}::operator()"),
             ("ns::f(int)::{lambda(int, char)#2}::operator()(int, char) const",
