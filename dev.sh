@@ -53,7 +53,10 @@ Usage: ./dev.sh <command> [args]
                           parallel (default 4)
   asan [suite...]         Build and run unit tests with ASan + UBSan
   cov                     Unit, functional and combined coverage reports
-                          (needs lcov) in .devbuild/coverage/
+                          (needs lcov) in .devbuild/coverage/, then cov-check
+  cov-check [args]        Check .devbuild/coverage/ against the targets in
+                          contrib/devtools/coverage-targets.json; args go to
+                          coverage-check.py (e.g. --per-function src/init.cpp)
   all                     dev build, unit, ftest and release build; runs every
                           step and prints a summary
   ccache-stats            Show ccache statistics
@@ -214,8 +217,9 @@ cmd_asan() {
 }
 
 # Unit test coverage (mainnet build) and functional test coverage
-# (low-difficulty build), then both merged. The Makefile targets capture
-# coverage even when tests fail, so all reports are written either way.
+# (low-difficulty build), then both merged and checked against the targets
+# (cmd_cov_check). The Makefile targets capture coverage even when tests fail,
+# so all reports are written either way.
 cmd_cov() {
     local out="$DEVBUILD/coverage" status=0 v
     ensure_dirs
@@ -228,9 +232,11 @@ cmd_cov() {
     # before a recipe runs, an old report must not be shown as this run's.
     # A report that exists after make comes from this run, even if tests failed.
     rm -rf "$BUILD_ROOT/cov-unit/test_bitcoin.coverage" "$BUILD_ROOT/cov-unit/test_bitcoin_coverage.info" \
-        "$BUILD_ROOT/cov-func/functional_test.coverage" "$BUILD_ROOT/cov-func/functional_test_coverage.info"
+        "$BUILD_ROOT/cov-unit/test_bitcoin_functions.json" \
+        "$BUILD_ROOT/cov-func/functional_test.coverage" "$BUILD_ROOT/cov-func/functional_test_coverage.info" \
+        "$BUILD_ROOT/cov-func/functional_test_functions.json"
     make -C "$BUILD_ROOT/cov-unit" -j"$JOBS" COV_JOBS="$JOBS" cov-unit || status=1
-    # Functional tests run serially here unless FTEST_JOBS is set (see Makefile.am).
+    # FTEST_JOBS, if set, replaces the Makefile's number of parallel scripts.
     make -C "$BUILD_ROOT/cov-func" -j"$JOBS" COV_JOBS="$JOBS" ${FTEST_JOBS:+FTEST_JOBS="$FTEST_JOBS"} cov-functional || status=1
     # Use the lcov and genhtml settings configure and Makefile.am chose, so the
     # merged report matches the per-build reports. Read after make, which may
@@ -239,20 +245,24 @@ cmd_cov() {
     read -ra lcov <<< "$(sed -n 's/^LCOV = //p' "$mk") $(sed -n 's/^LCOV_OPTS = //p' "$mk")"
     read -ra genhtml <<< "$(sed -n 's/^GENHTML = //p' "$mk") $(sed -n 's/^GENHTML_OPTS = //p' "$mk")"
     rm -rf "$out"; mkdir -p "$out"
-    local parts=() src_dir src_info part
+    local parts=() src_dir src_info src_functions part
     for part in unit functional; do
         if [[ $part == unit ]]; then
             src_dir="$BUILD_ROOT/cov-unit/test_bitcoin.coverage"
             src_info="$BUILD_ROOT/cov-unit/test_bitcoin_coverage.info"
+            src_functions="$BUILD_ROOT/cov-unit/test_bitcoin_functions.json"
         else
             src_dir="$BUILD_ROOT/cov-func/functional_test.coverage"
             src_info="$BUILD_ROOT/cov-func/functional_test_coverage.info"
+            src_functions="$BUILD_ROOT/cov-func/functional_test_functions.json"
         fi
         if [[ -f "$src_info" && -d "$src_dir" ]]; then
             cp -r "$src_dir" "$out/$part"; cp "$src_info" "$out/$part.info"; parts+=("$part")
         else
             echo "No $part coverage report was produced." >&2; status=1
         fi
+        # The function extents, for the per-function numbers of cov-check.
+        if [[ -f "$src_functions" ]]; then cp "$src_functions" "$out/${part}_functions.json"; fi
     done
     # Both builds record the same absolute source paths, so lcov merges them
     # per file. See doc/developer-build.md for the limits of this merge.
@@ -265,7 +275,25 @@ cmd_cov() {
         log "Coverage: $part (${out#"$ROOT"/}/$part/index.html)"
         "${lcov[@]}" --summary "$out/$part.info" 2>&1 | grep -E '^ +(lines|functions|branches)' || true
     done
-    [[ "$status" -eq 0 ]] || { echo "Tests failed or a report is missing; see ${BUILD_ROOT#"$ROOT"/}/cov-*/*.log" >&2; return 1; }
+    if [[ -f "$out/total.info" ]]; then
+        log "Coverage check"
+        cmd_cov_check || status=1
+    fi
+    [[ "$status" -eq 0 ]] || { echo "Tests failed, a report is missing or the coverage check failed; see ${BUILD_ROOT#"$ROOT"/}/cov-*/*.log" >&2; return 1; }
+}
+
+# Checks the reports of "cov" against contrib/devtools/coverage-targets.json
+# (contrib/devtools/coverage-check.py); arguments go to the script.
+# shellcheck disable=SC2120 # cmd_cov passes none, the command line may
+cmd_cov_check() {
+    local out="$DEVBUILD/coverage" functions=() f
+    [[ -f "$out/unit.info" && -f "$out/total.info" ]] ||
+        { echo "No coverage reports in ${out#"$ROOT"/}; run ./dev.sh cov first" >&2; return 1; }
+    for f in "$out/unit_functions.json" "$out/functional_functions.json"; do
+        [[ ! -f "$f" ]] || functions+=("$f")
+    done
+    python3 -I -B "$ROOT/contrib/devtools/coverage-check.py" --unit "$out/unit.info" --all "$out/total.info" \
+        ${functions[@]+--functions "${functions[@]}"} "$@"
 }
 
 # Builds a CI image from ci/containers/ and runs one of its modes on this
@@ -282,7 +310,7 @@ cmd_container() {
         esac
     done
     case "${1:-}" in
-        ""|build|build-low-difficulty|unit-tests|functional-tests|cov-unit) ;;
+        ""|build|build-low-difficulty|unit-tests|functional-tests|cov-unit|cov-functional) ;;
         *) image="$1"; shift ;;
     esac
     local env_args=(-u JOBS -u CCACHE_MAXSIZE)
@@ -310,8 +338,8 @@ cmd_all() {
 }
 
 case "${1:-}" in
-    depends|configure|build|unit|check|ftest|asan|cov|all|container)
-        c="$1"; shift; timed "cmd_$c" "$@" ;;
+    depends|configure|build|unit|check|ftest|asan|cov|cov-check|all|container)
+        c="${1//-/_}"; shift; timed "cmd_$c" "$@" ;;
     # configure picks up the pinned ccache built by depends, so query that one.
     ccache-stats) "$DEPENDS_PREFIX/native/bin/ccache" -s ;;
     *) usage; exit 1 ;;

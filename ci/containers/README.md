@@ -69,11 +69,13 @@ optional mode as its argument:
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
 | `functional-tests` | Low-difficulty build, then the functional tests serially (`test_runner.py -j 1`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 1.x, so it only works in the Ubuntu 22.04 image |
+| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 1.x (Ubuntu 22.04 image only) |
 
 ```bash
 image=$(ci/containers/image-tag.sh ubuntu.22.04)    # pullable once CI on master has published it
 docker run -v /path/to/yacoin:/src "$image" unit-tests
 docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$image" cov-unit
+docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$image" cov-functional
 ```
 
 - The test modes build out of tree in
@@ -157,3 +159,6 @@ The jobs also keep the depends packages, depends sources and ccache in the GitHu
 (`release-<image>-…`, `low-difficulty-<image>-…`, `unit-tests-<image>-…`, `functional-tests-<image>-…`, keyed by the depends
 definitions). Only pushes to `master` save them; the release jobs (including `build-ubuntu-1604-low-difficulty`) build from scratch there.
 Other runs restore the newest matching cache; the low-difficulty job falls back to the 16.04 release cache if it has none of its own.
+The coverage jobs (`coverage-unit`, `coverage-functional`) restore the `functional-tests-<image>-…` cache for their depends packages
+(the same image, packages and prefix) and never save one; they build with ccache off, since their `-O0` objects never match the
+cached ones. `coverage-report` merges their tracefiles and runs `contrib/devtools/coverage-check.py`.

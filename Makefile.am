@@ -179,10 +179,13 @@ release: all-recursive
 
 COVERAGE_UNIT_FILES = unit_baseline.info test_bitcoin.info test_bitcoin_all.info \
   test_bitcoin_coverage.info test_bitcoin.log test_bitcoin.status unit_baseline.log \
-  test_bitcoin.capture-failed
+  test_bitcoin.capture-failed test_bitcoin_functions.json test_bitcoin_functions.log \
+  test_bitcoin.functions-failed
 COVERAGE_FUNCTIONAL_FILES = functional_baseline.info functional_test.info \
   functional_test_all.info functional_test_coverage.info functional_test.log \
-  functional_test.status functional_baseline.log functional_test.capture-failed
+  functional_test.status functional_baseline.log functional_test.capture-failed \
+  functional_test_functions.json functional_test_functions.log \
+  functional_test.functions-failed
 
 if USE_LCOV
 # Coverage of the unit tests (cov-unit) and of the functional tests
@@ -193,7 +196,11 @@ if USE_LCOV
 # Each target zeroes the counters, records a baseline (so files that never run
 # still count), runs the tests, captures, removes vendored and test code, and
 # writes an HTML report plus a summary. Coverage is captured even if tests
-# fail; the target fails afterwards in that case.
+# fail; the target fails afterwards in that case. After the tests, each also
+# writes the extents of the functions of src/ (first and last line, from gcov's
+# JSON output) next to its tracefile, for the per-function numbers of
+# contrib/devtools/coverage-check.py; if that fails, the target fails at the
+# end, after the report.
 #
 # Captures run geninfo in parallel (COV_JOBS processes, default: all cores),
 # and the unit test suites run in parallel too. -b points geninfo at the
@@ -201,15 +208,20 @@ if USE_LCOV
 # relative to src/.
 
 COV_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-# Functional test scripts cov-functional runs in parallel. gcov merges the
-# counters of concurrent processes under a file lock, but at -O0 and next to
-# the baseline capture, timing-sensitive scripts (p2p_invalid_messages' 2 s
-# ping checks during its junk-message flood) failed with 4, so it's serial by
-# default.
-FTEST_JOBS ?= 1
+# cov-functional runs the functional test scripts FTEST_JOBS in parallel
+# (gcov merges the counters of concurrent processes under a file lock), then
+# the scripts in FTEST_SERIAL one at a time: at -O0 and next to other scripts,
+# p2p_invalid_messages' 2 s ping checks during its junk-message flood fail.
+FTEST_JOBS ?= 4
+FTEST_SERIAL ?= p2p_invalid_messages.py
+cov_comma := ,
+cov_space := $(subst ,, )
+FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
 COV_TOOLS = $(abs_top_srcdir)/contrib/devtools
 COV_CAPTURE = $(COV_TOOLS)/coverage-capture.sh --geninfo "$(GENINFO) $(LCOV_OPTS)" \
   --lcov "$(LCOV) $(LCOV_OPTS)" --dir $(abs_builddir)/src --jobs "$(COV_JOBS)"
+COV_FUNCTIONS = $(PYTHON) -I $(COV_TOOLS)/coverage-functions.py --gcov "$(GCOV)" \
+  --dir $(abs_builddir)/src --root $(abs_top_srcdir) --jobs "$(COV_JOBS)"
 # lcov 1.x only: lcov 2.x rejects -r patterns that match nothing.
 LCOV_FILTER = "/usr/*" "*/depends/*" "*/src/leveldb/*" "*/src/secp256k1/*" \
   "*/src/univalue/*" "*/src/crypto/ctaes/*" "*/src/test/*" "*/src/wallet/test/*"
@@ -229,6 +241,8 @@ cov-unit:
 	  $(COV_TOOLS)/run-unit-suites.sh $(abs_builddir)/src/test/test_bitcoin$(EXEEXT) \
 	    test_bitcoin.logs $(COV_JOBS) > test_bitcoin.log 2>&1; echo $$? > test_bitcoin.status; \
 	  wait $$pid || { cat unit_baseline.log >&2; exit 1; }
+	$(COV_FUNCTIONS) --out test_bitcoin_functions.json > test_bitcoin_functions.log 2>&1 || \
+	  { cat test_bitcoin_functions.log >&2; echo functions > test_bitcoin.functions-failed; }
 	@# A crashed test run writes no counters, so the capture is empty; that and a
 	@# failed capture fall back to the baseline (0%) so a report is still made.
 	$(COV_CAPTURE) --test-name test_bitcoin --out test_bitcoin.info || \
@@ -239,6 +253,7 @@ cov-unit:
 	$(GENHTML) $(GENHTML_OPTS) -q test_bitcoin_coverage.info -o test_bitcoin.coverage
 	$(LCOV) $(LCOV_OPTS) --summary test_bitcoin_coverage.info
 	@test ! -f test_bitcoin.capture-failed || { echo "capturing the unit test counters failed (see above); the report shows the baseline only" >&2; exit 1; }
+	@test ! -f test_bitcoin.functions-failed || { echo "writing the function extents failed (see test_bitcoin_functions.log)" >&2; exit 1; }
 	@test "$$(cat test_bitcoin.status)" = 0 || { echo "unit tests failed (see test_bitcoin.log and test_bitcoin.logs/); coverage was captured anyway" >&2; exit 1; }
 
 cov-functional:
@@ -251,12 +266,22 @@ cov-functional:
 	if test "$(abs_top_srcdir)" != "$(abs_top_builddir)"; then \
 	  ln -sf $(abs_top_srcdir)/test/functional/test_runner.py test/functional/test_runner.py; fi
 	$(LCOV) $(LCOV_OPTS) -q -z -d $(abs_builddir)/src
-	@# The baseline only reads .gcno files, so it runs while the tests run.
+	@# The baseline only reads .gcno files, so it runs while the tests run. The
+	@# scripts in FTEST_SERIAL run after the others, alone, on the cache the
+	@# first run made.
 	nice -n 10 $(COV_CAPTURE) --initial --out functional_baseline.info > functional_baseline.log 2>&1 & pid=$$!; \
 	  trap 'kill $$pid 2>/dev/null' INT TERM HUP; \
-	  test/functional/test_runner.py -j $(FTEST_JOBS) --tmpdirprefix=$(abs_builddir)/test/tmp > functional_test.log 2>&1; \
-	  echo $$? > functional_test.status; \
+	  status=0; \
+	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_EXCLUDE) --tmpdirprefix=$(abs_builddir)/test/tmp \
+	    > functional_test.log 2>&1 || status=1; \
+	  if test -n "$(strip $(FTEST_SERIAL))"; then \
+	    test/functional/test_runner.py -j 1 --keepcache --tmpdirprefix=$(abs_builddir)/test/tmp $(FTEST_SERIAL) \
+	      >> functional_test.log 2>&1 || status=1; \
+	  fi; \
+	  echo $$status > functional_test.status; \
 	  wait $$pid || { cat functional_baseline.log >&2; exit 1; }
+	$(COV_FUNCTIONS) --out functional_test_functions.json > functional_test_functions.log 2>&1 || \
+	  { cat functional_test_functions.log >&2; echo functions > functional_test.functions-failed; }
 	@# A crashed test run writes no counters, so the capture is empty; that and a
 	@# failed capture fall back to the baseline (0%) so a report is still made.
 	$(COV_CAPTURE) --test-name functional_tests --out functional_test.info || \
@@ -267,6 +292,7 @@ cov-functional:
 	$(GENHTML) $(GENHTML_OPTS) -q functional_test_coverage.info -o functional_test.coverage
 	$(LCOV) $(LCOV_OPTS) --summary functional_test_coverage.info
 	@test ! -f functional_test.capture-failed || { echo "capturing the functional test counters failed (see above); the report shows the baseline only" >&2; exit 1; }
+	@test ! -f functional_test.functions-failed || { echo "writing the function extents failed (see functional_test_functions.log)" >&2; exit 1; }
 	@test "$$(cat functional_test.status)" = 0 || { echo "functional tests failed (see functional_test.log); coverage was captured anyway" >&2; exit 1; }
 
 .PHONY: cov-unit cov-functional
@@ -281,7 +307,7 @@ endif
 
 dist_noinst_SCRIPTS = autogen.sh
 
-EXTRA_DIST = $(top_srcdir)/share/genbuild.sh contrib/devtools/coverage-capture.sh contrib/devtools/run-unit-suites.sh qa/pull-tester/rpc-tests.sh qa/pull-tester/run-bitcoin-cli qa/rpc-tests $(DIST_DOCS) $(WINDOWS_PACKAGING) $(OSX_PACKAGING)
+EXTRA_DIST = $(top_srcdir)/share/genbuild.sh contrib/devtools/coverage-capture.sh contrib/devtools/coverage-functions.py contrib/devtools/run-unit-suites.sh qa/pull-tester/rpc-tests.sh qa/pull-tester/run-bitcoin-cli qa/rpc-tests $(DIST_DOCS) $(WINDOWS_PACKAGING) $(OSX_PACKAGING)
 
 CLEANFILES = $(OSX_DMG) $(BITCOIN_WIN_INSTALLER)
 

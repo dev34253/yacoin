@@ -527,3 +527,192 @@ jobs:
           name: yacoin-cli-macos
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
           if-no-files-found: error
+  coverage-unit:
+    # Unit test coverage: mainnet coverage build (--enable-lcov, -O0) and
+    # "make cov-unit" (cov-unit mode of the yacoin-build image). Restores the
+    # functional-tests job's cache for its depends packages (same image, same
+    # no-Qt packages and prefix) and never saves a cache of its own; ccache is
+    # off, since -O0 objects never hit the cached -O1 ones.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ubuntu.22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - name: cache dir and key
+        run: |
+          echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.COV_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            functional-tests-${{ env.IMAGE }}-
+      - name: build and measure the unit test coverage
+        # Below the job timeout, so a hang fails this step and the logs are
+        # still uploaded.
+        timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$COV_CACHE"
+          docker run --rm --init --name coverage-unit -v "$GITHUB_WORKSPACE":/src -v "$COV_CACHE":/cache \
+            -e CCACHE_DISABLE=1 "$IMAGE_TAG" cov-unit
+      - name: stop the container and make the build readable
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f coverage-unit 2>/dev/null || true
+          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
+      - uses: actions/upload-artifact@v6
+        # Also when the tests failed: the make targets capture coverage anyway.
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-unit
+          path: |
+            build/docker-${{ env.IMAGE }}/cov-unit/test_bitcoin_coverage.info
+            build/docker-${{ env.IMAGE }}/cov-unit/test_bitcoin_functions.json
+            build/docker-${{ env.IMAGE }}/cov-unit/test_bitcoin.coverage/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: coverage-unit-logs
+          path: |
+            build/docker-*/cov-unit/*.log
+            build/docker-*/cov-unit/test_bitcoin.logs/
+            build/docker-*/cov-unit/config.log
+          retention-days: 14
+  coverage-functional:
+    # Functional test coverage: low-difficulty coverage build and "make
+    # cov-functional" (cov-functional mode of the yacoin-build image; the
+    # scripts run 4 in parallel, then the timing-sensitive ones alone). Cache as
+    # in coverage-unit: the functional-tests job's, restored only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ubuntu.22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - name: cache dir and key
+        run: |
+          echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.COV_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            functional-tests-${{ env.IMAGE }}-
+      - name: build and measure the functional test coverage
+        # Below the job timeout, so a hang fails this step and the logs are
+        # still uploaded.
+        timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$COV_CACHE"
+          docker run --rm --init --name coverage-functional -v "$GITHUB_WORKSPACE":/src -v "$COV_CACHE":/cache \
+            -e CCACHE_DISABLE=1 "$IMAGE_TAG" cov-functional
+      - name: stop the container and make the build and logs readable
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f coverage-functional 2>/dev/null || true
+          # The nodes write their datadirs with umask 077 as root.
+          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
+      - uses: actions/upload-artifact@v6
+        # Also when the tests failed: the make targets capture coverage anyway.
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-functional
+          path: |
+            build/docker-${{ env.IMAGE }}/cov-functional/functional_test_coverage.info
+            build/docker-${{ env.IMAGE }}/cov-functional/functional_test_functions.json
+            build/docker-${{ env.IMAGE }}/cov-functional/functional_test.coverage/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: coverage-functional-logs
+          path: |
+            build/docker-*/cov-functional/*.log
+            build/docker-*/cov-functional/test/tmp/test_runner_*/**/*.log
+            build/docker-*/cov-functional/test/tmp/test_runner_*/**/std*/*
+          retention-days: 14
+  coverage-report:
+    # Merges the two coverage jobs' tracefiles (lcov 1.14 of the 22.04 image,
+    # with configure's LCOV_OPTS and the Makefile's GENHTML_OPTS), writes the
+    # combined HTML report, and checks the files of
+    # contrib/devtools/coverage-targets.json with coverage-check.py (after its
+    # own tests). The table goes to the job summary; the job fails when the
+    # check fails.
+    needs: [coverage-unit, coverage-functional]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAGE: ubuntu.22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - uses: actions/download-artifact@v7
+        with:
+          name: coverage-unit
+          path: coverage/unit
+      - uses: actions/download-artifact@v7
+        with:
+          name: coverage-functional
+          path: coverage/functional
+      - name: merge, report and check
+        timeout-minutes: 15
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          status=0
+          docker run --rm --init --name coverage-report -v "$GITHUB_WORKSPACE":/src -w /src --entrypoint bash "$IMAGE_TAG" -c '
+            set -euo pipefail
+            python3 -I -B -m unittest discover -s contrib/devtools/test
+            # LCOV_OPTS of configure.ac and GENHTML_OPTS of Makefile.am; keep them in step.
+            lcov_opts=(--rc lcov_branch_coverage=1 --rc geninfo_no_exception_branch=1)
+            lcov "${lcov_opts[@]}" -q -a coverage/unit/test_bitcoin_coverage.info \
+              -a coverage/functional/functional_test_coverage.info -o coverage/total.info
+            genhtml --branch-coverage --demangle-cpp -s -q coverage/total.info -o coverage/total
+            python3 -I -B contrib/devtools/coverage-check.py --root /src \
+              --unit coverage/unit/test_bitcoin_coverage.info --all coverage/total.info \
+              --functions coverage/unit/test_bitcoin_functions.json coverage/functional/functional_test_functions.json \
+              --markdown coverage/summary.md' || status=$?
+          if [ -f coverage/summary.md ]; then cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$status"
+      - name: make the reports readable
+        if: always()
+        run: |
+          docker rm -f coverage-report 2>/dev/null || true
+          if [ -d coverage ]; then sudo chown -R "$(id -u):$(id -g)" coverage; fi
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-combined
+          path: |
+            coverage/total.info
+            coverage/total/
+          if-no-files-found: ignore
+          retention-days: 14

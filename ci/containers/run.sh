@@ -14,7 +14,7 @@ Usage: ci/containers/run.sh [options] <image> [mode]
 
   image   $(cd "$HERE" && ls Dockerfile.* | sed 's/^Dockerfile\.//' | tr '\n' ' ')
   mode    Linux images: build (default), build-low-difficulty, unit-tests,
-          functional-tests, cov-unit
+          functional-tests, cov-unit, cov-functional
           windows, macos: build (the only mode)
 
 Options:
@@ -25,11 +25,11 @@ Options:
                     unique per run)
   --no-image-build  run the existing local image instead of building it first
 
-The image is tagged $LOCAL_REPO:<image>. JOBS, BUILDVERSION, CCACHE_MAXSIZE
-and CCACHE_COMPRESS are passed to the container if set. The container runs as
-root, as in CI; afterwards the files it wrote are given back to the caller
-(not needed and not done with rootless Docker or Podman, where container root
-already is the caller).
+The image is tagged $LOCAL_REPO:<image>. JOBS, FTEST_JOBS, BUILDVERSION,
+CCACHE_MAXSIZE and CCACHE_COMPRESS are passed to the container if set. The
+container runs as root, as in CI; afterwards the files it wrote are given back
+to the caller (not needed and not done with rootless Docker or Podman, where
+container root already is the caller).
 EOF
 }
 
@@ -114,7 +114,7 @@ main() {
         run+=(-v "$cache:/cache")
     fi
     local v
-    for v in JOBS BUILDVERSION CCACHE_MAXSIZE CCACHE_COMPRESS; do
+    for v in JOBS FTEST_JOBS BUILDVERSION CCACHE_MAXSIZE CCACHE_COMPRESS; do
         [[ -z "${!v:-}" ]] || run+=(-e "$v")
     done
 

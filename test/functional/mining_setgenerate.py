@@ -6,8 +6,12 @@
 
 - Defaults and argument errors.
 - setgenerate(true, 1) mines blocks paying a wallet key (P2PK) and reserves
-  that key; setgenerate(false) stops the thread before it returns.
-- The coinbase key goes back to the keypool (known failure R-4).
+  that key; setgenerate(false) stops the thread before it returns. A block the
+  thread finds while it is being stopped can be stored without being
+  connected (the stop interrupts block processing in between); the next chain
+  activation connects it.
+- The coinbase key goes back to the keypool (known failure R-4), unless a
+  block paying it is connected after the thread returned it.
 - A processor limit of 0 switches generation off; a later setgenerate(true)
   then reports generation on with no thread (known failure M-B3).
 - -gen=1 at startup mines; the node stops cleanly while mining.
@@ -90,10 +94,13 @@ class SetGenerateTest(BitcoinTestFramework):
         assert_equal(node.getwalletinfo()['keypoolsize'], keypool - 1)
 
         self.log.info("Stopping: the thread has ended when the call returns")
+        log_start = os.path.getsize(self.debug_log(node))
         assert_equal(node.setgenerate(False), result)
+        self.connect_stored_blocks(node)
         new_height = node.getblockcount()
         assert_equal(node.getgenerate(), False)
         assert_equal(node.getmininginfo()['generate'], False)
+        # nothing more comes: no thread mines on
         self.sync_blocks(self.nodes[:2])
         assert_equal(node.getblockcount(), new_height)
 
@@ -112,9 +119,46 @@ class SetGenerateTest(BitcoinTestFramework):
 
         self.log.info("The coinbase key goes back to the keypool")
         address = node.getnewaddress()
-        self.known_failure("R-4 (%s)" % BUG_CARD,
-                           lambda: self.assert_not_coinbase_address(address, coinbase_address),
-                           expected="returned the coinbase address")
+        if self.coinbase_key_used_after_return(node, log_start):
+            # A block paying the key was connected after the thread had
+            # returned the key, so the wallet took it out of the keypool again.
+            self.log.info("A block paying the key was connected after the thread returned it")
+            self.assert_not_coinbase_address(address, coinbase_address)
+        else:
+            self.known_failure("R-4 (%s)" % BUG_CARD,
+                               lambda: self.assert_not_coinbase_address(address, coinbase_address),
+                               expected="returned the coinbase address")
+
+    @staticmethod
+    def debug_log(node):
+        return os.path.join(node.datadir, 'debug.log')
+
+    def connect_stored_blocks(self, node):
+        """Connect the blocks that are stored but not connected (getchaintips
+        "valid-headers"): submitblock runs chain activation for a block the
+        node already has. A tip that gets connected in the meantime (when the
+        peer sends the block back) makes it "duplicate"; nothing else
+        changes."""
+        for tip in node.getchaintips():
+            if tip['status'] == 'valid-headers':
+                self.log.info("Stored block %s: connecting it" % tip['hash'])
+                node.submitblock(node.getblock(tip['hash'], False))
+        assert_equal([tip['status'] for tip in node.getchaintips()], ['active'])
+
+    def coinbase_key_used_after_return(self, node, log_start):
+        """Whether the wallet marked the miner's key as used after the
+        thread returned it to the keypool (debug.log since log_start). A
+        reserved key is in no pool, so the wallet can mark it as used only
+        after it was returned, but the thread writes its "keypool return"
+        line after it has released the wallet lock: the two lines may be in
+        either order."""
+        with open(self.debug_log(node), encoding='utf-8') as f:
+            f.seek(log_start)
+            text = f.read()
+        returned = re.search(r"keypool return (\d+)\n", text)
+        if not returned:
+            return False
+        return re.search(r"keypool index %s removed\n" % returned.group(1), text) is not None
 
     @staticmethod
     def assert_not_coinbase_address(address, coinbase_address):
@@ -183,7 +227,7 @@ class SetGenerateTest(BitcoinTestFramework):
     def start_miner_and_wait(node):
         """setgenerate(true, 1), then wait for the miner thread to end (a
         miner without a coinbase script ends at once) or the node to exit."""
-        log_path = os.path.join(node.datadir, 'debug.log')
+        log_path = SetGenerateTest.debug_log(node)
         start = os.path.getsize(log_path)
 
         def miner_ended():
