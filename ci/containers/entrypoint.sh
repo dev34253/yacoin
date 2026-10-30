@@ -15,7 +15,8 @@
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
 #                     needs lcov 1.x (Ubuntu 22.04 image only)
 #   cov-functional    low-difficulty coverage build and "make cov-functional"
-#                     (functional test scripts JOBS in parallel); needs lcov 1.x
+#                     (functional test scripts FTEST_JOBS in parallel); needs
+#                     lcov 1.x
 #
 # The test modes build out of tree in /src/build/docker-<image>/<mode>, which
 # is recreated on every run. If a cache dir is mounted at /cache, depends
@@ -23,7 +24,9 @@
 # image (only one container per image should use the cache at a time).
 #
 # Environment: JOBS (default: number of CPUs), BUILDVERSION (passed through
-# to the version string). SRC_DIR and CACHE_DIR override /src and /cache.
+# to the version string), FTEST_JOBS (cov-functional: functional test scripts
+# in parallel, default 4, the number its run times were measured with). SRC_DIR
+# and CACHE_DIR override /src and /cache.
 set -euo pipefail
 
 MODE="${1:-build}"
@@ -60,6 +63,7 @@ case "$MODE" in
     *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
+[[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
 
 cd "$SRC"
 echo "== yacoin-build ($IMAGE): $MODE in $SRC with $JOBS jobs =="
@@ -197,7 +201,7 @@ else
             echo "== Coverage report: $builddir/test_bitcoin.coverage/index.html =="
             ;;
         cov-functional)
-            make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" FTEST_JOBS="$JOBS" cov-functional
+            make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" FTEST_JOBS="${FTEST_JOBS:-4}" cov-functional
             echo "== Coverage report: $builddir/functional_test.coverage/index.html =="
             ;;
     esac
