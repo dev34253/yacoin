@@ -594,7 +594,7 @@ jobs:
   coverage-functional:
     # Functional test coverage: low-difficulty coverage build and "make
     # cov-functional" (cov-functional mode of the yacoin-build image; the
-    # scripts run 4 in parallel, then p2p_invalid_messages.py alone). Cache as
+    # scripts run 4 in parallel, then the timing-sensitive ones alone). Cache as
     # in coverage-unit: the functional-tests job's, restored only.
     runs-on: ubuntu-latest
     timeout-minutes: 60

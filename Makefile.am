@@ -210,10 +210,12 @@ if USE_LCOV
 COV_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 # cov-functional runs the functional test scripts FTEST_JOBS in parallel
 # (gcov merges the counters of concurrent processes under a file lock), then
-# the scripts in FTEST_SERIAL one at a time: at -O0 and next to other scripts,
-# p2p_invalid_messages' 2 s ping checks during its junk-message flood fail.
+# the scripts in FTEST_SERIAL one at a time. At -O0 and next to other scripts,
+# p2p_invalid_messages' 2 s ping checks during its junk-message flood fail, and
+# mining_setgenerate's miner finds more blocks than its checks of the coinbase
+# key and the block count expect.
 FTEST_JOBS ?= 4
-FTEST_SERIAL ?= p2p_invalid_messages.py
+FTEST_SERIAL ?= p2p_invalid_messages.py mining_setgenerate.py
 cov_comma := ,
 cov_space := $(subst ,, )
 FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
