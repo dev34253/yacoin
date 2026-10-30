@@ -58,7 +58,7 @@ with this checkout mounted:
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, `cov-unit` (22.04 only); `windows` and `macos` only build.
+`unit-tests`, `functional-tests`, `cov-unit` and `cov-functional` (22.04 only); `windows` and `macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
@@ -174,18 +174,21 @@ two coverage builds (`--enable-lcov`, `-O0 -g`):
 | Build | Runs | Make target |
 |---|---|---|
 | `build/cov-unit` | `test_bitcoin` (all unit tests) | `make cov-unit` |
-| `build/cov-func` | All functional tests (serially unless `FTEST_JOBS` is set) | `make cov-functional` |
+| `build/cov-func` | All functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`) | `make cov-functional` |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests
 fail. It then removes vendored and test code (leveldb, secp256k1, univalue, ctaes,
-`src/test`, `src/wallet/test`) and writes an HTML report. `./dev.sh cov`
-then merges both results and writes line, function and branch coverage to
-`.devbuild/coverage/`:
+`src/test`, `src/wallet/test`) and writes an HTML report. Each also writes
+the extents of the functions of `src/` (first and last line, from gcov's JSON
+output; `contrib/devtools/coverage-functions.py`) next to its tracefile.
+`./dev.sh cov` then merges both results, writes line, function and branch
+coverage to `.devbuild/coverage/` and runs the coverage check
+(`./dev.sh cov-check`, below), whose result counts in its exit status:
 
-- `unit/index.html`
-- `functional/index.html`
-- `total/index.html`, with both merged
+- `unit/index.html`, `unit.info`, `unit_functions.json`
+- `functional/index.html`, `functional.info`, `functional_functions.json`
+- `total/index.html`, `total.info`, with both merged
 
 Notes:
 
@@ -196,13 +199,13 @@ Notes:
   approximate. Line and function coverage aren't affected.
 - Only lcov 1.x is supported, and configure checks for it. lcov 2.x rejects
   filter patterns that match nothing and has renamed the branch-coverage option.
-- With both builds cached, a full run takes about 27 minutes on 8 cores:
-  unit coverage about 5½ minutes, functional coverage about 21 minutes. Most
-  of that was the functional tests run serially (about 20 minutes at `-O0`,
-  measured before they ran in parallel and lost a 10 s sleep per node
-  connection; not re-measured since) and
-  `transaction_tests/test_big_transaction` (about 3 minutes). Building both
-  `-O0` variants from scratch adds about 13 minutes.
+- In the build image (`./dev.sh container cov-unit`, `cov-functional`), with
+  the depends packages cached and without ccache, `cov-unit` takes about 13
+  minutes on 8 cores (build about 5, tests about 5, captures about 2) and
+  `cov-functional` about 19 (build about 6, the scripts in parallel about 7,
+  `p2p_invalid_messages.py` alone about 3½, captures about 2); with 4 cores
+  (`docker run --cpus=4`) about 15 and 20 minutes. The unit test time is
+  bounded by `transaction_tests/test_big_transaction` (about 3 minutes).
 - To keep that time down, lcov captures run `geninfo` in parallel
   (`contrib/devtools/coverage-capture.sh`), the baseline is captured while
   the tests run, and the unit test suites run in parallel
@@ -222,6 +225,50 @@ Notes:
   `CONFIG_SITE` is set for make too, or if the build was configured with
   `--prefix=$PWD/depends/<host>`. `dev.sh` exports `CONFIG_SITE` for this
   reason.
+
+### Coverage targets
+
+`contrib/devtools/coverage-targets.json` holds the coverage targets: a
+tolerance, the recorded overall unit line coverage of `src/`, the tiers
+(`tier-1`: 90 % of lines and 60 % of branches from unit tests; `tier-2`: 90 %
+of lines from unit and functional tests together and 50 % from unit tests),
+and one entry per file, or per named functions of a file, with a target and a
+`met` flag, or with recorded values. It is strict JSON and holds nothing else.
+`contrib/devtools/coverage-check.py` checks the tracefiles against it:
+
+```sh
+./dev.sh cov-check                                # the table, after ./dev.sh cov
+./dev.sh cov-check --per-function src/init.cpp    # coverage per function of one file
+```
+
+The check prints unit and combined ("all") line and branch coverage of every
+entry, its target and its status, and the overall unit line coverage of
+`src/`. It **fails** when an entry with `"met": true` is below its target, or
+when a recorded value (or the overall value) is more than the tolerance (0.1
+percentage point) below the recorded value. It only reports entries below
+their target, entries that meet their target but are not recorded as met
+("record as met"), and recorded values that rose by at least the tolerance
+("record the new value"). A metric with nothing instrumented (no branches)
+counts as met. Recording is manual: the change that meets a target sets
+`"met": true`, and the one that raises a recorded value writes the new value,
+in the same change.
+
+A function target, and `--per-function`, count the lines and branches inside
+each function's extent as gcov reports it (`*_functions.json`), so a lambda's
+lines count in the enclosing function and in its own row, and the lines
+between functions count nowhere. Names in a target's `functions` list match
+the demangled name without return type, parameter list and qualifiers
+(`CScript::operator<<`, `HelpMessage`); a lambda keeps the enclosing function,
+e.g. `ns::f(int)::{lambda(int)#1}::operator()`. A name that matches nothing is
+an error. The script's own tests:
+`python3 -I -B -m unittest discover -s contrib/devtools/test`.
+
+CI measures the same in three jobs: `coverage-unit` and `coverage-functional`
+(the `cov-unit` and `cov-functional` modes of the Ubuntu 22.04 image) upload
+their tracefiles, function extents and HTML reports as artifacts;
+`coverage-report` merges them, uploads the combined tracefile and report, and
+runs the check (with `--root /src`, where the image mounts the tree), with
+the table in the job summary.
 
 ## Reference timings
 
@@ -269,5 +316,5 @@ The parallel unit test time is bounded by `transaction_tests/test_big_transactio
     hosts build in `build/<host>/<variant>/`.
   - `JOBS`: make jobs, default the number of cores.
   - `UNIT_JOBS`: parallel unit test suites, default `JOBS`.
-  - `FTEST_JOBS`: parallel functional test scripts, default 4 in `ftest`
-    and 1 in `cov`.
+  - `FTEST_JOBS`: parallel functional test scripts, default 4 (`ftest` and
+    `cov`).
