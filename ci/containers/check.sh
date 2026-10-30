@@ -182,6 +182,8 @@ step_smoke() {
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
             fi
         done
+        # The out-of-tree configure left root-owned build directories.
+        docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${stub##*/}"
     done
 }
 
