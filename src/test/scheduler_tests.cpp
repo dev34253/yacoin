@@ -11,6 +11,8 @@
 #include <boost/thread.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <future>
+
 BOOST_AUTO_TEST_SUITE(scheduler_tests)
 
 static void microTask(CScheduler& s, boost::mutex& mutex, int& counter, int delta, boost::chrono::system_clock::time_point rescheduleTime)
@@ -110,6 +112,42 @@ BOOST_AUTO_TEST_CASE(manythreads)
         counterSum += counter[i];
     }
     BOOST_CHECK_EQUAL(counterSum, 200);
+}
+
+BOOST_AUTO_TEST_CASE(idle_thread_runs_a_later_task)
+{
+    // A service thread started on an empty queue takes the idle branch (it
+    // releases the lock while it adds entropy, then waits), runs a task
+    // scheduled after it started, and stops.
+    CScheduler scheduler;
+    boost::thread service(boost::bind(&CScheduler::serviceQueue, &scheduler));
+    // serviceQueue holds the scheduler's lock from counting itself until it
+    // has found the queue empty, so once it is counted it is in the idle
+    // branch, and the task below is scheduled only after that.
+    while (!scheduler.AreThreadsServicingQueue()) {
+        boost::this_thread::yield();
+    }
+    std::promise<void> ran;
+    scheduler.schedule([&ran] { ran.set_value(); });
+    ran.get_future().wait();
+    scheduler.stop();
+    service.join();
+    BOOST_CHECK(!scheduler.AreThreadsServicingQueue());
+}
+
+BOOST_AUTO_TEST_CASE(idle_thread_ends_when_interrupted)
+{
+    // A service thread on an empty queue waits for a task; the wait is a
+    // boost interruption point, so interrupting the thread (as the node's
+    // shutdown does with its thread group) ends it, and it is no longer
+    // counted. Nothing before the wait is an interruption point, so
+    // interrupting at once still ends the thread in the wait, after the idle
+    // branch.
+    CScheduler scheduler;
+    boost::thread service(boost::bind(&CScheduler::serviceQueue, &scheduler));
+    service.interrupt();
+    service.join();
+    BOOST_CHECK(!scheduler.AreThreadsServicingQueue());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

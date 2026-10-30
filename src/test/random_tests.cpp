@@ -6,6 +6,8 @@
 
 #include "test/test_bitcoin.h"
 
+#include <string.h>
+
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(random_tests, BasicTestingSetup)
@@ -13,6 +15,18 @@ BOOST_FIXTURE_TEST_SUITE(random_tests, BasicTestingSetup)
 BOOST_AUTO_TEST_CASE(osrandom_tests)
 {
     BOOST_CHECK(Random_SanityCheck());
+}
+
+BOOST_AUTO_TEST_CASE(seed_sleep_then_strong_random)
+{
+    // RandAddSeedSleep (which an idle scheduler thread calls) adds to the
+    // state GetStrongRandBytes draws from; later draws still differ.
+    RandAddSeedSleep();
+    unsigned char a[32], b[32];
+    GetStrongRandBytes(a, sizeof(a));
+    GetStrongRandBytes(b, sizeof(b));
+    BOOST_CHECK(memcmp(a, b, sizeof(a)) != 0);
+    BOOST_CHECK(GetRandHash() != GetRandHash());
 }
 
 BOOST_AUTO_TEST_CASE(fastrandom_tests)
