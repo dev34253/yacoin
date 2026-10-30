@@ -147,13 +147,18 @@ class SetGenerateTest(BitcoinTestFramework):
 
     def coinbase_key_used_after_return(self, node, log_start):
         """Whether the wallet marked the miner's key as used after the
-        thread returned it to the keypool (debug.log since log_start)."""
+        thread returned it to the keypool (debug.log since log_start). A
+        reserved key is in no pool, so the wallet can mark it as used only
+        after it was returned, but the thread writes its "keypool return"
+        line after it has released the wallet lock: the two lines may be in
+        either order."""
         with open(self.debug_log(node), encoding='utf-8') as f:
             f.seek(log_start)
             text = f.read()
         returned = re.search(r"keypool return (\d+)\n", text)
-        assert returned, "the miner thread returned no key"
-        return re.search(r"keypool index %s removed\n" % returned.group(1), text[returned.end():]) is not None
+        if not returned:
+            return False
+        return re.search(r"keypool index %s removed\n" % returned.group(1), text) is not None
 
     @staticmethod
     def assert_not_coinbase_address(address, coinbase_address):
@@ -222,7 +227,7 @@ class SetGenerateTest(BitcoinTestFramework):
     def start_miner_and_wait(node):
         """setgenerate(true, 1), then wait for the miner thread to end (a
         miner without a coinbase script ends at once) or the node to exit."""
-        log_path = os.path.join(node.datadir, 'debug.log')
+        log_path = SetGenerateTest.debug_log(node)
         start = os.path.getsize(log_path)
 
         def miner_ended():
