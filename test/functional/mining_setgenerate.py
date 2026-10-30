@@ -96,10 +96,10 @@ class SetGenerateTest(BitcoinTestFramework):
         self.log.info("Stopping: the thread has ended when the call returns")
         log_start = os.path.getsize(self.debug_log(node))
         assert_equal(node.setgenerate(False), result)
-        assert_equal(node.getgenerate(), False)
-        assert_equal(node.getmininginfo()['generate'], False)
         self.connect_stored_blocks(node)
         new_height = node.getblockcount()
+        assert_equal(node.getgenerate(), False)
+        assert_equal(node.getmininginfo()['generate'], False)
         # nothing more comes: no thread mines on
         self.sync_blocks(self.nodes[:2])
         assert_equal(node.getblockcount(), new_height)
