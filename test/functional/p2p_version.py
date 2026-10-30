@@ -67,15 +67,21 @@ class HoldingRelay:
     def release(self):
         self.released.set()
 
+    def join(self, timeout):
+        """Whether the relay has ended within timeout seconds."""
+        self.thread.join(timeout=timeout)
+        return not self.thread.is_alive()
+
     def run(self):
-        self.listener.settimeout(60)
+        self.listener.settimeout(10)
         try:
             outbound, _ = self.listener.accept()
         finally:
             self.listener.close()
-        inbound = socket.create_connection(("127.0.0.1", self.target_port))
+        inbound = None
         held = b""
         try:
+            inbound = socket.create_connection(("127.0.0.1", self.target_port))
             while True:
                 # The timeout only lets a release() be seen while no data arrives.
                 readable, _, _ = select.select([outbound, inbound], [], [], 0.05)
@@ -94,7 +100,8 @@ class HoldingRelay:
             return
         finally:
             outbound.close()
-            inbound.close()
+            if inbound is not None:
+                inbound.close()
 
 
 class NoVerackPeer(P2PInterface):
@@ -286,16 +293,16 @@ class VersionTest(BitcoinTestFramework):
         wait_until(lambda: peers(node) == [], timeout=10)
         # The node connects to itself through a relay on a port of this
         # test's range that no node uses.
-        relay_address = "127.0.0.1:%d" % p2p_port(1)
-        relay = HoldingRelay(p2p_port(1), p2p_port(0))
+        relay_port = p2p_port(1)
+        relay_address = "127.0.0.1:%d" % relay_port
+        relay = HoldingRelay(relay_port, p2p_port(0))
         with node.assert_debug_log(["connected to self at 127.0.0.1:"], timeout=10):
             node.addnode(relay_address, "onetry")
             wait_until(lambda: [p['inbound'] for p in peers(node) if p['addr'] == relay_address] == [False],
                        timeout=10)
             relay.release()
         wait_until(lambda: peers(node) == [], timeout=10)
-        relay.thread.join(timeout=10)
-        assert not relay.thread.is_alive()
+        assert relay.join(timeout=10)
 
     def test_malformed_payloads(self):
         node = self.nodes[0]
