@@ -9,12 +9,13 @@ under ROOT/src/ to FILE: {"version": 1, "files": {"src/x.cpp": [{"demangled_name
 ..., "start_line": ..., "end_line": ...}, ...]}}. Used by "make cov-unit" and
 "make cov-functional"; coverage-check.py reads the result.
 
-Source paths in the .gcno files are relative to the compile directory; like
-geninfo's -b, they are resolved against DIR (the build's src/ directory). CMD
-is split on spaces. gcov is given a link to each .gcno file in a directory of
-its own, so it never reads the .gcda files the tests may be writing (the
-extents come from the .gcno files alone); it only warns about the missing
-counters. A gcov failure fails the script and writes nothing.
+Source paths in the .gcno files are relative to the compile directory, which
+gcov reports as current_working_directory; without it they are resolved
+against DIR (the build's src/ directory), as geninfo's -b does. CMD is split
+on spaces. gcov is given a link to each .gcno file in a directory of its own,
+so it never reads the .gcda files (the extents come from the .gcno files
+alone); it only warns about the missing counters. A gcov failure fails the
+script and writes nothing.
 """
 
 import argparse
@@ -34,9 +35,10 @@ def extents_from_gcov(data, build_dir, root):
     """{path relative to root: {(demangled name, start line, end line)}} for files under root/src/."""
     try:
         files = data["files"]
+        base = data.get("current_working_directory") or build_dir
         result = {}
         for f in files:
-            path = os.path.normpath(os.path.join(build_dir, f["file"]))
+            path = os.path.normpath(os.path.join(base, f["file"]))
             rel = os.path.relpath(path, root)
             functions = [(fn["demangled_name"], int(fn["start_line"]), int(fn["end_line"])) for fn in f["functions"]]
             if rel.startswith("src" + os.sep):

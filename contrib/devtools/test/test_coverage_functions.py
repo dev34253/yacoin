@@ -45,9 +45,21 @@ class ExtentsFromGcovTest(unittest.TestCase):
             gcov_file("../../../../build/docker-x/depends/include/boost/a.hpp", [("boost::a()", 1, 2)]),
             gcov_file("../../../../src/./wallet/../init.cpp", [("InitLogging()", 30, 40)]),
         ]}
+        del data["current_working_directory"]
         got = cf.extents_from_gcov(data, "/repo/build/docker-x/cov-unit/src", "/repo")
         self.assertEqual(got, {"src/init.cpp": {("HelpMessage(HelpMessageMode)", 10, 20), ("InitLogging()", 30, 40)},
                                "src/util.h": {("f()", 3, 4)}})
+
+    def test_paths_resolved_against_the_compile_directory(self):
+        # gcov reports the directory the object was compiled in; --dir is
+        # only the fallback.
+        data = {"format_version": "1", "current_working_directory": "/repo/build/src/univalue", "files": [
+            gcov_file("../../../src/univalue/lib/univalue.cpp", [("UniValue::clear()", 5, 9)]),
+            gcov_file("../../../src/init.cpp", [("f()", 1, 2)]),
+        ]}
+        got = cf.extents_from_gcov(data, "/repo/build/src", "/repo")
+        self.assertEqual(got, {"src/univalue/lib/univalue.cpp": {("UniValue::clear()", 5, 9)},
+                               "src/init.cpp": {("f()", 1, 2)}})
 
     def test_bad_gcov_output_is_an_error(self):
         for data in [{}, {"files": [{"file": "a.cpp"}]},
