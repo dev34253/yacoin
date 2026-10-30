@@ -334,6 +334,11 @@ class CheckTest(TempDirTest):
         self.assertEqual(len(report.failures), 2)
         self.assertIn("89.96 % (2249/2500) < 90.00", report.failures[0])
         self.assertIn("89.96 % (2249/2500), recorded 90.10", report.failures[1])
+        # 22499 of 25000 lines: 89.996 %, rounded down so it never reads as the target.
+        self.unit["src/big.cpp"] = self.cov({k: 1 if k <= 22499 else 0 for k in range(1, 25001)}, {})
+        report = self.run_check([{"group": "tier-1", "file": "src/big.cpp", "target": {"unit_lines": 90.0},
+                                  "met": True}])
+        self.assertIn("89.99 % (22499/25000) < 90.00", report.failures[0])
 
     def test_unmet_target_below_is_reported_without_failing(self):
         report = self.run_check([{"group": "tier-1", "file": "src/b.cpp", "target": "tier-1", "met": False}])

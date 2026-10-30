@@ -48,6 +48,7 @@ $GITHUB_STEP_SUMMARY).
 import argparse
 import collections
 import json
+import math
 import os
 import re
 import sys
@@ -403,8 +404,8 @@ def _fmt(value):
 
 
 def _exact(hit, found):
-    """For failure and notice lines: two decimals and the counts, so 89.96 never reads as 90.0."""
-    return "%.2f %% (%d/%d)" % (percent(hit, found), hit, found)
+    """For failure and notice lines: the counts and two decimals rounded down, so a value below a target never reads as equal to it."""
+    return "%.2f %% (%d/%d)" % (math.floor(percent(hit, found) * 100 + 1e-6) / 100, hit, found)
 
 
 def check(targets, unit, total, extents):
