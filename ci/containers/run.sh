@@ -14,7 +14,7 @@ Usage: ci/containers/run.sh [options] <image> [mode]
 
   image   $(cd "$HERE" && ls Dockerfile.* | sed 's/^Dockerfile\.//' | tr '\n' ' ')
   mode    Linux images: build (default), build-low-difficulty, unit-tests,
-          functional-tests, cov-unit
+          functional-tests, cov-unit, cov-functional
           windows, macos: build (the only mode)
 
 Options:

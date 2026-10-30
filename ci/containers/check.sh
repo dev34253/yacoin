@@ -13,6 +13,7 @@
 #   smoke   tools present, unknown modes and arguments rejected, test modes
 #           stop early on a tree without the scripts and targets they need,
 #           the Linux release build modes (build, build-low-difficulty)
+#           and the coverage modes (cov-unit, cov-functional; 22.04 image)
 #           configure with their flags
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
@@ -141,7 +142,7 @@ step_smoke() {
         expect_status 2 "smoke: $image: unknown mode rejected" docker run --rm "$tag" no-such-mode
         # The test modes must stop early, with a clear message, on a tree
         # without the scripts and targets they need.
-        for mode in unit-tests cov-unit; do
+        for mode in unit-tests cov-unit cov-functional; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -157,6 +158,24 @@ step_smoke() {
             [[ $mode != build-low-difficulty ]] || want_low=1
             [[ " $args " != *" --enable-low-difficulty-for-development "* ]] || has_low=1
             if [[ " $args " == *" --enable-glibc-back-compat "* && " $args " == *" LDFLAGS=-static-libstdc++ "* &&
+                  $want_low == "$has_low" ]]; then
+                pass "smoke: $image: $mode configures with: $args"
+            else
+                tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
+            fi
+        done
+        # The coverage modes configure out of tree with lcov and -O0 (lcov
+        # 1.x is in the 22.04 image only).
+        [[ "$image" == ubuntu.22.04 ]] || continue
+        for mode in cov-unit cov-functional; do
+            make_configure_stub "$stub" "$tag"
+            printf 'cov-unit:\ncov-functional:\n' > "$stub/Makefile.am"
+            docker run --rm -v "$stub:/src" "$tag" "$mode" > "$work/out.txt" 2>&1 || true
+            args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+            want_low=0 has_low=0
+            [[ $mode != cov-functional ]] || want_low=1
+            [[ " $args " != *" --enable-low-difficulty-for-development "* ]] || has_low=1
+            if [[ " $args " == *" --enable-lcov "* && " $args " == *" CXXFLAGS=-O0 -g "* &&
                   $want_low == "$has_low" ]]; then
                 pass "smoke: $image: $mode configures with: $args"
             else
