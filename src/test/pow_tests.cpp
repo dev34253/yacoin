@@ -171,9 +171,9 @@ BOOST_AUTO_TEST_CASE(next_target_fork_height_not_on_interval)
     ConsensusGlobalsGuard globals;
     globals.Set(25, 10);
     SyntheticChain chain;
+    const Consensus::Params& params = Params().GetConsensus();
     CBlockIndex* pindex24 = chain.Extend(nullptr, 24, SPACING, NBITS_EASY);
-    KNOWN_FAILURE_EQUAL("MG-021", Bits(GetNextTargetRequired(pindex24, false)), Bits(Params().GetConsensus().powLimit.GetCompact()),
-                        Bits(NBITS_EASY));
+    KNOWN_FAILURE_EQUAL("MG-021", Bits(GetNextTargetRequired(pindex24, false)), Bits(params.powLimit.GetCompact()), Bits(NBITS_EASY));
 }
 
 /* At an epoch boundary the target is retargeted over the last nDifficultyInterval blocks */

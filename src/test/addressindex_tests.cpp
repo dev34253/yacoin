@@ -530,11 +530,15 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
     }
 
     /** Whether an index or unspent line (Str) is one of tx0's CLTV/CSV P2SH outputs (10, 11) */
+    /** Whether an index or unspent line (Str) is about output n of tx0 */
+    bool IsTx0Output(const std::string& line, unsigned n) const
+    {
+        return line.find(strprintf("%s n %u ", tx0.GetHash().GetHex(), n)) != std::string::npos;
+    }
+
     bool IsTimelockP2sh(const std::string& line) const
     {
-        for (unsigned n : {10U, 11U})
-            if (line.find(strprintf("%s n %u ", tx0.GetHash().GetHex(), n)) != std::string::npos) return true;
-        return false;
+        return IsTx0Output(line, 10) || IsTx0Output(line, 11);
     }
 
     std::vector<std::string> WithoutTimelockP2sh(std::vector<std::string> v) const
@@ -954,8 +958,7 @@ BOOST_AUTO_TEST_CASE(outputs_and_spends_by_script_type)
     const std::vector<std::string> timelockIndex = TimelockP2shOnly(DumpIndex(*pblocktree)),
                                    timelockUnspent = TimelockP2shOnly(DumpUnspent(*pblocktree));
     auto mentions = [this](const std::vector<std::string>& lines, unsigned n) {
-        const std::string output = strprintf("%s n %u ", tx0.GetHash().GetHex(), n);
-        return std::any_of(lines.begin(), lines.end(), [&output](const std::string& line) { return line.find(output) != std::string::npos; });
+        return std::any_of(lines.begin(), lines.end(), [this, n](const std::string& line) { return IsTx0Output(line, n); });
     };
     bool fBothIndexed = true;
     for (unsigned n : {10U, 11U}) fBothIndexed = fBothIndexed && mentions(timelockIndex, n) && mentions(timelockUnspent, n);
