@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/test/results_collector.hpp>
 #include <boost/test/unit_test.hpp>
 
 namespace {
@@ -25,7 +26,22 @@ int Doubled(int n, int variant = 0)
     return n % 2 ? 2 * n + 1 : 2 * n;
 }
 
+/** Failing assertions of the running test case so far */
+unsigned long FailuresSoFar()
+{
+    using namespace boost::unit_test;
+    return results_collector.results(framework::current_test_case().p_id).p_assertions_failed.get();
+}
+
 } // namespace
+
+/** Runs check, which must add exactly one failure to the running test case; aborts it otherwise */
+#define REQUIRE_ONE_FAILURE(check)                                  \
+    do {                                                            \
+        const unsigned long kf_before_ = FailuresSoFar();           \
+        check;                                                      \
+        BOOST_REQUIRE_EQUAL(FailuresSoFar(), kf_before_ + 1);       \
+    } while (0)
 
 BOOST_AUTO_TEST_SUITE(known_failure_tests)
 
@@ -103,16 +119,18 @@ BOOST_AUTO_TEST_CASE(compares_c_strings_by_content)
     BOOST_CHECK_EQUAL(Message(p), "MG-999: known failure still present (\"0.00000001\")");
 }
 
-/* The macros' failing path: each of the four checks below fails, which the test case expects,
- * so the four errors it logs are part of a passing run. */
+/* The macros' failing path: each of the four checks below must fail exactly once, so the four
+ * errors the test case logs are part of a passing run. Boost only treats the expected number of
+ * failures as an upper bound, so REQUIRE_ONE_FAILURE counts each check's failure itself: a check
+ * that doesn't fail aborts the test case, which fails it. */
 BOOST_AUTO_TEST_CASE_EXPECTED_FAILURES(macros_report_failures, 4)
 BOOST_AUTO_TEST_CASE(macros_report_failures)
 {
     const int fixed = Doubled(3, 1), other = Doubled(3, 2);
-    KNOWN_FAILURE_EQUAL("MG-999", fixed, 6, 7);
-    KNOWN_FAILURE_EQUAL("MG-999", other, 6, 7);
-    KNOWN_FAILURE("MG-999", fixed, fixed == 6, fixed == 7);
-    KNOWN_FAILURE("MG-999", other, other == 6, other == 7);
+    REQUIRE_ONE_FAILURE(KNOWN_FAILURE_EQUAL("MG-999", fixed, 6, 7));
+    REQUIRE_ONE_FAILURE(KNOWN_FAILURE_EQUAL("MG-999", other, 6, 7));
+    REQUIRE_ONE_FAILURE(KNOWN_FAILURE("MG-999", fixed, fixed == 6, fixed == 7));
+    REQUIRE_ONE_FAILURE(KNOWN_FAILURE("MG-999", other, other == 6, other == 7));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
