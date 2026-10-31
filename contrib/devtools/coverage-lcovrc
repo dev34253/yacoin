@@ -16,6 +16,10 @@ branch_coverage = 1
 #                  closing brace, the type check of a catch clause)
 #   branch_region  the branches of the lines lcov_excl_br_line matches
 filter = exception,orphan,branch,branch_region
+# What the "branch" filter costs: it judges the line gcc puts the branches
+# on. A decision whose branches land on a line without a conditional
+# operator is not counted: the continuation line of a condition over several
+# lines, a "do {" line, a loop macro such as BOOST_FOREACH.
 
 # Lines whose branches are not counted:
 #   LogPrintf, LogPrint  the macros (src/util.h) expand to a try/catch whose
@@ -23,9 +27,11 @@ filter = exception,orphan,branch,branch_region
 #                        format string never takes; LogPrint adds its category
 #                        check
 #   assert               its failure path ends the process
+#   Yassert              (src/Yassert.h) its failure path logs the failed
+#                        expression and shuts the node down, as an assert
 # The whole line is matched, so a decision on the same line is not counted
 # either. lcov puts \b before and after the expression.
-lcov_excl_br_line = (?:LogPrintf?|assert)(?=\s*\()
+lcov_excl_br_line = (?:LogPrintf?|Y?assert)(?=\s*\()
 
 # Reported as warnings instead of errors:
 #   inconsistent  gcov data that lcov 2 checks and gcc 11 does not always

@@ -226,10 +226,14 @@ Notes:
   together with its normal return edge, a block left with one branch, the
   branches of lines without a conditional expression (lcov checks the source
   text; e.g. the cleanup at a closing brace, a catch clause), and the
-  branches of lines with `LogPrintf`, `LogPrint` or `assert`: the logging
-  macros expand to a try/catch whose handler only runs for an invalid format
-  string, and an assert's failure path ends the process. A decision on such a
-  line is not counted either. Line coverage is not filtered.
+  branches of lines with `LogPrintf`, `LogPrint`, `assert` or `Yassert`: the
+  logging macros expand to a try/catch whose handler only runs for an invalid
+  format string, and the failure path of an assert ends the process (that of
+  `Yassert` shuts the node down). Line coverage is not filtered. What this
+  costs: a decision on a log or assert line is not counted, and neither is
+  a decision whose branches gcc puts on a line without a conditional
+  operator (the continuation line of a condition over several lines, a
+  `do {` line, a `BOOST_FOREACH` loop).
 - Assembly (`scrypt-x86_64.S`) and the vendored libraries aren't measured.
 - Nodes that the functional tests kill with SIGKILL don't write their
   counters, so code that only those nodes ran is under-reported.
