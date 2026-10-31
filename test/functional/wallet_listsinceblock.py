@@ -51,6 +51,13 @@ class ListSinceBlockTest(BitcoinTestFramework):
         self.test_double_spend()
         self.test_double_send()
 
+    def large_utxo(self, node):
+        # listunspent's order isn't fixed: the first entry may be a change
+        # output smaller than the 1 + FEE a spend below needs.
+        utxo = max(node.listunspent(), key=lambda u: u['amount'])
+        assert utxo['amount'] > 1 + FEE, utxo
+        return utxo
+
     def raw_spend(self, signer, utxo, outputs):
         raw = signer.createrawtransaction([{'txid': utxo['txid'], 'vout': utxo['vout']}], outputs)
         signed = signer.signrawtransaction(raw)
@@ -109,7 +116,7 @@ class ListSinceBlockTest(BitcoinTestFramework):
         node0, node1, node2, node3 = self.nodes
         self.sync_all()
         self.split_network()
-        utxo = node2.listunspent()[0]
+        utxo = self.large_utxo(node2)
         node1.importprivkey(node2.dumpprivkey(utxo['address'])['private_key'])
         change = utxo['amount'] - 1 - FEE
         txid1 = node1.sendrawtransaction(self.raw_spend(node1, utxo, {
@@ -135,7 +142,7 @@ class ListSinceBlockTest(BitcoinTestFramework):
         node0, node1, node2 = self.nodes[:3]
         self.sync_all()
         self.split_network()
-        utxo = node2.listunspent()[0]
+        utxo = self.large_utxo(node2)
         signed = self.raw_spend(node2, utxo, {
             node0.getnewaddress(): 1, node2.getnewaddress(): utxo['amount'] - 1 - FEE})
         txid1 = node1.sendrawtransaction(signed)
