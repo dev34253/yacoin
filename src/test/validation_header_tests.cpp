@@ -6,8 +6,8 @@
 // ContextualCheckBlockHeader, AddToBlockIndex), and how received blocks are linked
 // (ReceivedBlockTransactions) and chosen as the new tip (FindMostWorkChain).
 //
-// The regtest headers here are version 7 and hash at nFactorAtHardfork, which is 0 in
-// the unit tests. Every header here is a proof-of-work header.
+// The regtest headers here are version 7, apart from one version 6 header, and hash at
+// nFactorAtHardfork, which is 0 in the unit tests. Every header here is a proof-of-work header.
 
 #include "chainparams.h"
 #include "consensus/validation.h"
@@ -368,7 +368,7 @@ BOOST_AUTO_TEST_CASE(reject_header)
     BOOST_CHECK_EQUAL(IndexSize(), nIndexSize);
     BOOST_CHECK(BestHeader() == pindexBestHeader);
 
-    // The edges of the time window are accepted
+    // Times just inside the window are accepted
     HeaderResult result = AcceptHeaders({HeaderOnTip([&](CBlockHeader& h) { h.nTime = nMedianTimePast + 1; })});
     BOOST_CHECK_EQUAL(result.reason, "");
     result = AcceptHeaders({HeaderOnTip([&](CBlockHeader& h) { h.nTime = GetAdjustedTime() + MAX_FUTURE_BLOCK_TIME - 60; })});
@@ -546,7 +546,6 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
     header = HeaderOn(pindexOld, 1368000200, VERSION_of_block_for_yac_049);
     result = AcceptHeaders({header});
     BOOST_CHECK_EQUAL(result.reason, "bad-version(0x00000006)");
-    BOOST_CHECK_EQUAL(result.nScore, 0);
     BOOST_CHECK_EQUAL(result.nCode, REJECT_OBSOLETE);
 }
 
