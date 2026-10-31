@@ -2,7 +2,7 @@
   "tolerance": 0.1,
   "overall": {"unit_lines": 54.0},
   "tiers": {
-    "tier-1": {"unit_lines": 90.0, "unit_branches": 60.0},
+    "tier-1": {"unit_lines": 90.0, "unit_branches": 70.0},
     "tier-2": {"all_lines": 90.0, "unit_lines": 50.0}
   },
   "files": [
@@ -17,11 +17,11 @@
     {"group": "tier-1", "file": "src/coins.cpp", "target": "tier-1", "met": false},
     {"group": "tier-1", "file": "src/tokens/tokens.cpp", "target": "tier-1", "met": false},
     {"group": "tier-1", "file": "src/tokens/tokendb.cpp", "target": "tier-1", "met": false},
-    {"group": "tier-1", "file": "src/txmempool.cpp", "target": "tier-1", "met": false},
-    {"group": "tier-1", "file": "src/script/sigcache.cpp", "target": "tier-1", "met": false},
     {"group": "guarded", "file": "src/script/interpreter.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/consensus/consensus.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/primitives/transaction.cpp", "target": "tier-1", "met": true},
+    {"group": "guarded", "file": "src/txmempool.cpp", "target": "tier-1", "met": true},
+    {"group": "guarded", "file": "src/script/sigcache.cpp", "target": "tier-1", "met": true},
     {"group": "tier-2", "file": "src/wallet/wallet.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/wallet/crypter.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/wallet/walletdb.cpp", "target": "tier-2", "met": false},

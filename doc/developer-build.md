@@ -249,7 +249,7 @@ Notes:
 
 `contrib/devtools/coverage-targets.json` holds the coverage targets: a
 tolerance, the recorded overall unit line coverage of `src/`, the tiers
-(`tier-1`: 90 % of lines and 60 % of branches from unit tests; `tier-2`: 90 %
+(`tier-1`: 90 % of lines and 70 % of branches from unit tests; `tier-2`: 90 %
 of lines from unit and functional tests together and 50 % from unit tests),
 and one entry per file, or per named functions of a file, with a target and a
 `met` flag, or with recorded values. Entries are grouped: `tier-1`, `tier-2`,
