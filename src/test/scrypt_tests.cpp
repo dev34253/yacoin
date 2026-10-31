@@ -2,13 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "chain.h"
 #include "chainparams.h"
+#include "hash.h"
 #include "main.h"
 #include "pow.h"
 #include "primitives/block.h"
 #include "scrypt.h"
 #include "streams.h"
+#include "util.h"
 #include "utilstrencodings.h"
+#include "validation.h"
 #include "version.h"
 
 extern "C" {
@@ -21,6 +25,9 @@ extern "C" {
 #include <string.h>
 
 #include <boost/test/unit_test.hpp>
+
+/* Defined in scrypt.cpp, not declared in scrypt.h */
+uint256 scrypt_nosalt(const void* input, size_t inputlen, void* scratchpad);
 
 BOOST_FIXTURE_TEST_SUITE(scrypt_tests, BasicTestingSetup)
 
@@ -109,6 +116,32 @@ static CBlockHeader TestHeader(int nVersion, ::int64_t nTime)
     return header;
 }
 
+/** The 80-byte pre-1.0 header (32-bit nTime) as CalculateHash hashes it */
+static old_block_header OldRaw(const CBlockHeader& header)
+{
+    old_block_header raw;
+    raw.version = header.nVersion;
+    raw.prev_block = header.hashPrevBlock;
+    raw.merkle_root = header.hashMerkleRoot;
+    raw.timestamp = header.nTime;
+    raw.bits = header.nBits;
+    raw.nonce = header.nNonce;
+    return raw;
+}
+
+/** The 84-byte header (64-bit nTime) */
+static block_header NewRaw(const CBlockHeader& header)
+{
+    block_header raw;
+    raw.version = header.nVersion;
+    raw.prev_block = header.hashPrevBlock;
+    raw.merkle_root = header.hashMerkleRoot;
+    raw.timestamp = header.nTime;
+    raw.bits = header.nBits;
+    raw.nonce = header.nNonce;
+    return raw;
+}
+
 /* Pre-1.0 headers (32-bit nTime) hash the 80-byte header with the N-factor of their timestamp */
 BOOST_AUTO_TEST_CASE(old_header_hash_uses_nfactor_schedule)
 {
@@ -186,6 +219,262 @@ BOOST_AUTO_TEST_CASE(mainnet_header_hash)
     // The same header at another N-factor hashes differently (a small one, to save memory)
     nFactorAtHardfork = 4;
     BOOST_CHECK(header.CalculateHash() != hash);
+}
+
+/* A pre-1.0 header in the last second of N-factor 8 */
+BOOST_AUTO_TEST_CASE(old_header_hash_nfactor_8)
+{
+    const ::int64_t nTime = NFACTOR_SCHEDULE[4] - 1;
+    BOOST_CHECK_EQUAL(GetNfactor(nTime), 8);
+    CBlockHeader header = TestHeader(VERSION_of_block_for_yac_049, nTime);
+    old_block_header raw = OldRaw(header);
+    uint256 expected;
+    BOOST_CHECK(scrypt_hash(&raw, sizeof(raw), (::uint32_t*)expected.begin(), 8));
+    BOOST_CHECK(header.CalculateHash() == expected);
+}
+
+/** Restores fTestNet */
+struct TestNetGuard {
+    bool fWas = fTestNet;
+    ~TestNetGuard() { fTestNet = fWas; }
+};
+
+/* With fTestNet set, every pre-1.0 header hashes at N-factor 4, whatever its time */
+BOOST_AUTO_TEST_CASE(old_header_hash_on_testnet)
+{
+    TestNetGuard guard;
+    CBlockHeader header = TestHeader(VERSION_of_block_for_yac_049, NFACTOR_SCHEDULE[3]); // N-factor 8 on mainnet
+    old_block_header raw = OldRaw(header);
+    uint256 nf4;
+    BOOST_CHECK(scrypt_hash(&raw, sizeof(raw), (::uint32_t*)nf4.begin(), 4));
+    fTestNet = true;
+    BOOST_CHECK(header.CalculateHash() == nf4);
+    fTestNet = false;
+    BOOST_CHECK(header.CalculateHash() != nf4);
+}
+
+/** SHA-256d of the 84-byte header (64-bit nTime), for every header version */
+static uint256 Sha256Header(const CBlockHeader& header)
+{
+    block_header raw = NewRaw(header);
+    return Hash(BEGIN(raw), END(raw));
+}
+
+/* GetHash fills the scrypt hash cache on first use and returns the cached value while the
+ * header fields stay the same; a change of any field, or an empty cache, recomputes it */
+BOOST_AUTO_TEST_CASE(header_hash_cache)
+{
+    ConsensusGlobalsGuard globals; // nFactorAtHardfork stays 0: cheap hashes
+    CBlockHeader header = TestHeader(VERSION_of_block_for_yac_05x_new, 1700000000);
+    BOOST_CHECK(header.blockHash == uint256());
+    BOOST_CHECK(header.IsHeaderDifferent());
+    const uint256 hash = header.GetHash();
+    BOOST_CHECK(hash == header.CalculateHash());
+    BOOST_CHECK(header.blockHash == hash);
+    BOOST_CHECK(!header.IsHeaderDifferent());
+
+    // Reused: a value planted in the cache is returned, so nothing was recomputed
+    const uint256 planted = uint256S("0x5e5e");
+    header.blockHash = planted;
+    BOOST_CHECK(header.GetHash() == planted);
+    BOOST_CHECK(header.GetHash() == planted);
+
+    // An empty cache is filled again
+    header.blockHash = uint256();
+    BOOST_CHECK(header.GetHash() == hash);
+
+    // A copy carries the cache along
+    header.blockHash = planted;
+    CBlockHeader copy = header;
+    BOOST_CHECK(copy.GetHash() == planted);
+
+    // Each field: a change makes the header differ from the cached one, and GetHash
+    // recomputes and caches the new hash
+    for (int field = 0; field < 6; field++) {
+        CBlockHeader changed = header;
+        switch (field) {
+        case 0: changed.nVersion += 1; break;
+        case 1: changed.hashPrevBlock = uint256S("0x01"); break;
+        case 2: changed.hashMerkleRoot = uint256S("0x02"); break;
+        case 3: changed.nTime += 1; break;
+        case 4: changed.nBits -= 1; break;
+        case 5: changed.nNonce += 1; break;
+        }
+        BOOST_CHECK(changed.IsHeaderDifferent());
+        const uint256 recomputed = changed.GetHash();
+        BOOST_CHECK(recomputed != planted);
+        BOOST_CHECK(recomputed != hash);
+        BOOST_CHECK(recomputed == changed.CalculateHash());
+        BOOST_CHECK(changed.blockHash == recomputed);
+        BOOST_CHECK(!changed.IsHeaderDifferent());
+    }
+
+    // A pre-1.0 header is cached the same way
+    CBlockHeader old = TestHeader(VERSION_of_block_for_yac_049, NFACTOR_SCHEDULE[0] - 1);
+    const uint256 oldHash = old.GetHash();
+    BOOST_CHECK(oldHash == old.CalculateHash());
+    old.blockHash = planted;
+    BOOST_CHECK(old.GetHash() == planted);
+    old.nTime -= 1;
+    BOOST_CHECK(old.GetHash() == old.CalculateHash());
+    BOOST_CHECK(old.GetHash() != oldHash);
+}
+
+/* GetSHA256Hash: SHA-256d of the header as the 84-byte struct with 64-bit nTime (also for
+ * pre-1.0 headers), cached like GetHash */
+BOOST_AUTO_TEST_CASE(header_sha256_cache)
+{
+    for (int nVersion : {VERSION_of_block_for_yac_049, VERSION_of_block_for_yac_05x_new}) {
+        CBlockHeader header = TestHeader(nVersion, 1700000000);
+        BOOST_CHECK(header.blockSHA256Hash == uint256());
+        const uint256 sha = header.GetSHA256Hash();
+        BOOST_CHECK(sha == Sha256Header(header));
+        BOOST_CHECK(header.blockSHA256Hash == sha);
+        BOOST_CHECK(!header.IsHeaderDifferent());
+        // Unrelated to the scrypt hash cache, which stays empty
+        BOOST_CHECK(header.blockHash == uint256());
+
+        const uint256 planted = uint256S("0x5e5e");
+        header.blockSHA256Hash = planted;
+        BOOST_CHECK(header.GetSHA256Hash() == planted);
+        header.blockSHA256Hash = uint256();
+        BOOST_CHECK(header.GetSHA256Hash() == sha);
+
+        header.blockSHA256Hash = planted;
+        header.nNonce += 1;
+        const uint256 recomputed = header.GetSHA256Hash();
+        BOOST_CHECK(recomputed == Sha256Header(header));
+        BOOST_CHECK(recomputed != sha);
+        BOOST_CHECK(header.blockSHA256Hash == recomputed);
+    }
+}
+
+static std::string Bytes(const uint256& hash)
+{
+    return HexStr(hash.begin(), hash.end());
+}
+
+/* The Litecoin-style functions in scrypt.cpp are scrypt with N = 1024, r = 1, p = 1 and a
+ * 32-byte result. The expected values (in byte order) come from another implementation,
+ * Python's hashlib.scrypt(password, salt=salt, n=1024, r=1, p=1, dklen=32). */
+BOOST_AUTO_TEST_CASE(scrypt_n1024_known_answers)
+{
+    unsigned char header[80];
+    for (int i = 0; i < 80; i++) header[i] = i;
+    // The input is also the salt
+    const std::string headerHash = "bc540a1a801df96e493005c71e010e2d387607fbf0fec416fd3c2645aa1ba9d2";
+    BOOST_CHECK_EQUAL(Bytes(scrypt_blockhash(header)), headerHash);
+    BOOST_CHECK_EQUAL(Bytes(scrypt_hash(header, sizeof(header))), headerHash);
+    BOOST_CHECK_EQUAL(Bytes(scrypt_hash("yacoin", 6)), "7eedb3d10c064f90e52aa252c8ae728b78c24b4a1cee37fdd6f513a1b30ff1b5");
+    BOOST_CHECK_EQUAL(Bytes(scrypt_hash("", 0)), "b34ab7cd1ce0c308146ab970fa75517bcf20f95c7ed7a34efc0d5f096469b2e1");
+
+    // A scratchpad from scrypt_buffer_alloc is large enough for the 64-byte aligned work area
+    void* scratchpad = scrypt_buffer_alloc();
+    BOOST_REQUIRE(scratchpad != nullptr);
+    BOOST_CHECK_EQUAL(Bytes(scrypt_nosalt(header, sizeof(header), scratchpad)), headerHash);
+    scrypt_buffer_free(scratchpad);
+
+    // Salted: the salt is separate; the input as its own salt is the unsalted hash
+    const std::string saltedHash = "8bb740a753619bbb66185549639d5f540396aea07bbd123032197014c28f8aff";
+    BOOST_CHECK_EQUAL(Bytes(scrypt_salted_hash("password", 8, "NaCl", 4)), saltedHash);
+    BOOST_CHECK_EQUAL(Bytes(scrypt_salted_hash(header, sizeof(header), header, sizeof(header))), headerHash);
+
+    // Multiround: every round after the first is salted with the result of the round before;
+    // zero rounds hash once, as one round does
+    BOOST_CHECK_EQUAL(Bytes(scrypt_salted_multiround_hash("password", 8, "NaCl", 4, 3)),
+                      "6c56bd9bbadc52568314cf5c7264030f93a7c31a037c9b2f972abb79de2d5336");
+    BOOST_CHECK_EQUAL(Bytes(scrypt_salted_multiround_hash("password", 8, "NaCl", 4, 1)), saltedHash);
+    BOOST_CHECK_EQUAL(Bytes(scrypt_salted_multiround_hash("password", 8, "NaCl", 4, 0)), saltedHash);
+}
+
+/** Restores the miner's flags that scanhash_scrypt reads */
+struct MinerFlagsGuard {
+    bool fGenerate = fGenerateYacoins;
+    bool fShutdownWas = fShutdown;
+    ~MinerFlagsGuard()
+    {
+        fGenerateYacoins = fGenerate;
+        fShutdown = fShutdownWas;
+    }
+};
+
+/** Header for scanhash_scrypt: zero previous block and merkle root */
+static CBlockHeader ScanHeader(int nVersion, ::int64_t nTime, unsigned int nNonce)
+{
+    CBlockHeader header;
+    header.nVersion = nVersion;
+    header.hashPrevBlock = uint256();
+    header.hashMerkleRoot = uint256();
+    header.nTime = nTime;
+    header.nBits = 0x1e0fffff;
+    header.nNonce = nNonce;
+    return header;
+}
+
+/* scanhash_scrypt hashes the header (read from a CBlockHeader in memory) with scrypt-jane at
+ * the given N-factor, from the next nonce on: the 84-byte header for version 7, the 80-byte
+ * one with a 32-bit nTime before. A hash qualifies when its two top bytes are zero and its
+ * third byte has zero bits wherever the target's third byte has leading zero bits. Every
+ * call here ends after one hash; it returns the nonce and copies the last hash. The nonces
+ * were found with a search over the same headers at N-factor 4. */
+BOOST_AUTO_TEST_CASE(scanhash_scrypt_one_hash)
+{
+    ConsensusGlobalsGuard globals;
+    MinerFlagsGuard flags;
+    CBlockIndex* pindexTip = chainActive.Tip();
+    CBlockIndex other; // not the tip
+    // Third byte 0xff: only the two top bytes of the hash count
+    uint256 targetTwoBytes = ~uint256(0) >> 16;
+    // Third byte 0x0f: the hash's third byte must also be below 0x10
+    uint256 targetNibble = ~uint256(0) >> 20;
+
+    // Version 7 with nonce 81260 hashes to 0000199a...
+    const std::string hash7 = "0000199aad05ca282a46bda3e243ee1d03a02f072d82a26771831d4a95eee84d";
+    CBlockHeader header = ScanHeader(VERSION_of_block_for_yac_05x_new, 1700000000, 81259);
+    uint256 result;
+    ::uint32_t nHashes = 99;
+    fGenerateYacoins = true;
+    fShutdown = false;
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, pindexTip, &targetTwoBytes), 81260U);
+    BOOST_CHECK_EQUAL(nHashes, 100U);
+    BOOST_CHECK_EQUAL(result.GetHex(), hash7);
+    BOOST_CHECK_EQUAL(header.nNonce, 81259U); // the caller's header is unchanged
+    CBlockHeader solved = ScanHeader(VERSION_of_block_for_yac_05x_new, 1700000000, 81260);
+    nFactorAtHardfork = 4;
+    BOOST_CHECK(solved.CalculateHash() == result);
+
+    // The same hash misses the nibble target (third byte 0x19): the loop stops because
+    // pindexPrev is not the tip
+    result = uint256();
+    nHashes = 0;
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, &other, &targetNibble), 81260U);
+    BOOST_CHECK_EQUAL(nHashes, 1U);
+    BOOST_CHECK_EQUAL(result.GetHex(), hash7);
+
+    // Version 6 with nonce 9920 hashes to 00009502...; its nTime has N-factor 4
+    const std::string hash6 = "0000950272004a8af775be356f19e3dab3925940c593f5640b95356379f81f4e";
+    header = ScanHeader(VERSION_of_block_for_yac_049, 1368000000, 9919);
+    result = uint256();
+    nHashes = 0;
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, pindexTip, &targetTwoBytes), 9920U);
+    BOOST_CHECK_EQUAL(result.GetHex(), hash6);
+    solved = ScanHeader(VERSION_of_block_for_yac_049, 1368000000, 9920);
+    BOOST_CHECK_EQUAL(GetNfactor(solved.nTime), 4);
+    BOOST_CHECK(solved.CalculateHash() == result);
+
+    // Missed target (third byte 0x95), on the tip: stops on shutdown...
+    fShutdown = true;
+    result = uint256();
+    nHashes = 0;
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, pindexTip, &targetNibble), 9920U);
+    BOOST_CHECK_EQUAL(nHashes, 1U);
+    BOOST_CHECK_EQUAL(result.GetHex(), hash6);
+    // ... and when mining is switched off
+    fShutdown = false;
+    fGenerateYacoins = false;
+    nHashes = 0;
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, pindexTip, &targetNibble), 9920U);
+    BOOST_CHECK_EQUAL(nHashes, 1U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
