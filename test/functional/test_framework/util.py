@@ -175,7 +175,10 @@ def known_failure(log, bug, check, expected):
 
     Passes (and logs) while check() fails the way the bug makes it fail, and
     raises as soon as the check passes, so the marker is removed together with
-    the fix. `bug` names the bug and its Trello card, e.g. "W-B5 (XbGM5oTW)".
+    the fix. `bug` names the bug: new markers name its row in the modernisation
+    gap register, e.g. "MG-045"; existing markers name a code and Trello card,
+    e.g. "W-B5 (XbGM5oTW)". The unit tests have the same check
+    (src/test/known_failure.h).
 
     `expected` is the bug's symptom and is required, so that an unrelated
     failure (a typo in an RPC name, a stopped node, a timeout) isn't taken for

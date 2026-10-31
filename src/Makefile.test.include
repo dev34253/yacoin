@@ -46,6 +46,9 @@ BITCOIN_TESTS =\
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
   test/key_tests.cpp \
+  test/known_failure.cpp \
+  test/known_failure.h \
+  test/known_failure_tests.cpp \
   test/limitedmap_tests.cpp \
   test/main_tests.cpp \
   test/dbwrapper_tests.cpp \

@@ -33,8 +33,10 @@
 #include "util.h"
 #include "utiltime.h"
 #include "validation.h"
+#include "validationinterface.h"
 
 #include "test/consensus_test_util.h"
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -43,11 +45,19 @@
 #include <io.h>
 #include <sys/stat.h>
 #else
+#include <signal.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#endif
+#ifdef __linux__
+#include <sys/prctl.h>
 #endif
 
 #include <atomic>
+#include <cerrno>
 #include <fstream>
+#include <functional>
 #include <sstream>
 
 #include <boost/test/unit_test.hpp>
@@ -152,6 +162,101 @@ bool Contains(const std::string& str, const std::string& part)
 {
     return str.find(part) != std::string::npos;
 }
+
+#ifndef WIN32
+std::string ReadFile(const fs::path& path)
+{
+    std::ifstream in(path.string());
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+/** The last line of text that isn't empty ("" if there is none) */
+std::string LastLine(const std::string& text)
+{
+    std::istringstream in(text);
+    std::string line, last;
+    while (std::getline(in, line))
+        if (line.find_first_not_of(" \t\r") != std::string::npos) last = line;
+    return last;
+}
+
+/** How a child process of RunInChild ended */
+struct ChildResult {
+    std::string status; // "exit <status>", "abort", "signal <n>", "timed out" or "<call> failed"
+    std::string err;    // what the child wrote to stderr
+};
+
+/** Runs body in a child process (fork). The child's stderr goes to stderrFile; status is body's
+ *  return value as "exit <status>", or how the child ended otherwise. The child never returns
+ *  into the test framework: its signal handlers are reset to the defaults, so that a crash
+ *  ends it, it writes no core file, and it leaves with _exit. body must not use Boost.Test
+ *  checks, whose results would stay in the child.
+ *
+ *  Only the calling thread is copied into the child: the script check workers and LevelDB's
+ *  background thread don't exist there, so body must not need a lock that another thread may
+ *  hold when fork is called. The script check queue is still usable, as the calling thread
+ *  works through it itself. The parent must not rely on files the child writes (a processed
+ *  block is appended to the block file). A child that doesn't end within nTimeoutSeconds is
+ *  killed. */
+ChildResult RunInChild(const std::function<int()>& body, const fs::path& stderrFile, int nTimeoutSeconds = 30)
+{
+    fflush(nullptr);
+    pid_t pid = fork();
+    if (pid < 0) return {"fork failed", ""};
+    if (pid == 0) {
+        for (int sig : {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGALRM}) signal(sig, SIG_DFL);
+        struct rlimit noCore = {0, 0};
+        setrlimit(RLIMIT_CORE, &noCore);
+#ifdef __linux__
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+#endif
+        int fd = open(stderrFile.string().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (fd >= 0) {
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+        int status = 100;
+        try {
+            status = body();
+        } catch (...) {
+            status = 101;
+        }
+        _exit(status);
+    }
+    int status = 0;
+    std::string result = "timed out";
+    for (int i = 0; i < nTimeoutSeconds * 100; i++) {
+        pid_t done = waitpid(pid, &status, WNOHANG);
+        if (done < 0 && errno == EINTR) continue;
+        if (done < 0) {
+            result = "waitpid failed";
+            break;
+        }
+        if (done == pid) {
+            if (WIFEXITED(status)) return {strprintf("exit %d", WEXITSTATUS(status)), ReadFile(stderrFile)};
+            if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) return {"abort", ReadFile(stderrFile)};
+            return {strprintf("signal %d", WTERMSIG(status)), ReadFile(stderrFile)};
+        }
+        usleep(10000);
+    }
+    kill(pid, SIGKILL);
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    return {result, ReadFile(stderrFile)};
+}
+#endif
+
+/** The reject reason of every block that ProcessNewBlock rejects (BlockChecked), by hash */
+struct RejectedBlocks : public CValidationInterface {
+    std::map<uint256, std::string> reasons;
+    RejectedBlocks() { RegisterValidationInterface(this); }
+    ~RejectedBlocks() { UnregisterValidationInterface(this); }
+    void BlockChecked(const CBlock& block, const CValidationState& state) override
+    {
+        if (!state.IsValid()) reasons[block.GetHash()] = state.GetRejectReason();
+    }
+};
 
 /** Everything about a block index entry that is stored or rebuilt on load */
 struct IndexSnapshot {
@@ -577,6 +682,20 @@ struct RestartSetup : public TestChain100Setup {
         }
     }
 
+    /** ThreadImport's reindex loop (keep in sync with ThreadImport in init.cpp): every block
+     *  file, from blk00000.dat on, through LoadExternalBlockFile. Returns its result per file. */
+    static std::vector<bool> ReindexBlockFiles()
+    {
+        std::vector<bool> loaded;
+        for (int nFile = 0; ; nFile++) {
+            CDiskBlockPos pos(nFile, 0);
+            FILE* file = OpenBlockFile(pos, true);
+            if (!file) break;
+            loaded.push_back(LoadExternalBlockFile(Params(), file, &pos));
+        }
+        return loaded;
+    }
+
     std::vector<CBlock> ReadChain()
     {
         std::vector<CBlock> blocks;
@@ -698,9 +817,39 @@ BOOST_AUTO_TEST_CASE(restart_restores_block_index)
     // No block is processed after this restart: with the tip already up to date the candidate
     // set isn't pruned until a block is connected (LoadChainTip doesn't call
     // PruneBlockIndexCandidates), and CheckBlockIndex, which unit tests enable, checks it on
-    // the next block. restart_reconnects_blocks_after_index_only_write processes blocks after
-    // a restart that has to reconnect blocks.
+    // the next block (MG-045, pinned by block_processed_after_plain_restart).
+    // restart_reconnects_blocks_after_index_only_write processes blocks after a restart that has
+    // to reconnect blocks.
 }
+
+#ifndef WIN32
+/* After a restart whose tip already matches the coins, the next block should be processed.
+ * CheckBlockIndex, which unit tests enable, asserts on it instead, because LoadChainTip leaves
+ * the candidate set unpruned (MG-045). The block is processed in a child process, so that the
+ * assertion only ends the child. */
+BOOST_AUTO_TEST_CASE(block_processed_after_plain_restart)
+{
+    Mine();
+    BOOST_REQUIRE(Restart());
+    const CBlock block = BuildOn(Tip(), scriptPubKey);
+    const uint256 hash = block.GetHash();
+    const ChildResult child = RunInChild([&block, &hash]() {
+        if (!Submit(block)) return 1;
+        LOCK(cs_main);
+        return chainActive.Tip()->GetBlockHash() == hash ? 0 : 2;
+    }, DataFile("child-stderr.log"));
+    // glibc's, musl's and macOS's assertion messages all contain the expression
+    const std::string assertion = "setBlockIndexCandidates.count(pindex) == 0";
+    std::string outcome = child.status;
+    if (child.status == "abort" && Contains(child.err, assertion)) {
+        outcome += ": " + assertion;
+    } else if (child.status != "exit 0" && !LastLine(child.err).empty()) {
+        // Anything else: the child's last words, as its stderr file goes with the datadir
+        outcome += " (" + LastLine(child.err) + ")";
+    }
+    KNOWN_FAILURE_EQUAL("MG-045", outcome, "exit 0", "abort: " + assertion);
+}
+#endif
 
 BOOST_AUTO_TEST_CASE(restart_marks_children_of_invalid_blocks)
 {
@@ -1228,8 +1377,9 @@ BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
         for (const CBlock& block : order) AppendBlock(out, block, &offsets[block.GetHash()]);
     }
     // The reindex re-accepts the genesis block through ProcessNewBlock. With the fork at height 0
-    // (the unit test default) ContextualCheckBlock rejects genesis' version 1 transaction, so the
-    // fork is moved to height 1 for the reindex, as feature_reindex.py does.
+    // (the unit test default) ContextualCheckBlock rejects genesis' version 1 transaction (MG-063,
+    // pinned by reindex_with_fork_at_genesis), so the fork is moved to height 1 for the reindex,
+    // as feature_reindex.py does.
     ConsensusGlobalsGuard guard;
     guard.Set(1, nEpochInterval);
     fReindex = true;
@@ -1239,16 +1389,9 @@ BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
         BOOST_CHECK(LoadBlockIndex(Params()));
         BOOST_CHECK(mapBlockIndex.empty());
     }
-    // ThreadImport's reindex loop (keep in sync with ThreadImport in init.cpp)
-    int nFiles = 0;
-    for (int nFile = 0; ; nFile++) {
-        CDiskBlockPos pos(nFile, 0);
-        FILE* file = OpenBlockFile(pos, true);
-        if (!file) break;
-        BOOST_CHECK(LoadExternalBlockFile(Params(), file, &pos));
-        nFiles++;
-    }
-    BOOST_CHECK_EQUAL(nFiles, 2);
+    const std::vector<bool> loaded = ReindexBlockFiles();
+    BOOST_CHECK_EQUAL(loaded.size(), 2U);
+    for (bool fLoaded : loaded) BOOST_CHECK(fLoaded);
     BOOST_REQUIRE(pblocktree->WriteReindexing(false));
     fReindex = false;
     {
@@ -1297,6 +1440,48 @@ BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
         BOOST_CHECK(ReadBlockHash(Index(hash), stored));
         BOOST_CHECK(stored == hash);
     }
+}
+
+/* -reindex with the fork at height 0, the unit test default: the reindex should accept the
+ * genesis block from the block files again and rebuild the chain. ContextualCheckBlock rejects
+ * genesis' version 1 transaction instead (MG-063). */
+BOOST_AUTO_TEST_CASE(reindex_with_fork_at_genesis)
+{
+    const uint256 hashTip = Tip()->GetBlockHash();
+    const uint256 hashGenesis = Params().GetConsensus().hashGenesisBlock;
+    FlushStateToDisk();
+
+    // Index, coins and token databases wiped, block files kept (-reindex)
+    FreshNode(false);
+    ConsensusGlobalsGuard guard;
+    guard.Set(0, nEpochInterval);
+    RejectedBlocks rejected;
+    fReindex = true;
+    BOOST_REQUIRE(pblocktree->WriteReindexing(true));
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(LoadBlockIndex(Params()));
+    }
+    // All blocks are in blk00000.dat; whether they load is the outcome checked below
+    BOOST_CHECK_EQUAL(ReindexBlockFiles().size(), 1U);
+    BOOST_REQUIRE(pblocktree->WriteReindexing(false));
+    fReindex = false;
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(LoadGenesisBlock(Params()));
+    }
+    CValidationState state;
+    BOOST_CHECK(ActivateBestChain(state, Params()));
+
+    std::string outcome;
+    if (rejected.reasons.count(hashGenesis)) {
+        outcome = "genesis rejected: " + rejected.reasons[hashGenesis];
+    } else if (Tip() && Tip()->GetBlockHash() == hashTip) {
+        outcome = "chain rebuilt";
+    } else {
+        outcome = strprintf("tip at height %d", Tip() ? Tip()->nHeight : -1);
+    }
+    KNOWN_FAILURE_EQUAL("MG-063", outcome, "chain rebuilt", "genesis rejected: bad-txns-version");
 }
 
 BOOST_AUTO_TEST_CASE(mempool_dump_and_load_round_trip)

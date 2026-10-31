@@ -24,6 +24,7 @@
 #include "utilstrencodings.h"
 #include "validation.h"
 
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -110,6 +111,13 @@ std::vector<std::string> Sorted(std::vector<std::string> v)
 {
     std::sort(v.begin(), v.end());
     return v;
+}
+
+std::string Joined(const std::vector<std::string>& v)
+{
+    std::string out;
+    for (const std::string& line : v) out += (out.empty() ? "" : "; ") + line;
+    return out;
 }
 
 uint160 FilledHash(unsigned char n) { return uint160(std::vector<unsigned char>(20, n)); }
@@ -395,12 +403,14 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
      *  differs from the output index for P2SH and P2PKH); tx2 spends tx1's P2SH output.
      *
      *  The disconnect tests rely on two properties of how their blocks spend coins, chosen
-     *  so that a known issue in the address index undo (DisconnectBlock) doesn't affect
-     *  their results:
+     *  so that a known issue in the address index undo (DisconnectBlock, MG-044) doesn't
+     *  affect their results:
      *  - every coin a disconnected block spends was created in the block just before it
      *    (here: tx0, at height 13), or in the same block;
      *  - every P2PK input's index equals the prevout.n it spends (input 0 spends output 0).
-     *  Keep both when extending these tests, or expect different results until it's fixed. */
+     *  Keep both when extending these tests, or expect different results until it's fixed.
+     *  disconnect_restores_unspent_height and disconnect_restores_p2pk_unspent_key pin what
+     *  happens without the first and without the second one. */
     void BuildX()
     {
         CMutableTransaction m1;
@@ -486,7 +496,8 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
 
     std::vector<IndexEntry> ExpectC(bool withX)
     {
-        // The CLTV/CSV P2SH outputs (10, 11) pay keyC's public key but aren't indexed
+        // The CLTV/CSV P2SH outputs (10, 11) pay keyC's public key but aren't indexed (MG-044):
+        // the checks compare everything else (WithoutTimelockP2sh) and pin these separately
         std::vector<IndexEntry> e{Recv(1, idC, YAC, 13, 1, tx0, 4, u), Recv(1, idC, YAC, 13, 1, tx0, 5, u)};
         if (withX) e.push_back(Recv(1, idC, YAC, 14, 1, tx1, 5, u));
         return e;
@@ -516,6 +527,30 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
             all.insert(all.end(), v.begin(), v.end());
         all.push_back(Utxo(1, idU, YAC, tx0, 6, u, 13));
         return InKeyOrder(all);
+    }
+
+    /** Whether an index or unspent line (Str) is about output n of tx0 */
+    bool IsTx0Output(const std::string& line, unsigned n) const
+    {
+        return line.find(strprintf("%s n %u ", tx0.GetHash().GetHex(), n)) != std::string::npos;
+    }
+
+    /** Whether an index or unspent line (Str) is one of tx0's CLTV/CSV P2SH outputs (10, 11) */
+    bool IsTimelockP2sh(const std::string& line) const
+    {
+        return IsTx0Output(line, 10) || IsTx0Output(line, 11);
+    }
+
+    std::vector<std::string> WithoutTimelockP2sh(std::vector<std::string> v) const
+    {
+        v.erase(std::remove_if(v.begin(), v.end(), [this](const std::string& line) { return IsTimelockP2sh(line); }), v.end());
+        return v;
+    }
+
+    std::vector<std::string> TimelockP2shOnly(std::vector<std::string> v) const
+    {
+        v.erase(std::remove_if(v.begin(), v.end(), [this](const std::string& line) { return !IsTimelockP2sh(line); }), v.end());
+        return v;
     }
 };
 
@@ -898,8 +933,8 @@ BOOST_AUTO_TEST_CASE(outputs_and_spends_by_script_type)
 {
     BuildP();
     BOOST_REQUIRE(Submit(blockP));
-    CHECK_SAME(DumpIndex(*pblocktree), ExpectAllIndex(false));
-    CHECK_SAME(DumpUnspent(*pblocktree), ExpectAllUnspent(false));
+    CHECK_SAME(WithoutTimelockP2sh(DumpIndex(*pblocktree)), ExpectAllIndex(false));
+    CHECK_SAME(WithoutTimelockP2sh(DumpUnspent(*pblocktree)), ExpectAllUnspent(false));
 
     BuildX();
     BOOST_REQUIRE(Submit(blockX));
@@ -914,16 +949,29 @@ BOOST_AUTO_TEST_CASE(outputs_and_spends_by_script_type)
     BOOST_CHECK(Unspent(idS, 2, YAC).empty());
     // Uncompressed P2PK: hash of the 65-byte key
     CHECK_SAME(Strs(Index(idU, 1)), (Strs<CAddressIndexKey, CAmount>({Recv(1, idU, YAC, 13, 1, tx0, 6, u)})));
-    // Timelocked P2PKH outputs count for the key; the timelocked P2SH outputs don't
-    CHECK_SAME(Strs(Index(idC, 1)), InKeyOrder(ExpectC(true)));
-    CHECK_SAME(Strs(Unspent(idC, 1, YAC)), InKeyOrder(ExpectUtxoC(true)));
+    // Timelocked P2PKH outputs count for the key
+    CHECK_SAME(WithoutTimelockP2sh(Strs(Index(idC, 1))), InKeyOrder(ExpectC(true)));
+    CHECK_SAME(WithoutTimelockP2sh(Strs(Unspent(idC, 1, YAC))), InKeyOrder(ExpectUtxoC(true)));
+    // The timelocked P2SH outputs pay keyC's public key and should be indexed, each with a
+    // receipt and an unspent record (under whichever address the index uses for them); they
+    // aren't indexed at all (MG-044)
+    const std::vector<std::string> timelockIndex = TimelockP2shOnly(DumpIndex(*pblocktree)),
+                                   timelockUnspent = TimelockP2shOnly(DumpUnspent(*pblocktree));
+    auto mentions = [this](const std::vector<std::string>& lines, unsigned n) {
+        return std::any_of(lines.begin(), lines.end(), [this, n](const std::string& line) { return IsTx0Output(line, n); });
+    };
+    bool fBothIndexed = true;
+    for (unsigned n : {10U, 11U}) fBothIndexed = fBothIndexed && mentions(timelockIndex, n) && mentions(timelockUnspent, n);
+    std::vector<std::string> found = timelockIndex;
+    found.insert(found.end(), timelockUnspent.begin(), timelockUnspent.end());
+    KNOWN_FAILURE("MG-044", Joined(found), fBothIndexed, found.empty());
 
     for (const uint160& id : {idA, idB, idC, idU})
         BOOST_CHECK_EQUAL(Balance(Index(id, 1)), UnspentSum(Unspent(id, 1, YAC)));
 
     // Nothing else (OP_TRUE, OP_RETURN, multisig, the OP_TRUE input) is indexed
-    CHECK_SAME(DumpIndex(*pblocktree), ExpectAllIndex(true));
-    CHECK_SAME(DumpUnspent(*pblocktree), ExpectAllUnspent(true));
+    CHECK_SAME(WithoutTimelockP2sh(DumpIndex(*pblocktree)), ExpectAllIndex(true));
+    CHECK_SAME(WithoutTimelockP2sh(DumpUnspent(*pblocktree)), ExpectAllUnspent(true));
 }
 
 /* Disconnecting blocks removes their entries and restores the unspent records they spent */
@@ -957,6 +1005,73 @@ BOOST_AUTO_TEST_CASE(disconnect_and_reconnect)
     Remove(expUnspent, Str(cbUtxo.first, cbUtxo.second));
     CHECK_SAME(DumpIndex(*pblocktree), expIndex);
     CHECK_SAME(DumpUnspent(*pblocktree), expUnspent);
+}
+
+/* Disconnecting a block that spends a coin created before the block just before it: the
+ * coin's unspent record comes back with the height of the block before the disconnected
+ * one instead of the coin's own height (MG-044, the first property in BuildX) */
+BOOST_AUTO_TEST_CASE(disconnect_restores_unspent_height)
+{
+    // Coinbase 2 (P2PK, height 2) spent at height 13 by input 0, the same index as prevout.n
+    const CTransaction& cb = coinbases[1];
+    const std::vector<std::string> indexBefore = DumpIndex(*pblocktree), unspentBefore = DumpUnspent(*pblocktree);
+    CMutableTransaction m;
+    m.vin.emplace_back(COutPoint(cb.GetHash(), 0));
+    m.vout.emplace_back(cb.vout[0].nValue - CENT, P2PKH(idB));
+    CTransaction tx = Sign(m, {cb.vout[0].scriptPubKey});
+    CBlock block = BuildBlock({tx});
+    BOOST_REQUIRE(Submit(block));
+    const int nHeight = Tip()->nHeight;
+    BOOST_REQUIRE_EQUAL(nHeight, 13);
+
+    Invalidate(block);
+    BOOST_REQUIRE_EQUAL(Tip()->nHeight, nHeight - 1);
+    CHECK_SAME(DumpIndex(*pblocktree), indexBefore);
+    // The coin's record is back, every other record is as before
+    const UnspentEntry correct = Utxo(1, idA, YAC, cb, 0, cb.vout[0].nValue, 2);
+    const std::string line = Str(correct.first, correct.second);
+    const std::string prefix = line.substr(0, line.rfind(" height "));
+    auto isCoin = [&prefix](const std::string& l) { return l.compare(0, prefix.size(), prefix) == 0; };
+    std::vector<std::string> unspentAfter = DumpUnspent(*pblocktree), unspentOthers = unspentBefore;
+    BOOST_CHECK_EQUAL(std::count_if(unspentAfter.begin(), unspentAfter.end(), isCoin), 1);
+    unspentAfter.erase(std::remove_if(unspentAfter.begin(), unspentAfter.end(), isCoin), unspentAfter.end());
+    unspentOthers.erase(std::remove_if(unspentOthers.begin(), unspentOthers.end(), isCoin), unspentOthers.end());
+    CHECK_SAME(unspentAfter, unspentOthers);
+
+    int nRestoredHeight = -1;
+    for (const UnspentEntry& e : Unspent(idA, 1, YAC))
+        if (e.first.txhash == cb.GetHash() && e.first.index == 0) nRestoredHeight = e.second.blockHeight;
+    KNOWN_FAILURE_EQUAL("MG-044", nRestoredHeight, 2, nHeight - 1);
+}
+
+/* Disconnecting a block whose P2PK input spends an output with another index than its own:
+ * the coin's unspent record comes back under the input's index instead of the output's
+ * (MG-044, the second property in BuildX). Only the keys are compared, not the heights. */
+BOOST_AUTO_TEST_CASE(disconnect_restores_p2pk_unspent_key)
+{
+    // Input 0 spends coinbase 3, output 0; input 1 spends coinbase 4, output 0 (both P2PK)
+    const CTransaction &cb3 = coinbases[2], &cb4 = coinbases[3];
+    const std::vector<std::string> indexBefore = DumpIndex(*pblocktree);
+    CMutableTransaction m;
+    m.vin.emplace_back(COutPoint(cb3.GetHash(), 0));
+    m.vin.emplace_back(COutPoint(cb4.GetHash(), 0));
+    m.vout.emplace_back(cb3.vout[0].nValue + cb4.vout[0].nValue - CENT, P2PKH(idB));
+    CTransaction tx = Sign(m, {cb3.vout[0].scriptPubKey, cb4.vout[0].scriptPubKey});
+    CBlock block = BuildBlock({tx});
+    BOOST_REQUIRE(Submit(block));
+    Invalidate(block);
+    CHECK_SAME(DumpIndex(*pblocktree), indexBefore);
+
+    // The output indexes of a transaction's unspent records, e.g. "n 0"
+    auto unspentKeys = [this](const CTransaction& cb) {
+        std::vector<std::string> keys;
+        for (const UnspentEntry& e : Unspent(idA, 1, YAC))
+            if (e.first.txhash == cb.GetHash()) keys.push_back(strprintf("n %u", (unsigned)e.first.index));
+        return Joined(keys);
+    };
+    // Input 0 spends output 0: its key is right
+    BOOST_CHECK_EQUAL(unspentKeys(cb3), "n 0");
+    KNOWN_FAILURE_EQUAL("MG-044", unspentKeys(cb4), "n 0", "n 1");
 }
 
 /* A reorg: the losing branch's entries go, the winning branch's are written */
@@ -1193,8 +1308,8 @@ BOOST_AUTO_TEST_CASE(index_untouched_by_checks)
     BOOST_REQUIRE(pblocktree->EraseAddressIndex({recv}));
     BOOST_REQUIRE(pblocktree->UpdateAddressUnspentIndex({UnspentEntry(utxo.first, CAddressUnspentValue())}));
     const std::vector<std::string> index1 = DumpIndex(*pblocktree), unspent1 = DumpUnspent(*pblocktree);
-    BOOST_CHECK_EQUAL(index1.size() + 1, ExpectAllIndex(true).size());
-    BOOST_CHECK_EQUAL(unspent1.size() + 1, ExpectAllUnspent(true).size());
+    BOOST_CHECK_EQUAL(WithoutTimelockP2sh(index1).size() + 1, ExpectAllIndex(true).size());
+    BOOST_CHECK_EQUAL(WithoutTimelockP2sh(unspent1).size() + 1, ExpectAllUnspent(true).size());
 
     BOOST_CHECK(CVerifyDB().VerifyDB(Params(), pcoinsTip, 4, 0));
     CHECK_SAME(DumpIndex(*pblocktree), index1);

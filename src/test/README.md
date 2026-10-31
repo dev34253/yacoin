@@ -29,6 +29,17 @@ example, to run just the getarg_tests verbosely:
 
 Run `test_bitcoin --help` for the full list.
 
+### Known defects
+
+A test that pins a known defect uses the known-failure checks of `known_failure.h` instead of asserting today's wrong value.
+`KNOWN_FAILURE_EQUAL(row, actual, correct, current)` compares a value with the correct one and with today's;
+`KNOWN_FAILURE(row, actual, correct, current)` takes the correct and today's conditions and shows `actual`. Both pass only while the outcome is
+today's; once the correct behaviour holds they fail with "<row> no longer fails; remove the known-failure check", so the fix replaces the check with a
+plain assertion, and any other outcome fails as "not the expected known failure". New checks name the defect's row in the modernisation gap register,
+e.g. `"MG-045"`. Behaviour that is intended is asserted with plain checks. The functional tests have the same check, `known_failure()` in
+`test/functional/test_framework/util.py`. `known_failure_tests` checks the reporting with four deliberate failures: a passing run logs their four
+errors, and a failing run's summary adds "(4 failures are expected)"; any other failure still fails the run.
+
 ### Note on adding test cases
 
 The sources in this directory are unit test cases.  Boost includes a

@@ -90,7 +90,8 @@ BOOST_AUTO_TEST_CASE(reward_height_zero)
 }
 
 /* After the fork: supply at the end of the previous epoch * 2% / blocks per year,
- * fixed for the whole epoch. Fees are not added (pins current behaviour). */
+ * fixed for the whole epoch. Fees are not added: post-fork fees are destroyed, an
+ * intended rule (MG-028). */
 BOOST_AUTO_TEST_CASE(post_fork_epoch_reward)
 {
     ConsensusGlobalsGuard globals;
@@ -109,7 +110,7 @@ BOOST_AUTO_TEST_CASE(post_fork_epoch_reward)
     }
     BOOST_CHECK(EpochReward(MoneySupplyAt(29)) > EpochReward(MoneySupplyAt(19)));
 
-    // nBits and fees don't matter
+    // nBits and fees don't matter: the reward never includes the fees (intended, MG-028)
     BOOST_CHECK_EQUAL(GetProofOfWorkReward(0x1c0fffff, 5 * COIN, 39), EpochReward(MoneySupplyAt(29)));
 
     // Blocks before the fork still use the pre-fork curve
