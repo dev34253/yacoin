@@ -22,6 +22,7 @@
 #include "wallet/db.h"
 #include "wallet/wallet.h"
 
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -707,10 +708,15 @@ BOOST_AUTO_TEST_CASE(issue_and_reissue_errors)
     CHECK_FAIL(TryIssue(wallet.get(), {TokenB()}, tokenAddress, ccSmall), RPC_WALLET_ERROR, "Insufficient funds");
     CHECK_FAIL(TryIssue(&locked, {TokenB()}, tokenAddress, CCoinControl()),
                RPC_WALLET_KEYPOOL_RAN_OUT, "Keypool ran out, please call keypoolrefill first");
-    // The destination isn't checked up front; the wallet refuses it. This pins a known
-    // bug: the error carries no message, so a fix is expected to change this check.
-    // (TryIssue starts the fee at 0, so no fee message is added.)
-    CHECK_FAIL(TryIssue(wallet.get(), {TokenB()}, "", cc), RPC_WALLET_ERROR, "");
+    // The destination isn't checked up front; the wallet refuses it with RPC_WALLET_ERROR and
+    // an error that carries no message (known defect MG-046). (TryIssue starts the fee at 0,
+    // so no fee message is added.)
+    {
+        const CreateResult r = TryIssue(wallet.get(), {TokenB()}, "", cc);
+        BOOST_CHECK(!r.ok);
+        const std::string error = strprintf("code %d, message '%s'", r.error.first, r.error.second);
+        KNOWN_FAILURE("MG-046", error, !r.error.second.empty(), r.error.first == RPC_WALLET_ERROR && r.error.second.empty());
+    }
 
     const CReissueToken reissue("TOKENA", COIN, -1, 1, "");
     CHECK_FAIL(TryReissue(wallet.get(), reissue, "bad", cc), RPC_INVALID_ADDRESS_OR_KEY, "Invalid Yacoin address: bad");
