@@ -14,7 +14,8 @@
 #           stop early on a tree without the scripts and targets they need,
 #           the Linux release build modes (build, build-low-difficulty)
 #           and the coverage modes (cov-unit, cov-functional; 22.04 image)
-#           configure with their flags
+#           configure with their flags, and functional-tests runs the test
+#           runner with --extended and FTEST_JOBS
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -164,6 +165,31 @@ step_smoke() {
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
             fi
         done
+        # The functional-tests mode runs every script, the extended ones
+        # too, FTEST_JOBS (default 4) at a time, and fails when the runner
+        # fails.
+        local want ftest_jobs status
+        for ftest_jobs in "" 2; do
+            make_runner_stub "$stub" "$tag" 0
+            want="${ftest_jobs:-4}"
+            docker run --rm -v "$stub:/src" ${ftest_jobs:+-e FTEST_JOBS="$ftest_jobs"} "$tag" functional-tests \
+                > "$work/out.txt" 2>&1 && status=0 || status=$?
+            args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
+            if [[ $status == 0 && " $args " == *" -j $want "* && " $args " == *" --extended "* ]]; then
+                pass "smoke: $image: functional-tests (FTEST_JOBS=${ftest_jobs:-unset}) runs: test_runner.py $args"
+            else
+                tail -n 5 "$work/out.txt"
+                fail "smoke: $image: functional-tests (FTEST_JOBS=${ftest_jobs:-unset}, exit status $status) runs: test_runner.py $args"
+            fi
+        done
+        make_runner_stub "$stub" "$tag" 1
+        expect_status 1 "smoke: $image: functional-tests fails when a script fails" \
+            docker run --rm -v "$stub:/src" "$tag" functional-tests
+        expect_status 1 "smoke: $image: functional-tests rejects FTEST_JOBS=0" \
+            docker run --rm -v "$stub:/src" -e FTEST_JOBS=0 "$tag" functional-tests
+        grep -q 'error: FTEST_JOBS' "$work/out.txt" || fail "smoke: $image: FTEST_JOBS=0 gave no 'error: FTEST_JOBS' message"
+        # The out-of-tree configure left root-owned build directories.
+        docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${stub##*/}"
         # The coverage modes configure out of tree with lcov and -O0 (lcov
         # 1.x is in the 22.04 image only).
         [[ "$image" == ubuntu.22.04 ]] || continue
@@ -199,6 +225,21 @@ make_configure_stub() {
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'exit 1' > "$d/configure"
     chmod +x "$d/autogen.sh" "$d/configure"
+}
+
+# A stub source tree for the functional-tests mode: depends, autogen.sh,
+# configure and the build are no-ops, and test/functional/test_runner.py
+# records its arguments in /src/runner-args and exits with <status>.
+# make_runner_stub <dir> <tag> <status>
+make_runner_stub() {
+    local d="$1" tag="$2"
+    make_configure_stub "$d" "$tag"
+    # configure runs in the build directory and leaves a src/Makefile there.
+    printf '%s\n' '#!/bin/sh' 'mkdir -p src' 'printf "yacoind yacoin-cli:\n" > src/Makefile' > "$d/configure"
+    mkdir -p "$d/test/functional"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/runner-args' "exit $3" > "$d/test/functional/test_runner.py"
+    chmod +x "$d/configure" "$d/test/functional/test_runner.py"
 }
 
 # A stub source tree: depends is a no-op and autogen.sh, the step after it and

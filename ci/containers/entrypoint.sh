@@ -11,7 +11,8 @@
 #                     the release build with --enable-low-difficulty-for-development
 #   unit-tests        build test_bitcoin (mainnet consensus) and run all unit
 #                     test suites in parallel
-#   functional-tests  low-difficulty build, then the functional tests serially
+#   functional-tests  low-difficulty build, then all functional test scripts,
+#                     the extended ones too, FTEST_JOBS in parallel
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
 #                     needs lcov 1.x (Ubuntu 22.04 image only)
 #   cov-functional    low-difficulty coverage build and "make cov-functional"
@@ -24,9 +25,11 @@
 # image (only one container per image should use the cache at a time).
 #
 # Environment: JOBS (default: number of CPUs), BUILDVERSION (passed through
-# to the version string), FTEST_JOBS (cov-functional: functional test scripts
-# in parallel, default 4, the number its run times were measured with). SRC_DIR
-# and CACHE_DIR override /src and /cache.
+# to the version string), FTEST_JOBS (functional-tests, cov-functional:
+# functional test scripts in parallel, default 4: the CI runners' vCPUs and the
+# number the run times were measured with; a fixed default, so a local run
+# schedules the scripts as CI does whatever its CPU count). SRC_DIR and
+# CACHE_DIR override /src and /cache.
 set -euo pipefail
 
 MODE="${1:-build}"
@@ -195,7 +198,7 @@ else
             # The runner reads ../config.ini relative to its own path.
             mkdir -p "$builddir/test/functional"
             ln -sf "$SRC/test/functional/test_runner.py" "$builddir/test/functional/test_runner.py"
-            "$builddir/test/functional/test_runner.py" -j 1 --tmpdirprefix="$TMPDIR"
+            "$builddir/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --extended --tmpdirprefix="$TMPDIR"
             ;;
         cov-unit)
             make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" cov-unit

@@ -97,8 +97,9 @@ jobs:
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
           if-no-files-found: error
   functional-tests:
-    # Low-difficulty build of yacoind and yacoin-cli, then the functional
-    # tests serially (functional-tests mode of the yacoin-build image, Python
+    # Low-difficulty build of yacoind and yacoin-cli, then every functional
+    # test script, the three extended ones too, 4 at a time, one per vCPU of
+    # the runner (functional-tests mode of the yacoin-build image, Python
     # 3.10). Cached and saved like the unit-tests job, in its own namespace.
     runs-on: ubuntu-latest
     timeout-minutes: 55

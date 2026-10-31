@@ -51,7 +51,7 @@ with this checkout mounted:
 
 ```sh
 ./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel
-./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, functional tests serially
+./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
@@ -72,9 +72,10 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
   other builds running), the second 1-2 minutes (all compiles from ccache).
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
-- `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (`cov-functional`'s parallel scripts,
-  default 4), `BUILDVERSION`, `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed
-  on, not `dev.sh`'s own defaults for its host builds.
+- `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (the parallel scripts of
+  `functional-tests` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count), `BUILDVERSION`,
+  `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own
+  defaults for its host builds.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
   `--src <dir>` for another tree.
 - CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:

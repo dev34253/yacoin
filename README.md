@@ -40,7 +40,7 @@ host, build in the CI images.
 
 ```sh
 ./dev.sh container unit-tests                # build test_bitcoin and run all unit test suites
-./dev.sh container functional-tests          # low-difficulty build, then the functional tests
+./dev.sh container functional-tests          # low-difficulty build, then all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ```
 
