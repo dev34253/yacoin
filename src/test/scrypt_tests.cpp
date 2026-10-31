@@ -20,6 +20,7 @@ extern "C" {
 }
 
 #include "test/consensus_test_util.h"
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 
 #include <string.h>
@@ -352,6 +353,32 @@ BOOST_AUTO_TEST_CASE(header_sha256_cache)
 static std::string Bytes(const uint256& hash)
 {
     return HexStr(hash.begin(), hash.end());
+}
+
+/* GetHash and GetSHA256Hash share one copy of the header fields, and serialisation also
+ * updates it: after a field changes, whichever of these runs first makes the other cache look
+ * current, so it returns its value for the old fields */
+BOOST_AUTO_TEST_CASE(header_hash_caches_after_field_change)
+{
+    ConsensusGlobalsGuard globals;
+    CBlockHeader header = TestHeader(VERSION_of_block_for_yac_05x_new, 1700000000);
+    uint256 hash = header.GetHash();
+    header.nNonce += 1;
+    BOOST_CHECK(header.GetSHA256Hash() == Sha256Header(header));
+    KNOWN_FAILURE_EQUAL("MG-030", header.GetHash().GetHex(), header.CalculateHash().GetHex(), hash.GetHex());
+
+    header = TestHeader(VERSION_of_block_for_yac_05x_new, 1700000000);
+    const uint256 sha = header.GetSHA256Hash();
+    header.nNonce += 1;
+    BOOST_CHECK(header.GetHash() == header.CalculateHash());
+    KNOWN_FAILURE_EQUAL("MG-030", header.GetSHA256Hash().GetHex(), Sha256Header(header).GetHex(), sha.GetHex());
+
+    header = TestHeader(VERSION_of_block_for_yac_05x_new, 1700000000);
+    hash = header.GetHash();
+    header.nNonce += 1;
+    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+    stream << header;
+    KNOWN_FAILURE_EQUAL("MG-030", header.GetHash().GetHex(), header.CalculateHash().GetHex(), hash.GetHex());
 }
 
 /* The Litecoin-style functions in scrypt.cpp are scrypt with N = 1024, r = 1, p = 1 and a
