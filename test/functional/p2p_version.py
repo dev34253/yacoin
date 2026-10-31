@@ -19,7 +19,10 @@
   only logged.
 """
 import random
+import select
+import socket
 import struct
+import threading
 import time
 
 from test_framework.messages import (
@@ -39,6 +42,66 @@ from test_framework.messages import (
 from test_framework.mininode import P2PInterface, mininode_lock
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, p2p_port, peers, wait_until
+
+
+class HoldingRelay:
+    """Forwards one TCP connection to the node's P2P port, holding what the
+    connecting side sends until release().
+
+    The node sends its version as soon as an outbound connection is open,
+    before the connection is registered among its peers; a self-connection
+    is only recognised once it is registered. Holding the version until
+    getpeerinfo lists the outbound connection makes the detection
+    independent of timing."""
+
+    def __init__(self, port, target_port):
+        self.target_port = target_port
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listener.bind(("127.0.0.1", port))
+        self.listener.listen(1)
+        self.released = threading.Event()
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+
+    def release(self):
+        self.released.set()
+
+    def join(self, timeout):
+        """Whether the relay has ended within timeout seconds."""
+        self.thread.join(timeout=timeout)
+        return not self.thread.is_alive()
+
+    def run(self):
+        self.listener.settimeout(10)
+        try:
+            outbound, _ = self.listener.accept()
+        finally:
+            self.listener.close()
+        inbound = None
+        held = b""
+        try:
+            inbound = socket.create_connection(("127.0.0.1", self.target_port))
+            while True:
+                # The timeout only lets a release() be seen while no data arrives.
+                readable, _, _ = select.select([outbound, inbound], [], [], 0.05)
+                for sock in readable:
+                    data = sock.recv(65536)
+                    if not data:
+                        return
+                    if sock is outbound:
+                        held += data
+                    else:
+                        outbound.sendall(data)
+                if held and self.released.is_set():
+                    inbound.sendall(held)
+                    held = b""
+        except OSError:
+            return
+        finally:
+            outbound.close()
+            if inbound is not None:
+                inbound.close()
 
 
 class NoVerackPeer(P2PInterface):
@@ -228,9 +291,18 @@ class VersionTest(BitcoinTestFramework):
         self.log.info("A connection to itself is dropped")
         node.disconnect_p2ps()
         wait_until(lambda: peers(node) == [], timeout=10)
+        # The node connects to itself through a relay on a port of this
+        # test's range that no node uses.
+        relay_port = p2p_port(1)
+        relay_address = "127.0.0.1:%d" % relay_port
+        relay = HoldingRelay(relay_port, p2p_port(0))
         with node.assert_debug_log(["connected to self at 127.0.0.1:"], timeout=10):
-            node.addnode("127.0.0.1:%d" % p2p_port(0), "onetry")
+            node.addnode(relay_address, "onetry")
+            wait_until(lambda: [p['inbound'] for p in peers(node) if p['addr'] == relay_address] == [False],
+                       timeout=10)
+            relay.release()
         wait_until(lambda: peers(node) == [], timeout=10)
+        assert relay.join(timeout=10)
 
     def test_malformed_payloads(self):
         node = self.nodes[0]
