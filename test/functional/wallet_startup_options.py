@@ -92,8 +92,9 @@ def clear_free_space(data, ps):
 
 
 def corrupt_tx_record(data, ps, txid):
-    """Change the last byte of the key of txid's "tx" record (the end of the
-    txid), so that the record no longer loads: a non-critical error."""
+    """Change the last byte of the key of txid's "tx" record (the last byte of
+    the serialized txid), so that the record no longer loads: a non-critical
+    error."""
     record_key = b'\x02tx' + bytes.fromhex(txid)[::-1]
     for p in leaf_pages(data, ps):
         for key, key_bytes in leaf_records(data, ps, p):
@@ -109,8 +110,10 @@ def add_stale_key_copy(data, ps):
     with no data item after it, as a page split can leave it. Salvage reads
     the pages in order, so it finds the copy before the record."""
     pages = leaf_pages(data, ps)
-    record_page, key = next((p, k) for p in reversed(pages) for k, b in leaf_records(data, ps, p)
-                            if b.startswith(b'\x03key'))
+    found = next(((p, k) for p in reversed(pages) for k, b in leaf_records(data, ps, p)
+                  if b.startswith(b'\x03key')), None)
+    assert found, "no key record"
+    record_page, key = found
     item = bytes(data[key:key + 3 + struct.unpack_from('<H', data, key)[0]])
     for p in pages[:pages.index(record_page)]:
         if p == 1:
@@ -239,8 +242,9 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         self.log.info("A wallet.dat with a damaged page is salvaged at startup")
         damaged = bytearray(healthy)
         clear_free_space(damaged, ps)
-        # The self-payment's record doesn't load: the second warning. Its
-        # block is newer than the wallet's keys, so the rescan finds it again.
+        # The self-payment's record doesn't load: the second warning. Its block
+        # is less than two hours older than the wallet's oldest key metadata,
+        # the window the rescan starts from, so the rescan finds it again.
         corrupt_tx_record(damaged, ps, self_payment)
         damage_page_1(damaged)
         self.write_wallet(bytes(damaged))
@@ -272,9 +276,8 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
             assert_equal(self.state(n0), before)
             self.stop_node(0, expected_stderr=salvage_warning(t))
         # Salvage keeps the first copy of each key it reads, the stale one.
-        self.known_failure("MG-007", salvaged_wallet_loaded,
-                           expected="exit code 1, stderr:\n%s\nError: Error loading wallet.dat: Wallet corrupted"
-                           % salvage_warning(t))
+        self.known_failure("MG-007", salvaged_wallet_loaded, expected=re.compile(r'\A%s\Z' % re.escape(
+            "exit code 1, stderr:\n%s\nError: Error loading wallet.dat: Wallet corrupted" % salvage_warning(t))))
 
         self.log.info("A wallet.dat that is not a database: salvage fails and the file stays")
         junk = bytes(range(256)) * 16
