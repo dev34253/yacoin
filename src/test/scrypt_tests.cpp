@@ -442,8 +442,9 @@ static CBlockHeader ScanHeader(int nVersion, ::int64_t nTime, unsigned int nNonc
  * the given N-factor, from the next nonce on: the 84-byte header for version 7, the 80-byte
  * one with a 32-bit nTime before. A hash qualifies when its two top bytes are zero and its
  * third byte has zero bits wherever the target's third byte has leading zero bits. Every
- * call here ends after one or two hashes; it returns the nonce and copies the last hash. The nonces
- * were found with a search over the same headers at N-factor 4. */
+ * call here ends after one or two hashes; it returns the nonce and copies the last hash.
+ * The nonces were found with a search over the same headers at N-factor 4. This fixture
+ * has no chain, so chainActive.Tip() is null: "on the tip" means pindexPrev == nullptr. */
 BOOST_AUTO_TEST_CASE(scanhash_scrypt_one_hash)
 {
     ConsensusGlobalsGuard globals;
@@ -480,12 +481,22 @@ BOOST_AUTO_TEST_CASE(scanhash_scrypt_one_hash)
     BOOST_CHECK_EQUAL(nHashes, 1U);
     BOOST_CHECK_EQUAL(result.GetHex(), hash7);
 
+    // Nonce 171: the top byte is zero but the second is not, so the hash misses
+    header.nNonce = 170;
+    result = uint256();
+    nHashes = 0;
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, &other, &targetTwoBytes), 171U);
+    BOOST_CHECK_EQUAL(nHashes, 1U);
+    BOOST_CHECK_EQUAL(result.GetHex(), "00a22630bba48d18b3527cef4c38db1f1b9047fbe5b46a032539d18ca49fc30c");
+
     // Version 6 with nonce 9920 hashes to 00009502...; its nTime has N-factor 4
     const std::string hash6 = "0000950272004a8af775be356f19e3dab3925940c593f5640b95356379f81f4e";
+    // (not the tip: a found hash ends the loop before that is checked)
     header = ScanHeader(VERSION_of_block_for_yac_049, 1368000000, 9919);
     result = uint256();
     nHashes = 0;
-    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, pindexTip, &targetTwoBytes), 9920U);
+    BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, &other, &targetTwoBytes), 9920U);
+    BOOST_CHECK_EQUAL(nHashes, 1U);
     BOOST_CHECK_EQUAL(result.GetHex(), hash6);
     solved = ScanHeader(VERSION_of_block_for_yac_049, 1368000000, 9920);
     BOOST_CHECK_EQUAL(GetNfactor(solved.nTime), 4);
