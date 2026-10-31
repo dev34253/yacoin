@@ -102,7 +102,7 @@ jobs:
     # the runner (functional-tests mode of the yacoin-build image, Python
     # 3.10). Cached and saved like the unit-tests job, in its own namespace.
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 30
     env:
       IMAGE: ubuntu.22.04
     steps:
@@ -126,7 +126,7 @@ jobs:
       - name: build and run the functional tests
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
-        timeout-minutes: 45
+        timeout-minutes: 25
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
