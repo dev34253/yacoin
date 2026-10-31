@@ -16,8 +16,8 @@ database environment.
   file stays in place.
 - Salvage in aggressive mode also reads the free space of the leaf pages,
   where BDB leaves old index entries and items (for example after a page
-  split). The damaged-page step zeroes that space first, so its result
-  doesn't depend on what the file holds there.
+  split). The salvage steps zero that space first, so their results don't
+  depend on what the file holds there.
 - Known failures: a silent -salvagewallet failure, a wallet.dat restored
   after a failed salvage is moved aside again, -salvagewallet drops the HD
   chain split, a raw exception for a file named "database", a segfault
@@ -168,6 +168,11 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         old_paths = [int(re.match(r"m/0'/0'/(\d+)'", n0.validateaddress(a)['hdkeypath']).group(1)) for a in self.addrs]
         before = self.state(n0)
         self.stop_node(0)
+        # Salvage also reads the pages' free space (see clear_free_space).
+        with open(self.wallet_path('wallet.dat'), 'rb') as f:
+            wallet = bytearray(f.read())
+        clear_free_space(wallet, struct.unpack('<I', wallet[20:24])[0])
+        self.write_wallet(bytes(wallet))
         t = self.tick()
         with n0.assert_debug_log(['parameter interaction: -salvagewallet=1 -> setting -rescan=1',
                                   'Renamed wallet.dat to wallet.dat.%d.bak' % t,
