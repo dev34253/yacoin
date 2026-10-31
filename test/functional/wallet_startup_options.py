@@ -14,7 +14,8 @@ database environment.
 - A wallet.dat that fails the database check is salvaged automatically at
   startup (warning), or the start fails ("salvage failed"); a non-database
   file stays in place. A transaction record that doesn't load adds a second
-  warning, and the rescan finds the transaction again.
+  warning, and the rescan finds the transaction again if its block is inside
+  the rescan's window.
 - Salvage in aggressive mode also reads the free space of the leaf pages,
   where BDB leaves old index entries and items (for example after a page
   split). The salvage steps zero that space first, so their results don't
