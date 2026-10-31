@@ -13,7 +13,8 @@ database environment.
   key metadata don't.
 - A wallet.dat that fails the database check is salvaged automatically at
   startup (warning), or the start fails ("salvage failed"); a non-database
-  file stays in place.
+  file stays in place. A transaction record that doesn't load adds a second
+  warning, and the rescan finds the transaction again.
 - Salvage in aggressive mode also reads the free space of the leaf pages,
   where BDB leaves old index entries and items (for example after a page
   split). The salvage steps zero that space first, so their results don't
@@ -52,12 +53,30 @@ PAGE_HEADER_SIZE = 26
 ITEM_DATA = 1
 
 
+def page_size(data):
+    """The page size of a little-endian BDB btree file, after checking its
+    magic number."""
+    assert_equal(struct.unpack_from('<I', data, 12)[0], BTREE_MAGIC)
+    return struct.unpack_from('<I', data, 20)[0]
+
+
 def leaf_pages(data, ps):
     return [p for p in range(1, len(data) // ps) if data[p * ps + 25] == PAGE_TYPE_LEAF]
 
 
 def entries_and_hoffset(data, ps, p):
     return struct.unpack_from('<HH', data, p * ps + 20)
+
+
+def leaf_records(data, ps, p):
+    """(offset of the key item in data, key bytes) of the records on leaf
+    page p whose key and data items both hold their bytes."""
+    entries, _ = entries_and_hoffset(data, ps, p)
+    for i in range(0, entries, 2):
+        key, value = (p * ps + o for o in struct.unpack_from('<HH', data, p * ps + PAGE_HEADER_SIZE + 2 * i))
+        length, key_type = struct.unpack_from('<HB', data, key)
+        if key_type == ITEM_DATA and data[value + 2] == ITEM_DATA:
+            yield key, bytes(data[key + 3:key + 3 + length])
 
 
 def clear_free_space(data, ps):
@@ -72,37 +91,39 @@ def clear_free_space(data, ps):
         data[start:p * ps + hoffset] = bytes(p * ps + hoffset - start)
 
 
-def key_record_keys(data, ps, p):
-    """The key items (length, type, bytes) of the "key" records on leaf page p."""
-    entries, _ = entries_and_hoffset(data, ps, p)
-    for i in range(0, entries, 2):
-        offset = p * ps + struct.unpack_from('<H', data, p * ps + PAGE_HEADER_SIZE + 2 * i)[0]
-        length, item_type = struct.unpack_from('<HB', data, offset)
-        item = bytes(data[offset:offset + 3 + length])
-        if item_type == ITEM_DATA and item[3:7] == b'\x03key':
-            yield item
+def corrupt_tx_record(data, ps, txid):
+    """Change the last byte of the key of txid's "tx" record (the end of the
+    txid), so that the record no longer loads: a non-critical error."""
+    record_key = b'\x02tx' + bytes.fromhex(txid)[::-1]
+    for p in leaf_pages(data, ps):
+        for key, key_bytes in leaf_records(data, ps, p):
+            if key_bytes == record_key:
+                data[key + 3 + len(record_key) - 1] ^= 0xff
+                return
+    raise AssertionError("no tx record for %s" % txid)
 
 
 def add_stale_key_copy(data, ps):
-    """Copy the key item of a "key" record into the free space of the leaf
-    pages before the record's page, behind an index entry past the page's
-    entries with no data item after it, as a page split leaves it. Salvage
-    reads the pages in order, so it finds the copy before the record."""
+    """Copy the key item of a "key" record into the free space of a leaf page
+    before the record's page, behind an index entry past the page's entries
+    with no data item after it, as a page split can leave it. Salvage reads
+    the pages in order, so it finds the copy before the record."""
     pages = leaf_pages(data, ps)
-    last = [p for p in pages if any(key_record_keys(data, ps, p))][-1]
-    item = next(key_record_keys(data, ps, last))
-    copies = 0
-    for p in pages[:pages.index(last)]:
+    record_page, key = next((p, k) for p in reversed(pages) for k, b in leaf_records(data, ps, p)
+                            if b.startswith(b'\x03key'))
+    item = bytes(data[key:key + 3 + struct.unpack_from('<H', data, key)[0]])
+    for p in pages[:pages.index(record_page)]:
+        if p == 1:
+            continue  # the master database's page, which the steps damage
         entries, hoffset = entries_and_hoffset(data, ps, p)
         index_end = PAGE_HEADER_SIZE + 2 * (entries + 2)
         offset = (hoffset - len(item)) & ~3  # items are 4-byte aligned
-        if offset < index_end:
-            continue  # no room on this page
-        data[p * ps + offset:p * ps + offset + len(item)] = item
-        # The copy's index entry, and a zero one where its data item would be.
-        struct.pack_into('<HH', data, p * ps + index_end - 4, offset, 0)
-        copies += 1
-    assert copies > 0
+        if offset >= index_end:  # room for the copy
+            data[p * ps + offset:p * ps + offset + len(item)] = item
+            # The copy's index entry, and a zero one where its data item would be.
+            struct.pack_into('<HH', data, p * ps + index_end - 4, offset, 0)
+            return
+    raise AssertionError("no room for the copy")
 
 
 def no_core_dump():
@@ -171,7 +192,7 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         # Salvage also reads the pages' free space (see clear_free_space).
         with open(self.wallet_path('wallet.dat'), 'rb') as f:
             wallet = bytearray(f.read())
-        clear_free_space(wallet, struct.unpack('<I', wallet[20:24])[0])
+        clear_free_space(wallet, page_size(wallet))
         self.write_wallet(bytes(wallet))
         t = self.tick()
         with n0.assert_debug_log(['parameter interaction: -salvagewallet=1 -> setting -rescan=1',
@@ -202,10 +223,9 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
 
         with open(self.wallet_path('wallet.dat'), 'rb') as f:
             healthy = f.read()
-        magic = struct.unpack('<I', healthy[12:16])[0]
-        ps = struct.unpack('<I', healthy[20:24])[0]
+        ps = page_size(healthy)
         # Page 1 is the master database's leaf, page 2 the meta page of "main".
-        assert_equal((magic, healthy[ps + 25], healthy[2 * ps + 25]), (BTREE_MAGIC, PAGE_TYPE_LEAF, PAGE_TYPE_META))
+        assert_equal((healthy[ps + 25], healthy[2 * ps + 25]), (PAGE_TYPE_LEAF, PAGE_TYPE_META))
 
         def salvage_warning(t):
             return ('Warning: Warning: Wallet file corrupt, data salvaged! Original wallet.dat saved as '
@@ -219,6 +239,9 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         self.log.info("A wallet.dat with a damaged page is salvaged at startup")
         damaged = bytearray(healthy)
         clear_free_space(damaged, ps)
+        # The self-payment's record doesn't load: the second warning. Its
+        # block is newer than the wallet's keys, so the rescan finds it again.
+        corrupt_tx_record(damaged, ps, self_payment)
         damage_page_1(damaged)
         self.write_wallet(bytes(damaged))
         t = self.tick()
@@ -226,9 +249,11 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         assert os.path.isfile(self.wallet_path('wallet.dat.%d.bak' % t))
         assert_equal(self.state(n0), before)
         # InitWarning adds a second "Warning: " (as for -paytxfee).
-        self.stop_node(0, expected_stderr=salvage_warning(t))
+        self.stop_node(0, expected_stderr=salvage_warning(t) + (
+            '\nWarning: Error reading wallet.dat! All keys read correctly, but transaction data or '
+            'address book entries might be missing or incorrect.'))
 
-        self.log.info("A stale copy of a key record's key in the free space of earlier pages")
+        self.log.info("A stale copy of a key record's key in an earlier page: the salvaged wallet loads")
         damaged = bytearray(healthy)
         clear_free_space(damaged, ps)
         add_stale_key_copy(damaged, ps)
