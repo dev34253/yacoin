@@ -40,7 +40,7 @@ host, build in the CI images.
 
 ```sh
 ./dev.sh container unit-tests                # build test_bitcoin and run all unit test suites
-./dev.sh container functional-tests          # low-difficulty build, then the functional tests
+./dev.sh container functional-tests          # low-difficulty build, then all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ```
 
@@ -73,7 +73,8 @@ variants.
 ```sh
 ./dev.sh unit                       # unit tests (test_bitcoin, build/dev), all suites in parallel
 ./dev.sh unit pow_tests             # selected suites
-./dev.sh ftest                      # functional tests (test/functional/, low-difficulty build build/func), 4 in parallel
+./dev.sh ftest                      # the base functional tests (test/functional/, low-difficulty build build/func), 4 in parallel
+./dev.sh ftest --extended           # the base and the three slow extended scripts
 ./dev.sh ftest feature_tokens.py    # selected functional tests
 ./dev.sh asan                       # unit tests under AddressSanitizer and UndefinedBehaviorSanitizer
 ./dev.sh all                        # build dev, unit, ftest and build release, with a summary
