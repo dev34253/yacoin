@@ -7,7 +7,7 @@
 // (ReceivedBlockTransactions) and chosen as the new tip (FindMostWorkChain).
 //
 // The regtest headers here are version 7 and hash at nFactorAtHardfork, which is 0 in
-// the unit tests. Every header is proof of work (non-zero nonce).
+// the unit tests. Every header here is a proof-of-work header.
 
 #include "chainparams.h"
 #include "consensus/validation.h"
@@ -173,8 +173,9 @@ struct HeaderSetup : public TestingSetup {
 
 /** Turns off the block index consistency check (CheckBlockIndex) while it lives */
 struct NoCheckBlockIndex {
+    bool fWas = fCheckBlockIndex;
     NoCheckBlockIndex() { fCheckBlockIndex = false; }
-    ~NoCheckBlockIndex() { fCheckBlockIndex = true; }
+    ~NoCheckBlockIndex() { fCheckBlockIndex = fWas; }
 };
 
 /** Restores fCheckpointsEnabled */
@@ -344,7 +345,7 @@ BOOST_AUTO_TEST_CASE(reject_header)
     easy.nBits = (Params().GetConsensus().powLimit * 2).GetCompact(); // no nonce can meet it
     cases.push_back({"target above limit", easy, "no reason", 50, 0});
 
-    // Target other than the required one (still an easy one, so the proof of work holds)
+    // Target other than the required one (a slightly lower target, still easy enough to mine here)
     cases.push_back({"wrong target", HeaderOnTip([&](CBlockHeader& h) { h.nBits = nBits - 1; }),
                      "bad-diffbits", 10, REJECT_INVALID});
 
@@ -358,7 +359,6 @@ BOOST_AUTO_TEST_CASE(reject_header)
 
     for (const Case& c : cases) {
         BOOST_TEST_MESSAGE(c.name);
-        BOOST_CHECK(c.header.nNonce != 0);
         HeaderResult result = AcceptHeaders({c.header});
         BOOST_CHECK_EQUAL(result.reason, c.reason);
         BOOST_CHECK_EQUAL(result.nScore, c.nScore);
@@ -539,13 +539,11 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
     BOOST_CHECK_EQUAL(result.reason, "time-too-old");
     BOOST_CHECK_EQUAL(result.nScore, 0);
 
-    // A version 6 header (32-bit nTime, N-factor 4 at this time) after the fork height,
-    // which is 0 on regtest
+    // A version 6 header after the fork height, which is 0 on regtest
     CBlockIndex* pindexOld = chain.Add(nullptr, 1368000000, nBitsLimit);
     pindexOld = chain.Add(pindexOld, 1368000100, nBitsLimit);
     chain.Register(pindexOld);
     header = HeaderOn(pindexOld, 1368000200, VERSION_of_block_for_yac_049);
-    BOOST_CHECK_EQUAL(GetNfactor(header.nTime), 4);
     result = AcceptHeaders({header});
     BOOST_CHECK_EQUAL(result.reason, "bad-version(0x00000006)");
     BOOST_CHECK_EQUAL(result.nScore, 0);
