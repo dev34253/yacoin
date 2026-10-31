@@ -163,8 +163,12 @@ so it only needs `TEST_RUNNER_PORT_MIN` to stay clear of a runner's ports.
 
 ## Code coverage
 
-Needs `lcov` (`sudo apt install lcov`; Ubuntu 22.04 ships lcov 1.15, which
-works with gcc 11). `gcov` must match the compiler version.
+Needs lcov 2.5 or newer, which configure checks for. Ubuntu 22.04 and 24.04
+ship older versions; the Ubuntu 22.04 build image has it
+(`./dev.sh container ubuntu.22.04 cov-unit`, `cov-functional`), or install a
+release from <https://github.com/linux-test-project/lcov/releases> as
+`ci/containers/Dockerfile.ubuntu.22.04` does. `gcov` must match the compiler
+version.
 
 ```sh
 ./dev.sh cov
@@ -200,8 +204,9 @@ Notes:
   counts. Branches are merged by position, so on the few lines whose
   conditions differ between the builds the merged branch numbers are only
   approximate. Line and function coverage aren't affected.
-- Only lcov 1.x is supported, and configure checks for it. lcov 2.x rejects
-  filter patterns that match nothing and has renamed the branch-coverage option.
+- Every lcov, geninfo and genhtml call takes its settings from
+  `contrib/devtools/coverage-lcovrc` (configure passes it with
+  `--config-file`), and from no system or user lcovrc.
 - In the build image (`./dev.sh container cov-unit`, `cov-functional`), with
   the depends packages cached and without ccache, `cov-unit` takes about 13
   minutes on 8 cores (build about 5, tests about 5, captures about 2) and
@@ -209,15 +214,22 @@ Notes:
   `p2p_invalid_messages.py` alone about 3½, captures about 2); with 4 cores
   (`docker run --cpus=4`) about 15 and 20 minutes. The unit test time is
   bounded by `transaction_tests/test_big_transaction` (about 3 minutes).
-- To keep that time down, lcov captures run `geninfo` in parallel
+- To keep that time down, the captures run `geninfo --parallel`
   (`contrib/devtools/coverage-capture.sh`), the baseline is captured while
   the tests run, and the unit test suites run in parallel
   (`contrib/devtools/run-unit-suites.sh`, the runner `./dev.sh unit` uses).
   `COV_JOBS` sets the number of processes (default: all cores), e.g.
   `make cov-unit COV_JOBS=4`.
-- Branch coverage excludes exception edges
-  (`geninfo_no_exception_branch=1`). Without that, C++ branch numbers are
-  mostly noise.
+- Branch coverage counts the branches of decisions in the code (`if`,
+  loops, `switch`, `?:`, `&&`, `||`), not the other branches gcc records at
+  `-O0`. lcov's filters (`coverage-lcovrc`) remove a call's exception edge
+  together with its normal return edge, a block left with one branch, the
+  branches of lines without a conditional expression (lcov checks the source
+  text; e.g. the cleanup at a closing brace, a catch clause), and the
+  branches of lines with `LogPrintf`, `LogPrint` or `assert`: the logging
+  macros expand to a try/catch whose handler only runs for an invalid format
+  string, and an assert's failure path ends the process. A decision on such a
+  line is not counted either. Line coverage is not filtered.
 - Assembly (`scrypt-x86_64.S`) and the vendored libraries aren't measured.
 - Nodes that the functional tests kill with SIGKILL don't write their
   counters, so code that only those nodes ran is under-reported.

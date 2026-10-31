@@ -1,8 +1,8 @@
 # YaCoin Build Environment
 
 This directory holds the definitions of the Docker build images that CI uses. CI runs each image under a tag computed from the files that go
-into it, `ghcr.io/dev34253/yacoin-build:<image>-<hash>` (`image-tag.sh`; see [GitHub Actions](#github-actions)). The base images are pinned by digest, the macOS toolchain inputs are pinned and checked, and the entrypoints create the ccache config before
-the build.
+into it, `ghcr.io/dev34253/yacoin-build:<image>-<hash>` (`image-tag.sh`; see [GitHub Actions](#github-actions)). The base images are pinned by digest, the macOS toolchain inputs and the lcov release of the Ubuntu 22.04 image are pinned and checked, and
+the entrypoints create the ccache config before the build.
 
 | File | What it is |
 |---|---|
@@ -33,7 +33,8 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 
 ### Ubuntu Builds
 - `Dockerfile.ubuntu.16.04` - Ubuntu 16.04 build environment
-- `Dockerfile.ubuntu.22.04` - Ubuntu 22.04 build environment
+- `Dockerfile.ubuntu.22.04` - Ubuntu 22.04 build environment, with lcov 2.5 for the coverage modes (from the release tarball of
+  [linux-test-project/lcov](https://github.com/linux-test-project/lcov/releases), checked against its SHA-256; Ubuntu 22.04 ships 1.14)
 
 ### Cross-Platform Builds
 - `Dockerfile.windows` - Windows cross-compilation environment
@@ -68,8 +69,8 @@ optional mode as its argument:
 | `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests) |
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
 | `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`) |
-| `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 1.x, so it only works in the Ubuntu 22.04 image |
-| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 1.x (Ubuntu 22.04 image only) |
+| `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.5 or newer, so it only works in the Ubuntu 22.04 image |
+| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 2.5 or newer (Ubuntu 22.04 image only) |
 
 ```bash
 image=$(ci/containers/image-tag.sh ubuntu.22.04)    # pullable once CI on master has published it
