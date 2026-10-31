@@ -657,7 +657,7 @@ jobs:
             build/docker-*/cov-functional/test/tmp/test_runner_*/**/std*/*
           retention-days: 14
   coverage-report:
-    # Merges the two coverage jobs' tracefiles (lcov 1.14 of the 22.04 image,
+    # Merges the two coverage jobs' tracefiles (lcov 2.5 of the 22.04 image,
     # with configure's LCOV_OPTS and the Makefile's GENHTML_OPTS), writes the
     # combined HTML report, and checks the files of
     # contrib/devtools/coverage-targets.json with coverage-check.py (after its
@@ -693,10 +693,10 @@ jobs:
             set -euo pipefail
             python3 -I -B -m unittest discover -s contrib/devtools/test
             # LCOV_OPTS of configure.ac and GENHTML_OPTS of Makefile.am; keep them in step.
-            lcov_opts=(--rc lcov_branch_coverage=1 --rc geninfo_no_exception_branch=1)
+            lcov_opts=(--config-file /src/contrib/devtools/coverage-lcovrc)
             lcov "${lcov_opts[@]}" -q -a coverage/unit/test_bitcoin_coverage.info \
               -a coverage/functional/functional_test_coverage.info -o coverage/total.info
-            genhtml --branch-coverage --demangle-cpp -s -q coverage/total.info -o coverage/total
+            genhtml "${lcov_opts[@]}" --demangle-cpp -s -q coverage/total.info -o coverage/total
             python3 -I -B contrib/devtools/coverage-check.py --root /src \
               --unit coverage/unit/test_bitcoin_coverage.info --all coverage/total.info \
               --functions coverage/unit/test_bitcoin_functions.json coverage/functional/functional_test_functions.json \

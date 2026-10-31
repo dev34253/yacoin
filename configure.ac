@@ -496,17 +496,21 @@ if test x$use_lcov = xyes; then
   if test x$GENINFO = x; then
     AC_MSG_ERROR("lcov testing requested but geninfo not found")
   fi
-  dnl The coverage targets use lcov 1.x options; lcov 2.x renamed or tightened them.
+  dnl The branch filters of contrib/devtools/coverage-lcovrc need lcov 2.5 or
+  dnl newer, whose exception filter also drops the call's normal return edge.
   lcov_version=`$LCOV --version 2>/dev/null`
-  if ! echo "$lcov_version" | grep -q "version 1\."; then
-    AC_MSG_ERROR([lcov testing requires lcov 1.x, found: $lcov_version])
+  lcov_major=`echo "$lcov_version" | sed -n 's/.*version \([[0-9]]*\)\.\([[0-9]]*\).*/\1/p'`
+  lcov_minor=`echo "$lcov_version" | sed -n 's/.*version \([[0-9]]*\)\.\([[0-9]]*\).*/\2/p'`
+  if test -z "$lcov_major" || test "$lcov_major" -lt 2 || { test "$lcov_major" -eq 2 && test "$lcov_minor" -lt 5; }; then
+    AC_MSG_ERROR([lcov testing requires lcov 2.5 or newer, found: $lcov_version
+(the Ubuntu 22.04 build image has it: ./dev.sh container ubuntu.22.04 cov-unit)])
   fi
   dnl gcov must match the compiler version (e.g. gcov 11 for g++ 11).
   LCOV="$LCOV --gcov-tool=$GCOV"
   GENINFO="$GENINFO --gcov-tool=$GCOV"
-  dnl lcov 1.x drops branch data unless this is passed to every lcov call.
-  dnl Exception edges would make the C++ branch numbers mostly noise.
-  LCOV_OPTS="--rc lcov_branch_coverage=1 --rc geninfo_no_exception_branch=1"
+  dnl Every lcov, geninfo and genhtml call reads its settings (branch coverage,
+  dnl the branch filters) from this file and from no other lcovrc.
+  LCOV_OPTS="--config-file `cd "$srcdir" && pwd`/contrib/devtools/coverage-lcovrc"
   dnl scrypt-jane (the scrypt-chacha PoW) is C, so instrument C as well.
   AX_CHECK_COMPILE_FLAG([--coverage],[CXXFLAGS="$CXXFLAGS --coverage"; CFLAGS="$CFLAGS --coverage"],
     [AC_MSG_ERROR("lcov testing requested but --coverage flag does not work")])

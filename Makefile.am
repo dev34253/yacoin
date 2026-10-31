@@ -219,13 +219,15 @@ cov_space := $(subst ,, )
 FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
 COV_TOOLS = $(abs_top_srcdir)/contrib/devtools
 COV_CAPTURE = $(COV_TOOLS)/coverage-capture.sh --geninfo "$(GENINFO) $(LCOV_OPTS)" \
-  --lcov "$(LCOV) $(LCOV_OPTS)" --dir $(abs_builddir)/src --jobs "$(COV_JOBS)"
+  --dir $(abs_builddir)/src --jobs "$(COV_JOBS)"
 COV_FUNCTIONS = $(PYTHON) -I $(COV_TOOLS)/coverage-functions.py --gcov "$(GCOV)" \
   --dir $(abs_builddir)/src --root $(abs_top_srcdir) --jobs "$(COV_JOBS)"
-# lcov 1.x only: lcov 2.x rejects -r patterns that match nothing.
+# Removed from the reports; a pattern that matches no file is only a warning
+# (contrib/devtools/coverage-lcovrc).
 LCOV_FILTER = "/usr/*" "*/depends/*" "*/src/leveldb/*" "*/src/secp256k1/*" \
   "*/src/univalue/*" "*/src/crypto/ctaes/*" "*/src/test/*" "*/src/wallet/test/*"
-GENHTML_OPTS = --branch-coverage --demangle-cpp -s
+# genhtml also gets $(LCOV_OPTS).
+GENHTML_OPTS = --demangle-cpp -s
 
 cov-unit:
 	rm -rf test_bitcoin.coverage/ test_bitcoin.logs/ $(COVERAGE_UNIT_FILES)
@@ -250,7 +252,7 @@ cov-unit:
 	grep -q '^SF:' test_bitcoin.info 2>/dev/null || cp unit_baseline.info test_bitcoin.info
 	$(LCOV) $(LCOV_OPTS) -q -a unit_baseline.info -a test_bitcoin.info -o test_bitcoin_all.info
 	$(LCOV) $(LCOV_OPTS) -q -r test_bitcoin_all.info $(LCOV_FILTER) -o test_bitcoin_coverage.info
-	$(GENHTML) $(GENHTML_OPTS) -q test_bitcoin_coverage.info -o test_bitcoin.coverage
+	$(GENHTML) $(LCOV_OPTS) $(GENHTML_OPTS) -q test_bitcoin_coverage.info -o test_bitcoin.coverage
 	$(LCOV) $(LCOV_OPTS) --summary test_bitcoin_coverage.info
 	@test ! -f test_bitcoin.capture-failed || { echo "capturing the unit test counters failed (see above); the report shows the baseline only" >&2; exit 1; }
 	@test ! -f test_bitcoin.functions-failed || { echo "writing the function extents failed (see test_bitcoin_functions.log)" >&2; exit 1; }
@@ -289,7 +291,7 @@ cov-functional:
 	grep -q '^SF:' functional_test.info 2>/dev/null || cp functional_baseline.info functional_test.info
 	$(LCOV) $(LCOV_OPTS) -q -a functional_baseline.info -a functional_test.info -o functional_test_all.info
 	$(LCOV) $(LCOV_OPTS) -q -r functional_test_all.info $(LCOV_FILTER) -o functional_test_coverage.info
-	$(GENHTML) $(GENHTML_OPTS) -q functional_test_coverage.info -o functional_test.coverage
+	$(GENHTML) $(LCOV_OPTS) $(GENHTML_OPTS) -q functional_test_coverage.info -o functional_test.coverage
 	$(LCOV) $(LCOV_OPTS) --summary functional_test_coverage.info
 	@test ! -f functional_test.capture-failed || { echo "capturing the functional test counters failed (see above); the report shows the baseline only" >&2; exit 1; }
 	@test ! -f functional_test.functions-failed || { echo "writing the function extents failed (see functional_test_functions.log)" >&2; exit 1; }
