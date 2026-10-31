@@ -1,6 +1,6 @@
 {
   "tolerance": 0.1,
-  "overall": {"unit_lines": 54.0},
+  "overall": {"unit_lines": 54.7},
   "tiers": {
     "tier-1": {"unit_lines": 90.0, "unit_branches": 70.0},
     "tier-2": {"all_lines": 90.0, "unit_lines": 50.0}
