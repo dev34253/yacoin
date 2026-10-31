@@ -442,7 +442,7 @@ static CBlockHeader ScanHeader(int nVersion, ::int64_t nTime, unsigned int nNonc
  * the given N-factor, from the next nonce on: the 84-byte header for version 7, the 80-byte
  * one with a 32-bit nTime before. A hash qualifies when its two top bytes are zero and its
  * third byte has zero bits wherever the target's third byte has leading zero bits. Every
- * call here ends after one hash; it returns the nonce and copies the last hash. The nonces
+ * call here ends after one or two hashes; it returns the nonce and copies the last hash. The nonces
  * were found with a search over the same headers at N-factor 4. */
 BOOST_AUTO_TEST_CASE(scanhash_scrypt_one_hash)
 {
@@ -455,17 +455,19 @@ BOOST_AUTO_TEST_CASE(scanhash_scrypt_one_hash)
     // Third byte 0x0f: the hash's third byte must also be below 0x10
     uint256 targetNibble = ~uint256(0) >> 20;
 
-    // Version 7 with nonce 81260 hashes to 0000199a...
+    // Version 7 with nonce 81260 hashes to 0000199a...; nonce 81259 misses, and on the tip
+    // with mining on the loop goes on to the next nonce
     const std::string hash7 = "0000199aad05ca282a46bda3e243ee1d03a02f072d82a26771831d4a95eee84d";
-    CBlockHeader header = ScanHeader(VERSION_of_block_for_yac_05x_new, 1700000000, 81259);
+    CBlockHeader header = ScanHeader(VERSION_of_block_for_yac_05x_new, 1700000000, 81258);
     uint256 result;
     ::uint32_t nHashes = 99;
     fGenerateYacoins = true;
     fShutdown = false;
     BOOST_CHECK_EQUAL(scanhash_scrypt((char*)&header, nHashes, result.begin(), 4, pindexTip, &targetTwoBytes), 81260U);
-    BOOST_CHECK_EQUAL(nHashes, 100U);
+    BOOST_CHECK_EQUAL(nHashes, 101U);
     BOOST_CHECK_EQUAL(result.GetHex(), hash7);
-    BOOST_CHECK_EQUAL(header.nNonce, 81259U); // the caller's header is unchanged
+    BOOST_CHECK_EQUAL(header.nNonce, 81258U); // the caller's header is unchanged
+    header.nNonce = 81259;
     CBlockHeader solved = ScanHeader(VERSION_of_block_for_yac_05x_new, 1700000000, 81260);
     nFactorAtHardfork = 4;
     BOOST_CHECK(solved.CalculateHash() == result);
