@@ -27,13 +27,14 @@ cc = load_module()
 
 
 def record(path, lines=(), branches=(), test_name=""):
-    """One lcov 1.x record: lines as (line, count), branches as
-    (line, block, branch, count or "-")."""
+    """One lcov record: lines as (line, count), branches as
+    (line, block, branch, count or "-"); a block may be a string with lcov's
+    flags (e.g. "fU0")."""
     out = ["TN:" + test_name, "SF:" + path]
     for line, count in lines:
         out.append("DA:%d,%d" % (line, count))
     for line, block, branch, taken in branches:
-        out.append("BRDA:%d,%d,%d,%s" % (line, block, branch, taken))
+        out.append("BRDA:%d,%s,%s,%s" % (line, block, branch, taken))
     out.append("LF:%d" % len(lines))
     out.append("LH:%d" % sum(1 for _, c in lines if c > 0))
     out.append("end_of_record")
@@ -90,7 +91,29 @@ class TracefileTest(TempDirTest):
         files = cc.read_tracefiles([path], os.path.relpath(self.dir))
         self.assertEqual(sorted(files), ["src/a.cpp"])
 
+    def test_branch_flags(self):
+        # lcov 2 marks exception (e) and fallthrough (f) branches and excluded
+        # ones (U); excluded branches are not counted, as lcov does.
+        path = self.write("a.info",
+                          record("/src/src/a.cpp", [(5, 1)],
+                                 [(5, "fU0", 0, 4), (5, "eU0", 1, 0), (5, "f0", 2, 4), (5, 0, 3, 0),
+                                  (6, "eU0", 0, "-"), (7, "e1", 0, 1)], "t1")
+                          + record("/src/src/a.cpp", [(5, 0)], [(5, "f0", 2, "-"), (5, 0, 3, 2)], "t2"))
+        cov = cc.read_tracefiles([path], "/src")["src/a.cpp"]
+        self.assertEqual(cov.branches, {(5, 0, 2): 4, (5, 0, 3): 2, (7, 1, 0): 1})
+        self.assertEqual(cc.stats(cov), cc.Stats(1, 1, 3, 3))
+
+    def test_branch_expressions(self):
+        # Tools other than gcc may name a branch by an expression, commas included.
+        path = self.write("a.info", record("/src/src/a.cpp", [(1, 1)], [(1, 0, "f(a, b)", 1), (1, 0, "!f(a, b)", 0)]))
+        cov = cc.read_tracefiles([path], "/src")["src/a.cpp"]
+        self.assertEqual(cov.branches, {(1, 0, "f(a, b)"): 1, (1, 0, "!f(a, b)"): 0})
+
     def test_malformed_lines_are_errors(self):
+        for brda in ("BRDA:5,x0,1,0", "BRDA:5,0,1", "BRDA:5,0,1,x", "BRDA:x,0,1,0", "BRDA:5,Ue0,1,0"):
+            path = self.write("c.info", "SF:/src/src/a.cpp\n%s\nend_of_record\n" % brda)
+            with self.assertRaises(cc.InputError, msg=brda):
+                cc.read_tracefiles([path], "/src")
         path = self.write("a.info", "SF:/src/src/a.cpp\nDA:x,1\nend_of_record\n")
         with self.assertRaises(cc.InputError):
             cc.read_tracefiles([path], "/src")
