@@ -38,6 +38,10 @@ lcov_excl_br_line = (?:LogPrintf?|Y?assert)(?=\s*\()
 #                 keep: different end lines for one function (Boost test
 #                 cases), a count on a line whose block gcov marks
 #                 unexecuted; the counts are kept as gcov reports them
+#   negative      a negative count: threads of one process update a
+#                 counter at the same time (the build does not use
+#                 -fprofile-update=atomic), seen in leveldb; lcov counts it
+#                 as 0, not taken
 #   unused        an "lcov -r" pattern that matches no file (a vendored
 #                 library the build does not instrument)
-ignore_errors = inconsistent,unused
+ignore_errors = inconsistent,negative,unused
