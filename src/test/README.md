@@ -37,7 +37,8 @@ A test that pins a known defect uses the known-failure checks of `known_failure.
 today's; once the correct behaviour holds they fail with "<row> no longer fails; remove the known-failure check", so the fix replaces the check with a
 plain assertion, and any other outcome fails as "not the expected known failure". New checks name the defect's row in the modernisation gap register,
 e.g. `"MG-045"`. Behaviour that is intended is asserted with plain checks. The functional tests have the same check, `known_failure()` in
-`test/functional/test_framework/util.py`.
+`test/functional/test_framework/util.py`. `known_failure_tests` checks the reporting with four deliberate failures, so a run's summary says "(4
+failures are expected)"; any other failure still fails the run.
 
 ### Note on adding test cases
 

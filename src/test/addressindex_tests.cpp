@@ -529,13 +529,13 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
         return InKeyOrder(all);
     }
 
-    /** Whether an index or unspent line (Str) is one of tx0's CLTV/CSV P2SH outputs (10, 11) */
     /** Whether an index or unspent line (Str) is about output n of tx0 */
     bool IsTx0Output(const std::string& line, unsigned n) const
     {
         return line.find(strprintf("%s n %u ", tx0.GetHash().GetHex(), n)) != std::string::npos;
     }
 
+    /** Whether an index or unspent line (Str) is one of tx0's CLTV/CSV P2SH outputs (10, 11) */
     bool IsTimelockP2sh(const std::string& line) const
     {
         return IsTx0Output(line, 10) || IsTx0Output(line, 11);

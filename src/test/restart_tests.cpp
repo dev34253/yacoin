@@ -843,7 +843,7 @@ BOOST_AUTO_TEST_CASE(block_processed_after_plain_restart)
     std::string outcome = child.status;
     if (child.status == "abort" && Contains(child.err, assertion)) {
         outcome += ": " + assertion;
-    } else if (!LastLine(child.err).empty()) {
+    } else if (child.status != "exit 0" && !LastLine(child.err).empty()) {
         // Anything else: the child's last words, as its stderr file goes with the datadir
         outcome += " (" + LastLine(child.err) + ")";
     }
