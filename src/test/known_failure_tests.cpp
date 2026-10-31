@@ -7,6 +7,9 @@
 
 #include "test/known_failure.h"
 
+#include <string>
+#include <vector>
+
 #include <boost/test/unit_test.hpp>
 
 namespace {
@@ -83,6 +86,33 @@ BOOST_AUTO_TEST_CASE(fails_when_correct_and_current_are_the_same)
     boost::test_tools::predicate_result r = known_failure::CheckEqual("MG-999", 6, 6, 6);
     BOOST_CHECK(!r);
     BOOST_CHECK_EQUAL(Message(r), "MG-999: the correct and the known-failure outcome both hold (6), so the check can't tell a fix from the defect");
+}
+
+BOOST_AUTO_TEST_CASE(compares_c_strings_by_content)
+{
+    // A C string with the same text at another address: the equality form compares the text
+    const std::string fixed = "0.000001";
+    boost::test_tools::predicate_result r = known_failure::CheckEqual("MG-999", fixed.c_str(), "0.000001", "0.00000001");
+    BOOST_CHECK(!r);
+    BOOST_CHECK_EQUAL(Message(r), "MG-999 no longer fails; remove the known-failure check (now \"0.000001\")");
+
+    std::vector<char> buffer(fixed.begin(), fixed.end());
+    buffer.push_back('\0');
+    boost::test_tools::predicate_result p = known_failure::CheckEqual("MG-999", "0.00000001", buffer.data(), "0.00000001");
+    BOOST_CHECK(p);
+    BOOST_CHECK_EQUAL(Message(p), "MG-999: known failure still present (\"0.00000001\")");
+}
+
+/* The macros' failing path: each of the four checks below fails, which the test case expects,
+ * so the four errors it logs are part of a passing run. */
+BOOST_AUTO_TEST_CASE_EXPECTED_FAILURES(macros_report_failures, 4)
+BOOST_AUTO_TEST_CASE(macros_report_failures)
+{
+    const int fixed = Doubled(3, 1), other = Doubled(3, 2);
+    KNOWN_FAILURE_EQUAL("MG-999", fixed, 6, 7);
+    KNOWN_FAILURE_EQUAL("MG-999", other, 6, 7);
+    KNOWN_FAILURE("MG-999", fixed, fixed == 6, fixed == 7);
+    KNOWN_FAILURE("MG-999", other, other == 6, other == 7);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

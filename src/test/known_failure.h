@@ -57,11 +57,19 @@ std::string Show(const char* value);
 boost::test_tools::predicate_result Check(const std::string& row, bool correct, bool current,
                                           const std::string& actual, const std::string& expected);
 
+/** A value as the equality form compares it: C strings as std::string, so that their contents
+ *  are compared, not their addresses. */
+template <typename T>
+const T& Comparable(const T& value) { return value; }
+inline std::string Comparable(const char* value) { return value; }
+inline std::string Comparable(char* value) { return value; }
+
 /** Equality form: correct if actual == correct, today's outcome if actual == current. */
 template <typename A, typename C, typename K>
 boost::test_tools::predicate_result CheckEqual(const std::string& row, const A& actual, const C& correct, const K& current)
 {
-    return Check(row, actual == correct, actual == current, Show(actual), Show(current));
+    return Check(row, Comparable(actual) == Comparable(correct), Comparable(actual) == Comparable(current),
+                 Show(Comparable(actual)), Show(Comparable(current)));
 }
 
 } // namespace known_failure
