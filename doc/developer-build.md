@@ -163,7 +163,7 @@ so it only needs `TEST_RUNNER_PORT_MIN` to stay clear of a runner's ports.
 
 ## Code coverage
 
-Needs lcov 2.5 or newer, which configure checks for. Ubuntu 22.04 and 24.04
+Needs lcov 2.6 or newer, which configure checks for. Ubuntu 22.04 and 24.04
 ship older versions; the Ubuntu 22.04 build image has it
 (`./dev.sh container ubuntu.22.04 cov-unit`, `cov-functional`), or install a
 release from <https://github.com/linux-test-project/lcov/releases> as

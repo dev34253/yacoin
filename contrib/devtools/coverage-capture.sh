@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Captures the coverage data of a build into a tracefile with geninfo (lcov
-# 2.5 or newer), JOBS processes in parallel. Used by "make cov-unit" /
+# 2.6 or newer), JOBS processes in parallel. Used by "make cov-unit" /
 # "cov-functional".
 #
 # Usage: coverage-capture.sh --geninfo CMD --dir SRCDIR --out FILE

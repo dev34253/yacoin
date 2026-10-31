@@ -53,7 +53,7 @@ Usage: ./dev.sh <command> [args]
                           parallel (default 4)
   asan [suite...]         Build and run unit tests with ASan + UBSan
   cov                     Unit, functional and combined coverage reports
-                          (needs lcov 2.5+) in .devbuild/coverage/, then cov-check
+                          (needs lcov 2.6+) in .devbuild/coverage/, then cov-check
   cov-check [args]        Check .devbuild/coverage/ against the targets in
                           contrib/devtools/coverage-targets.json; args go to
                           coverage-check.py (e.g. --per-function src/init.cpp)

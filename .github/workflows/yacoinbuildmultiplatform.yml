@@ -657,7 +657,7 @@ jobs:
             build/docker-*/cov-functional/test/tmp/test_runner_*/**/std*/*
           retention-days: 14
   coverage-report:
-    # Merges the two coverage jobs' tracefiles (lcov 2.5 of the 22.04 image,
+    # Merges the two coverage jobs' tracefiles (lcov 2.6 of the 22.04 image,
     # with configure's LCOV_OPTS and the Makefile's GENHTML_OPTS), writes the
     # combined HTML report, and checks the files of
     # contrib/devtools/coverage-targets.json with coverage-check.py (after its

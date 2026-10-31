@@ -33,7 +33,7 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 
 ### Ubuntu Builds
 - `Dockerfile.ubuntu.16.04` - Ubuntu 16.04 build environment
-- `Dockerfile.ubuntu.22.04` - Ubuntu 22.04 build environment, with lcov 2.5 for the coverage modes (from the release tarball of
+- `Dockerfile.ubuntu.22.04` - Ubuntu 22.04 build environment, with lcov 2.6 for the coverage modes (from the release tarball of
   [linux-test-project/lcov](https://github.com/linux-test-project/lcov/releases), checked against its SHA-256; Ubuntu 22.04 ships 1.14)
 
 ### Cross-Platform Builds
@@ -69,8 +69,8 @@ optional mode as its argument:
 | `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests) |
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
 | `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`) |
-| `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.5 or newer, so it only works in the Ubuntu 22.04 image |
-| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 2.5 or newer (Ubuntu 22.04 image only) |
+| `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.6 or newer, so it only works in the Ubuntu 22.04 image |
+| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 2.6 or newer (Ubuntu 22.04 image only) |
 
 ```bash
 image=$(ci/containers/image-tag.sh ubuntu.22.04)    # pullable once CI on master has published it

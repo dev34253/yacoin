@@ -1,4 +1,4 @@
-# lcov settings of the coverage targets (lcov 2.5 or newer). configure passes
+# lcov settings of the coverage targets (lcov 2.6 or newer). configure passes
 # this file to lcov, geninfo and genhtml with --config-file, so no system or
 # user lcovrc applies, and the coverage-report job of the CI workflow passes it
 # too.

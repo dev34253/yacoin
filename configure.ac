@@ -496,13 +496,15 @@ if test x$use_lcov = xyes; then
   if test x$GENINFO = x; then
     AC_MSG_ERROR("lcov testing requested but geninfo not found")
   fi
-  dnl The branch filters of contrib/devtools/coverage-lcovrc need lcov 2.5 or
-  dnl newer, whose exception filter also drops the call's normal return edge.
+  dnl The coverage targets need lcov 2.6 or newer: from 2.5 on, the exception
+  dnl filter of contrib/devtools/coverage-lcovrc also drops the call's normal
+  dnl return edge, and 2.6 keeps the branch counts right when it merges the
+  dnl tracefiles of two test runs (unit and functional).
   lcov_version=`$LCOV --version 2>/dev/null`
   lcov_major=`echo "$lcov_version" | sed -n 's/.*version \([[0-9]]*\)\.\([[0-9]]*\).*/\1/p'`
   lcov_minor=`echo "$lcov_version" | sed -n 's/.*version \([[0-9]]*\)\.\([[0-9]]*\).*/\2/p'`
-  if test -z "$lcov_major" || test "$lcov_major" -lt 2 || { test "$lcov_major" -eq 2 && test "$lcov_minor" -lt 5; }; then
-    AC_MSG_ERROR([lcov testing requires lcov 2.5 or newer, found: $lcov_version
+  if test -z "$lcov_major" || test "$lcov_major" -lt 2 || { test "$lcov_major" -eq 2 && test "$lcov_minor" -lt 6; }; then
+    AC_MSG_ERROR([lcov testing requires lcov 2.6 or newer, found: $lcov_version
 (the Ubuntu 22.04 build image has it: ./dev.sh container ubuntu.22.04 cov-unit)])
   fi
   dnl gcov must match the compiler version (e.g. gcov 11 for g++ 11).

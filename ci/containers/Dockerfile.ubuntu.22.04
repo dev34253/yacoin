@@ -15,19 +15,19 @@ RUN apt-get update && \
     g++-multilib python3-setuptools \
     libcapture-tiny-perl libdatetime-perl libjson-xs-perl libtimedate-perl
 
-# lcov 2.5 for the coverage modes (Ubuntu 22.04 ships 1.14; the coverage
-# targets need 2.5 or newer, see configure.ac), the Perl modules above are its
+# lcov 2.6 for the coverage modes (Ubuntu 22.04 ships 1.14; the coverage
+# targets need 2.6 or newer, see configure.ac), the Perl modules above are its
 # dependencies. From the release tarball, checked against its SHA-256 (the
-# digest GitHub lists for the release asset). lcov is Perl, so nothing is
-# compiled: "make install" copies the scripts, the library and the man pages
-# that come prebuilt in the tarball ("-o doc_finished" keeps make from
-# rebuilding the man pages, which would need Sphinx).
+# digest GitHub lists for the release asset). "make install" copies the Perl
+# scripts, the library and the man pages that come prebuilt in the tarball:
+# "-o doc" keeps make from rebuilding the man pages (that needs Sphinx), and
+# LCOV_NO_XS leaves out the optional C++ extension, so nothing is compiled.
 RUN cd /tmp && \
-    curl -fsSLO https://github.com/linux-test-project/lcov/releases/download/v2.5/lcov-2.5.tar.gz && \
-    echo "7e5e5a154bd5f3557659c328cab376764e7abd238bb403c424472c296b175126  lcov-2.5.tar.gz" | sha256sum -c && \
-    tar xzf lcov-2.5.tar.gz && \
-    make -C lcov-2.5 -o doc_finished install PREFIX=/usr/local && \
-    rm -rf lcov-2.5 lcov-2.5.tar.gz && \
+    curl -fsSLO https://github.com/linux-test-project/lcov/releases/download/v2.6/lcov-2.6.tar.gz && \
+    echo "67a45db99b8ef0260c3fac9a2e3749fd8fa350a15e235dd3c29b356d97755c75  lcov-2.6.tar.gz" | sha256sum -c && \
+    tar xzf lcov-2.6.tar.gz && \
+    make -C lcov-2.6 -o doc LCOV_NO_XS=1 install PREFIX=/usr/local && \
+    rm -rf lcov-2.6 lcov-2.6.tar.gz && \
     lcov --version
 
 COPY entrypoint.sh /entrypoint.sh
