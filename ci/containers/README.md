@@ -67,7 +67,7 @@ optional mode as its argument:
 | `build` (default) | Release build: depends, configure with glibc back-compat, make, `make install` into `/src/release-root` |
 | `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests) |
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
-| `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j 4 --extended`) |
+| `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 1.x, so it only works in the Ubuntu 22.04 image |
 | `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 1.x (Ubuntu 22.04 image only) |
 

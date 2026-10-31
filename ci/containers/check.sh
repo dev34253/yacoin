@@ -182,9 +182,12 @@ step_smoke() {
                 fail "smoke: $image: functional-tests (FTEST_JOBS=${ftest_jobs:-unset}, exit status $status) runs: test_runner.py $args"
             fi
         done
-        make_runner_stub "$stub" "$tag" 1
-        expect_status 1 "smoke: $image: functional-tests fails when a script fails" \
+        # Exit status 3 is the runner's own; the entrypoint's errors exit 1.
+        rm -f "$stub/runner-args"
+        make_runner_stub "$stub" "$tag" 3
+        expect_status 3 "smoke: $image: functional-tests fails when a script fails" \
             docker run --rm -v "$stub:/src" "$tag" functional-tests
+        [[ -f "$stub/runner-args" ]] || fail "smoke: $image: the failing run did not reach test_runner.py"
         expect_status 1 "smoke: $image: functional-tests rejects FTEST_JOBS=0" \
             docker run --rm -v "$stub:/src" -e FTEST_JOBS=0 "$tag" functional-tests
         grep -q 'error: FTEST_JOBS' "$work/out.txt" || fail "smoke: $image: FTEST_JOBS=0 gave no 'error: FTEST_JOBS' message"

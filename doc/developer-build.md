@@ -111,7 +111,8 @@ secp256k1 without its x86_64 assembly, which doesn't compile under ASan.
 ./dev.sh unit                       # all unit test suites, in parallel
 ./dev.sh unit pow_tests coins_tests # selected suites
 ./dev.sh check                      # upstream "make check" (serial)
-./dev.sh ftest                      # all functional tests, 4 in parallel
+./dev.sh ftest                      # the base functional tests, 4 in parallel
+./dev.sh ftest --extended           # the base and the three slow extended scripts
 ./dev.sh ftest feature_tokens.py    # selected functional tests
 ./dev.sh asan                       # unit tests under ASan/LSan/UBSan
 ./dev.sh all                        # build dev, unit, ftest, build release
