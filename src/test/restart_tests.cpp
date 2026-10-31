@@ -172,6 +172,16 @@ std::string ReadFile(const fs::path& path)
     return ss.str();
 }
 
+/** The last line of text that isn't empty ("" if there is none) */
+std::string LastLine(const std::string& text)
+{
+    std::istringstream in(text);
+    std::string line, last;
+    while (std::getline(in, line))
+        if (line.find_first_not_of(" \t\r") != std::string::npos) last = line;
+    return last;
+}
+
 /** How a child process of RunInChild ended */
 struct ChildResult {
     std::string status; // "exit <status>", "abort", "signal <n>", "timed out" or "<call> failed"
@@ -831,7 +841,12 @@ BOOST_AUTO_TEST_CASE(block_processed_after_plain_restart)
     // glibc's, musl's and macOS's assertion messages all contain the expression
     const std::string assertion = "setBlockIndexCandidates.count(pindex) == 0";
     std::string outcome = child.status;
-    if (child.status == "abort" && Contains(child.err, assertion)) outcome += ": " + assertion;
+    if (child.status == "abort" && Contains(child.err, assertion)) {
+        outcome += ": " + assertion;
+    } else if (!LastLine(child.err).empty()) {
+        // Anything else: the child's last words, as its stderr file goes with the datadir
+        outcome += " (" + LastLine(child.err) + ")";
+    }
     KNOWN_FAILURE_EQUAL("MG-045", outcome, "exit 0", "abort: " + assertion);
 }
 #endif
@@ -1447,7 +1462,8 @@ BOOST_AUTO_TEST_CASE(reindex_with_fork_at_genesis)
         LOCK(cs_main);
         BOOST_CHECK(LoadBlockIndex(Params()));
     }
-    ReindexBlockFiles();
+    // All blocks are in blk00000.dat; whether they load is the outcome checked below
+    BOOST_CHECK_EQUAL(ReindexBlockFiles().size(), 1U);
     BOOST_REQUIRE(pblocktree->WriteReindexing(false));
     fReindex = false;
     {
