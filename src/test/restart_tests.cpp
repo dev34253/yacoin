@@ -33,12 +33,12 @@
 #include "util.h"
 #include "utiltime.h"
 #include "validation.h"
+#include "validationinterface.h"
 
 #include "test/consensus_test_util.h"
 #include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
-#include "validationinterface.h"
 
 #include <fcntl.h>
 #ifdef WIN32
@@ -50,8 +50,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 #include <atomic>
+#include <cerrno>
 #include <fstream>
 #include <functional>
 #include <sstream>
@@ -168,22 +172,36 @@ std::string ReadFile(const fs::path& path)
     return ss.str();
 }
 
-/** Runs body in a child process (fork) and says how the child ended: "exit <status>" (body's
- *  return value), "abort: <failed assertion>", "signal <n>" or "timed out" (the child is then
- *  killed). The child's stderr goes to stderrFile. The child never returns into the test
- *  framework: its signal handlers are reset to the defaults, so that a crash ends it, and it
- *  leaves with _exit. body must not use Boost.Test checks, whose results would stay in the
- *  child, and must not need the fixture's other threads (the script check threads), which
- *  aren't copied into the child. */
-std::string RunInChild(const std::function<int()>& body, const fs::path& stderrFile, int nTimeoutSeconds = 120)
+/** How a child process of RunInChild ended */
+struct ChildResult {
+    std::string status; // "exit <status>", "abort", "signal <n>", "timed out" or "<call> failed"
+    std::string err;    // what the child wrote to stderr
+};
+
+/** Runs body in a child process (fork). The child's stderr goes to stderrFile; status is body's
+ *  return value as "exit <status>", or how the child ended otherwise. The child never returns
+ *  into the test framework: its signal handlers are reset to the defaults, so that a crash
+ *  ends it, it writes no core file, and it leaves with _exit. body must not use Boost.Test
+ *  checks, whose results would stay in the child.
+ *
+ *  Only the calling thread is copied into the child: the script check workers and LevelDB's
+ *  background thread don't exist there, so body must not need a lock that another thread may
+ *  hold when fork is called. The script check queue is still usable, as the calling thread
+ *  works through it itself. The parent must not rely on files the child writes (a processed
+ *  block is appended to the block file). A child that doesn't end within nTimeoutSeconds is
+ *  killed. */
+ChildResult RunInChild(const std::function<int()>& body, const fs::path& stderrFile, int nTimeoutSeconds = 30)
 {
     fflush(nullptr);
     pid_t pid = fork();
-    if (pid < 0) return "fork failed";
+    if (pid < 0) return {"fork failed", ""};
     if (pid == 0) {
         for (int sig : {SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGALRM}) signal(sig, SIG_DFL);
         struct rlimit noCore = {0, 0};
         setrlimit(RLIMIT_CORE, &noCore);
+#ifdef __linux__
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+#endif
         int fd = open(stderrFile.string().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
         if (fd >= 0) {
             dup2(fd, STDERR_FILENO);
@@ -198,28 +216,24 @@ std::string RunInChild(const std::function<int()>& body, const fs::path& stderrF
         _exit(status);
     }
     int status = 0;
+    std::string result = "timed out";
     for (int i = 0; i < nTimeoutSeconds * 100; i++) {
         pid_t done = waitpid(pid, &status, WNOHANG);
-        if (done < 0) return "waitpid failed";
+        if (done < 0 && errno == EINTR) continue;
+        if (done < 0) {
+            result = "waitpid failed";
+            break;
+        }
         if (done == pid) {
-            if (WIFEXITED(status)) return strprintf("exit %d", WEXITSTATUS(status));
-            if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
-                // glibc: "<program>: <file>:<line>: <function>: Assertion `<expression>' failed."
-                const std::string err = ReadFile(stderrFile);
-                const std::string start = "Assertion `", end = "' failed";
-                size_t pos = err.find(start);
-                size_t stop = pos == std::string::npos ? pos : err.find(end, pos);
-                if (stop == std::string::npos) return "abort";
-                return "abort: " + err.substr(pos + start.size(), stop - pos - start.size());
-            }
-            if (WIFSIGNALED(status)) return strprintf("signal %d", WTERMSIG(status));
-            return "stopped";
+            if (WIFEXITED(status)) return {strprintf("exit %d", WEXITSTATUS(status)), ReadFile(stderrFile)};
+            if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) return {"abort", ReadFile(stderrFile)};
+            return {strprintf("signal %d", WTERMSIG(status)), ReadFile(stderrFile)};
         }
         usleep(10000);
     }
     kill(pid, SIGKILL);
-    waitpid(pid, &status, 0);
-    return "timed out";
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    return {result, ReadFile(stderrFile)};
 }
 #endif
 
@@ -658,6 +672,20 @@ struct RestartSetup : public TestChain100Setup {
         }
     }
 
+    /** ThreadImport's reindex loop (keep in sync with ThreadImport in init.cpp): every block
+     *  file, from blk00000.dat on, through LoadExternalBlockFile. Returns its result per file. */
+    static std::vector<bool> ReindexBlockFiles()
+    {
+        std::vector<bool> loaded;
+        for (int nFile = 0; ; nFile++) {
+            CDiskBlockPos pos(nFile, 0);
+            FILE* file = OpenBlockFile(pos, true);
+            if (!file) break;
+            loaded.push_back(LoadExternalBlockFile(Params(), file, &pos));
+        }
+        return loaded;
+    }
+
     std::vector<CBlock> ReadChain()
     {
         std::vector<CBlock> blocks;
@@ -795,12 +823,16 @@ BOOST_AUTO_TEST_CASE(block_processed_after_plain_restart)
     BOOST_REQUIRE(Restart());
     const CBlock block = BuildOn(Tip(), scriptPubKey);
     const uint256 hash = block.GetHash();
-    const std::string outcome = RunInChild([&block, &hash]() {
+    const ChildResult child = RunInChild([&block, &hash]() {
         if (!Submit(block)) return 1;
         LOCK(cs_main);
         return chainActive.Tip()->GetBlockHash() == hash ? 0 : 2;
     }, DataFile("child-stderr.log"));
-    KNOWN_FAILURE_EQUAL("MG-045", outcome, "exit 0", "abort: setBlockIndexCandidates.count(pindex) == 0");
+    // glibc's, musl's and macOS's assertion messages all contain the expression
+    const std::string assertion = "setBlockIndexCandidates.count(pindex) == 0";
+    std::string outcome = child.status;
+    if (child.status == "abort" && Contains(child.err, assertion)) outcome += ": " + assertion;
+    KNOWN_FAILURE_EQUAL("MG-045", outcome, "exit 0", "abort: " + assertion);
 }
 #endif
 
@@ -1342,16 +1374,9 @@ BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
         BOOST_CHECK(LoadBlockIndex(Params()));
         BOOST_CHECK(mapBlockIndex.empty());
     }
-    // ThreadImport's reindex loop (keep in sync with ThreadImport in init.cpp)
-    int nFiles = 0;
-    for (int nFile = 0; ; nFile++) {
-        CDiskBlockPos pos(nFile, 0);
-        FILE* file = OpenBlockFile(pos, true);
-        if (!file) break;
-        BOOST_CHECK(LoadExternalBlockFile(Params(), file, &pos));
-        nFiles++;
-    }
-    BOOST_CHECK_EQUAL(nFiles, 2);
+    const std::vector<bool> loaded = ReindexBlockFiles();
+    BOOST_CHECK_EQUAL(loaded.size(), 2U);
+    for (bool fLoaded : loaded) BOOST_CHECK(fLoaded);
     BOOST_REQUIRE(pblocktree->WriteReindexing(false));
     fReindex = false;
     {
@@ -1422,13 +1447,7 @@ BOOST_AUTO_TEST_CASE(reindex_with_fork_at_genesis)
         LOCK(cs_main);
         BOOST_CHECK(LoadBlockIndex(Params()));
     }
-    // ThreadImport's reindex loop, as in reindex_rebuilds_index_from_block_files
-    for (int nFile = 0; ; nFile++) {
-        CDiskBlockPos pos(nFile, 0);
-        FILE* file = OpenBlockFile(pos, true);
-        if (!file) break;
-        LoadExternalBlockFile(Params(), file, &pos);
-    }
+    ReindexBlockFiles();
     BOOST_REQUIRE(pblocktree->WriteReindexing(false));
     fReindex = false;
     {
