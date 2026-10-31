@@ -9,6 +9,7 @@
 #include "util.h"
 #include "validation.h"
 #include "test/consensus_test_util.h"
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 
 #include <boost/test/unit_test.hpp>
@@ -125,6 +126,9 @@ static unsigned int ScaledBits(unsigned int nBits, ::int64_t num, ::int64_t den)
     return bn.GetCompact();
 }
 
+/** nBits as the known-failure messages show it */
+static std::string Bits(unsigned int nBits) { return strprintf("0x%08x", nBits); }
+
 /* Blocks 1 and 2 get initialHashTarget, also after the fork; no previous block gets powLimit */
 BOOST_AUTO_TEST_CASE(next_target_first_blocks)
 {
@@ -161,14 +165,15 @@ BOOST_AUTO_TEST_CASE(next_target_constant_within_epoch)
 
 /* The powLimit reset only happens when the fork height is a multiple of the epoch
  * interval (mainnet: 1890000 = 90 * 21000). Otherwise the fork block keeps the
- * previous nBits. Pins current behaviour. */
+ * previous nBits instead of getting powLimit (known defect MG-021). */
 BOOST_AUTO_TEST_CASE(next_target_fork_height_not_on_interval)
 {
     ConsensusGlobalsGuard globals;
     globals.Set(25, 10);
     SyntheticChain chain;
     CBlockIndex* pindex24 = chain.Extend(nullptr, 24, SPACING, NBITS_EASY);
-    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindex24, false), (unsigned int)NBITS_EASY);
+    KNOWN_FAILURE_EQUAL("MG-021", Bits(GetNextTargetRequired(pindex24, false)), Bits(Params().GetConsensus().powLimit.GetCompact()),
+                        Bits(NBITS_EASY));
 }
 
 /* At an epoch boundary the target is retargeted over the last nDifficultyInterval blocks */
@@ -295,7 +300,7 @@ BOOST_AUTO_TEST_CASE(calculate_next_work_floor_from_header_chain)
 }
 
 /* The floor also takes the active chain into account, even when pindexLast is on a
- * different branch that never had that difficulty. Pins current behaviour: the
+ * different branch that never had that difficulty. Pins current behaviour (MG-022): the
  * required work can depend on the node's active chain, not only on the header's
  * ancestry, so two nodes with different active chains can disagree about a
  * header's required work. */
@@ -312,7 +317,7 @@ BOOST_AUTO_TEST_CASE(calculate_next_work_floor_from_active_chain_other_branch)
     chain.Register(pindexOther);
 
     unsigned int nBits = CalculateNextWorkRequired(pindexOther, pindexOther->GetBlockTime() - 100 * 10 * SPACING, Params().GetConsensus());
-    BOOST_CHECK_EQUAL(nBits, ScaledBits(NBITS_HARD, 3, 1));
+    KNOWN_FAILURE_EQUAL("MG-022", Bits(nBits), Bits(ScaledBits(NBITS_EASY, 3, 1)), Bits(ScaledBits(NBITS_HARD, 3, 1)));
 }
 
 BOOST_AUTO_TEST_CASE(check_proof_of_work)
