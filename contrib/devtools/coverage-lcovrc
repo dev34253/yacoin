@@ -28,7 +28,7 @@ filter = exception,orphan,branch,branch_region
 #                        check
 #   assert               its failure path ends the process
 #   Yassert              (src/Yassert.h) its failure path logs the failed
-#                        expression and shuts the node down, as an assert
+#                        expression and requests a node shutdown
 # The whole line is matched, so a decision on the same line is not counted
 # either. lcov puts \b before and after the expression.
 lcov_excl_br_line = (?:LogPrintf?|Y?assert)(?=\s*\()

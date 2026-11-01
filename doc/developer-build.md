@@ -229,11 +229,14 @@ Notes:
   branches of lines with `LogPrintf`, `LogPrint`, `assert` or `Yassert`: the
   logging macros expand to a try/catch whose handler only runs for an invalid
   format string, and the failure path of an assert ends the process (that of
-  `Yassert` shuts the node down). Line coverage is not filtered. What this
+  `Yassert` requests a node shutdown). Line coverage is not filtered. What this
   costs: a decision on a log or assert line is not counted, and neither is
   a decision whose branches gcc puts on a line without a conditional
   operator (the continuation line of a condition over several lines, a
   `do {` line, a `BOOST_FOREACH` loop).
+- A negative counter (threads updating one counter at the same time; the
+  build does not use `-fprofile-update=atomic`) appears as an lcov warning
+  in the log and is counted as 0, not taken.
 - Assembly (`scrypt-x86_64.S`) and the vendored libraries aren't measured.
 - Nodes that the functional tests kill with SIGKILL don't write their
   counters, so code that only those nodes ran is under-reported.
