@@ -12,7 +12,10 @@ to a file, which fresh nodes import:
   a missing file is only a warning;
 - <datadir>/bootstrap.dat: imported and renamed to bootstrap.dat.old;
 - -loadblock with -stopafterblockimport: the node imports and exits (exit
-  code 1 today, VdCO5Ac4), and has the blocks after a restart.
+  code 1 today, VdCO5Ac4), and has the blocks after a restart. This start
+  has -listenonion=0: the import requests shutdown before startup has
+  finished, and a node whose shutdown is requested while its Tor control
+  thread is still starting can hang on shutdown (feature_shutdown.py).
 """
 
 import os
@@ -77,7 +80,7 @@ class LoadblockTest(BitcoinTestFramework):
         self.log.info("-stopafterblockimport")
         self.stop_node(3)
         with node3.assert_debug_log(["Stopping after block import", "Yacoin exited"]):
-            node3.start(BASE + ["-loadblock=" + blocks_file, "-stopafterblockimport"])
+            node3.start(BASE + ["-loadblock=" + blocks_file, "-stopafterblockimport", "-listenonion=0"])
             exit_code = node3.wait_for_exit(60)
         self.known_failure("R-18 (VdCO5Ac4)", lambda: assert_equal(exit_code, 0), "not(1 == 0)")
         self.start_node(3)
