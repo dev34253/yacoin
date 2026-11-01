@@ -167,7 +167,9 @@ Needs lcov 2.6 or newer, which configure checks for. Ubuntu 22.04 and 24.04
 ship older versions; the Ubuntu 22.04 build image has it
 (`./dev.sh container ubuntu.22.04 cov-unit`, `cov-functional`), or install a
 release from <https://github.com/linux-test-project/lcov/releases> as
-`ci/containers/Dockerfile.ubuntu.22.04` does. `gcov` must match the compiler
+`ci/containers/Dockerfile.ubuntu.22.04` does, with its Perl modules
+(`libcapture-tiny-perl libdatetime-perl libdevel-stacktrace-perl
+libjson-xs-perl libtimedate-perl` on Ubuntu). `gcov` must match the compiler
 version.
 
 ```sh
@@ -208,12 +210,12 @@ Notes:
   `contrib/devtools/coverage-lcovrc` (configure passes it with
   `--config-file`), and from no system or user lcovrc.
 - In the build image (`./dev.sh container cov-unit`, `cov-functional`), with
-  the depends packages cached and without ccache, `cov-unit` takes about 13
-  minutes on 8 cores (build about 5, tests about 5, captures about 2) and
+  the depends packages cached and without ccache, `cov-unit` takes about 11
+  minutes on 8 cores (build about 5, tests about 4, captures about 1) and
   `cov-functional` about 19 (build about 6, the scripts in parallel about 7,
-  `p2p_invalid_messages.py` alone about 3½, captures about 2); with 4 cores
-  (`docker run --cpus=4`) about 15 and 20 minutes. The unit test time is
-  bounded by `transaction_tests/test_big_transaction` (about 3 minutes).
+  `p2p_invalid_messages.py` alone 3½ to 4½, captures about 1); with 4 cores
+  (`docker run --cpus=4`) about 13 and 19 minutes. The unit test time is
+  bounded by `transaction_tests/test_big_transaction` (about 4 minutes).
 - To keep that time down, the captures run `geninfo --parallel`
   (`contrib/devtools/coverage-capture.sh`), the baseline is captured while
   the tests run, and the unit test suites run in parallel

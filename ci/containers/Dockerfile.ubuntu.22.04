@@ -13,7 +13,8 @@ RUN apt-get update && \
     python3 g++ gperf zip unzip \
     qtbase5-dev qttools5-dev-tools qttools5-dev \
     g++-multilib python3-setuptools \
-    libcapture-tiny-perl libdatetime-perl libjson-xs-perl libtimedate-perl
+    libcapture-tiny-perl libdatetime-perl libdevel-stacktrace-perl libjson-xs-perl \
+    libtimedate-perl
 
 # lcov 2.6 for the coverage modes (Ubuntu 22.04 ships 1.14; the coverage
 # targets need 2.6 or newer, see configure.ac), the Perl modules above are its
