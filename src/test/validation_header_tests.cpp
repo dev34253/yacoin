@@ -515,11 +515,12 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
     CBlockHeader header;
     HeaderResult result;
 
-    // Height 15000 has a checkpoint (the checkpoints are mainnet's on every network)
+    // On the mainnet build height 15000 has a checkpoint (its checkpoints apply on every network);
+    // the low-difficulty build's only checkpoint is its genesis block
     CBlockIndex* pindexCheckpointPrev = chain.Add(nullptr, nNow - 600, nBitsLimit);
     pindexCheckpointPrev->nHeight = 14999;
     chain.Register(pindexCheckpointPrev);
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT // the low-difficulty build's only checkpoint is its genesis block
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
     header = HeaderOn(pindexCheckpointPrev, nNow - 300);
     result = AcceptHeaders({header});
     BOOST_CHECK_EQUAL(result.reason, "bad-fork-prior-to-checkpoint");
@@ -569,8 +570,10 @@ BOOST_FIXTURE_TEST_CASE(genesis_stake_modifier_before_fork, PreForkGenesisSetup)
     BOOST_CHECK_EQUAL(pindexGenesis->nStakeModifier, 0U);
     BOOST_CHECK(CheckStakeModifierCheckpoints(0, pindexGenesis->nStakeModifierChecksum));
     BOOST_CHECK(!CheckStakeModifierCheckpoints(0, pindexGenesis->nStakeModifierChecksum ^ 1));
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT // the low-difficulty build has another genesis block and checkpoint
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
     BOOST_CHECK_EQUAL(pindexGenesis->nStakeModifierChecksum, 0x0e00670bU);
+#else // the low-difficulty build has another genesis block
+    BOOST_CHECK_EQUAL(pindexGenesis->nStakeModifierChecksum, 0xfd11f4e7U);
 #endif
 }
 
