@@ -11,6 +11,7 @@
 
 #include "chainparams.h"
 #include "consensus/validation.h"
+#include "kernel.h"
 #include "miner.h"
 #include "pow.h"
 #include "script/script.h"
@@ -511,15 +512,21 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
     const unsigned int nBitsLimit = Params().GetConsensus().powLimit.GetCompact();
     const ::int64_t nNow = GetAdjustedTime();
 
-    // Height 15000 has a checkpoint (the checkpoints are mainnet's on every network)
+    CBlockHeader header;
+    HeaderResult result;
+
+    // On the mainnet build height 15000 has a checkpoint (its checkpoints apply on every network);
+    // the low-difficulty build's only checkpoint is its genesis block
     CBlockIndex* pindexCheckpointPrev = chain.Add(nullptr, nNow - 600, nBitsLimit);
     pindexCheckpointPrev->nHeight = 14999;
     chain.Register(pindexCheckpointPrev);
-    CBlockHeader header = HeaderOn(pindexCheckpointPrev, nNow - 300);
-    HeaderResult result = AcceptHeaders({header});
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    header = HeaderOn(pindexCheckpointPrev, nNow - 300);
+    result = AcceptHeaders({header});
     BOOST_CHECK_EQUAL(result.reason, "bad-fork-prior-to-checkpoint");
     BOOST_CHECK_EQUAL(result.nScore, 100);
     BOOST_CHECK_EQUAL(result.nCode, REJECT_CHECKPOINT);
+#endif
     {
         // Without checkpoints the header gets to the next check (here: its time)
         CheckpointsGuard guard;
@@ -550,7 +557,8 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
 }
 
 /* Below the fork height, a block that is received also gets its stake modifier: for the
- * mainnet genesis block, modifier 0 and the checksum of the modifier checkpoint at height 0 */
+ * genesis block of the main network, modifier 0 and the checksum of the modifier checkpoint
+ * at height 0 */
 BOOST_FIXTURE_TEST_CASE(genesis_stake_modifier_before_fork, PreForkGenesisSetup)
 {
     LOCK(cs_main);
@@ -560,7 +568,13 @@ BOOST_FIXTURE_TEST_CASE(genesis_stake_modifier_before_fork, PreForkGenesisSetup)
     BOOST_CHECK(pindexGenesis->IsProofOfWork());
     BOOST_CHECK(pindexGenesis->GeneratedStakeModifier());
     BOOST_CHECK_EQUAL(pindexGenesis->nStakeModifier, 0U);
+    BOOST_CHECK(CheckStakeModifierCheckpoints(0, pindexGenesis->nStakeModifierChecksum));
+    BOOST_CHECK(!CheckStakeModifierCheckpoints(0, pindexGenesis->nStakeModifierChecksum ^ 1));
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
     BOOST_CHECK_EQUAL(pindexGenesis->nStakeModifierChecksum, 0x0e00670bU);
+#else // the low-difficulty build has another genesis block
+    BOOST_CHECK_EQUAL(pindexGenesis->nStakeModifierChecksum, 0xfd11f4e7U);
+#endif
 }
 
 BOOST_AUTO_TEST_SUITE_END()
