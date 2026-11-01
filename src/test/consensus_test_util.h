@@ -51,6 +51,9 @@ struct ConsensusGlobalsGuard
  * mapBlockIndex, before ~TestingSetup deletes everything in that map.
  * Only Register()ed blocks have a hash (phashBlock); don't call GetBlockHash()
  * on the others.
+ * The entries are not valid tree entries (no status, no chain transactions), so
+ * the block index consistency check (CheckBlockIndex, on in the unit tests) fails
+ * once a header is accepted on top of one: submit only headers that are rejected.
  */
 class SyntheticChain
 {
