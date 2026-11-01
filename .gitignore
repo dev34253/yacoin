@@ -120,5 +120,7 @@ build-aux/test-driver
 /*.functions-failed
 /*.info.parts/
 
-# Local Claude Code instructions
+# Local Claude Code files (instructions and settings)
 CLAUDE.local.md
+/CLAUDE.md
+/.claude/

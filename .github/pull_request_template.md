@@ -20,7 +20,7 @@ Task: `<id>`
   <!-- neutral: the argument why no block changes validity, or the replay result over mainnet; rule change: the activation -->
 - Verifier report (consensus-critical only): <!-- link or "n/a" -->
 - `known_failure` markers removed: <!-- list or "none" -->
-- New or upgraded dependency: no / yes (upstream signature or hash checked; owner approval)
+- New or upgraded dependency: no / yes (upstream signature or hash checked)
 - Removes a user-visible feature, option or RPC: no / yes (decision record and release note linked)
 - Documents in the planning repository that this change makes wrong: none / updated in the same task (list them)
 - Owner approval needed: yes / no
