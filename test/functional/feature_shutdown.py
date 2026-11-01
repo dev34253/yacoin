@@ -7,9 +7,17 @@
 
 - stop while another connection waits in waitfornewblock: the waiting call
   returns the current tip and the node exits with code 0;
-- stop accepts one (ignored) argument and rejects two.
+- stop accepts one (ignored) argument and rejects two;
+- stop while the Tor control thread has not yet entered its event loop: the
+  node does not exit today (MG-075), as the interrupt sent before the loop
+  runs is lost and shutdown waits for the thread for ever. The thread reads
+  <datadir>/onion_private_key before its loop; made a FIFO, that file holds
+  the thread there until the test opens it for writing, which the test does
+  only after the node has logged that shutdown is in progress.
 """
 
+import errno
+import os
 from threading import Thread
 
 from test_framework.test_framework import BitcoinTestFramework
@@ -51,6 +59,36 @@ class ShutdownTest(BitcoinTestFramework):
         self.log.info("stop with two arguments")
         self.start_node(0)
         assert_raises_rpc_error(-1, "stop\n\nStop Yacoin server.", node.stop, 1, 2)
+
+        self.log.info("stop while the Tor control thread is still starting")
+        self.stop_node(0)
+        key_file = os.path.join(node.datadir, 'onion_private_key')
+        os.mkfifo(key_file)
+        self.start_node(0)
+        log_start = len(self.debug_log(node))
+        assert_equal(node.stop(), "Yacoin server stopping")
+        # Logged after the Tor control thread has been interrupted.
+        wait_until(lambda: "Shutdown: In progress..." in self.debug_log(node)[log_start:])
+        writer = []
+
+        def open_writer():
+            try:
+                writer.append(os.open(key_file, os.O_WRONLY | os.O_NONBLOCK))
+                return True
+            except OSError as e:
+                if e.errno != errno.ENXIO:  # ENXIO: the thread has not opened the file yet
+                    raise
+                return False
+        wait_until(open_writer)
+        os.close(writer[0])  # the thread reads an empty key and enters its event loop
+        self.known_failure("MG-075", lambda: node.wait_until_stopped(timeout=10), "not true after")
+        node.process.kill()
+        node.wait_for_exit()
+        os.remove(key_file)
+
+    def debug_log(self, node):
+        with open(os.path.join(node.datadir, 'debug.log'), encoding='utf-8') as f:
+            return f.read()
 
 
 if __name__ == '__main__':
