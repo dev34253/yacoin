@@ -521,7 +521,7 @@ class CommittedTargetFileTest(unittest.TestCase):
         for entry in t.entries:
             groups.setdefault(entry.group, []).append(entry)
         self.assertEqual(sorted(groups), ["guarded", "prerequisite", "tier-1", "tier-2"])
-        self.assertEqual(len([e for e in groups["tier-1"]]), 11)
+        self.assertEqual(len([e for e in groups["tier-1"]]), 10)
         self.assertEqual(len([e for e in groups["tier-2"]]), 8)
         self.assertTrue(all(e.met for e in groups["guarded"]))
         self.assertFalse(any(e.met for e in groups["tier-1"] + groups["tier-2"]))
