@@ -7,10 +7,12 @@ Usage:
   coverage-check.py --unit FILE --all FILE [FILE...] --functions FILE...
                     [--root DIR] [--markdown FILE] --per-function SOURCE
 
---unit is the lcov 1.x tracefile of the unit tests, --all the tracefile of the
+--unit is the lcov tracefile of the unit tests, --all the tracefile of the
 unit and functional tests together (several files are summed, as "lcov -a"
 does). Several records of one file (one per test name) are merged: line counts
-are summed per line, branch counts per (line, block, branch). Source paths are
+are summed per line, branch counts per (line, block, branch); branches the
+lcov filters excluded (contrib/devtools/coverage-lcovrc) are not counted, as
+in lcov's own numbers. Source paths are
 made relative to --root (default: this repository; CI uses /src, where the
 tree is mounted in the build image).
 
@@ -120,8 +122,16 @@ def _ints(text, n, what, where):
     return values, parts[n:]
 
 
+# BRDA:<line>,[e|f][U]<block>,<branch>,<taken>: lcov 2 marks exception (e) and
+# fallthrough (f) branches and excluded ones (U). The branch is an index, or an
+# expression (which may contain commas) for tools other than gcc.
+_BRDA = re.compile(r"BRDA:(?P<line>\d+),[ef]?(?P<excluded>U?)(?P<block>\d+),(?P<branch>.+),(?P<taken>-|\d+)$")
+
+
 def parse_tracefile(path, root, files=None):
-    """Adds the records of an lcov 1.x tracefile to files {relative path: Coverage}."""
+    """Adds the records of an lcov tracefile to files {relative path: Coverage}.
+
+    Excluded branches are left out; lcov does not count them either."""
     files = {} if files is None else files
     cur = None
     with open(path, encoding="utf8", errors="replace") as f:
@@ -140,11 +150,15 @@ def parse_tracefile(path, root, files=None):
             elif line.startswith("BRDA:"):
                 if cur is None:
                     raise InputError("%s: BRDA record outside a file record" % where)
-                (ln, block, branch), rest = _ints(line[5:], 3, "BRDA", where)
-                if len(rest) != 1 or not (rest[0] == "-" or rest[0].isdigit()):
+                m = _BRDA.match(line)
+                if not m:
                     raise InputError("%s: malformed BRDA record: %s" % (where, line))
-                key = (ln, block, branch)
-                cur.branches[key] = cur.branches.get(key, 0) + (0 if rest[0] == "-" else int(rest[0]))
+                if m.group("excluded"):
+                    continue
+                branch = m.group("branch")
+                key = (int(m.group("line")), int(m.group("block")), int(branch) if branch.isdigit() else branch)
+                taken = m.group("taken")
+                cur.branches[key] = cur.branches.get(key, 0) + (0 if taken == "-" else int(taken))
     return files
 
 

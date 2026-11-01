@@ -194,7 +194,7 @@ step_smoke() {
         # The out-of-tree configure left root-owned build directories.
         docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${stub##*/}"
         # The coverage modes configure out of tree with lcov and -O0 (lcov
-        # 1.x is in the 22.04 image only).
+        # 2.6, which they need, is in the 22.04 image only).
         [[ "$image" == ubuntu.22.04 ]] || continue
         for mode in cov-unit cov-functional; do
             make_configure_stub "$stub" "$tag"

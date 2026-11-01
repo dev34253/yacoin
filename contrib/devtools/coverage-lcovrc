@@ -1,0 +1,47 @@
+# lcov settings of the coverage targets (lcov 2.6 or newer). configure passes
+# this file to lcov, geninfo and genhtml with --config-file, so no system or
+# user lcovrc applies, and the coverage-report job of the CI workflow passes it
+# too.
+
+branch_coverage = 1
+
+# The branch numbers count the branches of decisions in the code (if, loops,
+# switch, ?:, && and ||) only. These filters remove the other branches gcc
+# records at -O0:
+#   exception      the exception edge of a call (gcov marks it "throw") and
+#                  that call's normal return edge
+#   orphan         a block left with one branch, which is no decision
+#   branch         the branches of a line without a conditional expression,
+#                  by lcov's check of the source text (e.g. the cleanup at a
+#                  closing brace, the type check of a catch clause)
+#   branch_region  the branches of the lines lcov_excl_br_line matches
+filter = exception,orphan,branch,branch_region
+# What the "branch" filter costs: it judges the line gcc puts the branches
+# on. A decision whose branches land on a line without a conditional
+# operator is not counted: the continuation line of a condition over several
+# lines, a "do {" line, a loop macro such as BOOST_FOREACH.
+
+# Lines whose branches are not counted:
+#   LogPrintf, LogPrint  the macros (src/util.h) expand to a try/catch whose
+#                        handler formats an error message, a path a valid
+#                        format string never takes; LogPrint adds its category
+#                        check
+#   assert               its failure path ends the process
+#   Yassert              (src/Yassert.h) its failure path logs the failed
+#                        expression and requests a node shutdown
+# The whole line is matched, so a decision on the same line is not counted
+# either. lcov puts \b before and after the expression.
+lcov_excl_br_line = (?:LogPrintf?|Y?assert)(?=\s*\()
+
+# Reported as warnings instead of errors:
+#   inconsistent  gcov data that lcov 2 checks and gcc 11 does not always
+#                 keep: different end lines for one function (Boost test
+#                 cases), a count on a line whose block gcov marks
+#                 unexecuted; the counts are kept as gcov reports them
+#   negative      a negative count: threads of one process update a
+#                 counter at the same time (the build does not use
+#                 -fprofile-update=atomic), seen in leveldb; lcov counts it
+#                 as 0, not taken
+#   unused        an "lcov -r" pattern that matches no file (a vendored
+#                 library the build does not instrument)
+ignore_errors = inconsistent,negative,unused

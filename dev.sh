@@ -53,7 +53,7 @@ Usage: ./dev.sh <command> [args]
                           parallel (default 4)
   asan [suite...]         Build and run unit tests with ASan + UBSan
   cov                     Unit, functional and combined coverage reports
-                          (needs lcov) in .devbuild/coverage/, then cov-check
+                          (needs lcov 2.6+) in .devbuild/coverage/, then cov-check
   cov-check [args]        Check .devbuild/coverage/ against the targets in
                           contrib/devtools/coverage-targets.json; args go to
                           coverage-check.py (e.g. --per-function src/init.cpp)
@@ -243,7 +243,7 @@ cmd_cov() {
     # have regenerated the Makefile.
     local mk="$BUILD_ROOT/cov-unit/Makefile" lcov genhtml
     read -ra lcov <<< "$(sed -n 's/^LCOV = //p' "$mk") $(sed -n 's/^LCOV_OPTS = //p' "$mk")"
-    read -ra genhtml <<< "$(sed -n 's/^GENHTML = //p' "$mk") $(sed -n 's/^GENHTML_OPTS = //p' "$mk")"
+    read -ra genhtml <<< "$(sed -n 's/^GENHTML = //p' "$mk") $(sed -n 's/^LCOV_OPTS = //p' "$mk") $(sed -n 's/^GENHTML_OPTS = //p' "$mk")"
     rm -rf "$out"; mkdir -p "$out"
     local parts=() src_dir src_info src_functions part
     for part in unit functional; do

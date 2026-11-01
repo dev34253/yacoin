@@ -14,10 +14,10 @@
 #   functional-tests  low-difficulty build, then all functional test scripts,
 #                     the extended ones too, FTEST_JOBS in parallel
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
-#                     needs lcov 1.x (Ubuntu 22.04 image only)
+#                     needs lcov 2.6 or newer (Ubuntu 22.04 image only)
 #   cov-functional    low-difficulty coverage build and "make cov-functional"
 #                     (functional test scripts FTEST_JOBS in parallel); needs
-#                     lcov 1.x
+#                     lcov 2.6 or newer
 #
 # The test modes build out of tree in /src/build/docker-<image>/<mode>, which
 # is recreated on every run. If a cache dir is mounted at /cache, depends
@@ -89,8 +89,8 @@ fi
 if [[ "$MODE" == cov-unit || "$MODE" == cov-functional ]]; then
     grep -q "^$MODE:" Makefile.am ||
         die "this YaCoin tree has no $MODE target"
-    lcov --version 2>/dev/null | grep -q 'version 1\.' ||
-        die "$MODE needs lcov 1.x; use the Ubuntu 22.04 image"
+    lcov --version 2>/dev/null | grep -Eq 'version (2\.([6-9]|[1-9][0-9])|[3-9]|[1-9][0-9])' ||
+        die "$MODE needs lcov 2.6 or newer; use the Ubuntu 22.04 image"
 fi
 
 # For genbuild.sh, which runs git on the mounted tree.
