@@ -533,11 +533,17 @@ jobs:
     # "make cov-unit" (cov-unit mode of the yacoin-build image). Restores the
     # functional-tests job's cache for its depends packages (same image, same
     # no-Qt packages and prefix) and never saves a cache of its own; ccache is
-    # off, since -O0 objects never hit the cached -O1 ones.
+    # off, since -O0 objects never hit the cached -O1 ones. The coverage
+    # artifact is named per run attempt and its name and id are job outputs,
+    # so coverage-report takes the upload of the attempt that ran this job.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       IMAGE: ubuntu.22.04
+      COVERAGE_ARTIFACT: coverage-unit-${{ github.run_attempt }}
+    outputs:
+      artifact-name: ${{ env.COVERAGE_ARTIFACT }}
+      artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v6
       - name: image
@@ -573,10 +579,11 @@ jobs:
           docker rm -f coverage-unit 2>/dev/null || true
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/upload-artifact@v6
+        id: upload-coverage
         # Also when the tests failed: the make targets capture coverage anyway.
         if: ${{ !cancelled() }}
         with:
-          name: coverage-unit
+          name: ${{ env.COVERAGE_ARTIFACT }}
           path: |
             build/docker-${{ env.IMAGE }}/cov-unit/test_bitcoin_coverage.info
             build/docker-${{ env.IMAGE }}/cov-unit/test_bitcoin_functions.json
@@ -596,11 +603,16 @@ jobs:
     # Functional test coverage: low-difficulty coverage build and "make
     # cov-functional" (cov-functional mode of the yacoin-build image; the
     # scripts run 4 in parallel, then the timing-sensitive ones alone). Cache as
-    # in coverage-unit: the functional-tests job's, restored only.
+    # in coverage-unit: the functional-tests job's, restored only. Artifact
+    # name and outputs as in coverage-unit.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       IMAGE: ubuntu.22.04
+      COVERAGE_ARTIFACT: coverage-functional-${{ github.run_attempt }}
+    outputs:
+      artifact-name: ${{ env.COVERAGE_ARTIFACT }}
+      artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v6
       - name: image
@@ -637,10 +649,11 @@ jobs:
           # The nodes write their datadirs with umask 077 as root.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/upload-artifact@v6
+        id: upload-coverage
         # Also when the tests failed: the make targets capture coverage anyway.
         if: ${{ !cancelled() }}
         with:
-          name: coverage-functional
+          name: ${{ env.COVERAGE_ARTIFACT }}
           path: |
             build/docker-${{ env.IMAGE }}/cov-functional/functional_test_coverage.info
             build/docker-${{ env.IMAGE }}/cov-functional/functional_test_functions.json
@@ -662,7 +675,9 @@ jobs:
     # combined HTML report, and checks the files of
     # contrib/devtools/coverage-targets.json with coverage-check.py (after its
     # own tests). The table goes to the job summary; the job fails when the
-    # check fails.
+    # check fails. Downloads the artifacts named in the coverage jobs'
+    # outputs, which after a rerun are those of the attempt each job last ran
+    # in.
     needs: [coverage-unit, coverage-functional]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -675,13 +690,27 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
+      - name: coverage artifacts to merge
+        env:
+          UNIT_NAME: ${{ needs.coverage-unit.outputs.artifact-name }}
+          UNIT_ID: ${{ needs.coverage-unit.outputs.artifact-id }}
+          FUNCTIONAL_NAME: ${{ needs.coverage-functional.outputs.artifact-name }}
+          FUNCTIONAL_ID: ${{ needs.coverage-functional.outputs.artifact-id }}
+        run: |
+          echo "coverage-unit: artifact '$UNIT_NAME', id '$UNIT_ID'"
+          echo "coverage-functional: artifact '$FUNCTIONAL_NAME', id '$FUNCTIONAL_ID'"
+          # An empty id means the upload failed or found no files.
+          if [ -z "$UNIT_NAME" ] || [ -z "$UNIT_ID" ] || [ -z "$FUNCTIONAL_NAME" ] || [ -z "$FUNCTIONAL_ID" ]; then
+            echo "::error::A coverage job uploaded no coverage artifact; nothing to merge."
+            exit 1
+          fi
       - uses: actions/download-artifact@v7
         with:
-          name: coverage-unit
+          name: ${{ needs.coverage-unit.outputs.artifact-name }}
           path: coverage/unit
       - uses: actions/download-artifact@v7
         with:
-          name: coverage-functional
+          name: ${{ needs.coverage-functional.outputs.artifact-name }}
           path: coverage/functional
       - name: merge, report and check
         timeout-minutes: 15
