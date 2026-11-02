@@ -324,19 +324,21 @@ Ubuntu 22.04, 8 cores, 15 GB RAM.
 The parallel unit test time is bounded by `transaction_tests/test_big_transaction`
 (about 17 s at `-O1`).
 
-## Baseline test results (v1.11.0, 9706af8b)
+## Baseline test results
 
-- Unit tests (`dev`): 53 of 53 suites, 239 test cases pass.
-- Functional tests (`func`): 45 of 45 pass.
-- Sanitizers (`asan`): 49 of 53 suites pass. Findings:
-  - `checkqueue_tests`: stack-use-after-scope in `test_CheckQueueControl_Locks`
-    (test code, `checkqueue_tests.cpp:422`).
-  - `DoS_tests`: `CNode` objects created by the test are never freed (leak).
-  - `accounting_tests`, `wallet_tests`: small leaks inside Berkeley DB
-    (`__os_malloc`).
+Each line names the commit it was measured at.
+
+- Unit tests (`dev`, 87f283ef): 70 of 70 suites, 422 test cases pass.
+- Functional tests (`func`, v1.11.0, 9706af8b): 45 of 45 pass.
+- Sanitizers (`asan`, 87f283ef): 66 of 70 suites pass; the other four run all
+  their test cases without errors and fail on LeakSanitizer's report at exit.
+  Findings:
+  - `DoS_tests`: `CNode` objects created by `stale_tip_peer_management`
+    (`AddRandomOutboundPeer`) are never freed.
+  - `accounting_tests`, `token_wallet_tests`, `wallet_tests`: small leaks
+    inside Berkeley DB (`__os_malloc`).
   - No UBSan findings.
-- Unit test files present but not compiled: `blockencodings`, `main`,
-  `merkle`, `miner`, `policyestimator`, `versionbits`.
+- Every unit test file in `src/test/` and `src/wallet/test/` is compiled.
 
 ## Notes
 
