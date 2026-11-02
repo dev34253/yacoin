@@ -40,6 +40,7 @@ import http.client
 import json
 import logging
 import os
+import select
 import socket
 import time
 import urllib.parse
@@ -48,6 +49,9 @@ HTTP_TIMEOUT = 30
 USER_AGENT = "AuthServiceProxy/0.1"
 
 log = logging.getLogger("BitcoinRPC")
+# Resends after a lost reply go to the test's log: the logger above has no
+# handler unless --tracerpc is given.
+resend_log = logging.getLogger("TestFramework.authproxy")
 
 class JSONRPCException(Exception):
     def __init__(self, rpc_error, http_status=None):
@@ -89,11 +93,21 @@ class AuthServiceProxy():
             name = "%s.%s" % (self._service_name, name)
         return AuthServiceProxy(self.__service_url, name, connection=self.__conn)
 
-    def _request(self, method, path, postdata):
-        '''
-        Do a HTTP request, with retry if we get disconnected (e.g. due to a timeout).
-        This is a workaround for https://bugs.python.org/issue3566 which is fixed in Python 3.5.
-        '''
+    def _request(self, method, path, postdata, rpc_name=None):
+        """Do an HTTP request and return the response and its status.
+
+        The request is sent again, once, when the connection breaks
+        (BrokenPipeError or ConnectionResetError, which includes
+        http.client.RemoteDisconnected):
+        - without a trace when sending failed, so the request was not sent in
+          full;
+        - with a warning naming the call and the error when the connection
+          broke after the request was sent: the node may have run the call,
+          so a call that is not idempotent can run twice.
+        A connection the node has already closed (for example after
+        -rpcservertimeout) is reopened before the request is sent, so it
+        needs no resend unless the node closes it between that check and the
+        send. Errors of the resend go to the caller."""
         headers = {'Host': self.__url.hostname,
                    'User-Agent': USER_AGENT,
                    'Authorization': self.__auth_header,
@@ -102,22 +116,39 @@ class AuthServiceProxy():
             # Windows somehow does not like to re-use connections
             # TODO: Find out why the connection would disconnect occasionally and make it reusable on Windows
             self._set_conn()
+        elif self._closed_by_server():
+            log.debug("Connection closed by the server, reconnecting")
+            self.__conn.close()
         try:
             self.__conn.request(method, path, postdata, headers)
-            return self._get_response()
-        except http.client.BadStatusLine as e:
-            if e.line == "''":  # if connection was closed, try again
-                self.__conn.close()
-                self.__conn.request(method, path, postdata, headers)
-                return self._get_response()
-            else:
-                raise
-        except (BrokenPipeError, ConnectionResetError):
-            # Python 3.5+ raises BrokenPipeError instead of BadStatusLine when the connection was reset
-            # ConnectionResetError happens on FreeBSD with Python 3.4
+        except (BrokenPipeError, ConnectionResetError) as e:
+            log.debug("Sending failed (%r), sending again", e)
             self.__conn.close()
             self.__conn.request(method, path, postdata, headers)
             return self._get_response()
+        try:
+            return self._get_response()
+        except (BrokenPipeError, ConnectionResetError) as e:
+            resend_log.warning("Sending %s again: the connection broke after the request was sent (%r); the node may have run it twice",
+                               rpc_name or path, e)
+            self.__conn.close()
+            self.__conn.request(method, path, postdata, headers)
+            return self._get_response()
+
+    def _closed_by_server(self):
+        """Whether the open connection was closed by the server."""
+        sock = self.__conn.sock
+        if sock is None:
+            return False
+        try:
+            readable, _, _ = select.select([sock], [], [], 0)
+            # A connection the server closed is readable and has no data.
+            return bool(readable) and sock.recv(1, socket.MSG_PEEK) == b''
+        except ConnectionError:
+            return True
+        except ValueError:
+            # SSL sockets do not support MSG_PEEK.
+            return False
 
     def get_request(self, *args, **argsn):
         AuthServiceProxy.__id_count += 1
@@ -136,7 +167,7 @@ class AuthServiceProxy():
 
     def __call__(self, *args, **argsn):
         postdata = json.dumps(self.get_request(*args, **argsn), default=EncodeDecimal, ensure_ascii=self.ensure_ascii)
-        response, status = self._request('POST', self.__url.path, postdata.encode('utf-8'))
+        response, status = self._request('POST', self.__url.path, postdata.encode('utf-8'), self._service_name)
         if response['error'] is not None:
             raise JSONRPCException(response['error'], status)
         elif 'result' not in response:
@@ -151,7 +182,7 @@ class AuthServiceProxy():
     def batch(self, rpc_call_list):
         postdata = json.dumps(list(rpc_call_list), default=EncodeDecimal, ensure_ascii=self.ensure_ascii)
         log.debug("--> " + postdata)
-        response, status = self._request('POST', self.__url.path, postdata.encode('utf-8'))
+        response, status = self._request('POST', self.__url.path, postdata.encode('utf-8'), 'batch')
         if status != HTTPStatus.OK:
             raise JSONRPCException({
                 'code': -342, 'message': 'non-200 HTTP status code but no JSON-RPC error'}, status)
