@@ -3,9 +3,10 @@
 The test binary is a fake: a shell script that lists suites for
 --list_content and, for --run_test=<selector>, prints what the test gives it
 and exits with the given status. A run marked "colour" prints its stderr in
-colour unless --color_output=no is given, whatever the environment says. A run marked "xml" prints that stderr instead
-when BOOST_TEST_OUTPUT_FORMAT is set, whatever the options say, as Boost 1.64
-does. Every call also records the BOOST_TEST_* variables it was started with.
+colour unless --color_output=no is given, whatever the environment says. A
+run marked "xml" prints that stderr instead when BOOST_TEST_OUTPUT_FORMAT is
+set, whatever the options say, as Boost 1.64 does. Every call also records
+the BOOST_TEST_* variables it was started with.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """

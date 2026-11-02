@@ -147,7 +147,10 @@ same as a serial run. Per-suite logs and `summary.txt` are written to
 A suite passes only if `test_bitcoin` exits with status 0 and its log has
 Boost.Test's summary `*** No errors detected`. A suite that exits with 0
 without that summary ended before all its test cases ran and is shown as
-`FAIL <suite> (no test report)`. In `test_bitcoin`, a node shutdown request
+`FAIL <suite> (no test report)`. The runner starts `test_bitcoin` without any
+`BOOST_TEST_*` variable from the environment, so Boost.Test settings for
+debugging, such as a log level, need `test_bitcoin` run directly with its
+options (see `src/test/README.md`). In `test_bitcoin`, a node shutdown request
 (`StartShutdown`, for example after a failed release-mode assertion) prints a
 message to stderr and ends the process with a failure status.
 
