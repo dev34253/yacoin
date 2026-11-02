@@ -397,6 +397,11 @@ def initialize_datadir(dirname, n, chain, epochinterval=10):
         f.write("dnsseed=0\n")
         f.write("printtoconsole=0\n")
         f.write("upnp=0\n")
+        # No Tor control: a node stopped before its Tor control thread has
+        # entered its event loop can hang in shutdown, and test nodes must not
+        # talk to a Tor control port on the machine. feature_torcontrol.py
+        # tests Tor control without this line.
+        f.write("listenonion=0\n")
         f.write("nFactorAtHardfork=%d\n" % NFACTOR_AT_HARDFORK)
         # f.write("shrinkdebugfile=0\n")
         os.makedirs(os.path.join(datadir, 'stderr'), exist_ok=True)

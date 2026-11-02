@@ -13,7 +13,9 @@
   runs is lost and shutdown waits for the thread for ever. The thread reads
   <datadir>/onion_private_key before its loop; made a FIFO, that file holds
   the thread there until the test opens it for writing, which the test does
-  only after the node has logged that shutdown is in progress.
+  only after the node has logged that shutdown is in progress. The
+  framework's nodes run with listenonion=0, so this start passes
+  -listenonion=1.
 
 The node can shut down before it writes the reply to stop; such a stop counts
 as sent (TestNode.send_stop) and the node must still exit. The reply text is
@@ -79,7 +81,7 @@ class ShutdownTest(BitcoinTestFramework):
         self.stop_node(0)
         key_file = os.path.join(node.datadir, 'onion_private_key')
         os.mkfifo(key_file)
-        self.start_node(0)
+        self.start_node(0, ["-listenonion=1"])
         log_start = len(self.debug_log(node))
         self.stop_checked(node)
         # Logged after the Tor control thread has been interrupted.
