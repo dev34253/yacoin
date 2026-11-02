@@ -4,7 +4,9 @@ The test binary is a fake: a shell script that lists suites for
 --list_content and, for --run_test=<selector>, prints what the test gives it
 and exits with the given status. A run marked "colour" prints its stderr in
 colour, as Boost.Test does, when BOOST_TEST_COLOR_OUTPUT=yes is set and
---color_output=no is not given.
+--color_output=no is not given. A run marked "xml" prints that stderr instead
+when BOOST_TEST_OUTPUT_FORMAT is set, whatever the options say, as Boost 1.64
+does. Every call also records the BOOST_TEST_* variables it was started with.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -23,6 +25,8 @@ SCRIPT = os.path.join(os.path.dirname(HERE), "run-unit-suites.sh")
 NO_ERRORS = "\n*** No errors detected\n"
 # The same summary as Boost.Test prints it with colour output on
 NO_ERRORS_COLOURED = "\n\033[1;32;49m*** No errors detected\033[0;39;49m\n"
+# The same summary with BOOST_TEST_OUTPUT_FORMAT=XML
+XML_REPORT = '<TestResult><TestSuite name="Bitcoin Test Suite" result="passed"/></TestResult>'
 ENTERING = "Entering test module \"Bitcoin Test Suite\"\n" \
            "test/x.cpp(10): Entering test suite \"{0}\"\n" \
            "test/x.cpp(12): Entering test case \"{0}_case\"\n"
@@ -40,10 +44,13 @@ class RunUnitSuitesTest(unittest.TestCase):
         self.logdir = os.path.join(self.tmp, "logs")
         self.argsdir = os.path.join(self.tmp, "args")
         os.mkdir(self.argsdir)
+        self.envdir = os.path.join(self.tmp, "env")
+        os.mkdir(self.envdir)
 
     def write_bin(self, suites, listing=None, listing_status=0):
         """suites: selector -> {"stdout", "stderr", "status"} and optionally
-        "colour": the stderr printed instead when colour output is on.
+        "colour": the stderr printed instead when colour output is on, and
+        "xml": the stderr printed instead when BOOST_TEST_OUTPUT_FORMAT is set.
         listing: the output of --list_content (default: every selector as a
         suite)."""
         if listing is None:
@@ -53,13 +60,19 @@ class RunUnitSuitesTest(unittest.TestCase):
             # Every call's arguments, one per line, for the checks of what
             # the runner passes
             'printf "%s\\n" "$@" > "$(mktemp ' + shlex.quote(self.argsdir) + '/call.XXXXXX)"',
+            # and the Boost.Test variables in its environment
+            'env | grep "^BOOST_TEST_" > "$(mktemp ' + shlex.quote(self.envdir) + '/call.XXXXXX)"',
             'case "$1" in',
             "--list_content) printf %s " + shlex.quote(listing) + " >&2; exit %d ;;" % listing_status,
         ]
         for selector, run in suites.items():
             lines.append("--run_test=%s)" % shlex.quote(selector))
             lines.append("    printf %s " + shlex.quote(run["stdout"]))
-            if "colour" in run:
+            if "xml" in run:
+                lines.append('    if [ -n "${BOOST_TEST_OUTPUT_FORMAT+set}" ]; then printf %s '
+                             + shlex.quote(run["xml"]) + " >&2")
+                lines.append("    else printf %s " + shlex.quote(run["stderr"]) + " >&2; fi")
+            elif "colour" in run:
                 # Boost.Test: the command line option overrides the environment
                 lines.append('    colour="${BOOST_TEST_COLOR_OUTPUT:-no}"')
                 lines.append('    for a in "$@"; do case "$a" in --color_output=*) colour="${a#*=}" ;; esac; done')
@@ -191,6 +204,32 @@ class RunUnitSuitesTest(unittest.TestCase):
         result = self.run_runner(env={"BOOST_TEST_COLOR_OUTPUT": "yes"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.summary(), ["PASS a_tests"])
+
+    def test_output_format_in_the_environment_does_not_fail_a_suite(self):
+        # In Boost 1.64 BOOST_TEST_OUTPUT_FORMAT overrides --report_format;
+        # the runner starts the binary without it.
+        self.write_bin({"a_tests": dict(passing(), xml=XML_REPORT)})
+        result = self.run_runner(env={"BOOST_TEST_OUTPUT_FORMAT": "XML"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.summary(), ["PASS a_tests"])
+
+    def test_no_boost_test_variable_reaches_the_binary(self):
+        self.write_bin({"a_tests": passing()})
+        result = self.run_runner(env={"BOOST_TEST_OUTPUT_FORMAT": "XML", "BOOST_TEST_LOG_LEVEL": "all",
+                                      "BOOST_TEST_COLOR_OUTPUT": "yes", "BOOST_TEST_FUTURE_OPTION": "x"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = os.listdir(self.envdir)
+        self.assertEqual(len(calls), 2)  # --list_content and the suite run
+        for name in calls:
+            with open(os.path.join(self.envdir, name)) as f:
+                self.assertEqual(f.read(), "", name)
+
+    def test_xml_summary_does_not_count(self):
+        self.write_bin({"a_tests": {"stdout": ENTERING.format("a_tests"),
+                                    "stderr": XML_REPORT, "status": 0}})
+        result = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.summary(), ["FAIL a_tests (no test report)"])
 
     def test_coloured_summary_does_not_count(self):
         # A summary in colour codes is not the whole-line summary: a binary
