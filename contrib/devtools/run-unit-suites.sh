@@ -55,10 +55,12 @@ for i in "${!suites[@]}"; do printf '%s\0%s\0' "$i" "${suites[$i]}"; done |
         name="$1-$(printf "%s" "$2" | tr -c "A-Za-z0-9_.-" "_")"
         dir="$tmproot/$name"; mkdir -p "$dir"
         log="$logdir/$name.log"
-        # The report options are passed, so that BOOST_TEST_REPORT_* in the
-        # environment cannot change or suppress the summary checked below.
+        # The report and colour options are passed, so that BOOST_TEST_REPORT_*
+        # and BOOST_TEST_COLOR_OUTPUT in the environment cannot change,
+        # suppress or wrap in colour codes the summary checked below.
         if ! TMPDIR="$dir" "$bin" --run_test="$2" --log_level=test_suite \
-                --report_level=confirm --report_format=HRF --report_sink=stderr >"$log" 2>&1; then
+                --report_level=confirm --report_format=HRF --report_sink=stderr \
+                --color_output=no >"$log" 2>&1; then
             echo "FAIL $2"
         elif grep -qx "\*\*\* No errors detected" "$log"; then
             echo "PASS $2"

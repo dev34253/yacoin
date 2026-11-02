@@ -2,7 +2,9 @@
 
 The test binary is a fake: a shell script that lists suites for
 --list_content and, for --run_test=<selector>, prints what the test gives it
-and exits with the given status.
+and exits with the given status. A run marked "colour" prints its stderr in
+colour, as Boost.Test does, when BOOST_TEST_COLOR_OUTPUT=yes is set and
+--color_output=no is not given.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -19,6 +21,8 @@ SCRIPT = os.path.join(os.path.dirname(HERE), "run-unit-suites.sh")
 
 # Boost.Test's summary of a completed run without errors (report level confirm)
 NO_ERRORS = "\n*** No errors detected\n"
+# The same summary as Boost.Test prints it with colour output on
+NO_ERRORS_COLOURED = "\n\033[1;32;49m*** No errors detected\033[0;39;49m\n"
 ENTERING = "Entering test module \"Bitcoin Test Suite\"\n" \
            "test/x.cpp(10): Entering test suite \"{0}\"\n" \
            "test/x.cpp(12): Entering test case \"{0}_case\"\n"
@@ -38,8 +42,10 @@ class RunUnitSuitesTest(unittest.TestCase):
         os.mkdir(self.argsdir)
 
     def write_bin(self, suites, listing=None, listing_status=0):
-        """suites: selector -> {"stdout", "stderr", "status"}. listing: the
-        output of --list_content (default: every selector as a suite)."""
+        """suites: selector -> {"stdout", "stderr", "status"} and optionally
+        "colour": the stderr printed instead when colour output is on.
+        listing: the output of --list_content (default: every selector as a
+        suite)."""
         if listing is None:
             listing = "".join("%s*\n    %s_case*\n" % (s, s) for s in suites)
         lines = [
@@ -53,7 +59,14 @@ class RunUnitSuitesTest(unittest.TestCase):
         for selector, run in suites.items():
             lines.append("--run_test=%s)" % shlex.quote(selector))
             lines.append("    printf %s " + shlex.quote(run["stdout"]))
-            lines.append("    printf %s " + shlex.quote(run["stderr"]) + " >&2")
+            if "colour" in run:
+                # Boost.Test: the command line option overrides the environment
+                lines.append('    colour="${BOOST_TEST_COLOR_OUTPUT:-no}"')
+                lines.append('    for a in "$@"; do case "$a" in --color_output=*) colour="${a#*=}" ;; esac; done')
+                lines.append('    if [ "$colour" = yes ]; then printf %s ' + shlex.quote(run["colour"]) + " >&2")
+                lines.append("    else printf %s " + shlex.quote(run["stderr"]) + " >&2; fi")
+            else:
+                lines.append("    printf %s " + shlex.quote(run["stderr"]) + " >&2")
             lines.append("    exit %d ;;" % run["status"])
         lines.append('*) echo "unexpected arguments: $*" >&2; exit 99 ;;')
         lines.append("esac")
@@ -61,8 +74,8 @@ class RunUnitSuitesTest(unittest.TestCase):
             f.write("\n".join(lines) + "\n")
         os.chmod(self.bin, 0o755)
 
-    def run_runner(self, *selectors, jobs="2"):
-        env = dict(os.environ, TMPDIR=self.tmp)
+    def run_runner(self, *selectors, jobs="2", env=None):
+        env = dict(os.environ, TMPDIR=self.tmp, **(env or {}))
         return subprocess.run(["bash", SCRIPT, self.bin, self.logdir, jobs] + list(selectors),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               universal_newlines=True, env=env)
@@ -158,8 +171,35 @@ class RunUnitSuitesTest(unittest.TestCase):
         calls = self.run_calls()
         self.assertEqual(len(calls), 1)
         for arg in ("--run_test=a_tests", "--report_level=confirm", "--report_format=HRF",
-                    "--report_sink=stderr"):
+                    "--report_sink=stderr", "--color_output=no"):
             self.assertIn(arg, calls[0])
+
+    def test_colour_output_is_off_for_explicit_selectors(self):
+        self.write_bin({"a_tests/case_one": passing(), "!b_tests": passing()},
+                       listing="", listing_status=1)
+        result = self.run_runner("a_tests/case_one", "!b_tests")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.run_calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertIn("--color_output=no", call)
+
+    def test_colour_output_in_the_environment_does_not_fail_a_suite(self):
+        # BOOST_TEST_COLOR_OUTPUT=yes wraps the summary in colour codes; the
+        # runner turns colour off, so the summary is found.
+        self.write_bin({"a_tests": dict(passing(), colour=NO_ERRORS_COLOURED)})
+        result = self.run_runner(env={"BOOST_TEST_COLOR_OUTPUT": "yes"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.summary(), ["PASS a_tests"])
+
+    def test_coloured_summary_does_not_count(self):
+        # A summary in colour codes is not the whole-line summary: a binary
+        # that prints it regardless of the option fails.
+        self.write_bin({"a_tests": {"stdout": ENTERING.format("a_tests"),
+                                    "stderr": NO_ERRORS_COLOURED, "status": 0}})
+        result = self.run_runner()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.summary(), ["FAIL a_tests (no test report)"])
 
     def test_explicit_selectors_follow_the_same_rule(self):
         self.write_bin({
