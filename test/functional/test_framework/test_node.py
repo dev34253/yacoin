@@ -41,6 +41,17 @@ from .util import (
 
 BITCOIND_PROC_WAIT_TIMEOUT = 60
 
+# What the stop RPC can raise when the node shut down before it wrote the
+# reply: the connection closes without a reply, and the client's retry finds
+# no listening socket. RemoteDisconnected is a ConnectionResetError; it is
+# listed for the reader.
+LOST_REPLY_ERRORS = (
+    http.client.RemoteDisconnected,
+    ConnectionResetError,
+    BrokenPipeError,
+    ConnectionRefusedError,
+)
+
 
 def describe_exit_code(return_code):
     """Format a Popen return code, naming the signal for negative codes."""
@@ -286,6 +297,22 @@ class TestNode():
             wallet_path = "wallet/{}".format(urllib.parse.quote(wallet_name))
             return self.rpc / wallet_path
 
+    def send_stop(self, *args, **kwargs):
+        """Send the stop RPC and return its reply.
+
+        Returns None when the connection dropped instead of the reply: the
+        node can shut down before it writes the reply to stop. The stop then
+        counts as sent; whether the node exits is for the caller's
+        wait_until_stopped to check, which fails as usual if it does not."""
+        try:
+            return self.stop(*args, **kwargs)
+        except LOST_REPLY_ERRORS as e:
+            self.log.warning("No reply to stop (%r); the node must still exit", e)
+            # The connection is left in the request-sent state.
+            if self.rpc is not None:
+                self.rpc.close()
+            return None
+
     def stop_node(self, expected_stderr='', wait=0):
         """Stop the node."""
         if not self.running:
@@ -294,13 +321,13 @@ class TestNode():
         try:
             # Do not use wait argument when testing older nodes, e.g. in feature_backwards_compatibility.py
             if self.version is None or self.version >= 180000:
-                self.stop(wait=wait)
+                self.send_stop(wait=wait)
                 # Close the RPC connection. With --usecli there is none, and
                 # self.close() would be sent to yacoin-cli as a command.
                 if self.rpc is not None:
                     self.rpc.close()
             else:
-                self.stop()
+                self.send_stop()
         except http.client.CannotSendRequest:
             self.log.exception("Unable to stop node.")
 
