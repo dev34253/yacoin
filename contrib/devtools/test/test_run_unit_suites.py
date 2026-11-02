@@ -3,8 +3,7 @@
 The test binary is a fake: a shell script that lists suites for
 --list_content and, for --run_test=<selector>, prints what the test gives it
 and exits with the given status. A run marked "colour" prints its stderr in
-colour, as Boost.Test does, when BOOST_TEST_COLOR_OUTPUT=yes is set and
---color_output=no is not given. A run marked "xml" prints that stderr instead
+colour unless --color_output=no is given, whatever the environment says. A run marked "xml" prints that stderr instead
 when BOOST_TEST_OUTPUT_FORMAT is set, whatever the options say, as Boost 1.64
 does. Every call also records the BOOST_TEST_* variables it was started with.
 
@@ -49,7 +48,7 @@ class RunUnitSuitesTest(unittest.TestCase):
 
     def write_bin(self, suites, listing=None, listing_status=0):
         """suites: selector -> {"stdout", "stderr", "status"} and optionally
-        "colour": the stderr printed instead when colour output is on, and
+        "colour": the stderr printed instead unless --color_output=no is given,
         "xml": the stderr printed instead when BOOST_TEST_OUTPUT_FORMAT is set.
         listing: the output of --list_content (default: every selector as a
         suite)."""
@@ -73,9 +72,8 @@ class RunUnitSuitesTest(unittest.TestCase):
                              + shlex.quote(run["xml"]) + " >&2")
                 lines.append("    else printf %s " + shlex.quote(run["stderr"]) + " >&2; fi")
             elif "colour" in run:
-                # Boost.Test: the command line option overrides the environment
-                lines.append('    colour="${BOOST_TEST_COLOR_OUTPUT:-no}"')
-                lines.append('    for a in "$@"; do case "$a" in --color_output=*) colour="${a#*=}" ;; esac; done')
+                lines.append('    colour=yes')
+                lines.append('    for a in "$@"; do [ "$a" = --color_output=no ] && colour=no; done')
                 lines.append('    if [ "$colour" = yes ]; then printf %s ' + shlex.quote(run["colour"]) + " >&2")
                 lines.append("    else printf %s " + shlex.quote(run["stderr"]) + " >&2; fi")
             else:
@@ -199,7 +197,9 @@ class RunUnitSuitesTest(unittest.TestCase):
 
     def test_colour_output_in_the_environment_does_not_fail_a_suite(self):
         # BOOST_TEST_COLOR_OUTPUT=yes wraps the summary in colour codes; the
-        # runner turns colour off, so the summary is found.
+        # runner turns colour off, so the summary is found. The fake colours
+        # whenever the option is missing, so the test also fails if only the
+        # environment is cleaned.
         self.write_bin({"a_tests": dict(passing(), colour=NO_ERRORS_COLOURED)})
         result = self.run_runner(env={"BOOST_TEST_COLOR_OUTPUT": "yes"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
