@@ -219,6 +219,7 @@ class FrameworkTest(BitcoinTestFramework):
             nowhere.listen(8)
             drop_rpc_replies(node, *nowhere.getsockname())
             node.stop_node()
+            self.log.info("Expected: the next wait times out, and wait_until() logs its failure as an ERROR")
             try:
                 node.wait_until_stopped(timeout=3)
             except AssertionError as e:
