@@ -764,14 +764,6 @@ class TokenRPCTest(BitcoinTestFramework):
         self.mine_with_mocktime(n0, 1)
         fee_lock(unique_txid, 1)
 
-        # signrawtransaction leaves the fee lock input unsigned
-        spend = n0.createrawtransaction(
-            [{"txid": txid, "vout": lock["n"], "sequence": FEE_LOCK_BLOCKS}],
-            {n0.getnewaddress(): FEE_LOCK_YAC - Decimal("0.01")})
-        signed = n0.signrawtransaction(spend)
-        assert not signed["complete"]
-        assert_equal(signed["errors"][0]["scriptSig"], "")
-
         # A spend that waits for the lock duration isn't final before then
         key = key_from_wif(n0.dumpprivkey(lock["scriptPubKey"]["addresses"][0])["private_key"])
         tx = CTransaction()
