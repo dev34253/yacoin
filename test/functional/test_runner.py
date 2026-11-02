@@ -109,6 +109,7 @@ BASE_SCRIPTS = [
     'feature_verifydb.py',  # 6
     'feature_loadblock.py',  # 6
     'feature_shutdown.py',  # 6
+    'feature_torcontrol.py',  # 4
     'feature_crash_recovery.py',  # 5
     'feature_op_cltv.py',
     'feature_op_csv.py',
