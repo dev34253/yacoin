@@ -144,6 +144,7 @@ BASE_SCRIPTS = [
     'interface_rpc.py',
     'rpc_blockchain.py',
     'feature_hardfork_1_0.py',  # 4
+    'feature_stake_modifier.py',
     'feature_block_limits.py',  # 4
     'rpc_invalidateblock.py',  # 3
     'p2p_invalid_block.py',  # 3
