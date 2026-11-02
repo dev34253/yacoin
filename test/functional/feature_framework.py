@@ -7,6 +7,8 @@
 Later tests rely on these helpers, so check them against a real node:
 - node exit codes and the signal helpers (TestNode.wait_until_stopped,
   send_signal, wait_for_exit).
+- stop_node goes on when the reply to stop is lost and the node exits, and
+  the wait after it still fails when the node keeps running.
 - connect_nodes returns only when both sides finished the handshake, and
   peers() drops YACoin's extra getpeerinfo element.
 - CTransaction computes the node's txids (scriptSigs ignored from version 2
@@ -20,10 +22,13 @@ Later tests rely on these helpers, so check them against a real node:
 """
 
 from decimal import Decimal
+import http.client
 import re
 import signal
+import socket
 import sys
 import time
+import urllib.parse
 
 from test_framework.authproxy import JSONRPCException
 from test_framework.messages import COIN, CBlock, CTransaction, FromHex, TX_VERSION
@@ -42,6 +47,21 @@ from test_framework.util import (
 from test_framework.wallet_util import assert_yac_fee, expected_fee
 
 
+class DroppedReplyConnection(http.client.HTTPConnection):
+    """An RPC connection that sends each request in full and then closes
+    without reading the reply: what the client sees when the node shuts down
+    before it writes the reply to stop."""
+
+    def getresponse(self):
+        self.close()
+        raise http.client.RemoteDisconnected("reply dropped by the test")
+
+
+def drop_rpc_replies(node, host, port):
+    """Send node's RPC calls to host:port and drop their replies."""
+    node.rpc.auth_service_proxy_instance._set_conn(DroppedReplyConnection(host, port, timeout=node.rpc_timeout))
+
+
 class FrameworkTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
@@ -57,6 +77,7 @@ class FrameworkTest(BitcoinTestFramework):
     def run_test(self):
         self.test_mocktime_at_start()
         self.test_exit_codes()
+        self.test_lost_stop_reply()
         self.test_connect_nodes()
         self.test_txid()
         self.test_mininode_options()
@@ -96,6 +117,40 @@ class FrameworkTest(BitcoinTestFramework):
         else:
             raise AssertionError("wait_until_stopped did not fail on exit code -9")
         assert not node.running
+        self.start_node(1)
+        assert_equal(node.getblockcount(), 0)
+
+    def test_lost_stop_reply(self):
+        node = self.nodes[1]
+
+        self.log.info("stop_node goes on when the reply to stop is lost and the node exits")
+        url = urllib.parse.urlparse(node.url)
+        drop_rpc_replies(node, url.hostname, url.port)
+        self.stop_node(1)
+        assert not node.running
+        self.start_node(1)
+        assert_equal(node.getblockcount(), 0)
+
+        self.log.info("A stop that is lost while the node keeps running still fails the wait")
+        # A listener that never accepts: the request ends in its backlog and
+        # never reaches the node.
+        nowhere = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            nowhere.bind(("127.0.0.1", 0))
+            nowhere.listen(8)
+            drop_rpc_replies(node, *nowhere.getsockname())
+            node.stop_node()
+            try:
+                node.wait_until_stopped(timeout=3)
+            except AssertionError as e:
+                assert "not true after 3 seconds" in str(e), str(e)
+            else:
+                raise AssertionError("wait_until_stopped returned for a node that is still running")
+        finally:
+            nowhere.close()
+        assert node.process.poll() is None
+        node.process.kill()
+        node.wait_for_exit()
         self.start_node(1)
         assert_equal(node.getblockcount(), 0)
 
