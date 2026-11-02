@@ -222,6 +222,123 @@ BOOST_AUTO_TEST_CASE(mainnet_header_hash)
     BOOST_CHECK(header.CalculateHash() != hash);
 }
 
+/** A mainnet block: height, its header as `getblockheader <hash> false` returns it, and its hash */
+struct MainnetHeader {
+    int nHeight;
+    const char* pszHeader;
+    const char* pszHash;
+};
+
+/* One real mainnet header per N-factor step the chain has passed through; the
+ * step to N-factor 21 with the 1.0 headers is mainnet_header_hash */
+static const MainnetHeader MAINNET_HEADERS[] = {
+    {1,
+     "03000000e5531375f88f6038ffccfc3ac4aba952109a01ad5e41de3c111806c9"
+     "0f060000f64e8be9cd9e7eed8721e38e4ef6df9611086b6f299bac5c0f3b5fcb"
+     "959f5b5c7df58951ffff0f1ed21f0200",
+     "000000f260c39629d99355c5476d710d46ca0d35b3d962b44054b9ff943fe622"},
+    {60540,
+     "03000000062436d8f1fb30595befa369ab6b038a4835f8bffa69d2bdbb675117"
+     "000000001dff058fc782acb9147c0d79430bb863e9e08414769baded2c7fd0b6"
+     "04f3b97227e491513d321e1ce68f0100",
+     "0000000000074d33875724ae7bd66da3a493dbf4491eba26a796771318b97b3c"},
+    {64429,
+     "030000003c4221b57d0db869ec8c9fd47868f452f3019f90c2f437e18187621c"
+     "000000002488757448b2fd85b658feec414091370f7a6568e10f2b90a1f6e58b"
+     "f5a3281953e495518a2b211c78ad0fe0",
+     "000000001dd547cb314c19be3e4ba22a64a9ce31eda13d348b4894bc38f86452"},
+    {67044,
+     "030000003b57de56c31710a61f3b824aaae3d75630d26237a7a86789461a111a"
+     "00000000c7efc40ed19c1c8843d780f1ec7c703eb46370035ef9314fc5780315"
+     "7e844f7a73e59951d1972e1c0bb60500",
+     "0000000027c70d58032cf2f6bdc93206b0db2fda288a0096a176c45982ad7513"},
+    {74470,
+     "030000008df12b32f734688c5a420e352eecefc9a980f6cd9cf804246a83dc3a"
+     "0000000070d26b6794514aeea7671715bd31c410aa6ffb1c4ff79f00022f5709"
+     "a8ec50f139e4a5512886001d5c6f0040",
+     "0000000062fe1e875fcd9159a0803da13c6b1c0e8afad8ee39923b7d72b682c3"},
+    {77190,
+     "03000000a98fbc93bc248cd0faf67674769d8f8c6a3edebbc26050af065b1a6c"
+     "00000000306c5ffeddbb4c23baac773022c6b60564bddf80e811d23a74f985f1"
+     "cf0f6db052e4a95132b4001d694a00c0",
+     "00000000a805ec5bdfdf2d3dc7e767f0e547a94068074f3fad00376e77606ec9"},
+    {110560,
+     "0300000058d9b03d6eed6cdfc2971d7fc27c514dfa6ebb43b43354f5a4b79047"
+     "00000000dae4ddbe2e79272e3fdf23e1cdcbe32fce8ee0bca45e1494aa420fa3"
+     "b88263a44ae4c951f1bf001dd9e21500",
+     "00000000a1e01e963829d254e2df01c0a0e1270f98c3ca4f05bf4ea2bf9844e0"},
+    {126564,
+     "03000000db9fa666cafbb76cb087edf74eeb01e6ff94732f4fc9f8ec8d3eaf49"
+     "f0879d5fa1cf6cec790ddca0ddfc21893645829e3196be2057b38745b7c8855d"
+     "4d867422b9e3d95170e6001dfe5c55f5",
+     "000000002ed91fbf7aae4c88c155bfe3d17454dadb9c9044e3fc745dedc06c41"},
+    {172924,
+     "030000008a484a3c0928d49acfa8c50f8f775fb6edd2a778e2b5dd773d43c962"
+     "0200000047a35a13dad29507ca841e1aa5be5f334fa9a6449bd9eba1759c1c2a"
+     "7498e556fae40952a6b1021ddeb30100",
+     "00000000d3b401986fe6a1ee00561b38a4c1089a0d91d28f7431d7df1324fc86"},
+    {235672,
+     "03000000943719e65d8f9bedd09586d4796deaa9dac756aaddbb94ab2274bb05"
+     "0a0000008b908db9e07858bc3862823831814f0edf13a492b8b264067962ca13"
+     "ec3a8a30a7e34952d99c0a1dc0000000",
+     "00000003a7362e446e85cf6f42dfb142828bcd66da4ecd3c63d91c30026922d0"},
+    {293786,
+     "0300000020826fd147a3d01f76d58517da799f07e31ec631993de6a121f4b348"
+     "250000009079b077126cba47d3821b91610ac11cd710d0474d70592b9bc2b27d"
+     "3e543e73f4e38952d4cc6c1dc8000000",
+     "0000005065285b460c24acd7033a42635bd3c046d20b1ec71304f4edf045f42f"},
+    {575679,
+     "03000000b2cad84689d69aac34287af01293b7e7e09b99b2e018c5ab115fdac9"
+     "a35cec61f94d76efcdc4baacab68718cdfefc546f3f95c5197366a15049bbe23"
+     "db49f6befee48953a4e1371da93c0000",
+     "000000028fdb58403a0e13d21f60e60cad7c6310931a1dcf1b46915f326cf4ed"},
+    {702923,
+     "0300000098fdf67dbc978b04be269d409af2795d1c148a191196aecf2d462500"
+     "7b000000b902dcafe0c850d6a4ab2fc2541b5182d835a8ad5486796c4cfb003c"
+     "3e8b5b2171e409546ff1001e0c000080",
+     "00000026b871944ab5396a0b91d1b2f006575394bc9443ea707146c0187ed956"},
+    {1112866,
+     "03000000e21f0fc85276f8c3a7d13429a1b91dae55102e60ab66f12daa79930a"
+     "6701000070de9c39038d9dab6442fb50adac7eb2029aca4bbe8cbaef9be45f6d"
+     "b10feb111fe489552910021eb4000040",
+     "00000168e9027e29ff9dbd92744d41ef75e22efcfdc174563eca466bf6a934b2"},
+    {1608562,
+     "03000000a3d19b9302442377ffcef79905187c05428b4b4cc2a7744c2c641286"
+     "b5070000bed461f9fab869c74547f4e88511f6ea481508e63f8a4381014ccdc1"
+     "ae5df767a1e3895742ee091e23000040",
+     "0000045f83a0f81362228b1dc7f1f8638182c2f3a5983f1696625d52c79625b1"},
+    {1749204,
+     "030000006b2fa3653170d88146d29f0b393cd716e38f31119c203c2bf43ac87e"
+     "380b0000e55213bcf4025e03e936beacb7af25a4c7718451fa90c815c0be2e84"
+     "fdfda6f759e48959ffff0f1e01000000",
+     "000003b528000c914cca9d9440ea117254e43f5d4985969ca200e5f6a1314ac6"},
+    {1882539,
+     "0300000056406a92de92b76e2b636e56930ec197f1513be3b8fcecf442de09fe"
+     "479056c6c92029f93e094ec110035b34f39a87040aa8917f72a5594e8c332734"
+     "184ab41d77f1895fffff0f1e800009ac",
+     "000005e2a4968629de40dc91643655de3c1256a783709c6c6f0779fddbbd7169"},
+};
+
+/* Each header hashes to its block hash and meets its own target */
+BOOST_AUTO_TEST_CASE(mainnet_header_hashes)
+{
+    const auto chainParams = CreateChainParams(CBaseChainParams::MAIN);
+    for (const MainnetHeader& block : MAINNET_HEADERS) {
+        BOOST_TEST_MESSAGE("block " << block.nHeight);
+        CDataStream stream(ParseHex(block.pszHeader), SER_NETWORK, PROTOCOL_VERSION);
+        BOOST_CHECK_EQUAL(stream.size(), 80U);
+        CBlockHeader header;
+        stream >> header;
+        BOOST_CHECK(stream.empty());
+        BOOST_CHECK_LT(header.nVersion, VERSION_of_block_for_yac_05x_new);
+
+        const uint256 hash = header.CalculateHash();
+        BOOST_CHECK_EQUAL(hash.GetHex(), block.pszHash);
+        BOOST_CHECK_MESSAGE(CheckProofOfWork(hash, header.nBits, chainParams->GetConsensus()),
+                            "block " << block.nHeight << " meets its target");
+    }
+}
+
 /* A pre-1.0 header in the last second of N-factor 8 */
 BOOST_AUTO_TEST_CASE(old_header_hash_nfactor_8)
 {

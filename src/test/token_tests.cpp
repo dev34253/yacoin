@@ -397,6 +397,32 @@ BOOST_AUTO_TEST_CASE(lock_amount_and_duration)
     BOOST_CHECK(!CheckIssueLockTx(CTxOut(lock.nValue, TestTokenScriptBase()), ETokenType::YATOKEN));
 }
 
+BOOST_AUTO_TEST_CASE(lock_duration_and_count_must_match)
+{
+    const CAmount nLock = GetLockAmount(ETokenType::YATOKEN);
+    const uint32_t nDuration = GetLockDuration(ETokenType::YATOKEN);
+    const CKeyID keyID(uint160(std::vector<unsigned char>(20, 1)));
+
+    // A longer lock than the rule's isn't accepted either: the duration must match
+    for (uint32_t nLonger : {nDuration + 1, nDuration * 2}) {
+        const CTxOut lockLonger(nLock, GetScriptForCsvP2PKH(nLonger, keyID));
+        BOOST_CHECK(!CheckIssueLockTx(lockLonger, ETokenType::YATOKEN));
+        BOOST_CHECK(!CheckIssueLockTx(lockLonger, ETokenType::SUB));
+        BOOST_CHECK(!CheckIssueLockTx(lockLonger, ETokenType::UNIQUE, 1));
+        BOOST_CHECK(!CheckReissueLockTx(lockLonger));
+    }
+
+    // Unique tokens lock the amount once for each token the transaction issues
+    for (int n : {1, 5}) {
+        const CTxOut lock = TokenLockOutput(ETokenType::UNIQUE, n);
+        BOOST_CHECK_EQUAL(lock.nValue, n * nLock);
+        BOOST_CHECK(CheckIssueLockTx(lock, ETokenType::UNIQUE, n));
+        BOOST_CHECK(!CheckIssueLockTx(lock, ETokenType::UNIQUE, n + 1));
+        BOOST_CHECK(!CheckIssueLockTx(lock, ETokenType::UNIQUE, n - 1));
+        BOOST_CHECK_EQUAL(CheckIssueLockTx(lock, ETokenType::UNIQUE), n == 1);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(check_new_token)
 {
     std::string strError;

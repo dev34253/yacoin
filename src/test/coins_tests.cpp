@@ -7,6 +7,7 @@
 #include "uint256.h"
 #include "undo.h"
 #include "utilstrencodings.h"
+#include "test/consensus_test_util.h"
 #include "test/test_bitcoin.h"
 #include "validation.h"
 #include "consensus/validation.h"
@@ -522,6 +523,112 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
 //        BOOST_CHECK_MESSAGE(false, "We should have thrown");
 //    } catch (const std::ios_base::failure& e) {
 //    }
+}
+
+/** A coin paying 8000 YAC to a P2PKH address */
+static Coin RealCoin(int nHeight, bool fCoinBase, bool fCoinStake, int nTime)
+{
+    CTxOut out(8000000000LL, GetScriptForDestination(CKeyID(uint160(ParseHex("e480473de775e89c7425ab353b8795f1acdaf960")))));
+    return Coin(out, nHeight, fCoinBase, fCoinStake, nTime);
+}
+
+static void CheckSameCoin(const Coin& a, const Coin& b)
+{
+    BOOST_CHECK(a.out == b.out);
+    BOOST_CHECK_EQUAL(a.nHeight, b.nHeight);
+    BOOST_CHECK_EQUAL(a.fCoinBase, b.fCoinBase);
+    BOOST_CHECK_EQUAL(a.nTime, b.nTime);
+}
+
+/* Real (height, time) pairs of mainnet blocks below and above the hardfork
+ * height, from which coins no longer store the coinstake flag */
+static const std::pair<int, int> REAL_HEIGHT_TIMES[] = {
+    {1608562, 1468654497},
+    {1882539, 1602875767},
+    {1890000, 1619048730},
+    {1911210, 1682210698},
+};
+
+BOOST_AUTO_TEST_CASE(coin_serialization_real_times)
+{
+    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    for (const auto& ht : REAL_HEIGHT_TIMES) {
+        for (bool fCoinBase : {false, true}) {
+            for (bool fCoinStake : {false, true}) {
+                if (fCoinBase && fCoinStake) continue;
+                const Coin coin = RealCoin(ht.first, fCoinBase, fCoinStake, ht.second);
+                CDataStream ss(SER_DISK, CLIENT_VERSION);
+                ss << coin;
+                Coin read;
+                ss >> read;
+                BOOST_CHECK(ss.empty());
+                CheckSameCoin(read, coin);
+                BOOST_CHECK_EQUAL(read.fCoinStake, fCoinStake && ht.first < nFork);
+            }
+        }
+    }
+
+    // The exact bytes: height and coinbase, compressed output, time, and the coinstake flag below the hardfork only
+    CDataStream below(SER_DISK, CLIENT_VERSION), above(SER_DISK, CLIENT_VERSION);
+    below << RealCoin(1608562, false, true, 1468654497);
+    above << RealCoin(1911210, true, false, 1682210698);
+    BOOST_CHECK_EQUAL(HexStr(below.begin(), below.end()),
+                      "80c3ac64" "5000e480473de775e89c7425ab353b8795f1acdaf960" "84bba6c621" "01");
+    BOOST_CHECK_EQUAL(HexStr(above.begin(), above.end()),
+                      "80e8a555" "5000e480473de775e89c7425ab353b8795f1acdaf960" "85a190fe0a");
+}
+
+BOOST_AUTO_TEST_CASE(undo_serialization_real_times)
+{
+    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    for (const auto& ht : REAL_HEIGHT_TIMES) {
+        for (bool fCoinBase : {false, true}) {
+            for (bool fCoinStake : {false, true}) {
+                if (fCoinBase && fCoinStake) continue;
+                const Coin coin = RealCoin(ht.first, fCoinBase, fCoinStake, ht.second);
+                CDataStream ss(SER_DISK, CLIENT_VERSION);
+                ss << TxInUndoSerializer(&coin);
+                Coin read;
+                TxInUndoDeserializer reader(&read);
+                ss >> reader;
+                BOOST_CHECK(ss.empty());
+                CheckSameCoin(read, coin);
+                BOOST_CHECK_EQUAL(read.fCoinStake, fCoinStake && ht.first < nFork);
+            }
+        }
+    }
+
+    // The exact bytes: height and coinbase, time, the coinstake flag below the hardfork only, a zero byte, compressed output
+    CDataStream below(SER_DISK, CLIENT_VERSION), above(SER_DISK, CLIENT_VERSION);
+    const Coin coinBelow = RealCoin(1608562, false, true, 1468654497);
+    const Coin coinAbove = RealCoin(1911210, true, false, 1682210698);
+    below << TxInUndoSerializer(&coinBelow);
+    above << TxInUndoSerializer(&coinAbove);
+    BOOST_CHECK_EQUAL(HexStr(below.begin(), below.end()),
+                      "80c3ac64" "84bba6c621" "01" "00" "5000e480473de775e89c7425ab353b8795f1acdaf960");
+    BOOST_CHECK_EQUAL(HexStr(above.begin(), above.end()),
+                      "80e8a555" "85a190fe0a" "00" "5000e480473de775e89c7425ab353b8795f1acdaf960");
+
+    // A transaction's undo data with inputs from both sides of the hardfork. Reading
+    // it checks the input count against the block size at the first input's height,
+    // which from the hardfork on needs the chain's money supply: with the node's
+    // hardfork height, the first input is from before it.
+    ConsensusGlobalsGuard globals;
+    globals.Set(nFork, nEpochInterval);
+    CTxUndo undo;
+    undo.vprevout.push_back(RealCoin(1608562, false, true, 1468654497));
+    undo.vprevout.push_back(RealCoin(1911210, false, false, 1682210698));
+    undo.vprevout.push_back(RealCoin(1890000, true, false, 1619048730));
+    CDataStream ss(SER_DISK, CLIENT_VERSION);
+    ss << undo;
+    CTxUndo read;
+    ss >> read;
+    BOOST_CHECK(ss.empty());
+    BOOST_REQUIRE_EQUAL(read.vprevout.size(), undo.vprevout.size());
+    for (size_t i = 0; i < undo.vprevout.size(); i++) {
+        CheckSameCoin(read.vprevout[i], undo.vprevout[i]);
+        BOOST_CHECK_EQUAL(read.vprevout[i].fCoinStake, undo.vprevout[i].fCoinStake);
+    }
 }
 
 const static COutPoint OUTPOINT;
