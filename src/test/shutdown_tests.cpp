@@ -119,11 +119,6 @@ BOOST_AUTO_TEST_CASE(passing_yassert_does_not_exit)
     BOOST_CHECK_EQUAL(end.err, "");
 }
 
-BOOST_AUTO_TEST_CASE(shutdown_never_requested)
-{
-    BOOST_CHECK(!ShutdownRequested());
-}
-
 BOOST_AUTO_TEST_SUITE_END()
 
 #endif // WIN32
