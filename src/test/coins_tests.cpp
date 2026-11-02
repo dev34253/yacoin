@@ -525,7 +525,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
 //    }
 }
 
-/** A coin paying 80 YAC to a P2PKH address */
+/** A coin paying 8000 YAC to a P2PKH address */
 static Coin RealCoin(int nHeight, bool fCoinBase, bool fCoinStake, int nTime)
 {
     CTxOut out(8000000000LL, GetScriptForDestination(CKeyID(uint160(ParseHex("e480473de775e89c7425ab353b8795f1acdaf960")))));
