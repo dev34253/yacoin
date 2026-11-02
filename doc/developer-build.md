@@ -147,7 +147,10 @@ same as a serial run. Per-suite logs and `summary.txt` are written to
 A suite passes only if `test_bitcoin` exits with status 0 and its log has
 Boost.Test's summary `*** No errors detected`. A suite that exits with 0
 without that summary ended before all its test cases ran and is shown as
-`FAIL <suite> (no test report)`. In `test_bitcoin`, a node shutdown request
+`FAIL <suite> (no test report)`. The runner starts `test_bitcoin` without any
+`BOOST_TEST_*` variable from the environment, so Boost.Test settings for
+debugging, such as a log level, need `test_bitcoin` run directly with its
+options (see `src/test/README.md`). In `test_bitcoin`, a node shutdown request
 (`StartShutdown`, for example after a failed release-mode assertion) prints a
 message to stderr and ends the process with a failure status.
 
@@ -324,19 +327,24 @@ Ubuntu 22.04, 8 cores, 15 GB RAM.
 The parallel unit test time is bounded by `transaction_tests/test_big_transaction`
 (about 17 s at `-O1`).
 
-## Baseline test results (v1.11.0, 9706af8b)
+## Baseline test results
 
-- Unit tests (`dev`): 53 of 53 suites, 239 test cases pass.
-- Functional tests (`func`): 45 of 45 pass.
-- Sanitizers (`asan`): 49 of 53 suites pass. Findings:
-  - `checkqueue_tests`: stack-use-after-scope in `test_CheckQueueControl_Locks`
-    (test code, `checkqueue_tests.cpp:422`).
-  - `DoS_tests`: `CNode` objects created by the test are never freed (leak).
-  - `accounting_tests`, `wallet_tests`: small leaks inside Berkeley DB
-    (`__os_malloc`).
+Each line says when and on which state of `master` it was measured.
+
+- Unit tests (`dev`, 2026-11-02, after `master` cdd47912): 70 of 70 suites,
+  422 test cases pass.
+- Functional tests (CI `functional-tests` job, 2026-11-02, `master` cdd47912):
+  119 of 119 test runs pass, none skipped (a script run with arguments counts
+  separately).
+- Sanitizers (`asan`, 2026-11-02, after `master` cdd47912): 66 of 70 suites
+  pass; the other four run all their test cases without errors and fail on
+  LeakSanitizer's report at exit. Findings:
+  - `DoS_tests`: `CNode` objects created by `stale_tip_peer_management`
+    (`AddRandomOutboundPeer`) are never freed.
+  - `accounting_tests`, `token_wallet_tests`, `wallet_tests`: small leaks
+    inside Berkeley DB (`__os_malloc`).
   - No UBSan findings.
-- Unit test files present but not compiled: `blockencodings`, `main`,
-  `merkle`, `miner`, `policyestimator`, `versionbits`.
+- Every unit test file in `src/test/` and `src/wallet/test/` is compiled.
 
 ## Notes
 

@@ -6,6 +6,8 @@
 #
 # A selector passes only if BIN exits with status 0 and its log has Boost.Test's
 # summary of a completed run without errors ("*** No errors detected").
+# BIN is started without any BOOST_TEST_* variable from the environment, so
+# Boost.Test's settings come only from the options passed below.
 #
 # Without selectors, all suites are listed from BIN and run. Each process gets
 # its own TMPDIR below $TMPDIR (default /tmp), because the test fixtures create
@@ -16,6 +18,10 @@ set -euo pipefail
 bin="${1:?test binary required}" logdir="${2:?log dir required}" jobs="${3:?job count required}"
 shift 3
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || { echo "$0: job count must be a positive integer" >&2; exit 2; }
+# Boost.Test reads its settings from BOOST_TEST_* variables too, and some of
+# them override the options (BOOST_TEST_OUTPUT_FORMAT overrides
+# --report_format in Boost 1.64), so none of them may reach BIN.
+while IFS= read -r var; do unset "$var"; done < <(compgen -e | grep '^BOOST_TEST_' || true)
 if [[ $# -gt 0 ]]; then
     suites=("$@")
 else
@@ -55,10 +61,11 @@ for i in "${!suites[@]}"; do printf '%s\0%s\0' "$i" "${suites[$i]}"; done |
         name="$1-$(printf "%s" "$2" | tr -c "A-Za-z0-9_.-" "_")"
         dir="$tmproot/$name"; mkdir -p "$dir"
         log="$logdir/$name.log"
-        # The report options are passed, so that BOOST_TEST_REPORT_* in the
-        # environment cannot change or suppress the summary checked below.
+        # The report and colour options fix the form of the summary checked
+        # below: one plain-text line in the log.
         if ! TMPDIR="$dir" "$bin" --run_test="$2" --log_level=test_suite \
-                --report_level=confirm --report_format=HRF --report_sink=stderr >"$log" 2>&1; then
+                --report_level=confirm --report_format=HRF --report_sink=stderr \
+                --color_output=no >"$log" 2>&1; then
             echo "FAIL $2"
         elif grep -qx "\*\*\* No errors detected" "$log"; then
             echo "PASS $2"
