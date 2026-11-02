@@ -96,8 +96,15 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
 | `release` | Check before a PR | Mainnet, default optimisation |
 | `asan` | Memory and UB checks | `dev` plus AddressSanitizer, LeakSanitizer and UBSan |
 
-The unit tests assume mainnet consensus parameters (for example `pow_tests`),
-so they fail on the low-difficulty build. The functional tests need it.
+The unit tests run on the mainnet build (`./dev.sh unit`, as in CI) and pass
+on the low-difficulty build as well; a test that uses mainnet-only data, such
+as checkpoints or the genesis block, needs its own part for that build. The
+functional tests need the low-difficulty build. To run the unit tests on it:
+
+```sh
+./dev.sh build func test/test_bitcoin
+contrib/devtools/run-unit-suites.sh build/func/src/test/test_bitcoin .devbuild/logs/unit-func "$(nproc)"
+```
 
 All variants use one ccache directory. Because they're built with `-g`, ccache
 keys entries on the build directory, so variants don't share cached objects
@@ -188,9 +195,9 @@ version.
 ./dev.sh cov
 ```
 
-The unit tests need mainnet consensus and the functional tests need the
-low-difficulty build, so no single build can run both. `./dev.sh cov` uses
-two coverage builds (`--enable-lcov`, `-O0 -g`):
+The unit coverage is measured on the mainnet build, as CI runs the unit
+tests, and the functional tests need the low-difficulty build, so `./dev.sh
+cov` uses two coverage builds (`--enable-lcov`, `-O0 -g`):
 
 | Build | Runs | Make target |
 |---|---|---|
@@ -333,12 +340,14 @@ The parallel unit test time is bounded by `transaction_tests/test_big_transactio
 
 Each line says when and on which state of `master` it was measured.
 
-- Unit tests (`dev`, 2026-11-02, after `master` cdd47912): 70 of 70 suites,
-  422 test cases pass.
-- Functional tests (CI `functional-tests` job, 2026-11-02, `master` cdd47912):
+- Unit tests (`dev`, 2026-11-02, `master` 06329a8b): 70 of 70 suites, 422
+  test cases pass.
+- Unit tests on the low-difficulty build (`func`, 2026-11-02, `master`
+  0f8685e2): 70 of 70 suites, 422 test cases pass.
+- Functional tests (CI `functional-tests` job, 2026-11-02, `master` 06329a8b):
   119 of 119 test runs pass, none skipped (a script run with arguments counts
   separately).
-- Sanitizers (`asan`, 2026-11-02, after `master` cdd47912): 66 of 70 suites
+- Sanitizers (`asan`, 2026-11-02, `master` 06329a8b): 66 of 70 suites
   pass; the other four run all their test cases without errors and fail on
   LeakSanitizer's report at exit. Findings:
   - `DoS_tests`: `CNode` objects created by `stale_tip_peer_management`
