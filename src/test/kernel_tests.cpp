@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <string>
+#include <vector>
 
 #include <boost/test/unit_test.hpp>
 
@@ -66,11 +68,45 @@ struct ValueGuard {
     ~ValueGuard() { m_ref = m_saved; }
 };
 
+/** Reaches the protected maps of gArgs through pointers to members formed in a derived class */
+class ArgsAccess : public ArgsManager
+{
+public:
+    static std::map<std::string, std::string>& MapArgs() { return gArgs.*(&ArgsAccess::mapArgs); }
+    static std::map<std::string, std::vector<std::string> >& MapMultiArgs() { return gArgs.*(&ArgsAccess::mapMultiArgs); }
+};
+
+/** Sets an argument of gArgs while it lives; restores its value, or unsets it if it was unset */
+struct ArgGuard {
+    const std::string m_arg;
+    const bool m_fWasSet;
+    std::string m_value;
+    std::vector<std::string> m_values;
+    ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg), m_fWasSet(gArgs.IsArgSet(arg))
+    {
+        if (m_fWasSet) {
+            m_value = ArgsAccess::MapArgs()[arg];
+            m_values = ArgsAccess::MapMultiArgs()[arg];
+        }
+        gArgs.ForceSetArg(arg, value);
+    }
+    ~ArgGuard()
+    {
+        if (m_fWasSet) {
+            ArgsAccess::MapArgs()[m_arg] = m_value;
+            ArgsAccess::MapMultiArgs()[m_arg] = m_values;
+        } else {
+            ArgsAccess::MapArgs().erase(m_arg);
+            ArgsAccess::MapMultiArgs().erase(m_arg);
+        }
+    }
+};
+
 /** -debug on, and -printstakemodifier if fPrint, while it lives */
 struct StakeLogGuard {
     ValueGuard<bool> debug{fDebug, true};
-    explicit StakeLogGuard(bool fPrint) { gArgs.ForceSetArg("-printstakemodifier", fPrint ? "1" : "0"); }
-    ~StakeLogGuard() { gArgs.ForceSetArg("-printstakemodifier", "0"); }
+    ArgGuard print;
+    explicit StakeLogGuard(bool fPrint) : print("-printstakemodifier", fPrint ? "1" : "0") {}
 };
 
 struct MockTimeGuard {
@@ -142,7 +178,8 @@ CBlockIndex* BuildCandidates(SyntheticChain& chain, int n, std::function<unsigne
     return pindex;
 }
 
-// Mainnet data, read from a node over RPC (getblock <hash> false): block 644, whose coinbase
+// Mainnet data, read with getblock <hash> false from a yacoind built from master commit 6d723834
+// of 2026-10-18 and synced to height 1964924: block 644, whose coinbase
 // is the coin staked in block 82204, the lowest proof-of-stake block, and block 82204. The kernel
 // of 82204 uses the stake modifier of block 64327.
 const char* BLOCK_644_HEX =
@@ -356,6 +393,9 @@ BOOST_AUTO_TEST_CASE(modifier_genesis)
     Modifier modifier = Compute(pindexGenesis);
     BOOST_CHECK_EQUAL(modifier.nModifier, 0U);
     BOOST_CHECK(modifier.fGenerated);
+    // The log runs leave the arguments as they were
+    BOOST_CHECK(!gArgs.IsArgSet("-printstakemodifier"));
+    BOOST_CHECK(!fDebug);
 }
 
 /* While the parent is in the modifier interval of the last generated modifier, the block keeps
@@ -601,8 +641,9 @@ BOOST_AUTO_TEST_CASE(modifiers_from_rows)
 }
 
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-/* Mainnet blocks 0-15000 (hash and time of each, read from a node over RPC, in
- * data/stake_modifier_blocks.raw): the computed checksums pass the checkpoints at heights 0 and
+/* Mainnet blocks 0-15000 (hash and time of each, in data/stake_modifier_blocks.raw, read with
+ * getblockhash and getblock from a yacoind built from master commit 6d723834 of 2026-10-18 and
+ * synced to height 1964924): the computed checksums pass the checkpoints at heights 0 and
  * 15000, and the modifiers are the node's. All of these blocks are proof of work, and modifiers
  * are generated only at heights 0, 2 and 10089 (the blocks span 9.3 hours). */
 BOOST_AUTO_TEST_CASE(mainnet_modifiers_0_15000)
