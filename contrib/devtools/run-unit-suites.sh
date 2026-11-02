@@ -4,6 +4,9 @@
 #
 # Usage: run-unit-suites.sh BIN LOGDIR JOBS [SELECTOR...]
 #
+# A selector passes only if BIN exits with status 0 and its log has Boost.Test's
+# summary of a completed run without errors ("*** No errors detected").
+#
 # Without selectors, all suites are listed from BIN and run. Each process gets
 # its own TMPDIR below $TMPDIR (default /tmp), because the test fixtures create
 # their datadirs in the temp dir. Writes LOGDIR/<n>-<name>.log per selector and
@@ -51,10 +54,18 @@ for i in "${!suites[@]}"; do printf '%s\0%s\0' "$i" "${suites[$i]}"; done |
     xargs -0 -P "$jobs" -n 2 bash -c '
         name="$1-$(printf "%s" "$2" | tr -c "A-Za-z0-9_.-" "_")"
         dir="$tmproot/$name"; mkdir -p "$dir"
-        if TMPDIR="$dir" "$bin" --run_test="$2" --log_level=test_suite >"$logdir/$name.log" 2>&1; then
+        log="$logdir/$name.log"
+        # The report options are passed, so that BOOST_TEST_REPORT_* in the
+        # environment cannot change or suppress the summary checked below.
+        if ! TMPDIR="$dir" "$bin" --run_test="$2" --log_level=test_suite \
+                --report_level=confirm --report_format=HRF --report_sink=stderr >"$log" 2>&1; then
+            echo "FAIL $2"
+        elif grep -qx "\*\*\* No errors detected" "$log"; then
             echo "PASS $2"
         else
-            echo "FAIL $2"
+            # Exit status 0 without the summary: the process ended before
+            # Boost.Test finished, so not every test case ran.
+            echo "FAIL $2 (no test report)"
         fi
         rm -rf "$dir"' _ | sort -k2 | tee "$logdir/summary.txt"
 failed=$(grep -c '^FAIL' "$logdir/summary.txt" || true)
