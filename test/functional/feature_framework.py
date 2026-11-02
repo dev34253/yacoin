@@ -21,11 +21,15 @@ Later tests rely on these helpers, so check them against a real node:
 - known_failure passes while its check fails and fails once it passes.
 - the RPC client resends a request without a trace only when it cannot have
   reached the node, and with a warning when its reply was lost.
+- start_nodes, when one node fails to start, stops the nodes it connected
+  to by the stop RPC and the others by SIGTERM, and raises the start error;
+  wait_for_exit_or_kill kills a node that does not exit in time.
 """
 
 from decimal import Decimal
 import http.client
 import logging
+import os
 import re
 import signal
 import socket
@@ -37,6 +41,7 @@ from test_framework.authproxy import JSONRPCException
 from test_framework.messages import COIN, CBlock, CTransaction, FromHex, TX_VERSION
 from test_framework.mininode import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_node import FailedToStartError
 from test_framework.util import (
     assert_equal,
     assert_raises,
@@ -164,6 +169,7 @@ class FrameworkTest(BitcoinTestFramework):
         self.test_wallet_helpers()
         self.test_known_failure()
         self.test_rpc_resend()
+        self.test_start_nodes_failure()
 
     def test_mocktime_at_start(self):
         self.log.info("Nodes added after set_mocktime start on the test's clock")
@@ -219,6 +225,7 @@ class FrameworkTest(BitcoinTestFramework):
             nowhere.listen(8)
             drop_rpc_replies(node, *nowhere.getsockname())
             node.stop_node()
+            self.log.info("Expected: the next wait times out, and wait_until() logs its failure as an ERROR")
             try:
                 node.wait_until_stopped(timeout=3)
             except AssertionError as e:
@@ -497,6 +504,49 @@ class FrameworkTest(BitcoinTestFramework):
             assert_equal(node.getblockcount(), height)
         assert_equal((conn.requests, conn.connects), (2, 2))
         assert_equal(warnings.messages, [])
+
+    def test_start_nodes_failure(self):
+        self.log.info("start_nodes with a node that fails to start before one that starts stops both quickly and raises the start error")
+        self.stop_nodes()
+        good = self.nodes[1]
+        pids = []
+        start = good.start
+
+        def start_and_record_pid(*args, **kwargs):
+            start(*args, **kwargs)
+            pids.append(good.process.pid)
+        good.start = start_and_record_pid
+        began = time.time()
+        try:
+            self.start_nodes([["-paytxfee=abc"], []])
+        except FailedToStartError as e:
+            error = e
+        else:
+            raise AssertionError("start_nodes did not fail")
+        finally:
+            del good.start
+        elapsed = time.time() - began
+        self.log.info("start_nodes failed after %.1f s: %r", elapsed, error)
+        assert "exited with status 1 during initialization" in str(error), str(error)
+        assert elapsed < 30, elapsed
+        assert "Invalid amount for -paytxfee=<amount>: 'abc'" in self.nodes[0].read_stderr()
+        for node in self.nodes:
+            assert not node.running
+            assert node.process is None
+        assert_equal(len(pids), 1)
+        assert_raises(ProcessLookupError, os.kill, pids[0], 0)
+
+        self.log.info("The nodes start normally afterwards")
+        self.start_nodes()
+        for node in self.nodes:
+            assert node.getblockcount() > 0
+
+        self.log.info("wait_for_exit_or_kill kills a node that does not exit in time")
+        good.send_signal(signal.SIGSTOP)
+        assert_equal(good.wait_for_exit_or_kill(timeout=1), -signal.SIGKILL)
+        assert not good.running
+        self.start_node(1)
+        assert good.getblockcount() > 0
 
 
 if __name__ == '__main__':

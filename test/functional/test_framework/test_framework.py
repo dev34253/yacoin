@@ -12,6 +12,7 @@ import os
 import pdb
 import random
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -20,7 +21,7 @@ import time
 from .authproxy import JSONRPCException
 from . import coverage
 from .blocktools import TIME_GENESIS_BLOCK
-from .test_node import TestNode
+from .test_node import TestNode, describe_exit_code
 from .mininode import NetworkThread
 from .util import (
     MAX_NODES,
@@ -449,19 +450,52 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if extra_args is None:
             extra_args = [None] * self.num_nodes
         assert_equal(len(extra_args), self.num_nodes)
+        connected = set()
         try:
             for i, node in enumerate(self.nodes):
                 node.start(extra_args[i], *args, **kwargs)
-            for node in self.nodes:
+            for i, node in enumerate(self.nodes):
                 node.wait_for_rpc_connection()
+                connected.add(i)
         except:
-            # If one node failed to start, stop the others
-            self.stop_nodes()
+            # If one node failed to start, stop the others; the start error
+            # is raised, not an error of this cleanup.
+            self._stop_nodes_after_failed_start(connected)
             raise
 
         if self.options.coveragedir is not None:
             for node in self.nodes:
                 coverage.write_all_rpc_commands(self.options.coveragedir, node.rpc)
+
+    def _stop_nodes_after_failed_start(self, connected):
+        """Stop the running nodes after start_nodes failed: those in
+        connected (indexes of the nodes start_nodes connected to) by the stop
+        RPC, the others, which have no RPC connection, by SIGTERM. Errors are
+        logged, not raised; exit codes are not checked."""
+        rpc_stopped = []
+        for i, node in enumerate(self.nodes):
+            if not node.running:
+                continue
+            try:
+                if i in connected:
+                    node.stop_node()
+                    rpc_stopped.append(i)
+                elif node.process.poll() is None:
+                    node.send_signal(signal.SIGTERM)
+            except Exception as e:
+                self.log.error("Stopping node %d after the failed start: %r", i, e)
+        for i, node in enumerate(self.nodes):
+            if not node.running:
+                continue
+            try:
+                if i in rpc_stopped:
+                    node.wait_until_stopped()
+                else:
+                    return_code = node.wait_for_exit_or_kill()
+                    self.log.info("Node %d stopped without RPC after the failed start, exit code %s; stderr: %r",
+                                  i, describe_exit_code(return_code), node.read_stderr().strip())
+            except Exception as e:
+                self.log.error("Stopping node %d after the failed start: %r", i, e)
 
     def stop_node(self, i, expected_stderr='', wait=0, *, expected_ret_code=0):
         """Stop a bitcoind test node"""

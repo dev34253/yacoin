@@ -66,6 +66,8 @@ class ShutdownTest(BitcoinTestFramework):
             # waiting call's reply comes later and is lost the same way.
             self.log.warning("Waiting call not checked: %r", result)
         else:
+            if 'error' in result:
+                raise AssertionError("waitfornewblock raised: %r" % result['error'])
             assert_equal(result.get('block'), {'hash': genesis, 'height': 0})
 
         self.log.info("stop with one argument")

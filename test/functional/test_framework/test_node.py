@@ -40,6 +40,8 @@ from .util import (
 )
 
 BITCOIND_PROC_WAIT_TIMEOUT = 60
+# How long wait_for_exit_or_kill waits before it kills the node.
+SIGTERM_WAIT_TIMEOUT = 10
 
 # What the stop RPC can raise when the node shut down before it wrote the
 # reply: the connection closes without a reply, and the client's resend
@@ -393,6 +395,20 @@ class TestNode():
         return_code = self.process.wait(timeout)
         self._mark_stopped()
         return return_code
+
+    def wait_for_exit_or_kill(self, timeout=SIGTERM_WAIT_TIMEOUT):
+        """Wait for the node process to exit, for a node stopped without RPC
+        (for example by SIGTERM); kill it if it has not exited after timeout
+        seconds. Returns the exit code, unchecked, and marks the node
+        stopped."""
+        for profile_name in tuple(self.perf_subprocesses.keys()):
+            self._stop_perf(profile_name)
+        try:
+            return self.wait_for_exit(timeout)
+        except subprocess.TimeoutExpired:
+            self.log.warning("Node did not exit within %d s; killing it", timeout)
+            self.process.kill()
+            return self.wait_for_exit()
 
     def read_stderr(self):
         """Return what the node wrote to stderr since it was last started."""
