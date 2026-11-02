@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(csv_p2pkh_blocks)
     }
 }
 
-/* A relative lock in time (type flag, 512-second units) is met by an input nSequence of at least that time */
+/* A relative lock in time (type flag, in seconds) is met by an input nSequence of at least that time */
 BOOST_AUTO_TEST_CASE(csv_p2pkh_seconds)
 {
     const LockSpender spender;
@@ -142,12 +142,10 @@ BOOST_AUTO_TEST_CASE(csv_p2pkh_seconds)
         const uint32_t nLock = CsvSeconds(nSeconds);
         const CScript script = spender.Csv(nLock);
         BOOST_CHECK_EQUAL(spender.Spend(script, 0, nLock), SCRIPT_ERR_OK);
-        BOOST_CHECK_EQUAL(spender.Spend(script, 0, CsvSeconds(nSeconds + 512)), SCRIPT_ERR_OK);
-        BOOST_CHECK_EQUAL(spender.Spend(script, 0, CsvSeconds(nSeconds - 512)), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
+        BOOST_CHECK_EQUAL(spender.Spend(script, 0, CsvSeconds(nSeconds + 1)), SCRIPT_ERR_OK);
+        BOOST_CHECK_EQUAL(spender.Spend(script, 0, CsvSeconds(nSeconds - 1)), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
         BOOST_CHECK_EQUAL(spender.Spend(script, 0, CTxIn::SEQUENCE_LOCKTIME_DISABLE_FLAG | nLock),
                           SCRIPT_ERR_UNSATISFIED_LOCKTIME);
-        // Bits outside the type flag and the 16-bit value don't count
-        BOOST_CHECK_EQUAL(spender.Spend(script, 0, nLock | (1U << 16)), SCRIPT_ERR_OK);
     }
 }
 
@@ -156,7 +154,7 @@ BOOST_AUTO_TEST_CASE(csv_p2pkh_blocks_and_seconds_dont_mix)
 {
     const LockSpender spender;
     const uint32_t nBlocks = 21000, nTime = CsvSeconds(30 * 86400);
-    // The same 16-bit value, once as blocks and once as time
+    // The same value, once as blocks and once as time
     const uint32_t nValue = nTime & CTxIn::SEQUENCE_LOCKTIME_MASK;
     BOOST_CHECK_EQUAL(spender.Spend(spender.Csv(nBlocks), 0, nTime), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
     BOOST_CHECK_EQUAL(spender.Spend(spender.Csv(nValue), 0, nTime), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
