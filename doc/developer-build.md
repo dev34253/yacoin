@@ -31,12 +31,14 @@ package version changes.
 ./dev.sh depends qt     # only needed for yacoin-qt
 ```
 
-Some upstream download hosts accept the connection but never send data, and
-depends then waits indefinitely (seen with samba.org for ccache). Stop the
-build, download that file from the depends mirror into `depends/sources/`,
-and run `./dev.sh depends` again; depends checks the package hash. The mirror
-is `FALLBACK_DOWNLOAD_PATH` in `depends/Makefile`; it stores every file under
-the recipe's file name. For example:
+Some upstream download hosts accept the connection but never send data (seen
+with samba.org for ccache). Depends gives up on a download that stays below
+1 KiB/s for 30 s, retries it three times, and then fetches the file from the
+depends mirror, so such a host costs about two minutes per file. To skip the
+wait, download the file from the mirror into `depends/sources/` yourself and
+run `./dev.sh depends` again; depends checks the package hash either way. The
+mirror is `FALLBACK_DOWNLOAD_PATH` in `depends/Makefile`; it stores every file
+under the recipe's file name. For example:
 
 ```sh
 curl -fL -o depends/sources/ccache-3.3.4.tar.bz2 \

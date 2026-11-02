@@ -27,16 +27,16 @@
 #             can be fetched from neither, which is what breaks a build
 #
 # The make runs share a curl config (CURL_HOME) that refuses redirects to
-# anything but https:// and gives up on a download that stalls (under 1 KiB/s
-# for 60 s) instead of waiting forever. GitHub release downloads sometimes
-# answer 404 once, which curl does not retry, so the primary, mirror and
-# download steps run `make download` up to DOWNLOAD_ATTEMPTS times (default
-# 3); files fetched once are kept, and the primary step reports only what its
-# last attempt failed to fetch. A recipe with several files (qt,
-# native_cctools) fetches them one after another and stops at the first that
-# fails, so the files after it are neither tried nor listed until it is
-# fixed. DEPENDS_SOURCES_WORKDIR keeps the work files (default: a new
-# temporary directory, removed when every step passes).
+# anything but https://; depends' own download command gives up on a download
+# that stalls (DOWNLOAD_SPEED_LIMIT, DOWNLOAD_SPEED_TIME in depends/Makefile).
+# GitHub release downloads sometimes answer 404 once, which curl does not
+# retry, so the primary, mirror and download steps run `make download` up to
+# DOWNLOAD_ATTEMPTS times (default 3); files fetched once are kept, and the
+# primary step reports only what its last attempt failed to fetch. A recipe
+# with several files (qt, native_cctools) fetches them one after another and
+# stops at the first that fails, so the files after it are neither tried nor
+# listed until it is fixed. DEPENDS_SOURCES_WORKDIR keeps the work files
+# (default: a new temporary directory, removed when every step passes).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,8 +72,6 @@ mkdir -p "$work/none" "$work/curl"
 # the allowed protocols) and still follows a redirect to http://.
 cat > "$work/curl/.curlrc" <<'EOF'
 proto-redir = "=https"
-speed-limit = 1024
-speed-time = 60
 EOF
 
 failures=()
