@@ -23,8 +23,13 @@
 #include "test/consensus_test_util.h"
 #include "test/test_bitcoin.h"
 
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+#include "data/stake_modifier_blocks.raw.h"
+#endif
+
 #include <algorithm>
 #include <functional>
+#include <map>
 
 #include <boost/test/unit_test.hpp>
 
@@ -575,6 +580,43 @@ BOOST_AUTO_TEST_CASE(modifiers_from_rows)
     BOOST_CHECK_EQUAL(nGenerated, 12);
     BOOST_CHECK_EQUAL(entries.back().nModifier, 0x99376b954611be7fULL);
 }
+
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+/* Mainnet blocks 0-15000 (hash and time of each, read from a node over RPC, in
+ * data/stake_modifier_blocks.raw): the computed checksums pass the checkpoints at heights 0 and
+ * 15000, and the modifiers are the node's. All of these blocks are proof of work, and modifiers
+ * are generated only at heights 0, 2 and 10089 (the blocks span 9.3 hours). */
+BOOST_AUTO_TEST_CASE(mainnet_modifiers_0_15000)
+{
+    SyntheticChain chain;
+    std::vector<HashTimeRow> rows = ReadRows(raw_tests::stake_modifier_blocks, sizeof(raw_tests::stake_modifier_blocks));
+    BOOST_REQUIRE_EQUAL(rows.size(), 15001U);
+    BOOST_CHECK_EQUAL(rows[15000].hash.GetHex(), "00000082cab82d04354692fac3b83d19cbe3c3ab4b73610d0e73397545eb012e");
+    std::vector<StakeModifierEntry> entries = ComputeModifiers(chain, rows);
+    BOOST_REQUIRE_EQUAL(entries.size(), 15001U);
+
+    BOOST_CHECK_EQUAL(entries[0].nChecksum, 0x0e00670bU);
+    BOOST_CHECK(CheckStakeModifierCheckpoints(0, entries[0].nChecksum));
+    BOOST_CHECK_EQUAL(entries[15000].nChecksum, 0x085e9cafU);
+    BOOST_CHECK(CheckStakeModifierCheckpoints(15000, entries[15000].nChecksum));
+    BOOST_CHECK(!CheckStakeModifierCheckpoints(15000, entries[15000].nChecksum ^ 1));
+    // Checksums the node reports at the heights with a new modifier
+    BOOST_CHECK_EQUAL(entries[2].nChecksum, 0x919e03c5U);
+    BOOST_CHECK_EQUAL(entries[10089].nChecksum, 0x9e1bda36U);
+
+    // The node's modifiers at the heights that generate one
+    const std::map<size_t, ::uint64_t> generated = {{0, 0x0}, {2, 0x1}, {10089, 0x514ac69ff6a11fd1}};
+    ::uint64_t nModifier = 0;
+    for (size_t i = 0; i < entries.size(); i++) {
+        auto it = generated.find(i);
+        if (it != generated.end()) nModifier = it->second;
+        if (entries[i].fGenerated != (it != generated.end()) || entries[i].nModifier != nModifier) {
+            BOOST_ERROR("height " << i << ": modifier " << std::hex << entries[i].nModifier << " generated "
+                                   << entries[i].fGenerated << ", the node's " << nModifier);
+        }
+    }
+}
+#endif
 
 /* The kernel hash: double SHA-256 of the modifier, the coin's block time, the coin's offset in
  * its block, its transaction time, its output index and the coinstake time; the coin-day weight
