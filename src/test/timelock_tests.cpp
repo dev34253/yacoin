@@ -12,6 +12,7 @@
 #include "script/script.h"
 #include "script/script_error.h"
 #include "script/standard.h"
+#include "tokens/tokens.h"
 
 #include "test/test_bitcoin.h"
 
@@ -161,6 +162,19 @@ BOOST_AUTO_TEST_CASE(csv_p2pkh_blocks_and_seconds_dont_mix)
     BOOST_CHECK_EQUAL(spender.Spend(spender.Csv(nValue), 0, nTime), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
     BOOST_CHECK_EQUAL(spender.Spend(spender.Csv(nTime), 0, nBlocks), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
     BOOST_CHECK_EQUAL(spender.Spend(spender.Csv(nTime), 0, nValue), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
+}
+
+/* The fee lock of a token issue, as the wallet builds it, can be spent once the lock duration has passed */
+BOOST_AUTO_TEST_CASE(token_fee_lock_script)
+{
+    const LockSpender spender;
+    for (ETokenType type : {ETokenType::YATOKEN, ETokenType::SUB, ETokenType::UNIQUE, ETokenType::REISSUE}) {
+        const uint32_t nDuration = GetLockDuration(type);
+        const CScript script = spender.Csv(nDuration);
+        BOOST_CHECK_EQUAL(spender.Spend(script, 0, nDuration - 1), SCRIPT_ERR_UNSATISFIED_LOCKTIME);
+        BOOST_CHECK_EQUAL(spender.Spend(script, 0, nDuration), SCRIPT_ERR_OK);
+        BOOST_CHECK_EQUAL(spender.Spend(script, 0, nDuration + 1), SCRIPT_ERR_OK);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
