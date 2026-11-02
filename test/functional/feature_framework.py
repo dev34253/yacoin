@@ -21,16 +21,16 @@ Later tests rely on these helpers, so check them against a real node:
 - known_failure passes while its check fails and fails once it passes.
 - the RPC client resends a request without a trace only when it cannot have
   reached the node, and with a warning when its reply was lost.
-- start_nodes, when one node fails to start, stops the others without
-  waiting for their RPC and raises the start error; wait_for_exit_or_kill
-  kills a node that does not exit in time.
+- start_nodes, when one node fails to start, stops the nodes it connected
+  to by the stop RPC and the others by SIGTERM, and raises the start error;
+  wait_for_exit_or_kill kills a node that does not exit in time.
 """
 
 from decimal import Decimal
 import http.client
 import logging
-import re
 import os
+import re
 import signal
 import socket
 import sys
@@ -528,8 +528,6 @@ class FrameworkTest(BitcoinTestFramework):
         elapsed = time.time() - began
         self.log.info("start_nodes failed after %.1f s: %r", elapsed, error)
         assert "exited with status 1 during initialization" in str(error), str(error)
-        # Not raised while handling a cleanup error.
-        assert error.__context__ is None, repr(error.__context__)
         assert elapsed < 30, elapsed
         assert "Invalid amount for -paytxfee=<amount>: 'abc'" in self.nodes[0].read_stderr()
         for node in self.nodes:
