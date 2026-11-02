@@ -42,9 +42,9 @@ from .util import (
 BITCOIND_PROC_WAIT_TIMEOUT = 60
 
 # What the stop RPC can raise when the node shut down before it wrote the
-# reply: the connection closes without a reply, and the client's retry finds
-# no listening socket. RemoteDisconnected is a ConnectionResetError; it is
-# listed for the reader.
+# reply: the connection closes without a reply, and the client's resend
+# (logged as a warning) finds no listening socket or loses its reply too.
+# RemoteDisconnected is a ConnectionResetError; it is listed for the reader.
 LOST_REPLY_ERRORS = (
     http.client.RemoteDisconnected,
     ConnectionResetError,

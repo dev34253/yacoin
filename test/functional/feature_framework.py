@@ -19,10 +19,13 @@ Later tests rely on these helpers, so check them against a real node:
   nodes, also across restarts.
 - raw_rpc, rpcauth_value, the wallet fee rule and single_utxo_wallet.
 - known_failure passes while its check fails and fails once it passes.
+- the RPC client resends a request without a trace only when it cannot have
+  reached the node, and with a warning when its reply was lost.
 """
 
 from decimal import Decimal
 import http.client
+import logging
 import re
 import signal
 import socket
@@ -62,6 +65,81 @@ def drop_rpc_replies(node, host, port):
     node.rpc.auth_service_proxy_instance._set_conn(DroppedReplyConnection(host, port, timeout=node.rpc_timeout))
 
 
+class CountingConnection(http.client.HTTPConnection):
+    """An RPC connection that counts the requests it sends and the times it
+    opens its socket."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.requests = 0
+        self.connects = 0
+
+    def connect(self):
+        self.connects += 1
+        super().connect()
+
+    def request(self, *args, **kwargs):
+        self.requests += 1
+        super().request(*args, **kwargs)
+
+
+class LostReplyConnection(CountingConnection):
+    """Sends the request in full and lets the node reply, then drops the
+    first reply and raises error, as when the connection breaks after the
+    node received the request."""
+
+    def __init__(self, *args, error, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.error = error
+
+    def getresponse(self):
+        response = super().getresponse()
+        if self.error is None:
+            return response
+        # Read the whole reply first, so the node has finished the call.
+        response.read()
+        self.close()
+        error, self.error = self.error, None
+        raise error
+
+
+class FailedSendConnection(CountingConnection):
+    """The first request fails before anything is written to the socket."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fail = True
+
+    def request(self, *args, **kwargs):
+        if self.fail:
+            self.requests += 1
+            self.fail = False
+            raise BrokenPipeError("send failed in the test")
+        super().request(*args, **kwargs)
+
+
+class CountingDroppedReplyConnection(CountingConnection, DroppedReplyConnection):
+    """DroppedReplyConnection with counters: every reply is lost."""
+
+
+class CaptureWarnings(logging.Handler):
+    """Collects the warnings of the RPC client's logger."""
+
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+    def __enter__(self):
+        logging.getLogger("TestFramework.authproxy").addHandler(self)
+        return self
+
+    def __exit__(self, *exc):
+        logging.getLogger("TestFramework.authproxy").removeHandler(self)
+
+
 class FrameworkTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
@@ -85,6 +163,7 @@ class FrameworkTest(BitcoinTestFramework):
         self.test_raw_rpc()
         self.test_wallet_helpers()
         self.test_known_failure()
+        self.test_rpc_resend()
 
     def test_mocktime_at_start(self):
         self.log.info("Nodes added after set_mocktime start on the test's clock")
@@ -333,6 +412,91 @@ class FrameworkTest(BitcoinTestFramework):
             assert_equal(str(e), "not(1 == 2)")
         else:
             raise AssertionError("known_failure matched an error code against an assertion")
+
+    def use_connection(self, node, connection_class, **kwargs):
+        """Send node's RPC calls through a new connection_class connection."""
+        url = urllib.parse.urlparse(node.url)
+        conn = connection_class(url.hostname, url.port, timeout=node.rpc_timeout, **kwargs)
+        node.rpc.auth_service_proxy_instance._set_conn(conn)
+        return conn
+
+    def test_rpc_resend(self):
+        self.check_lost_reply_resent()
+        self.check_lost_batch_reply_resent()
+        self.check_failed_send_resent()
+        self.check_failed_resend_raises()
+        self.check_idle_close_reconnects()
+
+    def check_lost_reply_resent(self):
+        node = self.nodes[0]
+        for error in (ConnectionResetError("reset by the test"), http.client.RemoteDisconnected("closed by the test")):
+            self.log.info("A request whose reply is lost is sent again with a warning (%s)", type(error).__name__)
+            height = node.getblockcount()
+            conn = self.use_connection(node, LostReplyConnection, error=error)
+            with CaptureWarnings() as warnings:
+                assert_equal(len(node.generate(1)), 1)
+            assert_equal(conn.requests, 2)
+            # The node ran the call twice: the resend is not silent.
+            assert_equal(node.getblockcount(), height + 2)
+            assert_equal(len(warnings.messages), 1)
+            # TestNode.generate sends generatetoaddress.
+            assert warnings.messages[0].startswith("Sending generatetoaddress again:"), warnings.messages[0]
+            assert repr(error) in warnings.messages[0], warnings.messages[0]
+
+    def check_lost_batch_reply_resent(self):
+        node = self.nodes[0]
+        self.log.info("A batch whose reply is lost is named as a batch in the warning")
+        height = node.getblockcount()
+        conn = self.use_connection(node, LostReplyConnection, error=ConnectionResetError("reset by the test"))
+        with CaptureWarnings() as warnings:
+            replies = node.batch([node.getblockcount.get_request()])
+        assert_equal(conn.requests, 2)
+        assert_equal(replies[0]['result'], height)
+        assert_equal(len(warnings.messages), 1)
+        assert "batch" in warnings.messages[0], warnings.messages[0]
+
+    def check_failed_send_resent(self):
+        node = self.nodes[0]
+        self.log.info("A request that failed while sending is sent again without a warning")
+        height = node.getblockcount()
+        conn = self.use_connection(node, FailedSendConnection)
+        with CaptureWarnings() as warnings:
+            assert_equal(node.getblockcount(), height)
+        assert_equal(conn.requests, 2)
+        assert_equal(warnings.messages, [])
+
+    def check_failed_resend_raises(self):
+        node = self.nodes[0]
+        self.log.info("When the resend loses its reply too, its error goes to the caller")
+        conn = self.use_connection(node, CountingDroppedReplyConnection)
+        with CaptureWarnings() as warnings:
+            assert_raises(http.client.RemoteDisconnected, node.getblockcount)
+        assert_equal(conn.requests, 2)
+        assert_equal(len(warnings.messages), 1)
+        self.use_connection(node, http.client.HTTPConnection)
+        assert node.getblockcount() > 0
+
+    def check_idle_close_reconnects(self):
+        self.log.info("An open connection is reused")
+        node = self.nodes[0]
+        height = node.getblockcount()
+        conn = self.use_connection(node, CountingConnection)
+        # Default -rpcservertimeout (30 s): the node keeps the connection open.
+        assert_equal(node.getblockcount(), height)
+        assert_equal(node.getblockcount(), height)
+        assert_equal((conn.requests, conn.connects), (2, 1))
+
+        self.log.info("A connection the node closed while idle is reopened before the request is sent")
+        node = self.nodes[1]
+        self.restart_node(1, extra_args=["-rpcservertimeout=1"])
+        height = node.getblockcount()
+        conn = self.use_connection(node, CountingConnection)
+        with CaptureWarnings() as warnings:
+            assert_equal(node.getblockcount(), height)
+            time.sleep(4)
+            assert_equal(node.getblockcount(), height)
+        assert_equal((conn.requests, conn.connects), (2, 2))
+        assert_equal(warnings.messages, [])
 
 
 if __name__ == '__main__':
