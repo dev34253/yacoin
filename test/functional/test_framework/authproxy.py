@@ -140,14 +140,17 @@ class AuthServiceProxy():
         sock = self.__conn.sock
         if sock is None:
             return False
+        poller = select.poll()
+        poller.register(sock, select.POLLIN)
         try:
-            readable, _, _ = select.select([sock], [], [], 0)
-            # A connection the server closed is readable and has no data.
-            return bool(readable) and sock.recv(1, socket.MSG_PEEK) == b''
+            # A connection the server closed is readable (or hung up) and
+            # has no data left; a reset shows as a ConnectionError.
+            return bool(poller.poll(0)) and sock.recv(1, socket.MSG_PEEK) == b''
         except ConnectionError:
             return True
         except ValueError:
-            # SSL sockets do not support MSG_PEEK.
+            # SSL sockets refuse MSG_PEEK: a closed connection is then found
+            # only after the request was sent.
             return False
 
     def get_request(self, *args, **argsn):

@@ -439,7 +439,8 @@ class FrameworkTest(BitcoinTestFramework):
             # The node ran the call twice: the resend is not silent.
             assert_equal(node.getblockcount(), height + 2)
             assert_equal(len(warnings.messages), 1)
-            assert "generate" in warnings.messages[0], warnings.messages[0]
+            # TestNode.generate sends generatetoaddress.
+            assert warnings.messages[0].startswith("Sending generatetoaddress again:"), warnings.messages[0]
             assert repr(error) in warnings.messages[0], warnings.messages[0]
 
     def check_lost_batch_reply_resent(self):
@@ -476,20 +477,27 @@ class FrameworkTest(BitcoinTestFramework):
         assert node.getblockcount() > 0
 
     def check_idle_close_reconnects(self):
-        node = self.nodes[1]
+        self.log.info("An open connection is reused")
+        node = self.nodes[0]
+        height = node.getblockcount()
+        conn = self.use_connection(node, CountingConnection)
+        # Default -rpcservertimeout (30 s): the node keeps the connection open.
+        assert_equal(node.getblockcount(), height)
+        assert_equal(node.getblockcount(), height)
+        assert_equal((conn.requests, conn.connects), (2, 1))
+
         self.log.info("A connection the node closed while idle is reopened before the request is sent")
+        node = self.nodes[1]
         self.restart_node(1, extra_args=["-rpcservertimeout=1"])
         height = node.getblockcount()
         conn = self.use_connection(node, CountingConnection)
         with CaptureWarnings() as warnings:
             assert_equal(node.getblockcount(), height)
-            # Within the timeout the connection is reused.
+            time.sleep(4)
             assert_equal(node.getblockcount(), height)
-            assert_equal((conn.requests, conn.connects), (2, 1))
-            time.sleep(3)
-            assert_equal(node.getblockcount(), height)
-        assert_equal((conn.requests, conn.connects), (3, 2))
+        assert_equal((conn.requests, conn.connects), (2, 2))
         assert_equal(warnings.messages, [])
+
 
 if __name__ == '__main__':
     FrameworkTest().main()
