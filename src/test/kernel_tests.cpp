@@ -66,10 +66,10 @@ struct ValueGuard {
     ~ValueGuard() { m_ref = m_saved; }
 };
 
-/** -debug and -printstakemodifier on while it lives */
+/** -debug on, and -printstakemodifier if fPrint, while it lives */
 struct StakeLogGuard {
     ValueGuard<bool> debug{fDebug, true};
-    StakeLogGuard() { gArgs.ForceSetArg("-printstakemodifier", "1"); }
+    explicit StakeLogGuard(bool fPrint) { gArgs.ForceSetArg("-printstakemodifier", fPrint ? "1" : "0"); }
     ~StakeLogGuard() { gArgs.ForceSetArg("-printstakemodifier", "0"); }
 };
 
@@ -83,20 +83,20 @@ struct Modifier {
     bool fGenerated;
 };
 
-/** ComputeNextStakeModifier for pindex, once quiet and once with its log lines; both runs
- * must agree */
+/** ComputeNextStakeModifier for pindex, quiet, with -debug and with -debug and
+ * -printstakemodifier; all runs must agree */
 Modifier Compute(const CBlockIndex* pindex)
 {
     // ComputeNextStakeModifier sets both outputs, whatever they held before
     Modifier quiet{0xdeadbeef, true};
     BOOST_REQUIRE(ComputeNextStakeModifier(pindex, quiet.nModifier, quiet.fGenerated));
-    Modifier logged{0xdeadbeef, true};
-    {
-        StakeLogGuard log;
+    for (bool fPrint : {false, true}) {
+        Modifier logged{0xdeadbeef, true};
+        StakeLogGuard log(fPrint);
         BOOST_REQUIRE(ComputeNextStakeModifier(pindex, logged.nModifier, logged.fGenerated));
+        BOOST_CHECK_EQUAL(quiet.nModifier, logged.nModifier);
+        BOOST_CHECK_EQUAL(quiet.fGenerated, logged.fGenerated);
     }
-    BOOST_CHECK_EQUAL(quiet.nModifier, logged.nModifier);
-    BOOST_CHECK_EQUAL(quiet.fGenerated, logged.fGenerated);
     return quiet;
 }
 
@@ -403,6 +403,25 @@ BOOST_AUTO_TEST_CASE(modifier_new_interval_few_candidates)
     BOOST_CHECK(modifier.fGenerated);
 }
 
+/* Close to the genesis block the window reaches back past it: the genesis block is a
+ * candidate too */
+BOOST_AUTO_TEST_CASE(modifier_window_includes_genesis)
+{
+    SyntheticChain chain;
+    const CBlockIndex* pindexGenesis = chain.Genesis();
+    const ::int64_t nGenesisTime = pindexGenesis->GetBlockTime();
+    CBlockIndex* pindex = AddBlock(chain, nullptr, nGenesisTime + 600);
+    pindex = AddBlock(chain, pindex, nGenesisTime + 1200);
+    pindex = AddBlock(chain, pindex, nGenesisTime + 2 * MODIFIER_INTERVAL);
+    Modifier modifier = Compute(AddBlock(chain, pindex, nGenesisTime + 2 * MODIFIER_INTERVAL + 60));
+    BOOST_CHECK(modifier.fGenerated);
+    // Four rounds: three candidates with entropy bit 1 and the genesis block with its own
+    BOOST_CHECK(modifier.nModifier < 0x10U);
+    int nBits = 0;
+    for (::uint64_t n = modifier.nModifier; n; n >>= 1) nBits += n & 1;
+    BOOST_CHECK_EQUAL(nBits, 3 + (int)pindexGenesis->GetStakeEntropyBit());
+}
+
 /* With 64 or more candidates there are 64 rounds; one modifier value pinned */
 BOOST_AUTO_TEST_CASE(modifier_new_interval_64_rounds)
 {
@@ -678,6 +697,7 @@ BOOST_AUTO_TEST_CASE(real_kernel_passes)
     {
         ValueGuard<bool> debug(fDebug, true);
         check(false);
+        check(true);
     }
     // On the active chain
     chain.SetActiveTip(k.pindexPrev);
