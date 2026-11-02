@@ -144,6 +144,13 @@ same as a serial run. Per-suite logs and `summary.txt` are written to
 `.devbuild/logs/unit-<variant>/` (`unit-dev` or `unit-asan`), so `unit` and
 `asan` can run at the same time.
 
+A suite passes only if `test_bitcoin` exits with status 0 and its log has
+Boost.Test's summary `*** No errors detected`. A suite that exits with 0
+without that summary ended before all its test cases ran and is shown as
+`FAIL <suite> (no test report)`. In `test_bitcoin`, a node shutdown request
+(`StartShutdown`, for example after a failed release-mode assertion) prints a
+message to stderr and ends the process with a failure status.
+
 ### Functional tests
 
 `./dev.sh ftest` runs `FTEST_JOBS` scripts in parallel (default 4;
