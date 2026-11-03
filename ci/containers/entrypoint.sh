@@ -8,7 +8,10 @@
 #   build             release build (default): depends, configure with glibc
 #                     back-compat, make, make install into /src/release-root
 #   build-low-difficulty
-#                     the release build with --enable-low-difficulty-for-development
+#                     the release build with --enable-low-difficulty-for-development,
+#                     then all unit test suites of its test_bitcoin in parallel
+#                     (logs in /src/build/docker-<image>/build-low-difficulty/
+#                     unit-test-logs, recreated on every run)
 #   unit-tests        build test_bitcoin (mainnet consensus) and run all unit
 #                     test suites in parallel
 #   functional-tests  low-difficulty build, then all functional test scripts,
@@ -82,7 +85,7 @@ if (( ! release )); then
     [[ ! -f "$SRC/config.status" ]] ||
         die "$SRC was configured in place (e.g. by the build mode); run 'make distclean' in it first"
 fi
-if [[ "$MODE" == unit-tests ]]; then
+if [[ "$MODE" == unit-tests || "$MODE" == build-low-difficulty ]]; then
     [[ -x contrib/devtools/run-unit-suites.sh ]] ||
         die "this YaCoin tree has no contrib/devtools/run-unit-suites.sh (needs master after PR #114)"
 fi
@@ -173,6 +176,14 @@ if (( release )); then
     ./configure "${flags[@]}"
     make -j"$JOBS"
     make install DESTDIR="$SRC/release-root"
+    if [[ "$MODE" == build-low-difficulty ]]; then
+        # The unit tests also have to pass with the low-difficulty
+        # parameters; the release make builds test_bitcoin in the tree.
+        echo "== Running the unit tests =="
+        [[ -x src/test/test_bitcoin ]] || die "the build made no src/test/test_bitcoin (configured without tests?)"
+        contrib/devtools/run-unit-suites.sh "$SRC/src/test/test_bitcoin" \
+            "$SRC/build/docker-$IMAGE/$MODE/unit-test-logs" "$JOBS"
+    fi
 else
     builddir="$SRC/build/docker-$IMAGE/$MODE"
     echo "== Configuring in $builddir =="

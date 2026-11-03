@@ -125,8 +125,9 @@ ensure_autogen() {
 variant_flags() {
     local san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
     flags=(--without-gui --disable-man --enable-ccache)
-    # Unit tests run on the mainnet build (they also pass on the low-difficulty
-    # one), while the functional tests need the low-difficulty build, as in CI.
+    # Unit tests run on the mainnet build (CI also runs them on the
+    # low-difficulty one), while the functional tests need the low-difficulty
+    # build, as in CI.
     case "$1" in
         dev)
             flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
