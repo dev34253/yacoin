@@ -14,6 +14,7 @@
 #include "coins.h"
 #include "consensus/validation.h"
 #include "miner.h"
+#include "policy/policy.h"
 #include "pow.h"
 #include "script/sign.h"
 #include "script/standard.h"
@@ -1362,6 +1363,47 @@ BOOST_AUTO_TEST_CASE(index_switched_off)
     BOOST_CHECK(!GetAddressIndex(idZ, 1, YAC, out, 1, 10));
     BOOST_CHECK(!GetAddressUnspent(idZ, 1, YAC, uout));
     BOOST_CHECK(!GetAddressUnspent(idZ, 1, uout));
+}
+
+/* Spending a timelocked P2PKH output: a spend entry for the key, removed again when the
+ * block is disconnected, which also restores the unspent record */
+BOOST_AUTO_TEST_CASE(timelock_p2pkh_spend)
+{
+    const CTransaction& cb = coinbases[0];
+    const CScript lockScript = GetScriptForCltvP2PKH(1, CKeyID(idC));
+    const CAmount v = cb.vout[0].nValue - CENT;
+    CMutableTransaction m;
+    m.vin.emplace_back(COutPoint(cb.GetHash(), 0));
+    m.vout.emplace_back(v, lockScript);
+    const CTransaction txLock = Sign(m, {cb.vout[0].scriptPubKey});
+    BOOST_REQUIRE(Submit(BuildBlock({txLock})));
+    const int hLock = Tip()->nHeight;
+    const std::vector<std::string> indexBefore = DumpIndex(*pblocktree), unspentBefore = DumpUnspent(*pblocktree);
+    CHECK_SAME(Strs(Unspent(idC, 1, YAC)), Strs(std::vector<UnspentEntry>{Utxo(1, idC, YAC, txLock, 0, v, hLock)}));
+
+    // A valid spend of the output: lock height reached, input not final, signed by keyC
+    CMutableTransaction s;
+    s.nLockTime = 1;
+    s.vin.emplace_back(COutPoint(txLock.GetHash(), 0), CScript(), CTxIn::SEQUENCE_FINAL - 1);
+    s.vout.emplace_back(v - CENT, P2PKH(idA));
+    std::vector<unsigned char> vchSig;
+    BOOST_REQUIRE(keyC.Sign(SignatureHash(lockScript, s, 0, SIGHASH_ALL), vchSig));
+    vchSig.push_back((unsigned char)SIGHASH_ALL);
+    s.vin[0].scriptSig = CScript() << vchSig << ToByteVector(keyC.GetPubKey());
+    const CTransaction txSpend(s);
+    ScriptError err;
+    BOOST_CHECK(VerifyScript(txSpend.vin[0].scriptSig, lockScript, STANDARD_SCRIPT_VERIFY_FLAGS,
+                             MutableTransactionSignatureChecker(&s, 0), &err));
+    BOOST_CHECK_EQUAL(err, SCRIPT_ERR_OK);
+    CBlock blockS = BuildBlock({txSpend});
+    BOOST_REQUIRE(Submit(blockS));
+    CHECK_SAME(Strs(Index(idC, 1)), InKeyOrder(std::vector<IndexEntry>{Recv(1, idC, YAC, hLock, 1, txLock, 0, v),
+                                                                          Spend(1, idC, YAC, hLock + 1, 1, txSpend, 0, v)}));
+    BOOST_CHECK(Unspent(idC, 1, YAC).empty());
+
+    Invalidate(blockS);
+    CHECK_SAME(DumpIndex(*pblocktree), indexBefore);
+    CHECK_SAME(DumpUnspent(*pblocktree), unspentBefore);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
