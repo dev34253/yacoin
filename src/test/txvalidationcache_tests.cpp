@@ -300,15 +300,15 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
 
 namespace {
 
-/** Coins paying to scripts of one key, each from its own funding outpoint,
- *  and spends of them. Every transaction spends its own coin, so no two
- *  transactions here share a txid. */
+/** Coins paying to scripts of one key, each from its own random funding
+ *  outpoint, and spends of them. Random outpoints keep the cases independent
+ *  of each other and of their order, since the caches are shared by the
+ *  whole test binary. */
 struct ScriptCheckSetup : public BasicTestingSetup {
     CCoinsView base;
     CCoinsViewCache view{&base};
     CKey key;
     CScript p2pk;
-    uint8_t nNextCoin = 1;
 
     ScriptCheckSetup()
     {
@@ -318,9 +318,7 @@ struct ScriptCheckSetup : public BasicTestingSetup {
 
     COutPoint AddCoin(const CScript& scriptPubKey)
     {
-        uint256 hash;
-        *hash.begin() = nNextCoin++;
-        COutPoint outpoint(hash, 0);
+        COutPoint outpoint(GetRandHash(), 0);
         view.AddCoin(outpoint, Coin(CTxOut(COIN, scriptPubKey), 1, false, false, 0), false);
         return outpoint;
     }
@@ -530,6 +528,8 @@ BOOST_FIXTURE_TEST_CASE(cache_sizes_zero, ScriptCheckSetup)
     BOOST_CHECK(!gArgs.IsArgSet("-maxsigcachesize"));
     {
         // -maxsigcachesize=0 gives the smallest caches, which still work.
+        // Re-initialising sets the size only: it does not empty a cache,
+        // the table keeps the entries that fit.
         ArgGuard size("-maxsigcachesize", "0");
         InitSignatureCache();
         InitScriptExecutionCache();
@@ -546,7 +546,8 @@ BOOST_FIXTURE_TEST_CASE(cache_sizes_zero, ScriptCheckSetup)
         BOOST_CHECK(Check(tx, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, &checks));
         BOOST_CHECK(checks.empty());
     }
-    // Back to the default sizes for the cases that follow.
+    // Back to the default sizes for the cases that follow. As above, this
+    // sets the size and does not empty the caches.
     BOOST_CHECK(!gArgs.IsArgSet("-maxsigcachesize"));
     InitSignatureCache();
     InitScriptExecutionCache();

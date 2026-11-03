@@ -191,6 +191,8 @@ BOOST_AUTO_TEST_CASE(check_transaction_size)
     BOOST_CHECK_EQUAL(nMaxSize, MAX_GENESIS_BLOCK_SIZE);
 
     // Grow one output script until the transaction is exactly nMaxSize bytes.
+    // One correction step is enough: both script lengths are above 0xffff,
+    // so the compact-size prefix of the length stays 5 bytes.
     CTransaction tx = SimpleTx(Hash(1));
     tx.vout[0].scriptPubKey = FilledScript(nMaxSize - 100);
     const size_t nSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
