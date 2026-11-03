@@ -11,6 +11,7 @@
 #include "validation.h"
 
 #include "test/consensus_test_util.h"
+#include "test/stake_test_util.h"
 #include "test/test_bitcoin.h"
 
 #include <boost/signals2/signal.hpp>
@@ -81,6 +82,29 @@ BOOST_AUTO_TEST_CASE(pre_fork_reward)
     }
 }
 
+/* The pre-fork reward is the same with its -printcreation log lines on (with
+ * -debug) or off; the guards restore -debug and -printcreation */
+BOOST_AUTO_TEST_CASE(pre_fork_reward_logged)
+{
+    ConsensusGlobalsGuard globals;
+    globals.Set(1000, 10);
+    const bool fDebugBefore = fDebug;
+    const bool fPrintSetBefore = gArgs.IsArgSet("-printcreation");
+
+    for (bool fPrint : {false, true}) {
+        ValueGuard<bool> debug(fDebug, true);
+        ArgGuard print("-printcreation", fPrint ? "1" : "0");
+        BOOST_CHECK_EQUAL(gArgs.GetBoolArg("-printcreation", false), fPrint);
+        BOOST_CHECK_EQUAL(PreForkReward(1), MAX_MINT_PROOF_OF_WORK);
+        BOOST_CHECK_EQUAL(PreForkReward(64), 50 * COIN);
+        BOOST_CHECK_EQUAL(PreForkReward(64 * 64 * 64 * 64), 625 * CENT);
+        BOOST_CHECK_EQUAL(PreForkReward(64, 3 * CENT), 50 * COIN + 3 * CENT);
+        BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, 1), CENT);
+    }
+    BOOST_CHECK_EQUAL(fDebug, fDebugBefore);
+    BOOST_CHECK_EQUAL(gArgs.IsArgSet("-printcreation"), fPrintSetBefore);
+}
+
 /* Height 0 always takes the pre-fork path, even with the fork at 0 */
 BOOST_AUTO_TEST_CASE(reward_height_zero)
 {
@@ -120,6 +144,68 @@ BOOST_AUTO_TEST_CASE(post_fork_epoch_reward)
     // (nInflation is a double, so the reward is computed in floating point)
     BuildSupplyChain(chain, 19);
     BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, 20), 3803293);
+}
+
+/* The epochs that start at 1890000, 1911000, 1932000 and 1953000 (k = 90..93),
+ * with the money supply of the block before each start and the coinbase value of
+ * every block of the epoch as recorded on mainnet (mainnet reference node, master
+ * commit 6d723834; the epoch from 1953000 up to its tip 1964927). The test scales
+ * the epoch interval down to 10 blocks with the fork at 900, so epoch k starts at
+ * 10 * k instead of 21000 * k: the reward only depends on that money supply. */
+BOOST_AUTO_TEST_CASE(post_fork_epoch_reward_mainnet_epochs)
+{
+    ConsensusGlobalsGuard globals;
+    globals.Set(900, 10);
+    SyntheticChain chain;
+
+    struct Epoch {
+        int nStart;            // first height on mainnet
+        ::int64_t nSupply;     // money supply of block nStart - 1
+        ::int64_t nReward;     // coinbase value of every block of the epoch
+        ::uint64_t nMaxSize;   // GetMaxSize(MAX_BLOCK_SIZE) in the epoch: nReward * 1000 / MIN_TX_FEE
+    };
+    const Epoch epochs[] = {
+        {1890000, 135559014630631, 5154727, 515472},
+        {1911000, 135667258614271, 5158843, 515884},
+        {1932000, 135775575497237, 5162962, 516296},
+        {1953000, 135883984037692, 5167084, 516708},
+    };
+    const int nEpochs = sizeof(epochs) / sizeof(epochs[0]);
+
+    // Blocks 1..939; the block before each epoch start carries the recorded
+    // supply, the blocks after it add the epoch's reward
+    CBlockIndex* pindex = chain.Genesis();
+    for (int nHeight = 1; nHeight < 900 + 10 * nEpochs; nHeight++) {
+        const int i = std::min(std::max((nHeight + 1) / 10 - 90, 0), nEpochs - 1);
+        const int nBefore = 899 + 10 * i;
+        ::int64_t nSupply = nHeight < nBefore ? (::int64_t)nHeight * COIN
+                                              : epochs[i].nSupply + (nHeight - nBefore) * epochs[i].nReward;
+        pindex = chain.Add(pindex, pindex->GetBlockTime() + 60, 0x1e0fffff, nSupply);
+    }
+    chain.SetActiveTip(pindex);
+
+    for (int i = 0; i < nEpochs; i++) {
+        BOOST_CHECK_EQUAL(chainActive[899 + 10 * i]->nMoneySupply, epochs[i].nSupply);
+        BOOST_CHECK_EQUAL(EpochReward(epochs[i].nSupply), epochs[i].nReward);
+        for (int nHeight = 900 + 10 * i; nHeight < 910 + 10 * i; nHeight++) {
+            // nBits and fees are ignored
+            BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, nHeight), epochs[i].nReward);
+            BOOST_CHECK_EQUAL(GetProofOfWorkReward(0x1e0fffff, 0, nHeight), epochs[i].nReward);
+            BOOST_CHECK_EQUAL(GetProofOfWorkReward(0x1c0fffff, 5 * COIN, nHeight), epochs[i].nReward);
+
+            // Below the pre-fork 1 MB, so the sigops limit stays 1 MB / 50
+            BOOST_CHECK_EQUAL(GetMaxSize(MAX_BLOCK_SIZE, nHeight), epochs[i].nMaxSize);
+            BOOST_CHECK_EQUAL(GetMaxSize(MAX_BLOCK_SIZE_GEN, nHeight), epochs[i].nMaxSize / 2);
+            BOOST_CHECK_EQUAL(GetMaxSize(MAX_BLOCK_SIGOPS, nHeight), 20000U);
+        }
+    }
+    // The last block of an epoch still gets the old reward, the next one the new
+    BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, 909), 5154727);
+    BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, 910), 5158843);
+    BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, 929), 5162962);
+    BOOST_CHECK_EQUAL(GetProofOfWorkReward(0, 0, 930), 5167084);
+    // The block before the fork still uses the pre-fork curve
+    BOOST_CHECK_EQUAL(GetProofOfWorkReward(Params().GetConsensus().powLimit.GetCompact(), 0, 899), MAX_MINT_PROOF_OF_WORK);
 }
 
 /* Fork inside the first epoch interval: the first epoch starts at the fork */
