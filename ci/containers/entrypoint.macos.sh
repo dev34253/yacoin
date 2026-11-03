@@ -26,8 +26,10 @@ JOBS="${JOBS:-4}"
 echo "== Building yacoin for macOS in $SRC with $JOBS jobs =="
 cd "$SRC"
 
-# For genbuild.sh, which runs git on the mounted tree.
-git config --global --get-all safe.directory 2>/dev/null | grep -qx "$SRC" ||
+# For genbuild.sh, which runs git on the mounted tree. The list is captured
+# first, as grep -q at the end of a pipe under pipefail can read as no match.
+safe_dirs=$(git config --global --get-all safe.directory 2>/dev/null) || safe_dirs=""
+grep -qx "$SRC" <<< "$safe_dirs" ||
     git config --global --add safe.directory "$SRC"
 
 depends_args=(-C depends -j"$JOBS" HOST="$HOST_TRIPLET")

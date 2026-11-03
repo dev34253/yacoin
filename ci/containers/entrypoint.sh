@@ -92,12 +92,15 @@ fi
 if [[ "$MODE" == cov-unit || "$MODE" == cov-functional ]]; then
     grep -q "^$MODE:" Makefile.am ||
         die "this YaCoin tree has no $MODE target"
-    lcov --version 2>/dev/null | grep -Eq 'version (2\.([6-9]|[1-9][0-9])|[3-9]|[1-9][0-9])' ||
+    lcov_version=$(lcov --version 2>/dev/null) || lcov_version=""
+    grep -Eq 'version (2\.([6-9]|[1-9][0-9])|[3-9]|[1-9][0-9])' <<< "$lcov_version" ||
         die "$MODE needs lcov 2.6 or newer; use the Ubuntu 22.04 image"
 fi
 
-# For genbuild.sh, which runs git on the mounted tree.
-git config --global --get-all safe.directory 2>/dev/null | grep -qx "$SRC" ||
+# For genbuild.sh, which runs git on the mounted tree. The list is captured
+# first, as grep -q at the end of a pipe under pipefail can read as no match.
+safe_dirs=$(git config --global --get-all safe.directory 2>/dev/null) || safe_dirs=""
+grep -qx "$SRC" <<< "$safe_dirs" ||
     git config --global --add safe.directory "$SRC"
 
 # The release builds install depends into the tree's usual prefix. The test
