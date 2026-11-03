@@ -760,7 +760,11 @@ public:
     }
     uint256 GetBestBlock() const override { return mark; }
     std::vector<uint256> GetHeadBlocks() const override { return {mark}; }
-    bool BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock) override { return ++writes; }
+    bool BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock) override
+    {
+        writes++;
+        return true;
+    }
     CCoinsViewCursor* Cursor() const override { return new MarkedCursor(mark); }
     size_t EstimateSize() const override { return size; }
 };

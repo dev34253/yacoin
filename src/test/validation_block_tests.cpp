@@ -480,22 +480,34 @@ BOOST_AUTO_TEST_CASE(replay_heads)
 }
 
 /* A relative lock in seconds (YaCoin counts them one by one) is checked in ConnectBlock,
- * where the heights of the spent coins are known */
+ * where the heights of the spent coins are known. The spend of a coin of height h in the
+ * next block is valid while the time of block h - 1 plus the lock, minus 1, is before the
+ * tip's time: a lock of the difference d is met, d + 1 is not. */
 BOOST_AUTO_TEST_CASE(relative_time_lock)
 {
-    const uint32_t nSeconds = 30 * 24 * 60 * 60;
-    // The newest mature coinbase: its block's predecessor is far less than 30 days before the tip
-    CTransaction locked = Spend(matureCoinbases.back(), 0, CENT, [&](CMutableTransaction& tx) {
-        tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | nSeconds;
-    });
-    BOOST_REQUIRE_EQUAL(locked.nLockTime, 0U);
-    BOOST_CHECK_EQUAL(Validity(BuildBlock({locked})), "bad-txns-nonfinal");
+    // The newest mature coinbase whose block's predecessor is at least a second older than the tip
+    const CTransaction* prev = nullptr;
+    int64_t d = 0;
+    {
+        LOCK(cs_main);
+        for (auto it = matureCoinbases.rbegin(); it != matureCoinbases.rend() && !prev; ++it) {
+            const int h = pcoinsTip->AccessCoin(COutPoint(it->GetHash(), 0)).nHeight;
+            BOOST_REQUIRE(h > 0);
+            d = chainActive.Tip()->GetBlockTime() - chainActive[h - 1]->GetBlockTime();
+            if (d >= 1) prev = &*it;
+        }
+    }
+    BOOST_REQUIRE(prev);
+    BOOST_REQUIRE(d <= (int64_t)CTxIn::SEQUENCE_LOCKTIME_MASK);
 
-    // The coinbase of block 1 was created more than a second after the genesis block
-    CTransaction met = Spend(matureCoinbases[0], 0, CENT, [&](CMutableTransaction& tx) {
-        tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
-    });
-    BOOST_CHECK_EQUAL(Validity(BuildBlock({met})), "");
+    auto spendLocked = [&](int64_t nLock) {
+        return Spend(*prev, 0, CENT, [&](CMutableTransaction& tx) {
+            tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | (uint32_t)nLock;
+        });
+    };
+    BOOST_REQUIRE_EQUAL(spendLocked(d).nLockTime, 0U);
+    BOOST_CHECK_EQUAL(Validity(BuildBlock({spendLocked(d)})), "");
+    BOOST_CHECK_EQUAL(Validity(BuildBlock({spendLocked(d + 1)})), "bad-txns-nonfinal");
 }
 
 /** Append an undo record for pindex to its undo file, as ConnectBlock writes it (with a
