@@ -66,7 +66,7 @@ optional mode as its argument:
 | Mode | What it does |
 |---|---|
 | `build` (default) | Release build: depends, configure with glibc back-compat, make, `make install` into `/src/release-root` |
-| `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests) |
+| `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests), then all unit test suites of its `src/test/test_bitcoin` in parallel (`contrib/devtools/run-unit-suites.sh`, logs in `/src/build/docker-<image>/build-low-difficulty/unit-test-logs`) |
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
 | `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.6 or newer, so it only works in the Ubuntu 22.04 image |
@@ -155,6 +155,10 @@ The action pins `docker/setup-buildx-action` and `docker/build-push-action` by c
 Nothing outside this repository changes what CI builds with: a tag names the files it was built from, and a new image definition is a
 reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own, which `build-ubuntu-1604` runs first) checks the tags
 and that every `docker run` in the workflow runs a tagged image of this directory.
+
+The unit tests run in two jobs: `unit-tests` on the mainnet build, and `build-ubuntu-1604-low-difficulty` (the `build-low-difficulty`
+mode) on the low-difficulty build, so a test that only passes with the mainnet parameters fails in CI. Each uploads its unit test logs
+when it fails (`unit-test-logs`, `unit-test-logs-low-difficulty`, kept 14 days).
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache, one per job kind and image
 (`release-<image>-…`, `low-difficulty-<image>-…`, `unit-tests-<image>-…`, `functional-tests-<image>-…`, keyed by the depends

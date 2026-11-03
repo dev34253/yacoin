@@ -4,18 +4,21 @@
 # Usage: ci/containers/check.sh [--steps LIST] [image...]
 #
 # Steps (default: lint,tag,static,build,smoke,ccache; all images by default):
-#   lint    bash -n and shellcheck --severity=warning on the scripts here
+#   lint    bash -n and shellcheck --severity=warning on the scripts here, and
+#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE)
 #   tag     test-image-tag.sh: the image tags (image-tag.sh) and the CI
 #           workflow's use of them
 #   static  every Dockerfile pins its base image by digest and sets
 #           YACOIN_BUILD_IMAGE to its own name
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
-#   smoke   tools present, unknown modes and arguments rejected, test modes
-#           stop early on a tree without the scripts and targets they need,
-#           the Linux release build modes (build, build-low-difficulty)
-#           and the coverage modes (cov-unit, cov-functional; 22.04 image)
-#           configure with their flags, and functional-tests runs the test
-#           runner with --extended and FTEST_JOBS
+#   smoke   tools present, unknown modes and arguments rejected, the modes
+#           that run tests stop early on a tree without the scripts and
+#           targets they need, the Linux release build modes (build,
+#           build-low-difficulty) and the coverage modes (cov-unit,
+#           cov-functional; 22.04 image) configure with their flags,
+#           build-low-difficulty runs the unit test suites of its build
+#           with JOBS and fails when one fails, and functional-tests runs
+#           the test runner with --extended and FTEST_JOBS
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -82,6 +85,22 @@ step_lint() {
     done
     (cd "$HERE" && shellcheck_cmd -x --severity=warning "${scripts[@]}") &&
         pass "lint: shellcheck ${scripts[*]}" || fail "lint: shellcheck"
+    # Under pipefail, grep -q at the end of a pipe may exit on the first
+    # match, the command before it gets SIGPIPE and the pipe reads as no
+    # match. A pipe continued on the next line counts too; comments do not.
+    local piped
+    piped=$(cd "$HERE" && awk '
+        FNR == 1 { prev = "" }
+        { line = $0; if (prev ~ /(^|[^|])\|[[:space:]]*$/) line = "|" line; prev = $0 }
+        $0 !~ /^[[:space:]]*#/ &&
+        line ~ /(^|[^|])\|[[:space:]]*grep[[:space:]]+(-[A-Za-z]+[[:space:]]+)*(-[A-Za-z]*q|--quiet|--silent)/ {
+            print FILENAME ":" FNR ": " $0
+        }' "${scripts[@]}")
+    if [[ -z "$piped" ]]; then
+        pass "lint: no grep -q at the end of a pipe"
+    else
+        while read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$piped"
+    fi
 }
 
 step_tag() {
@@ -141,9 +160,9 @@ step_smoke() {
         fi
         # An unknown mode must be rejected before anything is built.
         expect_status 2 "smoke: $image: unknown mode rejected" docker run --rm "$tag" no-such-mode
-        # The test modes must stop early, with a clear message, on a tree
-        # without the scripts and targets they need.
-        for mode in unit-tests cov-unit cov-functional; do
+        # The modes that run tests must stop early, with a clear message, on
+        # a tree without the scripts and targets they need.
+        for mode in unit-tests build-low-difficulty cov-unit cov-functional; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -165,6 +184,31 @@ step_smoke() {
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
             fi
         done
+        # build-low-difficulty runs every unit test suite of the test_bitcoin
+        # it built in the tree, JOBS at a time, logs to its own directory,
+        # and fails when a suite fails or the build made no test_bitcoin.
+        local want_args="/src/src/test/test_bitcoin /src/build/docker-$image/build-low-difficulty/unit-test-logs 3"
+        make_unit_stub "$stub" "$tag" 0
+        docker run --rm -v "$stub:/src" -e JOBS=3 "$tag" build-low-difficulty \
+            > "$work/out.txt" 2>&1 && status=0 || status=$?
+        args=$(cat "$stub/suites-args" 2>/dev/null || echo "run-unit-suites.sh did not run")
+        if [[ $status == 0 && "$args" == "$want_args" ]]; then
+            pass "smoke: $image: build-low-difficulty runs: run-unit-suites.sh $args"
+        else
+            tail -n 5 "$work/out.txt"
+            fail "smoke: $image: build-low-difficulty (exit status $status) runs: run-unit-suites.sh $args"
+        fi
+        make_unit_stub "$stub" "$tag" 3
+        expect_status 3 "smoke: $image: build-low-difficulty fails when a unit test suite fails" \
+            docker run --rm -v "$stub:/src" "$tag" build-low-difficulty
+        [[ -f "$stub/suites-args" ]] || fail "smoke: $image: the failing run did not reach run-unit-suites.sh"
+        make_unit_stub "$stub" "$tag" 0
+        rm "$stub/src/test/test_bitcoin"
+        expect_status 1 "smoke: $image: build-low-difficulty stops when the build made no test_bitcoin" \
+            docker run --rm -v "$stub:/src" "$tag" build-low-difficulty
+        grep -q 'error: the build made no src/test/test_bitcoin' "$work/out.txt" ||
+            fail "smoke: $image: a build without test_bitcoin gave no 'error: ' message"
+        [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: run-unit-suites.sh ran without test_bitcoin"
         # The functional-tests mode runs every script, the extended ones
         # too, FTEST_JOBS (default 4) at a time, and fails when the runner
         # fails.
@@ -227,7 +271,26 @@ make_configure_stub() {
     printf '#!/bin/sh\nexit 0\n' > "$d/autogen.sh"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'exit 1' > "$d/configure"
-    chmod +x "$d/autogen.sh" "$d/configure"
+    # The early check of build-low-difficulty needs the unit test runner.
+    mkdir -p "$d/contrib/devtools"
+    printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-unit-suites.sh"
+    chmod +x "$d/autogen.sh" "$d/configure" "$d/contrib/devtools/run-unit-suites.sh"
+}
+
+# A stub source tree for build-low-difficulty: depends, autogen.sh, configure,
+# make and make install are no-ops, src/test/test_bitcoin exists, and
+# contrib/devtools/run-unit-suites.sh records its arguments in
+# /src/suites-args and exits with <status>.
+# make_unit_stub <dir> <tag> <status>
+make_unit_stub() {
+    local d="$1" tag="$2"
+    make_configure_stub "$d" "$tag"
+    printf '%s\n' '#!/bin/sh' 'printf "all:\ninstall:\n" > Makefile' > "$d/configure"
+    mkdir -p "$d/src/test"
+    printf '#!/bin/sh\nexit 1\n' > "$d/src/test/test_bitcoin"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/suites-args' "exit $3" > "$d/contrib/devtools/run-unit-suites.sh"
+    chmod +x "$d/configure" "$d/src/test/test_bitcoin" "$d/contrib/devtools/run-unit-suites.sh"
 }
 
 # A stub source tree for the functional-tests mode: depends, autogen.sh,

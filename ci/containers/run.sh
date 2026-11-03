@@ -50,8 +50,13 @@ src="" cache="" no_cache=0 name="" image="" owner="" cidfile=""
 # Docker, Podman): then the files the container writes already belong to the
 # caller, and a chown would hand them to a subordinate uid instead.
 container_root_is_caller() {
-    docker --version 2>/dev/null | grep -qi podman && return 0
-    docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -q rootless
+    local out
+    # Captured first: grep -q at the end of a pipe may exit before the command
+    # has written everything, which pipefail turns into a no.
+    out=$(docker --version 2>/dev/null) || out=""
+    grep -qi podman <<< "$out" && return 0
+    out=$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null) || out=""
+    grep -q rootless <<< "$out"
 }
 
 # On any exit, including Ctrl-C: remove the container this run started

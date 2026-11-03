@@ -66,9 +66,11 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
   `build/docker-<image>/functional-tests/test/tmp/`.
 - The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` (for Linux the prefix `./dev.sh depends` uses),
-  configure in the source tree, and `make install` into `release-root/`. Because it configures in place, out-of-tree builds (`dev.sh`
-  and the test modes) refuse the tree afterwards until `make distclean`. Run release builds in a separate clone, for example
-  `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
+  configure in the source tree, and `make install` into `release-root/`. `build-low-difficulty` does the same with
+  `--enable-low-difficulty-for-development` and then runs all unit test suites of that build's `src/test/test_bitcoin`, as the CI job
+  `build-ubuntu-1604-low-difficulty` does; their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/`. Because both
+  configure in place, out-of-tree builds (`dev.sh` and the test modes) refuse the tree afterwards until `make distclean`. Run release
+  builds in a separate clone, for example `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
 - Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
   builds depends. Measured on 8 cores: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine (40 with
   other builds running), the second 1-2 minutes (all compiles from ccache).
@@ -96,10 +98,12 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
 | `release` | Check before a PR | Mainnet, default optimisation |
 | `asan` | Memory and UB checks | `dev` plus AddressSanitizer, LeakSanitizer and UBSan |
 
-The unit tests run on the mainnet build (`./dev.sh unit`, as in CI) and pass
-on the low-difficulty build as well; a test that uses mainnet-only data, such
-as checkpoints or the genesis block, needs its own part for that build. The
-functional tests need the low-difficulty build. To run the unit tests on it:
+The unit tests run on the mainnet build (`./dev.sh unit`) and must pass on the
+low-difficulty build as well: CI runs them on both (the `unit-tests` job and
+the `build-ubuntu-1604-low-difficulty` job). A test that uses mainnet-only
+data, such as checkpoints or the genesis block, needs its own part for that
+build. The functional tests need the low-difficulty build. To run the unit
+tests on it locally:
 
 ```sh
 ./dev.sh build func test/test_bitcoin

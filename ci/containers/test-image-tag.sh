@@ -65,8 +65,13 @@ done
 echo "== changing a file =="
 mutable="$work/containers"
 cp -a "$HERE" "$mutable"
-declare -A before
-for image in "${images[@]}"; do before[$image]=$(tag_of "$mutable" "$image"); done
+declare -A before inputs_of
+for image in "${images[@]}"; do
+    before[$image]=$(tag_of "$mutable" "$image")
+    # Searched as a whole: grep -q at the end of a pipe may exit before
+    # image-tag.sh has written everything, which pipefail turns into a no.
+    inputs_of[$image]=$("$TAG" --inputs "$image")
+done
 # Every file here: an input of some images, or of none.
 mapfile -t files < <(cd "$HERE" && find . -type f | sed 's|^\./||' | LC_ALL=C sort)
 for f in "${files[@]}"; do
@@ -75,7 +80,7 @@ for f in "${files[@]}"; do
     printf '\n' >> "$mutable/$f"
     for image in "${images[@]}"; do
         after=$(tag_of "$mutable" "$image")
-        if "$TAG" --inputs "$image" | grep -qxF "$f"; then
+        if grep -qxF "$f" <<< "${inputs_of[$image]}"; then
             check "$image: changing its input $f changes the tag" test "$after" != "${before[$image]}"
         else
             check "$image: changing $f (not an input) keeps the tag" test "$after" = "${before[$image]}"
