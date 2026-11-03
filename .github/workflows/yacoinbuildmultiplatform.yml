@@ -272,7 +272,7 @@ jobs:
           docker run --rm --init --name low-difficulty-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG" build-low-difficulty
-      - name: stop the container and make the cache readable for saving
+      - name: stop the container and make the cache readable for saving and the unit test logs for uploading
         if: always()
         run: |
           # A step timeout may kill docker run without stopping the container.

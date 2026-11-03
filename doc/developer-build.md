@@ -68,9 +68,9 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
 - The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` (for Linux the prefix `./dev.sh depends` uses),
   configure in the source tree, and `make install` into `release-root/`. `build-low-difficulty` does the same with
   `--enable-low-difficulty-for-development` and then runs all unit test suites of that build's `src/test/test_bitcoin`, as the CI job
-  `build-ubuntu-1604-low-difficulty` does; their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/`. Because it configures in place, out-of-tree builds (`dev.sh`
-  and the test modes) refuse the tree afterwards until `make distclean`. Run release builds in a separate clone, for example
-  `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
+  `build-ubuntu-1604-low-difficulty` does; their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/`. Because both
+  configure in place, out-of-tree builds (`dev.sh` and the test modes) refuse the tree afterwards until `make distclean`. Run release
+  builds in a separate clone, for example `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
 - Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
   builds depends. Measured on 8 cores: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine (40 with
   other builds running), the second 1-2 minutes (all compiles from ccache).
