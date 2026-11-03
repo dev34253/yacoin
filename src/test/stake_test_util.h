@@ -22,7 +22,6 @@
 #include "test/test_bitcoin.h"
 
 #include <algorithm>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -50,40 +49,6 @@ struct ValueGuard {
     T m_saved;
     ValueGuard(T& ref, T value) : m_ref(ref), m_saved(ref) { ref = value; }
     ~ValueGuard() { m_ref = m_saved; }
-};
-
-/** Reaches the protected maps of gArgs through pointers to members formed in a derived class */
-class ArgsAccess : public ArgsManager
-{
-public:
-    static std::map<std::string, std::string>& MapArgs() { return gArgs.*(&ArgsAccess::mapArgs); }
-    static std::map<std::string, std::vector<std::string> >& MapMultiArgs() { return gArgs.*(&ArgsAccess::mapMultiArgs); }
-};
-
-/** Sets an argument of gArgs while it lives; restores its value, or unsets it if it was unset */
-struct ArgGuard {
-    const std::string m_arg;
-    const bool m_fWasSet;
-    std::string m_value;
-    std::vector<std::string> m_values;
-    ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg), m_fWasSet(gArgs.IsArgSet(arg))
-    {
-        if (m_fWasSet) {
-            m_value = ArgsAccess::MapArgs()[arg];
-            m_values = ArgsAccess::MapMultiArgs()[arg];
-        }
-        gArgs.ForceSetArg(arg, value);
-    }
-    ~ArgGuard()
-    {
-        if (m_fWasSet) {
-            ArgsAccess::MapArgs()[m_arg] = m_value;
-            ArgsAccess::MapMultiArgs()[m_arg] = m_values;
-        } else {
-            ArgsAccess::MapArgs().erase(m_arg);
-            ArgsAccess::MapMultiArgs().erase(m_arg);
-        }
-    }
 };
 
 /** -debug on, and -printstakemodifier if fPrint, while it lives */
