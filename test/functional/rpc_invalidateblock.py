@@ -10,7 +10,9 @@
 - the transactions of an invalidated block go back to the mempool;
 - a child of an invalidated block is rejected (bad-prevblk);
 - the invalid status survives a restart; -reindex forgets it;
-- the genesis block can't be invalidated.
+- the genesis block can't be invalidated;
+- the coin set (gettxout) across a block, its invalidation, the next block
+  and a restart; verifychain at level 4 afterwards.
 """
 
 from test_framework.blocktools import create_block_yac, solve_block
@@ -124,6 +126,46 @@ class InvalidateTest(BitcoinTestFramework):
                            "No exception raised")
         assert_equal(node.getbestblockhash(), bad_hash)
         assert_equal([t for t in node.getchaintips() if t['status'] == 'invalid'], [])
+
+        self.log.info("The coin set across a block, its invalidation, the next block and a restart")
+        txid = node.sendtoaddress(address=node.getnewaddress(), amount=1)
+        decoded = node.decoderawtransaction(node.getrawtransaction(txid))
+        spent = [(i['txid'], i['vout']) for i in decoded['vin']]
+        created = [(txid, o['n']) for o in decoded['vout']]
+
+        def coins(outpoints):
+            return [node.gettxout(t, n, False) for t, n in outpoints]
+
+        def without_bestblock(entries):
+            return [{k: v for k, v in e.items() if k != 'bestblock'} for e in entries]
+        before = coins(spent)
+        assert None not in before
+        assert_equal(coins(created), [None] * len(created))
+
+        block = node.generatetoaddress(1, address)[0]
+        coinbase = [(node.getblock(block)['tx'][0], 0)]
+        assert_equal(coins(spent), [None] * len(spent))
+        after = coins(created + coinbase)
+        assert None not in after
+        assert all(e['bestblock'] == block and e['confirmations'] == 1 for e in after)
+
+        node.invalidateblock(block)
+        assert_equal(coins(spent), before)
+        assert_equal(coins(created + coinbase), [None] * (len(created) + 1))
+
+        # The next block confirms the transaction again (yacoind has no reconsiderblock); its
+        # coinbase pays another address, so it isn't the invalidated block once more
+        assert_equal(node.getrawmempool(), [txid])
+        node.generatetoaddress(1, node.getnewaddress())
+        assert_equal(coins(spent), [None] * len(spent))
+        assert_equal(without_bestblock(coins(created)), without_bestblock(after[:-1]))
+        assert_equal(coins(coinbase), [None])
+
+        # Coins read back from disk after a restart give the same answers
+        expected = coins(spent + created)
+        self.restart_node(0)
+        assert_equal(coins(spent + created), expected)
+        assert node.verifychain(4, 3)
 
 
 if __name__ == '__main__':
