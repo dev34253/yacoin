@@ -8,6 +8,7 @@
 #include "base58.h"
 #include "primitives/transaction.h"
 #include "script/standard.h"
+#include "streams.h"
 #include "tokens/tokendb.h"
 #include "tokens/tokens.h"
 #include "txmempool.h"
@@ -129,6 +130,53 @@ inline CScript ReissueTokenScript(const CReissueToken& reissue, unsigned char n 
     CScript script = TestTokenScriptBase(n);
     reissue.ConstructTransaction(script);
     return script;
+}
+
+/**
+ * A token script with the P2PKH prefix and the "yac" marker of `marker`
+ * (YAC_Q, YAC_O, YAC_R or YAC_T), whose payload is only the first nKeep bytes
+ * of `data` serialized. It is detected as a token script of that type; its
+ * payload does not decode when nKeep cuts a field short.
+ */
+template <typename T>
+inline CScript TruncatedTokenScript(unsigned char marker, const T& data, size_t nKeep, unsigned char n = 1)
+{
+    CDataStream ss(SER_NETWORK, PROTOCOL_VERSION);
+    ss << data;
+    BOOST_REQUIRE(nKeep < ss.size());
+    std::vector<unsigned char> vch = {YAC_Y, YAC_A, YAC_C, marker};
+    vch.insert(vch.end(), ss.begin(), ss.begin() + nKeep);
+    CScript script = TestTokenScriptBase(n);
+    script << OP_YAC_TOKEN << vch << OP_DROP;
+    return script;
+}
+
+/** Bytes of a short name in a token payload: a length byte and the characters */
+inline size_t SerializedNameSize(const std::string& name)
+{
+    return 1 + name.size();
+}
+
+/** Payloads cut two bytes into the amount after the name; the decoders need eight */
+inline CScript TruncatedIssueScript(const std::string& name, unsigned char n = 1)
+{
+    return TruncatedTokenScript(YAC_Q, CNewToken(name, COIN), SerializedNameSize(name) + 2, n);
+}
+
+inline CScript TruncatedReissueScript(const std::string& name, unsigned char n = 1)
+{
+    return TruncatedTokenScript(YAC_R, CReissueToken(name, COIN, -1, 1, ""), SerializedNameSize(name) + 2, n);
+}
+
+inline CScript TruncatedTransferScript(const std::string& name, unsigned char n = 1)
+{
+    return TruncatedTokenScript(YAC_T, CTokenTransfer(name, COIN), SerializedNameSize(name) + 2, n);
+}
+
+/** Owner payload cut inside the name ("<name>!") */
+inline CScript TruncatedOwnerScript(const std::string& name, unsigned char n = 1)
+{
+    return TruncatedTokenScript(YAC_O, std::string(name + OWNER_TAG), SerializedNameSize(name + OWNER_TAG) - 2, n);
 }
 
 /** YAC lock output as the wallet builds it (GetScriptForCsvP2PKH, tokens.cpp CreateTokenTransaction) */
