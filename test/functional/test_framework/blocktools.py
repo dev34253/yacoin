@@ -38,6 +38,7 @@ import itertools
 from io import BytesIO
 
 from .authproxy import JSONRPCException
+from .key import ECPubKey
 from .messages import (
     BLOCK_VERSION,
     CBlock,
@@ -292,6 +293,26 @@ def blocks_from_node(node, hashes):
         block.hash = block_hash
         blocks.append(block)
     return blocks
+
+
+def block_signer(node, block_hash):
+    """The public key (bytes) of the first pay-to-pubkey coinbase output of a
+    block whose signature (vchBlockSig) verifies over the block hash, or None.
+    This is how the node signs a proof-of-work block (CBlock::SignBlock); it
+    does not check that signature."""
+    block = FromHex(CBlock(), node.getblock(block_hash, False))
+    if not block.vchBlockSig:
+        return None
+    # The node signs the hash as a 32-byte number in its internal byte order
+    msg = bytes.fromhex(block_hash)[::-1]
+    for out in block.vtx[0].vout:
+        script = bytes(out.scriptPubKey)
+        if len(script) in (35, 67) and script[0] == len(script) - 2 and script[-1] == 0xac:
+            pubkey = ECPubKey()
+            pubkey.set(script[1:-1])
+            if pubkey.is_valid and pubkey.verify_ecdsa(block.vchBlockSig, msg, low_s=False):
+                return script[1:-1]
+    return None
 
 
 def mutate_duplicate_last_tx(block):
