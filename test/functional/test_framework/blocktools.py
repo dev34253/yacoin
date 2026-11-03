@@ -298,8 +298,9 @@ def blocks_from_node(node, hashes):
 def block_signer(node, block_hash):
     """The public key (bytes) of the first pay-to-pubkey coinbase output of a
     block whose signature (vchBlockSig) verifies over the block hash, or None.
-    This is how the node signs a proof-of-work block (CBlock::SignBlock); it
-    does not check that signature."""
+    This is how the node signs a proof-of-work block (CBlock::SignBlock). The
+    node never verifies the signature of a proof-of-work block: validation
+    checks block signatures of proof-of-stake blocks only."""
     block = FromHex(CBlock(), node.getblock(block_hash, False))
     if not block.vchBlockSig:
         return None

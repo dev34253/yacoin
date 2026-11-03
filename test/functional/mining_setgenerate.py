@@ -6,7 +6,8 @@
 
 - Defaults and argument errors.
 - setgenerate(true, 1) mines proof-of-work blocks paying a wallet key (P2PK),
-  signed with that key over the block hash, and reserves that key; setgenerate(false) stops the thread before it returns. A block the
+  signed with that key over the block hash, and reserves that key;
+  setgenerate(false) stops the thread before it returns. A block the
   thread finds while it is being stopped can be stored without being
   connected (the stop interrupts block processing in between); the next chain
   activation connects it.
