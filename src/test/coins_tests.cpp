@@ -642,7 +642,7 @@ BOOST_AUTO_TEST_CASE(block_undo_serialization_real_times)
     globals.Set(nFork, nEpochInterval);
     CBlockUndo blockundo;
     blockundo.vtxundo.resize(2);
-    blockundo.vtxundo[0].vprevout = {RealCoin(1608562, false, true, 1468654497), RealCoin(1911210, false, false, 1682210698)};
+    blockundo.vtxundo[0].vprevout = {RealCoin(1608562, false, true, 1468654497), RealCoin(1911210, false, true, 1682210698)};
     blockundo.vtxundo[1].vprevout = {RealCoin(1882539, true, false, 1602875767), RealCoin(1890000, true, false, 1619048730)};
     CDataStream ss(SER_DISK, CLIENT_VERSION);
     ss << blockundo;
