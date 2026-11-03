@@ -16,6 +16,9 @@ Also: a resend of a mempool transaction returns its txid, a mined one gives
 -27, P2P stays silent about both; a transaction rejected over P2P once is
 ignored the second time (recentRejects).
 
+A script that fails only a standard, not mandatory, script flag (an
+unsatisfied CLTV) gives non-mandatory-script-verify-flag.
+
 The ancestor/descendant limits (too-long-mempool-chain) are in
 mempool_packages.py; CLTV/CSV and the sequence-lock boundaries in
 feature_cltv_csv_enforcement.py; coinbase maturity in
@@ -43,6 +46,7 @@ from test_framework.script import (
     OP_1,
     OP_3,
     OP_4,
+    OP_CHECKLOCKTIMEVERIFY,
     OP_CHECKMULTISIG,
     OP_CHECKSIG,
     OP_DROP,
@@ -409,6 +413,20 @@ class MempoolAcceptTest(BitcoinTestFramework):
         tx.rehash()
         self.check_reject(tx, 16, "mandatory-script-verify-flag-failed (Script evaluated without error "
                                   "but finished with a false/empty top stack element)")
+
+        self.log.info("A script failing only a standard flag (CLTV): non-mandatory-script-verify-flag")
+        # Without the CLTV flag OP_CHECKLOCKTIMEVERIFY is a NOP, so the script
+        # passes the mandatory flags; the reject has code 64 and no DoS score.
+        redeem = CScript([1000, OP_CHECKLOCKTIMEVERIFY, OP_DROP, OP_TRUE])
+        parent = self.spend_true(lambda v: [CTxOut(v - FEE, p2sh_script(redeem))])
+        self.check_accept(parent)
+        tx = self.spend_true([CTxOut(parent.vout[0].nValue - FEE, P2SH_TRUE_SCRIPT)],
+                             utxo=(parent.sha256, 0, parent.vout[0].nValue))
+        tx.vin[0].scriptSig = CScript([bytes(redeem)])
+        tx.vin[0].nSequence = 0xfffffffe
+        tx.nLockTime = 0  # final, but below the lock
+        tx.rehash()
+        self.check_reject(tx, 64, "non-mandatory-script-verify-flag (Locktime requirement not satisfied)")
 
     def test_size_and_decoding(self):
         node = self.nodes[0]

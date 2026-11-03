@@ -152,4 +152,66 @@ BOOST_AUTO_TEST_CASE(GetTxSigOpCost)
     }
 }
 
+BOOST_AUTO_TEST_CASE(GetP2SHSigOpCount_and_cost_by_flags)
+{
+    CCoinsView coinsDummy;
+    CCoinsViewCache coins(&coinsDummy);
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pubkey = key.GetPubKey();
+
+    // A redeem script with 2 sigops (accurate count), a P2PKH script with 1.
+    const CScript redeemScript = CScript() << OP_2 << ToByteVector(pubkey) << ToByteVector(pubkey) << OP_2 << OP_CHECKMULTISIG;
+    const CScript p2sh = GetScriptForDestination(CScriptID(redeemScript));
+    const CScript p2pkh = GetScriptForDestination(pubkey.GetID());
+
+    CMutableTransaction creationTx;
+    creationTx.vin.resize(1);
+    creationTx.vin[0].prevout.SetNull();
+    creationTx.vin[0].scriptSig = CScript() << OP_1 << OP_1;
+    creationTx.vout.resize(2);
+    creationTx.vout[0].nValue = 1;
+    creationTx.vout[0].scriptPubKey = p2sh;
+    creationTx.vout[1].nValue = 1;
+    creationTx.vout[1].scriptPubKey = p2pkh;
+    const CTransaction creation(creationTx);
+    BOOST_REQUIRE(creation.IsCoinBase());
+    AddCoins(coins, creation, 0, uint256());
+
+    // A coinbase has no P2SH sigops; its cost is the legacy count of its
+    // outputs (1 for the P2PKH output; a P2SH output counts none).
+    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(creation, coins), 0U);
+    BOOST_CHECK_EQUAL(GetTransactionSigOpCost(creation, coins, SCRIPT_VERIFY_P2SH), 1);
+    BOOST_CHECK_EQUAL(GetTransactionSigOpCost(creation, coins, SCRIPT_VERIFY_NONE), 1);
+
+    // Spending the P2SH output counts the redeem script's sigops.
+    CMutableTransaction spendP2SH;
+    spendP2SH.vin.resize(1);
+    spendP2SH.vin[0].prevout = COutPoint(creation.GetHash(), 0);
+    spendP2SH.vin[0].scriptSig = CScript() << OP_0 << OP_0 << OP_0 << ToByteVector(redeemScript);
+    spendP2SH.vout.resize(1);
+    spendP2SH.vout[0].nValue = 1;
+    spendP2SH.vout[0].scriptPubKey = CScript() << OP_TRUE;
+    const CTransaction p2shTx(spendP2SH);
+    BOOST_CHECK_EQUAL(GetLegacySigOpCount(p2shTx), 0U);
+    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(p2shTx, coins), 2U);
+    BOOST_CHECK_EQUAL(GetTransactionSigOpCost(p2shTx, coins, SCRIPT_VERIFY_P2SH), 2);
+    // Without the P2SH flag the cost has no P2SH part.
+    BOOST_CHECK_EQUAL(GetTransactionSigOpCost(p2shTx, coins, SCRIPT_VERIFY_NONE), 0);
+
+    // Spending the P2PKH output: no P2SH sigops.
+    CMutableTransaction spendP2PKH(spendP2SH);
+    spendP2PKH.vin[0].prevout = COutPoint(creation.GetHash(), 1);
+    const CTransaction p2pkhTx(spendP2PKH);
+    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(p2pkhTx, coins), 0U);
+    BOOST_CHECK_EQUAL(GetTransactionSigOpCost(p2pkhTx, coins, SCRIPT_VERIFY_P2SH), 0);
+
+    // Both inputs together.
+    CMutableTransaction spendBoth(spendP2SH);
+    spendBoth.vin.push_back(spendP2PKH.vin[0]);
+    const CTransaction bothTx(spendBoth);
+    BOOST_CHECK_EQUAL(GetP2SHSigOpCount(bothTx, coins), 2U);
+    BOOST_CHECK_EQUAL(GetTransactionSigOpCost(bothTx, coins, SCRIPT_VERIFY_P2SH), 2);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
