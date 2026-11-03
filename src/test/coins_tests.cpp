@@ -18,6 +18,7 @@
 #include <boost/test/unit_test.hpp>
 
 int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out, CTokensCache* tokensCache = nullptr);
+void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight);
 
 namespace
 {
@@ -629,6 +630,320 @@ BOOST_AUTO_TEST_CASE(undo_serialization_real_times)
         CheckSameCoin(read.vprevout[i], undo.vprevout[i]);
         BOOST_CHECK_EQUAL(read.vprevout[i].fCoinStake, undo.vprevout[i].fCoinStake);
     }
+}
+
+/* Block undo data: the per-input records of each transaction, and their exact bytes */
+BOOST_AUTO_TEST_CASE(block_undo_serialization_real_times)
+{
+    // Reading a transaction's undo data checks its input count against the block size at
+    // its first input's height: every transaction's first input is from before the hardfork
+    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    ConsensusGlobalsGuard globals;
+    globals.Set(nFork, nEpochInterval);
+    CBlockUndo blockundo;
+    blockundo.vtxundo.resize(2);
+    blockundo.vtxundo[0].vprevout = {RealCoin(1608562, false, true, 1468654497), RealCoin(1911210, false, true, 1682210698)};
+    blockundo.vtxundo[1].vprevout = {RealCoin(1882539, true, false, 1602875767), RealCoin(1890000, true, false, 1619048730)};
+    CDataStream ss(SER_DISK, CLIENT_VERSION);
+    ss << blockundo;
+    CBlockUndo read;
+    ss >> read;
+    BOOST_CHECK(ss.empty());
+    BOOST_REQUIRE_EQUAL(read.vtxundo.size(), 2U);
+    for (size_t t = 0; t < 2; t++) {
+        BOOST_REQUIRE_EQUAL(read.vtxundo[t].vprevout.size(), 2U);
+        for (size_t i = 0; i < 2; i++) {
+            const Coin& coin = blockundo.vtxundo[t].vprevout[i];
+            CheckSameCoin(read.vtxundo[t].vprevout[i], coin);
+            BOOST_CHECK_EQUAL(read.vtxundo[t].vprevout[i].fCoinStake, coin.fCoinStake && coin.nHeight < (unsigned)nFork);
+        }
+    }
+
+    // The exact bytes: the transaction count, each transaction's input count, the input records
+    CBlockUndo one;
+    one.vtxundo.resize(1);
+    one.vtxundo[0].vprevout = {RealCoin(1608562, false, true, 1468654497)};
+    CDataStream bytes(SER_DISK, CLIENT_VERSION);
+    bytes << one;
+    BOOST_CHECK_EQUAL(HexStr(bytes.begin(), bytes.end()),
+                      "01" "01" "80c3ac64" "84bba6c621" "01" "00" "5000e480473de775e89c7425ab353b8795f1acdaf960");
+}
+
+/* An input record with height 0 (old versions wrote these for all but the last spend of a
+ * transaction's outputs): no version byte after the coinstake flag */
+BOOST_AUTO_TEST_CASE(legacy_undo_serialization)
+{
+    const Coin legacy = RealCoin(0, false, false, 1468654497);
+    CDataStream ss(SER_DISK, CLIENT_VERSION);
+    ss << TxInUndoSerializer(&legacy);
+    BOOST_CHECK_EQUAL(HexStr(ss.begin(), ss.end()), "00" "84bba6c621" "00" "5000e480473de775e89c7425ab353b8795f1acdaf960");
+    Coin read;
+    TxInUndoDeserializer reader(&read);
+    ss >> reader;
+    BOOST_CHECK(ss.empty());
+    CheckSameCoin(read, legacy);
+    BOOST_CHECK(!read.fCoinStake);
+}
+
+/* The coins database keeps each coin's time, and the coinstake flag below the hardfork only */
+BOOST_FIXTURE_TEST_CASE(coins_db_real_times, TestingSetup)
+{
+    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    CCoinsViewDB db(1 << 20, true);
+    std::map<COutPoint, Coin> expected;
+    CCoinsMap map;
+    uint32_t n = 0;
+    for (const auto& ht : REAL_HEIGHT_TIMES) {
+        for (bool fCoinBase : {false, true}) {
+            for (bool fCoinStake : {false, true}) {
+                if (fCoinBase && fCoinStake) continue;
+                const COutPoint out(uint256S("0c01"), n++);
+                expected[out] = RealCoin(ht.first, fCoinBase, fCoinStake, ht.second);
+                CCoinsCacheEntry entry;
+                entry.coin = expected[out];
+                entry.flags = CCoinsCacheEntry::DIRTY;
+                map.emplace(out, std::move(entry));
+            }
+        }
+    }
+    const uint256 hashBlock = uint256S("0b01");
+    BOOST_REQUIRE(db.BatchWrite(map, hashBlock));
+    BOOST_CHECK(db.GetBestBlock() == hashBlock);
+
+    for (const auto& e : expected) {
+        Coin read;
+        BOOST_REQUIRE(db.GetCoin(e.first, read));
+        CheckSameCoin(read, e.second);
+        BOOST_CHECK_EQUAL(read.fCoinStake, e.second.fCoinStake && e.second.nHeight < (unsigned)nFork);
+    }
+
+    std::unique_ptr<CCoinsViewCursor> cursor(db.Cursor());
+    BOOST_CHECK(cursor->GetBestBlock() == hashBlock);
+    size_t count = 0;
+    for (; cursor->Valid(); cursor->Next(), count++) {
+        COutPoint key;
+        Coin read;
+        BOOST_REQUIRE(cursor->GetKey(key) && cursor->GetValue(read));
+        BOOST_REQUIRE(expected.count(key));
+        CheckSameCoin(read, expected[key]);
+        BOOST_CHECK_EQUAL(read.fCoinStake, expected[key].fCoinStake && expected[key].nHeight < (unsigned)nFork);
+    }
+    BOOST_CHECK_EQUAL(count, expected.size());
+}
+
+/** A cursor and a view that answer with their own best block (and the view with its own
+ *  head blocks, size and one coin), to see which view a call reached */
+class MarkedCursor : public CCoinsViewCursor
+{
+public:
+    explicit MarkedCursor(const uint256& hashBlock) : CCoinsViewCursor(hashBlock) {}
+    bool GetKey(COutPoint& key) const override { return false; }
+    bool GetValue(Coin& coin) const override { return false; }
+    unsigned int GetValueSize() const override { return 0; }
+    bool Valid() const override { return false; }
+    void Next() override {}
+};
+
+class MarkedView : public CCoinsView
+{
+public:
+    uint256 mark;
+    COutPoint have;
+    size_t size;
+    int writes = 0;
+
+    MarkedView(const uint256& markIn, const COutPoint& haveIn, size_t sizeIn) : mark(markIn), have(haveIn), size(sizeIn) {}
+    bool GetCoin(const COutPoint& outpoint, Coin& coin) const override
+    {
+        if (outpoint == have) coin = RealCoin(1608562, false, false, 1468654497);
+        return outpoint == have;
+    }
+    uint256 GetBestBlock() const override { return mark; }
+    std::vector<uint256> GetHeadBlocks() const override { return {mark}; }
+    bool BatchWrite(CCoinsMap& mapCoins, const uint256& hashBlock) override
+    {
+        writes++;
+        return true;
+    }
+    CCoinsViewCursor* Cursor() const override { return new MarkedCursor(mark); }
+    size_t EstimateSize() const override { return size; }
+};
+
+BOOST_AUTO_TEST_CASE(coins_view_defaults_and_backed)
+{
+    const COutPoint outA(uint256S("0a01"), 0), outB(uint256S("0b02"), 1);
+
+    // The base view has nothing
+    CCoinsView empty;
+    Coin coin;
+    CCoinsMap map;
+    BOOST_CHECK(!empty.GetCoin(outA, coin));
+    BOOST_CHECK(!empty.HaveCoin(outA));
+    BOOST_CHECK(empty.GetBestBlock().IsNull());
+    BOOST_CHECK(empty.GetHeadBlocks().empty());
+    BOOST_CHECK(!empty.BatchWrite(map, uint256S("0b01")));
+    BOOST_CHECK(empty.Cursor() == nullptr);
+    BOOST_CHECK_EQUAL(empty.EstimateSize(), 0U);
+
+    // A backed view forwards every call to its base; SetBackend switches the base.
+    // MarkedView keeps the default HaveCoin, which asks GetCoin.
+    MarkedView a(uint256S("0a"), outA, 11), b(uint256S("0b"), outB, 22);
+    CCoinsViewBacked backed(&a);
+    for (MarkedView* base : {&a, &b}) {
+        if (base == &b) backed.SetBackend(b);
+        const COutPoint& other = base == &a ? outB : outA;
+        BOOST_CHECK(backed.GetCoin(base->have, coin));
+        CheckSameCoin(coin, RealCoin(1608562, false, false, 1468654497));
+        BOOST_CHECK(!backed.GetCoin(other, coin));
+        BOOST_CHECK(backed.HaveCoin(base->have));
+        BOOST_CHECK(!backed.HaveCoin(other));
+        BOOST_CHECK(backed.GetBestBlock() == base->mark);
+        BOOST_CHECK(backed.GetHeadBlocks() == std::vector<uint256>{base->mark});
+        BOOST_CHECK(backed.BatchWrite(map, base->mark));
+        BOOST_CHECK_EQUAL(base->writes, 1);
+        std::unique_ptr<CCoinsViewCursor> cursor(backed.Cursor());
+        BOOST_REQUIRE(cursor);
+        BOOST_CHECK(cursor->GetBestBlock() == base->mark);
+        BOOST_CHECK_EQUAL(backed.EstimateSize(), base->size);
+    }
+    BOOST_CHECK_EQUAL(a.writes, 1);
+}
+
+/* AccessByTxid's search covers the outputs of a transaction of the largest block before and
+ * after the hardfork: with the node's hardfork height and no chain, both are the genesis
+ * block size */
+BOOST_AUTO_TEST_CASE(access_by_txid)
+{
+    ConsensusGlobalsGuard globals;
+    globals.Set(Params().GetConsensus().HeliopolisHardforkHeight, nEpochInterval);
+    CCoinsView empty;
+    CCoinsViewCache base(&empty);
+    const uint256 txid = uint256S("0c02");
+    const Coin first = RealCoin(1882539, true, false, 1602875767), fourth = RealCoin(1911210, false, false, 1682210698);
+
+    // An unspent output 0
+    base.AddCoin(COutPoint(txid, 0), Coin(first), false);
+    CheckSameCoin(AccessByTxid(base, txid), first);
+
+    // Only output 3 is left: output 2 is absent, outputs 0 and 1 are spent in the cache
+    base.AddCoin(COutPoint(txid, 1), Coin(first), false);
+    base.AddCoin(COutPoint(txid, 3), Coin(fourth), false);
+    CCoinsViewCache cache(&base);
+    BOOST_REQUIRE(cache.SpendCoin(COutPoint(txid, 0)));
+    BOOST_REQUIRE(cache.SpendCoin(COutPoint(txid, 1)));
+    BOOST_REQUIRE(cache.AccessCoin(COutPoint(txid, 0)).IsSpent());
+    CheckSameCoin(AccessByTxid(cache, txid), fourth);
+
+    // No unspent output: a spent coin
+    BOOST_CHECK(AccessByTxid(cache, uint256S("0c03")).IsSpent());
+}
+
+/* Restoring a spent coin from its undo record (DisconnectBlock) */
+BOOST_AUTO_TEST_CASE(apply_tx_in_undo)
+{
+    // DisconnectResult values
+    const int OK = 0, UNCLEAN = 1, FAILED = 2;
+    ConsensusGlobalsGuard globals; // as in access_by_txid
+    globals.Set(Params().GetConsensus().HeliopolisHardforkHeight, nEpochInterval);
+    CCoinsView empty;
+    CCoinsViewCache view(&empty);
+    const uint256 txid = uint256S("0c04");
+    const COutPoint out0(txid, 0), out1(txid, 1);
+
+    // A full record into an empty view: the coin with all its fields
+    const Coin stake = RealCoin(1608562, false, true, 1468654497);
+    BOOST_CHECK_EQUAL(ApplyTxInUndo(Coin(stake), view, out0), OK);
+    CheckSameCoin(view.AccessCoin(out0), stake);
+    BOOST_CHECK(view.AccessCoin(out0).fCoinStake);
+
+    // The coin is already there: overwritten, unclean
+    const Coin other = RealCoin(1882539, true, false, 1602875767);
+    BOOST_CHECK_EQUAL(ApplyTxInUndo(Coin(other), view, out0), UNCLEAN);
+    CheckSameCoin(view.AccessCoin(out0), other);
+    BOOST_CHECK(!view.AccessCoin(out0).fCoinStake);
+
+    // A record with height 0 takes height, coinbase, coinstake and time from an unspent
+    // output of the same transaction
+    BOOST_CHECK_EQUAL(ApplyTxInUndo(Coin(stake), view, out0), UNCLEAN);
+    const Coin legacy = RealCoin(0, false, false, 1682210698);
+    BOOST_CHECK_EQUAL(ApplyTxInUndo(Coin(legacy), view, out1), OK);
+    const Coin& restored = view.AccessCoin(out1);
+    BOOST_CHECK(restored.out == legacy.out);
+    BOOST_CHECK_EQUAL(restored.nHeight, stake.nHeight);
+    BOOST_CHECK_EQUAL(restored.fCoinBase, stake.fCoinBase);
+    BOOST_CHECK(restored.fCoinStake);
+    BOOST_CHECK_EQUAL(restored.nTime, stake.nTime);
+
+    // ... and fails if there is none, without adding the coin
+    const COutPoint lone(uint256S("0c05"), 1);
+    BOOST_CHECK_EQUAL(ApplyTxInUndo(Coin(legacy), view, lone), FAILED);
+    BOOST_CHECK(!view.HaveCoin(lone));
+}
+
+/* UpdateCoins without undo data: spends the inputs and adds the outputs with the
+ * transaction's flags and time */
+BOOST_AUTO_TEST_CASE(update_coins)
+{
+    CCoinsView empty;
+    CCoinsViewCache view(&empty);
+    const COutPoint prev(uint256S("0c06"), 0);
+    const Coin prevCoin = RealCoin(1608562, false, false, 1468654497);
+    const CAmount nValue = prevCoin.out.nValue;
+    view.AddCoin(prev, Coin(prevCoin), false);
+
+    CMutableTransaction tx;
+    tx.nTime = 1682210698;
+    tx.vin.emplace_back(prev);
+    tx.vout.emplace_back(nValue / 2, CScript() << OP_TRUE);
+    tx.vout.emplace_back(nValue / 4, CScript() << OP_TRUE);
+    const CTransaction spend(tx);
+    BOOST_CHECK_EQUAL(view.GetValueIn(spend), nValue);
+    UpdateCoins(spend, view, 1911210);
+    BOOST_CHECK(!view.HaveCoin(prev));
+    for (uint32_t n = 0; n < 2; n++) {
+        const Coin& coin = view.AccessCoin(COutPoint(spend.GetHash(), n));
+        BOOST_CHECK(coin.out == spend.vout[n]);
+        BOOST_CHECK_EQUAL(coin.nHeight, 1911210U);
+        BOOST_CHECK(!coin.fCoinBase);
+        BOOST_CHECK(!coin.fCoinStake);
+        BOOST_CHECK_EQUAL(coin.nTime, 1682210698);
+    }
+
+    // A coinstake (first output empty)
+    CMutableTransaction stake;
+    stake.nTime = 1468654497;
+    stake.vin.emplace_back(COutPoint(spend.GetHash(), 0));
+    stake.vout.emplace_back();
+    stake.vout[0].SetEmpty();
+    stake.vout.emplace_back(nValue, CScript() << OP_TRUE);
+    const CTransaction coinstake(stake);
+    BOOST_REQUIRE(coinstake.IsCoinStake());
+    UpdateCoins(coinstake, view, 1608562);
+    BOOST_CHECK(!view.HaveCoin(COutPoint(spend.GetHash(), 0)));
+    const Coin& staked = view.AccessCoin(COutPoint(coinstake.GetHash(), 1));
+    BOOST_CHECK_EQUAL(staked.nHeight, 1608562U);
+    BOOST_CHECK(!staked.fCoinBase);
+    BOOST_CHECK(staked.fCoinStake);
+    BOOST_CHECK_EQUAL(staked.nTime, 1468654497);
+
+    // A coinbase spends nothing
+    CMutableTransaction cb;
+    cb.nTime = 1602875767;
+    cb.vin.resize(1);
+    cb.vin[0].prevout.SetNull();
+    cb.vout.emplace_back(nValue, CScript() << OP_TRUE);
+    const CTransaction coinbase(cb);
+    BOOST_REQUIRE(coinbase.IsCoinBase());
+    BOOST_CHECK_EQUAL(view.GetValueIn(coinbase), 0);
+    const unsigned int nCached = view.GetCacheSize();
+    UpdateCoins(coinbase, view, 1882539);
+    BOOST_CHECK_EQUAL(view.GetCacheSize(), nCached + 1);
+    BOOST_CHECK(view.HaveCoin(COutPoint(spend.GetHash(), 1)));
+    const Coin& minted = view.AccessCoin(COutPoint(coinbase.GetHash(), 0));
+    BOOST_CHECK_EQUAL(minted.nHeight, 1882539U);
+    BOOST_CHECK(minted.fCoinBase);
+    BOOST_CHECK(!minted.fCoinStake);
+    BOOST_CHECK_EQUAL(minted.nTime, 1602875767);
 }
 
 const static COutPoint OUTPOINT;
