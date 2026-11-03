@@ -108,7 +108,16 @@ public:
         do {
             hash = uint256(0x5e5e0000 + (++m_hashCounter));
         } while (mapBlockIndex.count(hash));
-        pindex->phashBlock = &mapBlockIndex.emplace(hash, pindex).first->first;
+        Register(pindex, hash);
+    }
+
+    /** Register pindex in mapBlockIndex under the given hash (one that is not there yet). */
+    void Register(CBlockIndex* pindex, const uint256& hash)
+    {
+        LOCK(cs_main);
+        auto inserted = mapBlockIndex.emplace(hash, pindex);
+        assert(inserted.second);
+        pindex->phashBlock = &inserted.first->first;
         m_registered.push_back(hash);
     }
 
