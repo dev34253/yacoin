@@ -2,11 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "consensus/consensus.h"
 #include "policy/policy.h"
 #include "txmempool.h"
 #include "util.h"
+#include "validation.h"
 
+#include "test/stake_test_util.h"
 #include "test/test_bitcoin.h"
+#include "test/token_test_util.h"
 
 #include <boost/test/unit_test.hpp>
 #include <algorithm>
@@ -924,6 +928,242 @@ BOOST_AUTO_TEST_CASE(MempoolUpdateTransactionsFromBlockTest)
     BOOST_CHECK(reorg.GetMemPoolChildren(itP3) == CTxMemPool::setEntries({itC}));
     BOOST_CHECK(reorg.GetMemPoolParents(itC) == CTxMemPool::setEntries({itP3}));
     BOOST_CHECK_EQUAL(reorg.GetMemPoolChildren(reorg.mapTx.find(txP1.GetHash())).size(), 2U);
+}
+
+/* Block txs leave the pool, their in-pool children stay with the parent taken out of their
+ * ancestor state; a pool tx that spends an input of a block tx leaves with its descendants */
+BOOST_AUTO_TEST_CASE(MempoolRemoveForBlockTest)
+{
+    CTxMemPool pool;
+    TestMemPoolEntryHelper entry;
+    CMutableTransaction txA = MakeTx({}, 10 * COIN);
+    CMutableTransaction txB = MakeTx({COutPoint(txA.GetHash(), 0)}, 9 * COIN);
+    CMutableTransaction txC = MakeTx({}, 8 * COIN);
+    CMutableTransaction txC2 = MakeTx({COutPoint(txC.GetHash(), 0)}, 7 * COIN);
+    CMutableTransaction txX = MakeTx({}, 6 * COIN);
+    CMutableTransaction txD = MakeTx({txC.vin[0].prevout}, 5 * COIN); // in the block, conflicts with C
+    pool.addUnchecked(txA.GetHash(), entry.Fee(1000).FromTx(txA));
+    pool.addUnchecked(txB.GetHash(), entry.Fee(2000).FromTx(txB));
+    pool.addUnchecked(txC.GetHash(), entry.Fee(3000).FromTx(txC));
+    pool.addUnchecked(txC2.GetHash(), entry.Fee(4000).FromTx(txC2));
+    pool.addUnchecked(txX.GetHash(), entry.Fee(5000).FromTx(txX));
+    pool.PrioritiseTransaction(txA.GetHash(), 100);
+    BOOST_CHECK_EQUAL(Entry(pool, txB.GetHash()).GetCountWithAncestors(), 2U);
+
+    pool.removeForBlock({CTransaction(txA), CTransaction(txD)});
+    BOOST_CHECK_EQUAL(pool.size(), 2U);
+    BOOST_CHECK(!pool.exists(txA.GetHash()));
+    BOOST_CHECK(!pool.exists(txC.GetHash()));
+    BOOST_CHECK(!pool.exists(txC2.GetHash()));
+    BOOST_CHECK(pool.exists(txX.GetHash()));
+    BOOST_CHECK_EQUAL(StoredDelta(pool, txA.GetHash()), 0);
+    BOOST_CHECK_EQUAL(Entry(pool, txB.GetHash()).GetCountWithAncestors(), 1U);
+    BOOST_CHECK_EQUAL(Entry(pool, txB.GetHash()).GetSizeWithAncestors(), Size(txB));
+    BOOST_CHECK_EQUAL(Entry(pool, txB.GetHash()).GetModFeesWithAncestors(), 2000);
+    BOOST_CHECK(pool.isSpent(COutPoint(txA.GetHash(), 0)));
+    BOOST_CHECK(!pool.isSpent(txC.vin[0].prevout));
+}
+
+/* With tokens active, a pool tx that issues a name the connected block issues as well
+ * leaves the pool, and its name leaves the maps. It is removed as a block tx is: its
+ * in-pool child stays, with the issue taken out of its ancestor state */
+BOOST_FIXTURE_TEST_CASE(MempoolRemoveForBlockTokensTest, TokenTestingSetup)
+{
+    ValueGuard<::int32_t> activation(nTokenSupportBlockNumber, 0);
+    BOOST_REQUIRE(AreTokensDeployed());
+    CTxMemPool pool;
+    TestMemPoolEntryHelper entry;
+    CMutableTransaction txIssue = MakeTx({}, 10 * COIN);
+    CMutableTransaction txChild = MakeTx({COutPoint(txIssue.GetHash(), 0)}, 9 * COIN);
+    CMutableTransaction txOther = MakeTx({}, 8 * COIN);
+    pool.addUnchecked(txIssue.GetHash(), entry.FromTx(txIssue));
+    pool.addUnchecked(txChild.GetHash(), entry.FromTx(txChild));
+    pool.addUnchecked(txOther.GetHash(), entry.FromTx(txOther));
+    pool.PrioritiseTransaction(txIssue.GetHash(), 100);
+    pool.mapTokenToHash["POOLTOKEN"] = txIssue.GetHash();
+    pool.mapHashToToken[txIssue.GetHash()] = "POOLTOKEN";
+    // A name whose tx is no longer in the pool
+    const uint256 hashGone = InsecureRand256();
+    pool.mapTokenToHash["GONETOKEN"] = hashGone;
+
+    ConnectedBlockTokenData blockData;
+    for (const std::string& name : {"POOLTOKEN", "GONETOKEN", "BLOCKONLY"})
+        blockData.newTokensToAdd.insert(CTokenCacheNewToken(CNewToken(name, 1000 * COIN, 0, 1, 0, ""), TestTokenAddress(), 1, uint256()));
+
+    // The block's own issue is another tx, not in the pool
+    pool.removeForBlock({CTransaction(MakeTx({}, 7 * COIN))}, blockData);
+    BOOST_CHECK_EQUAL(pool.size(), 2U);
+    BOOST_CHECK(!pool.exists(txIssue.GetHash()));
+    BOOST_CHECK(pool.exists(txChild.GetHash()));
+    BOOST_CHECK_EQUAL(Entry(pool, txChild.GetHash()).GetCountWithAncestors(), 1U);
+    BOOST_CHECK(pool.exists(txOther.GetHash()));
+    BOOST_CHECK_EQUAL(StoredDelta(pool, txIssue.GetHash()), 0);
+    BOOST_CHECK(pool.mapHashToToken.empty());
+    BOOST_CHECK_EQUAL(pool.mapTokenToHash.size(), 1U);
+    BOOST_CHECK(pool.mapTokenToHash.at("GONETOKEN") == hashGone);
+
+    // Without token data only the block txs count
+    pool.removeForBlock({CTransaction(MakeTx({}, 6 * COIN))});
+    BOOST_CHECK_EQUAL(pool.size(), 2U);
+}
+
+/* Removal frees a reissue the tx holds and clears the name it issues; a reissue entry whose
+ * name is no longer locked is left as it is */
+BOOST_FIXTURE_TEST_CASE(MempoolRemoveUncheckedTokensTest, TokenTestingSetup)
+{
+    ValueGuard<::int32_t> activation(nTokenSupportBlockNumber, 0);
+    BOOST_REQUIRE(AreTokensDeployed());
+    CTxMemPool pool;
+    TestMemPoolEntryHelper entry;
+    CMutableTransaction txReissue = MakeTx({}, 10 * COIN);
+    CMutableTransaction txIssue = MakeTx({}, 9 * COIN);
+    CMutableTransaction txStale = MakeTx({}, 8 * COIN);
+    for (const CMutableTransaction& tx : {txReissue, txIssue, txStale})
+        pool.addUnchecked(tx.GetHash(), entry.FromTx(tx));
+    const uint256 hashOther = InsecureRand256();
+    mapReissuedTokens["REISSUED"] = txReissue.GetHash();
+    mapReissuedTx[txReissue.GetHash()] = "REISSUED";
+    mapReissuedTokens["OTHER"] = hashOther;
+    mapReissuedTx[hashOther] = "OTHER";
+    mapReissuedTx[txStale.GetHash()] = "FREED";
+    pool.mapTokenToHash["ISSUED"] = txIssue.GetHash();
+    pool.mapHashToToken[txIssue.GetHash()] = "ISSUED";
+
+    pool.removeRecursive(CTransaction(txReissue));
+    BOOST_CHECK_EQUAL(mapReissuedTokens.count("REISSUED"), 0U);
+    BOOST_CHECK_EQUAL(mapReissuedTx.count(txReissue.GetHash()), 0U);
+    BOOST_CHECK(mapReissuedTokens.at("OTHER") == hashOther);
+    BOOST_CHECK_EQUAL(pool.mapTokenToHash.size(), 1U);
+
+    pool.removeRecursive(CTransaction(txIssue));
+    BOOST_CHECK(pool.mapTokenToHash.empty());
+    BOOST_CHECK(pool.mapHashToToken.empty());
+
+    pool.removeRecursive(CTransaction(txStale));
+    BOOST_CHECK_EQUAL(pool.size(), 0U);
+    BOOST_CHECK_EQUAL(mapReissuedTx.at(txStale.GetHash()), "FREED");
+    BOOST_CHECK_EQUAL(mapReissuedTx.size(), 2U);
+    BOOST_CHECK_EQUAL(mapReissuedTokens.size(), 1U);
+}
+
+/* isSpent follows the pool's inputs */
+BOOST_AUTO_TEST_CASE(MempoolIsSpentTest)
+{
+    CTxMemPool pool;
+    TestMemPoolEntryHelper entry;
+    const COutPoint prevout(InsecureRand256(), 0);
+    CMutableTransaction tx = MakeTx({prevout}, COIN);
+    BOOST_CHECK(!pool.isSpent(prevout));
+    pool.addUnchecked(tx.GetHash(), entry.FromTx(tx));
+    BOOST_CHECK(pool.isSpent(prevout));
+    BOOST_CHECK(!pool.isSpent(COutPoint(tx.GetHash(), 0)));
+    BOOST_CHECK(!pool.isSpent(COutPoint(prevout.hash, 1)));
+    pool.DynamicMemoryUsage();
+    pool.removeRecursive(CTransaction(tx));
+    BOOST_CHECK(!pool.isSpent(prevout));
+}
+
+/* After a reorg: txs no longer final in the next block of the active chain, sequence-locked
+ * txs and coinbase spends immature at the given height leave with their descendants */
+BOOST_FIXTURE_TEST_CASE(MempoolRemoveForReorgTest, TestChain100Setup)
+{
+    LOCK2(cs_main, mempool.cs);
+    const int nTip = chainActive.Height();
+    const int nMaturity = GetCoinbaseMaturity();
+    const int flags = STANDARD_LOCKTIME_VERIFY_FLAGS;
+    auto coinbase = [&](int nHeight) { return COutPoint(coinbaseTxns.at(nHeight - 1).GetHash(), 0); };
+    BOOST_REQUIRE_GE(nTip, 3);
+    TestMemPoolEntryHelper entry;
+
+    {
+        // nLockTime against the next block of the active chain
+        CTxMemPool pool;
+        CMutableTransaction txLocked = MakeTx({}, 10 * COIN);
+        txLocked.vin[0].nSequence = CTxIn::SEQUENCE_FINAL - 1;
+        txLocked.nLockTime = nTip + 1;
+        CMutableTransaction txChild = MakeTx({COutPoint(txLocked.GetHash(), 0)}, 9 * COIN);
+        CMutableTransaction txFinal = MakeTx({}, 8 * COIN);
+        txFinal.vin[0].nSequence = CTxIn::SEQUENCE_FINAL - 1;
+        txFinal.nLockTime = nTip;
+        for (const CMutableTransaction& tx : {txLocked, txChild, txFinal})
+            pool.addUnchecked(tx.GetHash(), entry.FromTx(tx));
+        pool.removeForReorg(pcoinsTip, nTip + 1, flags);
+        BOOST_CHECK_EQUAL(pool.size(), 1U);
+        BOOST_CHECK(pool.exists(txFinal.GetHash()));
+    }
+    {
+        // Lock points that are still valid are used as they are
+        CTxMemPool pool;
+        TestMemPoolEntryHelper locked;
+        locked.lp.height = nTip + 1;
+        TestMemPoolEntryHelper unlocked;
+        unlocked.lp.height = nTip;
+        CMutableTransaction txLocked = MakeTx({}, 10 * COIN);
+        CMutableTransaction txUnlocked = MakeTx({}, 9 * COIN);
+        pool.addUnchecked(txLocked.GetHash(), locked.FromTx(txLocked));
+        pool.addUnchecked(txUnlocked.GetHash(), unlocked.FromTx(txUnlocked));
+        pool.removeForReorg(pcoinsTip, nTip + 1, flags);
+        BOOST_CHECK_EQUAL(pool.size(), 1U);
+        BOOST_CHECK(pool.exists(txUnlocked.GetHash()));
+    }
+    {
+        // A coinbase spend is mature at depth nMaturity of the given height
+        CTxMemPool pool;
+        pool.setSanityCheck(1.0);
+        CMutableTransaction tx = MakeTx({coinbase(1)}, COIN);
+        pool.addUnchecked(tx.GetHash(), entry.SpendsCoinbase(true).FromTx(tx));
+        pool.removeForReorg(pcoinsTip, 1 + nMaturity, flags);
+        BOOST_CHECK(pool.exists(tx.GetHash()));
+        pool.removeForReorg(pcoinsTip, nMaturity, flags);
+        BOOST_CHECK(!pool.exists(tx.GetHash()));
+    }
+    {
+        // An input from an in-pool parent is not looked up in the coins (with sanity checks
+        // on, a lookup would find it spent and assert)
+        CTxMemPool pool;
+        pool.setSanityCheck(1.0);
+        CMutableTransaction txParent = MakeTx({coinbase(1)}, COIN);
+        CMutableTransaction txChild = MakeTx({COutPoint(txParent.GetHash(), 0), coinbase(2)}, COIN);
+        pool.addUnchecked(txParent.GetHash(), entry.SpendsCoinbase(true).FromTx(txParent));
+        pool.addUnchecked(txChild.GetHash(), entry.SpendsCoinbase(true).FromTx(txChild));
+        pool.removeForReorg(pcoinsTip, 2 + nMaturity, flags);
+        BOOST_CHECK_EQUAL(pool.size(), 2U);
+        pool.removeForReorg(pcoinsTip, 1 + nMaturity, flags);
+        BOOST_CHECK_EQUAL(pool.size(), 1U);
+        BOOST_CHECK(pool.exists(txParent.GetHash()));
+    }
+    {
+        // With sanity checks off (the default), a spend of a coin that is gone leaves
+        CTxMemPool pool;
+        CMutableTransaction txGone = MakeTx({COutPoint(InsecureRand256(), 0)}, COIN);
+        CMutableTransaction txChild = MakeTx({COutPoint(txGone.GetHash(), 0)}, COIN);
+        CMutableTransaction txMature = MakeTx({coinbase(1)}, COIN);
+        pool.addUnchecked(txGone.GetHash(), entry.SpendsCoinbase(true).FromTx(txGone));
+        pool.addUnchecked(txChild.GetHash(), entry.SpendsCoinbase(false).FromTx(txChild));
+        pool.addUnchecked(txMature.GetHash(), entry.SpendsCoinbase(true).FromTx(txMature));
+        pool.removeForReorg(pcoinsTip, 1 + nMaturity, flags);
+        BOOST_CHECK_EQUAL(pool.size(), 1U);
+        BOOST_CHECK(pool.exists(txMature.GetHash()));
+    }
+    {
+        // Lock points based on a block that is no longer in the chain are computed again,
+        // and the kept tx gets them
+        CTxMemPool pool;
+        CBlockIndex stale;
+        stale.nHeight = 1;
+        BOOST_REQUIRE(!chainActive.Contains(&stale));
+        TestMemPoolEntryHelper old;
+        old.lp.height = nTip + 100;
+        old.lp.maxInputBlock = &stale;
+        CMutableTransaction tx = MakeTx({coinbase(1)}, COIN);
+        tx.vin[0].nSequence = 2; // a relative lock of 2 blocks on the coin at height 1
+        pool.addUnchecked(tx.GetHash(), old.FromTx(tx));
+        pool.removeForReorg(pcoinsTip, nTip + 1, flags);
+        BOOST_REQUIRE(pool.exists(tx.GetHash()));
+        const LockPoints& lp = Entry(pool, tx.GetHash()).GetLockPoints();
+        BOOST_CHECK_EQUAL(lp.height, 2);
+        BOOST_CHECK(lp.maxInputBlock == chainActive[1]);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

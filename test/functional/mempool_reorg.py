@@ -8,6 +8,8 @@ Test re-org scenarios with a mempool that contains transactions
 that spend (directly or indirectly) coinbase transactions.
 """
 
+from decimal import Decimal
+
 from test_framework.blocktools import create_raw_transaction
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
@@ -95,6 +97,50 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
 
         # mempool should be empty.
         assert_equal(set(self.nodes[0].getrawmempool()), set())
+
+        self.test_coinbase_spend_with_in_pool_parent()
+
+    def test_coinbase_spend_with_in_pool_parent(self):
+        """A coinbase spend that is mature only at the current tip and also spends an output
+        of an in-pool parent leaves the mempool when the tip is invalidated; the parent, which
+        spends an older coinbase, stays."""
+        node = self.nodes[0]
+        new_blocks = node.generate(7)
+        self.sync_all(timeout=720)
+        tip = new_blocks[-1]
+        # Coinbases mature at depth 6 of the next block: the one of new_blocks[1] only at the tip
+        coinbase_old, coinbase_new = [node.getblock(h)['tx'][0] for h in new_blocks[:2]]
+        value_old = node.gettxout(coinbase_old, 0)['value']
+        value_new = node.gettxout(coinbase_new, 0)['value']
+        address = node.getnewaddress()
+
+        parent_raw = node.createrawtransaction([{"txid": coinbase_old, "vout": 0}], {address: value_old - Decimal("0.01")})
+        parent_id = node.sendrawtransaction(node.signrawtransaction(parent_raw)["hex"])
+        child_raw = node.createrawtransaction([{"txid": coinbase_new, "vout": 0}, {"txid": parent_id, "vout": 0}],
+                                              {address: value_old + value_new - Decimal("0.02")})
+        child_id = node.sendrawtransaction(node.signrawtransaction(child_raw)["hex"])
+        self.sync_all(timeout=720)
+        assert_equal(set(node.getrawmempool()), {parent_id, child_id})
+
+        for n in self.nodes:
+            n.invalidateblock(tip)
+        for n in self.nodes:
+            assert_equal(set(n.getrawmempool()), {parent_id})
+            assert_equal(n.getbestblockhash(), new_blocks[-2])
+
+        # yacoind has no reconsiderblock: the chain grows back to the old height with a new
+        # block, which confirms the parent; the child doesn't come back
+        height = node.getblockcount()
+        new_tip = node.generatetoaddress(1, node.getnewaddress())[0]
+        assert new_tip != tip
+        self.sync_all(timeout=720)
+        for n in self.nodes:
+            assert_equal(n.getblockcount(), height + 1)
+            assert_equal(n.getbestblockhash(), new_tip)
+            assert_equal(n.getrawmempool(), [])
+        block_txs = node.getblock(new_tip)['tx']
+        assert parent_id in block_txs
+        assert child_id not in block_txs
 
 
 if __name__ == '__main__':
