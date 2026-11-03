@@ -21,7 +21,10 @@
 #include "rpc/server.h"
 #include "rpc/register.h"
 #include "script/sigcache.h"
+#include "sync.h"
+#include "util.h"
 
+#include <map>
 #include <memory>
 
 void CConnmanTest::AddNode(CNode& node)
@@ -34,6 +37,50 @@ void CConnmanTest::ClearNodes()
 {
     LOCK(g_connman->cs_vNodes);
     g_connman->vNodes.clear();
+}
+
+namespace {
+/** ArgsManager offers no way to unset an argument, and its lock and maps are protected. The
+ * product code stays as it is, so pointers to members formed in this derived class reach them
+ * in gArgs. Only ArgGuard uses it. */
+class ArgsAccess : public ArgsManager
+{
+public:
+    static CCriticalSection& Lock() { return gArgs.*(&ArgsAccess::cs_args); }
+    static std::map<std::string, std::string>& MapArgs() { return gArgs.*(&ArgsAccess::mapArgs); }
+    static std::map<std::string, std::vector<std::string> >& MapMultiArgs() { return gArgs.*(&ArgsAccess::mapMultiArgs); }
+};
+} // namespace
+
+ArgGuard::ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg), m_fHadArg(false), m_fHadMultiArg(false)
+{
+    LOCK(ArgsAccess::Lock());
+    const auto it = ArgsAccess::MapArgs().find(m_arg);
+    if (it != ArgsAccess::MapArgs().end()) {
+        m_fHadArg = true;
+        m_value = it->second;
+    }
+    const auto itMulti = ArgsAccess::MapMultiArgs().find(m_arg);
+    if (itMulti != ArgsAccess::MapMultiArgs().end()) {
+        m_fHadMultiArg = true;
+        m_values = itMulti->second;
+    }
+    gArgs.ForceSetArg(m_arg, value);
+}
+
+ArgGuard::~ArgGuard()
+{
+    LOCK(ArgsAccess::Lock());
+    if (m_fHadArg) {
+        ArgsAccess::MapArgs()[m_arg] = m_value;
+    } else {
+        ArgsAccess::MapArgs().erase(m_arg);
+    }
+    if (m_fHadMultiArg) {
+        ArgsAccess::MapMultiArgs()[m_arg] = m_values;
+    } else {
+        ArgsAccess::MapMultiArgs().erase(m_arg);
+    }
 }
 
 uint256 insecure_rand_seed = GetRandHash();

@@ -14,6 +14,9 @@
 #include "txdb.h"
 #include "txmempool.h"
 
+#include <string>
+#include <vector>
+
 #include <boost/thread.hpp>
 
 extern uint256 insecure_rand_seed;
@@ -34,6 +37,25 @@ static inline uint256 InsecureRand256() { return insecure_rand_ctx.rand256(); }
 static inline uint64_t InsecureRandBits(int bits) { return insecure_rand_ctx.randbits(bits); }
 static inline uint64_t InsecureRandRange(uint64_t range) { return insecure_rand_ctx.randrange(range); }
 static inline bool InsecureRandBool() { return insecure_rand_ctx.randbool(); }
+
+/** Sets an argument of gArgs while it lives. On destruction each of gArgs's two maps gets its
+ * entry for the argument back as it was before, or loses it if there was none, so an argument
+ * that was unset is unset again. Both steps hold gArgs's lock. */
+class ArgGuard
+{
+public:
+    ArgGuard(const std::string& arg, const std::string& value);
+    ~ArgGuard();
+    ArgGuard(const ArgGuard&) = delete;
+    ArgGuard& operator=(const ArgGuard&) = delete;
+
+private:
+    const std::string m_arg;
+    bool m_fHadArg;
+    std::string m_value;
+    bool m_fHadMultiArg;
+    std::vector<std::string> m_values;
+};
 
 /** Basic testing setup.
  * This just configures logging and chain parameters.

@@ -130,6 +130,83 @@ public:
     }
 };
 
+// ArgGuard, on an argument nothing else reads
+
+static const std::string ARG_GUARD_TEST = "-argguardtest";
+
+/** The argument has no entry in either map of gArgs (an empty entry counts as one) */
+static bool ArgAbsent(const std::string& strArg)
+{
+    return TestArgsManager::MapArgsOf(gArgs).count(strArg) == 0 && TestArgsManager::MapMultiArgsOf(gArgs).count(strArg) == 0;
+}
+
+BOOST_AUTO_TEST_CASE(argguard_unset_before)
+{
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    {
+        ArgGuard guard(ARG_GUARD_TEST, "value");
+        BOOST_CHECK(gArgs.IsArgSet(ARG_GUARD_TEST));
+        BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "value");
+        BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"value"});
+    }
+    BOOST_CHECK(!gArgs.IsArgSet(ARG_GUARD_TEST));
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "default");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST).empty());
+    BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+}
+
+BOOST_AUTO_TEST_CASE(argguard_set_before)
+{
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    gArgs.ForceSetArg(ARG_GUARD_TEST, "old");
+    {
+        ArgGuard guard(ARG_GUARD_TEST, "new");
+        BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "new");
+        BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"new"});
+    }
+    BOOST_CHECK(gArgs.IsArgSet(ARG_GUARD_TEST));
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "old");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"old"});
+    TestArgsManager::EraseArg(gArgs, ARG_GUARD_TEST);
+}
+
+BOOST_AUTO_TEST_CASE(argguard_multi_value)
+{
+    // Planted as ParseParameters leaves an argument given twice (-argguardtest=a
+    // -argguardtest=b): ParseParameters on gArgs would replace all of its arguments
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    TestArgsManager::MapArgsOf(gArgs)[ARG_GUARD_TEST] = "b";
+    TestArgsManager::MapMultiArgsOf(gArgs)[ARG_GUARD_TEST] = {"a", "b"};
+    const std::vector<std::string> vBefore{"a", "b"};
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "b");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == vBefore);
+    {
+        ArgGuard guard(ARG_GUARD_TEST, "c");
+        BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "c");
+        BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"c"});
+    }
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "b");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == vBefore);
+    TestArgsManager::EraseArg(gArgs, ARG_GUARD_TEST);
+}
+
+BOOST_AUTO_TEST_CASE(argguard_nested)
+{
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    {
+        ArgGuard outer(ARG_GUARD_TEST, "1");
+        {
+            ArgGuard inner(ARG_GUARD_TEST, "2");
+            BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "2");
+            BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"2"});
+        }
+        BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "1");
+        BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"1"});
+    }
+    BOOST_CHECK(!gArgs.IsArgSet(ARG_GUARD_TEST));
+    BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+}
+
 BOOST_AUTO_TEST_CASE(util_ParseParameters)
 {
     TestArgsManager testArgs;
@@ -178,6 +255,31 @@ BOOST_AUTO_TEST_CASE(util_GetArg)
     BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest2", false), false);
     BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest3", false), false);
     BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest4", false), true);
+}
+
+BOOST_AUTO_TEST_CASE(util_SoftSetArg)
+{
+    TestArgsManager testArgs;
+
+    // Unset: set in both maps
+    BOOST_CHECK(testArgs.SoftSetArg("-softtest", "first"));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softtest", "default"), "first");
+    BOOST_CHECK(testArgs.GetArgs("-softtest") == std::vector<std::string>{"first"});
+
+    // Already set: left as it is
+    BOOST_CHECK(!testArgs.SoftSetArg("-softtest", "second"));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softtest", "default"), "first");
+    BOOST_CHECK(testArgs.GetArgs("-softtest") == std::vector<std::string>{"first"});
+
+    // Booleans as "1" and "0", through SoftSetArg
+    BOOST_CHECK(testArgs.SoftSetBoolArg("-softtrue", true));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softtrue", "default"), "1");
+    BOOST_CHECK(testArgs.GetArgs("-softtrue") == std::vector<std::string>{"1"});
+    BOOST_CHECK(testArgs.SoftSetBoolArg("-softfalse", false));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softfalse", "default"), "0");
+    BOOST_CHECK(testArgs.GetArgs("-softfalse") == std::vector<std::string>{"0"});
+    BOOST_CHECK(!testArgs.SoftSetBoolArg("-softfalse", true));
+    BOOST_CHECK_EQUAL(testArgs.GetBoolArg("-softfalse", true), false);
 }
 
 BOOST_AUTO_TEST_CASE(util_FormatMoney)
