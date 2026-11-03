@@ -16,6 +16,7 @@
 #include "core_io.h"
 #include "keystore.h"
 #include "policy/policy.h"
+#include "script/sigcache.h"
 
 #include <boost/test/unit_test.hpp>
 
@@ -295,6 +296,266 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, TestChain100Setup)
         // Should get 2 script checks back -- caching is on a whole-transaction basis.
         BOOST_CHECK_EQUAL(scriptchecks.size(), 2);
     }
+}
+
+namespace {
+
+/** Coins paying to scripts of one key, each from its own funding outpoint,
+ *  and spends of them. Every transaction spends its own coin, so no two
+ *  transactions here share a txid. */
+struct ScriptCheckSetup : public BasicTestingSetup {
+    CCoinsView base;
+    CCoinsViewCache view{&base};
+    CKey key;
+    CScript p2pk;
+    uint8_t nNextCoin = 1;
+
+    ScriptCheckSetup()
+    {
+        key.MakeNewKey(true);
+        p2pk = CScript() << ToByteVector(key.GetPubKey()) << OP_CHECKSIG;
+    }
+
+    COutPoint AddCoin(const CScript& scriptPubKey)
+    {
+        uint256 hash;
+        *hash.begin() = nNextCoin++;
+        COutPoint outpoint(hash, 0);
+        view.AddCoin(outpoint, Coin(CTxOut(COIN, scriptPubKey), 1, false, false, 0), false);
+        return outpoint;
+    }
+
+    /** A transaction spending prevout, without a scriptSig yet. */
+    static CTransaction Spend(const COutPoint& prevout)
+    {
+        CTransaction tx;
+        tx.nVersion = 2;
+        tx.vin.resize(1);
+        tx.vin[0].prevout = prevout;
+        tx.vout.resize(1);
+        tx.vout[0].nValue = COIN - CENT;
+        tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
+        return tx;
+    }
+
+    /** A DER signature by key over hash, without the hash type byte. */
+    std::vector<unsigned char> Sign(const uint256& hash) const
+    {
+        std::vector<unsigned char> vchSig;
+        BOOST_REQUIRE(key.Sign(hash, vchSig));
+        return vchSig;
+    }
+
+    /** A spend of a new P2PK coin; with fValid false the signature is over
+     *  another hash. */
+    CTransaction P2PKSpend(bool fValid)
+    {
+        CTransaction tx = Spend(AddCoin(p2pk));
+        uint256 hash = SignatureHash(p2pk, tx, 0, SIGHASH_ALL);
+        if (!fValid) {
+            hash = uint256S("01");
+        }
+        std::vector<unsigned char> vchSig = Sign(hash);
+        vchSig.push_back((unsigned char)SIGHASH_ALL);
+        tx.vin[0].scriptSig = CScript() << vchSig;
+        return tx;
+    }
+
+    /** CheckInputs on view with script checks on and the signature cache stored. */
+    bool Check(const CTransaction& tx, CValidationState& state, unsigned int flags, bool cacheFullScriptStore,
+               std::vector<CScriptCheck>* pvChecks)
+    {
+        return CheckInputs(tx, state, view, true, flags, true, cacheFullScriptStore, pvChecks);
+    }
+};
+
+const std::string EVAL_FALSE = "Script evaluated without error but finished with a false/empty top stack element";
+
+void CheckRejected(bool fResult, const CValidationState& state, int nDoSExpected, unsigned int nCode, const std::string& strReason)
+{
+    BOOST_CHECK(!fResult);
+    int nDoS = -1;
+    BOOST_CHECK(state.IsInvalid(nDoS));
+    BOOST_CHECK_EQUAL(nDoS, nDoSExpected);
+    BOOST_CHECK_EQUAL(state.GetRejectCode(), nCode);
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), strReason);
+}
+
+} // namespace
+
+BOOST_FIXTURE_TEST_CASE(checkinputs_without_script_checks, ScriptCheckSetup)
+{
+    LOCK(cs_main);
+
+    // A coinbase has no inputs to check: true, nothing pushed, nothing looked up.
+    CTransaction coinbase;
+    coinbase.vin.resize(1);
+    coinbase.vin[0].prevout.SetNull();
+    coinbase.vin[0].scriptSig = CScript() << OP_1 << OP_1;
+    coinbase.vout.resize(1);
+    coinbase.vout[0].nValue = COIN;
+    coinbase.vout[0].scriptPubKey = p2pk;
+    BOOST_REQUIRE(coinbase.IsCoinBase());
+    std::vector<CScriptCheck> checks;
+    CValidationState state;
+    BOOST_CHECK(Check(coinbase, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, &checks));
+    BOOST_CHECK(checks.empty());
+    BOOST_CHECK(state.IsValid());
+
+    // With fScriptChecks false the scripts are not run: a bad signature passes.
+    const CTransaction bad = P2PKSpend(false);
+    BOOST_CHECK(!Check(bad, state, STANDARD_SCRIPT_VERIFY_FLAGS, false, nullptr));
+    CValidationState state2;
+    BOOST_CHECK(CheckInputs(bad, state2, view, false, STANDARD_SCRIPT_VERIFY_FLAGS, true, true, &checks));
+    BOOST_CHECK(checks.empty());
+    BOOST_CHECK(CheckInputs(bad, state2, view, false, STANDARD_SCRIPT_VERIFY_FLAGS, true, true, nullptr));
+    BOOST_CHECK(state2.IsValid());
+}
+
+BOOST_FIXTURE_TEST_CASE(checkinputs_execution_cache_store, ScriptCheckSetup)
+{
+    LOCK(cs_main);
+    const unsigned int flags = STANDARD_SCRIPT_VERIFY_FLAGS;
+    const CTransaction tx = P2PKSpend(true);
+    CValidationState state;
+    std::vector<CScriptCheck> checks;
+
+    // Valid, but cacheFullScriptStore false: not stored, so a later call
+    // returns the input's script check again.
+    BOOST_CHECK(Check(tx, state, flags, false, nullptr));
+    BOOST_CHECK(Check(tx, state, flags, true, &checks));
+    BOOST_CHECK_EQUAL(checks.size(), 1U);
+
+    // With pvChecks the scripts are not run, so nothing is stored either.
+    checks.clear();
+    BOOST_CHECK(Check(tx, state, flags, true, &checks));
+    BOOST_CHECK_EQUAL(checks.size(), 1U);
+
+    // The returned check, run by hand, passes.
+    BOOST_CHECK(checks[0]());
+    BOOST_CHECK_EQUAL(checks[0].GetScriptError(), SCRIPT_ERR_OK);
+
+    // Run inline with cacheFullScriptStore true: stored, and the next call
+    // with the same flags is a cache hit that returns no checks.
+    BOOST_CHECK(Check(tx, state, flags, true, nullptr));
+    checks.clear();
+    BOOST_CHECK(Check(tx, state, flags, true, &checks));
+    BOOST_CHECK(checks.empty());
+
+    // The entry is per flags: other flags miss.
+    BOOST_CHECK(Check(tx, state, SCRIPT_VERIFY_P2SH, true, &checks));
+    BOOST_CHECK_EQUAL(checks.size(), 1U);
+
+    // A lookup with cacheFullScriptStore false is a hit too. It only marks
+    // the entry as one the cache may overwrite, so while the cache has room
+    // the entry is still found.
+    checks.clear();
+    BOOST_CHECK(Check(tx, state, flags, false, &checks));
+    BOOST_CHECK(checks.empty());
+    BOOST_CHECK(Check(tx, state, flags, true, &checks));
+    BOOST_CHECK(checks.empty());
+    BOOST_CHECK(state.IsValid());
+
+    // A transaction with two inputs gives one check per input.
+    CTransaction two = Spend(AddCoin(CScript() << OP_TRUE));
+    two.vin.emplace_back(AddCoin(CScript() << OP_TRUE));
+    checks.clear();
+    BOOST_CHECK(Check(two, state, flags, true, &checks));
+    BOOST_CHECK_EQUAL(checks.size(), 2U);
+    BOOST_CHECK(checks[0]() && checks[1]());
+}
+
+BOOST_FIXTURE_TEST_CASE(checkinputs_reject_reasons, ScriptCheckSetup)
+{
+    LOCK(cs_main);
+
+    // A script that fails only under the standard-but-not-mandatory CLTV
+    // flag: without the flag OP_CHECKLOCKTIMEVERIFY is a NOP.
+    BOOST_REQUIRE(STANDARD_NOT_MANDATORY_VERIFY_FLAGS & SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY);
+    CTransaction cltv = Spend(AddCoin(CScript() << 100 << OP_CHECKLOCKTIMEVERIFY << OP_DROP << OP_TRUE));
+    cltv.nLockTime = 0;
+    cltv.vin[0].nSequence = 0;
+    {
+        CValidationState state;
+        bool fResult = Check(cltv, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, nullptr);
+        CheckRejected(fResult, state, 0, REJECT_NONSTANDARD,
+                      "non-mandatory-script-verify-flag (Locktime requirement not satisfied)");
+        CValidationState state2;
+        BOOST_CHECK(Check(cltv, state2, MANDATORY_SCRIPT_VERIFY_FLAGS, true, nullptr));
+    }
+
+    // A bad signature fails the mandatory flags too: DoS 100, with the
+    // standard flags set and with no flags at all.
+    const CTransaction bad = P2PKSpend(false);
+    for (unsigned int flags : {STANDARD_SCRIPT_VERIFY_FLAGS, (unsigned int)SCRIPT_VERIFY_NONE}) {
+        CValidationState state;
+        bool fResult = Check(bad, state, flags, true, nullptr);
+        CheckRejected(fResult, state, 100, REJECT_INVALID, "mandatory-script-verify-flag-failed (" + EVAL_FALSE + ")");
+    }
+
+    // With pvChecks the failure shows only when the check runs.
+    std::vector<CScriptCheck> checks;
+    CValidationState state;
+    BOOST_CHECK(Check(bad, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, &checks));
+    BOOST_REQUIRE_EQUAL(checks.size(), 1U);
+    BOOST_CHECK(!checks[0]());
+    BOOST_CHECK_EQUAL(checks[0].GetScriptError(), SCRIPT_ERR_EVAL_FALSE);
+    BOOST_CHECK(state.IsValid());
+}
+
+BOOST_FIXTURE_TEST_CASE(signature_cache, ScriptCheckSetup)
+{
+    const CTransaction tx = P2PKSpend(true);
+    const uint256 sighash = SignatureHash(p2pk, tx, 0, SIGHASH_ALL);
+    const std::vector<unsigned char> vchSig = Sign(sighash);
+    const std::vector<unsigned char> vchOther = Sign(uint256S("02"));
+    const CPubKey pubkey = key.GetPubKey();
+
+    for (bool store : {false, true}) {
+        CachingTransactionSignatureChecker checker(&tx, 0, store);
+        BOOST_CHECK(checker.VerifySignature(vchSig, pubkey, sighash));
+        BOOST_CHECK(checker.VerifySignature(vchSig, pubkey, sighash));
+        // An invalid signature is never stored: it fails every time.
+        BOOST_CHECK(!checker.VerifySignature(vchOther, pubkey, sighash));
+        BOOST_CHECK(!checker.VerifySignature(vchOther, pubkey, sighash));
+    }
+    // After a stored check, a lookup without storing still verifies.
+    BOOST_CHECK(CachingTransactionSignatureChecker(&tx, 0, false).VerifySignature(vchSig, pubkey, sighash));
+    BOOST_CHECK(!CachingTransactionSignatureChecker(&tx, 0, true).VerifySignature(vchSig, CPubKey(), sighash));
+}
+
+BOOST_FIXTURE_TEST_CASE(cache_sizes_zero, ScriptCheckSetup)
+{
+    LOCK(cs_main);
+    BOOST_CHECK(!gArgs.IsArgSet("-maxsigcachesize"));
+    {
+        // -maxsigcachesize=0 gives the smallest caches, which still work.
+        ArgGuard size("-maxsigcachesize", "0");
+        InitSignatureCache();
+        InitScriptExecutionCache();
+
+        const CTransaction tx = P2PKSpend(true);
+        const uint256 sighash = SignatureHash(p2pk, tx, 0, SIGHASH_ALL);
+        const std::vector<unsigned char> vchSig = Sign(sighash);
+        BOOST_CHECK(CachingTransactionSignatureChecker(&tx, 0, true).VerifySignature(vchSig, key.GetPubKey(), sighash));
+        BOOST_CHECK(CachingTransactionSignatureChecker(&tx, 0, false).VerifySignature(vchSig, key.GetPubKey(), sighash));
+
+        CValidationState state;
+        std::vector<CScriptCheck> checks;
+        BOOST_CHECK(Check(tx, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, nullptr));
+        BOOST_CHECK(Check(tx, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, &checks));
+        BOOST_CHECK(checks.empty());
+    }
+    // Back to the default sizes for the cases that follow.
+    BOOST_CHECK(!gArgs.IsArgSet("-maxsigcachesize"));
+    InitSignatureCache();
+    InitScriptExecutionCache();
+    const CTransaction tx = P2PKSpend(true);
+    CValidationState state;
+    std::vector<CScriptCheck> checks;
+    BOOST_CHECK(Check(tx, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, nullptr));
+    BOOST_CHECK(Check(tx, state, STANDARD_SCRIPT_VERIFY_FLAGS, true, &checks));
+    BOOST_CHECK(checks.empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
