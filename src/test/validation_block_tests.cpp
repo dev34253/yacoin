@@ -2,10 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Block validation paths: the rules TestBlockValidity applies, connecting and
-// invalidating blocks (DisconnectBlock), blocks that fail while being connected
-// (InvalidBlockFound), VerifyDB, and ReplayBlocks after an interrupted flush
-// (RollforwardBlock).
+// Block validation paths: the rules TestBlockValidity applies (relative time
+// locks included), connecting and invalidating blocks (DisconnectBlock), blocks
+// that fail while being connected (InvalidBlockFound), VerifyDB, and ReplayBlocks
+// after an interrupted flush (RollforwardBlock) and without usable undo data.
 //
 // Note: script checks only run above the last checkpoint (fScriptChecks), and
 // the checkpoint map is mainnet's, so signatures aren't verified here.
@@ -477,6 +477,114 @@ BOOST_AUTO_TEST_CASE(replay_heads)
     BOOST_CHECK(!ReplayBlocks(Params(), &view));
     view.heads = {Tip()->GetBlockHash()};
     BOOST_CHECK(!ReplayBlocks(Params(), &view));
+}
+
+/* A relative lock in seconds (YaCoin counts them one by one) is checked in ConnectBlock,
+ * where the heights of the spent coins are known */
+BOOST_AUTO_TEST_CASE(relative_time_lock)
+{
+    const uint32_t nSeconds = 30 * 24 * 60 * 60;
+    // The newest mature coinbase: its block's predecessor is far less than 30 days before the tip
+    CTransaction locked = Spend(matureCoinbases.back(), 0, CENT, [&](CMutableTransaction& tx) {
+        tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | nSeconds;
+    });
+    BOOST_REQUIRE_EQUAL(locked.nLockTime, 0U);
+    BOOST_CHECK_EQUAL(Validity(BuildBlock({locked})), "bad-txns-nonfinal");
+
+    // The coinbase of block 1 was created more than a second after the genesis block
+    CTransaction met = Spend(matureCoinbases[0], 0, CENT, [&](CMutableTransaction& tx) {
+        tx.vin[0].nSequence = CTxIn::SEQUENCE_LOCKTIME_TYPE_FLAG | 1;
+    });
+    BOOST_CHECK_EQUAL(Validity(BuildBlock({met})), "");
+}
+
+/** Append an undo record for pindex to its undo file, as ConnectBlock writes it (with a
+ *  wrong checksum if fCorrupt), and point pindex at it */
+static void WriteUndo(CBlockIndex* pindex, const CBlockUndo& blockundo, bool fCorrupt = false)
+{
+    CDiskBlockPos pos(pindex->nFile, 0);
+    CAutoFile file(fsbridge::fopen(GetBlockPosFilename(pos, "rev"), "ab"), SER_DISK, CLIENT_VERSION);
+    BOOST_REQUIRE(!file.IsNull());
+    BOOST_REQUIRE(fseek(file.Get(), 0, SEEK_END) == 0);
+    unsigned int nSize = GetSerializeSize(file, blockundo);
+    file << FLATDATA(Params().MessageStart()) << nSize;
+    long nPos = ftell(file.Get());
+    BOOST_REQUIRE(nPos > 0);
+    file << blockundo;
+    CHashWriter hasher(SER_GETHASH, PROTOCOL_VERSION);
+    hasher << pindex->pprev->GetBlockHash() << blockundo;
+    uint256 hash = hasher.GetHash();
+    if (fCorrupt) *hash.begin() ^= 1;
+    file << hash;
+    pindex->nUndoPos = nPos;
+}
+
+/* Rolling back a block without usable undo data fails, and the view is left as it was */
+BOOST_AUTO_TEST_CASE(replay_without_undo_data)
+{
+    const CTransaction& cb = matureCoinbases[0];
+    const COutPoint spent(cb.GetHash(), 0);
+    Coin tipCoin;
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(pcoinsTip->GetCoin(spent, tipCoin));
+    }
+    BOOST_REQUIRE(Submit(BuildBlock({Spend(cb)})));
+    CBlockIndex* pindexX = Tip();
+    UtxoSnapshot atX(pcoinsdbview);
+    LOCK(cs_main);
+    const unsigned int nUndoPos = pindexX->nUndoPos;
+    BOOST_REQUIRE(pindexX->nStatus & BLOCK_HAVE_UNDO);
+
+    auto rollback = [&]() {
+        HeadsView view(&atX.coins);
+        view.heads = {pindexX->pprev->GetBlockHash(), pindexX->GetBlockHash()};
+        return ReplayBlocks(Params(), &view);
+    };
+    auto unchanged = [&]() {
+        BOOST_CHECK(!atX.coins.HaveCoin(spent));
+        BOOST_CHECK(atX.coins.GetBestBlock() == pindexX->GetBlockHash());
+    };
+
+    // No undo data
+    pindexX->nStatus &= ~BLOCK_HAVE_UNDO;
+    BOOST_CHECK(!rollback());
+    unchanged();
+    pindexX->nStatus |= BLOCK_HAVE_UNDO;
+
+    // The undo record of the block's one spend
+    CBlockUndo good;
+    good.vtxundo.resize(1);
+    good.vtxundo[0].vprevout.push_back(tipCoin);
+
+    // Wrong checksum
+    WriteUndo(pindexX, good, true);
+    BOOST_CHECK(!rollback());
+    unchanged();
+
+    // Undo data for a different number of transactions
+    WriteUndo(pindexX, CBlockUndo());
+    BOOST_CHECK(!rollback());
+    unchanged();
+
+    // Undo data for a different number of inputs
+    CBlockUndo twoInputs = good;
+    twoInputs.vtxundo[0].vprevout.push_back(tipCoin);
+    WriteUndo(pindexX, twoInputs);
+    BOOST_CHECK(!rollback());
+    unchanged();
+
+    // The same record with the right checksum rolls the block back
+    WriteUndo(pindexX, good);
+    BOOST_CHECK(rollback());
+    const Coin& restored = atX.coins.AccessCoin(spent);
+    BOOST_CHECK(restored.out == tipCoin.out);
+    BOOST_CHECK_EQUAL(restored.nHeight, tipCoin.nHeight);
+    BOOST_CHECK_EQUAL(restored.fCoinBase, tipCoin.fCoinBase);
+    BOOST_CHECK_EQUAL(restored.fCoinStake, tipCoin.fCoinStake);
+    BOOST_CHECK_EQUAL(restored.nTime, tipCoin.nTime);
+    BOOST_CHECK(atX.coins.GetBestBlock() == pindexX->pprev->GetBlockHash());
+    pindexX->nUndoPos = nUndoPos;
 }
 
 BOOST_AUTO_TEST_SUITE_END()
