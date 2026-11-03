@@ -14,6 +14,10 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <map>
+#include <utility>
+
 BOOST_FIXTURE_TEST_SUITE(pow_tests, TestingSetup)
 
 /* Test calculation of next difficulty target with no constraints applying */
@@ -318,6 +322,213 @@ BOOST_AUTO_TEST_CASE(calculate_next_work_floor_from_active_chain_other_branch)
 
     unsigned int nBits = CalculateNextWorkRequired(pindexOther, pindexOther->GetBlockTime() - 100 * 10 * SPACING, Params().GetConsensus());
     KNOWN_FAILURE_EQUAL("MG-022", Bits(nBits), Bits(ScaledBits(NBITS_EASY, 3, 1)), Bits(ScaledBits(NBITS_HARD, 3, 1)));
+}
+
+static const ::int64_t ONE_DAY = 24 * 60 * 60;
+// Easiest proof-of-stake target: ~uint256(0) >> 30
+static const unsigned int NBITS_POS_LIMIT = 0x1d03ffff;
+
+/** A proof-of-stake block on top of pprev */
+static CBlockIndex* AddStake(SyntheticChain& chain, CBlockIndex* pprev, ::int64_t nTime, unsigned int nBits)
+{
+    CBlockIndex* pindex = chain.Add(pprev, nTime, nBits);
+    pindex->SetProofOfStake();
+    return pindex;
+}
+
+/* ComputeMinWork: the base target doubled, then doubled once more per started
+ * day, capped at powLimit */
+BOOST_AUTO_TEST_CASE(compute_min_work)
+{
+    const CBigNum& bnLimit = Params().GetConsensus().powLimit;
+    const unsigned int nLimitBits = bnLimit.GetCompact();
+    const unsigned int nBase = (bnLimit / 1024).GetCompact();
+
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, 0), ScaledBits(nBase, 2, 1));
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, -ONE_DAY), ScaledBits(nBase, 2, 1));
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, 1), ScaledBits(nBase, 4, 1));
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, ONE_DAY), ScaledBits(nBase, 4, 1));
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, ONE_DAY + 1), ScaledBits(nBase, 8, 1));
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, 2 * ONE_DAY), ScaledBits(nBase, 8, 1));
+    // Nine days: 2^10 times the base, still below powLimit
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, 9 * ONE_DAY), ScaledBits(nBase, 1024, 1));
+    // Ten days and more: capped at powLimit
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, 10 * ONE_DAY), nLimitBits);
+    BOOST_CHECK_EQUAL(ComputeMinWork(nBase, 365 * ONE_DAY), nLimitBits);
+
+    // A base at the limit stays at the limit
+    BOOST_CHECK_EQUAL(ComputeMinWork(nLimitBits, 0), nLimitBits);
+    BOOST_CHECK_EQUAL(ComputeMinWork(nLimitBits, ONE_DAY), nLimitBits);
+
+    BOOST_CHECK_EQUAL(ComputeMinWork(NBITS_HARD, 0), 0x1c1ffffeU);
+    BOOST_CHECK_EQUAL(ComputeMinWork(NBITS_HARD, ONE_DAY), 0x1c3ffffcU);
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    BOOST_CHECK_EQUAL(nLimitBits, 0x1e0fffffU);
+#endif
+}
+
+/* ComputeMinStake: as ComputeMinWork, capped at the proof-of-stake limit
+ * whatever the block time */
+BOOST_AUTO_TEST_CASE(compute_min_stake)
+{
+    for (unsigned int nBlockTime : {0U, 1700000000U, 0xffffffffU}) {
+        // A base above the limit
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_EASY, 0, nBlockTime), NBITS_POS_LIMIT);
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_EASY, 30 * ONE_DAY, nBlockTime), NBITS_POS_LIMIT);
+        // At the limit
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_POS_LIMIT, ONE_DAY, nBlockTime), NBITS_POS_LIMIT);
+        // Below the limit: doubles per day until it reaches it
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_HARD, 0, nBlockTime), ScaledBits(NBITS_HARD, 2, 1));
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_HARD, ONE_DAY, nBlockTime), ScaledBits(NBITS_HARD, 4, 1));
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_HARD, 2 * ONE_DAY, nBlockTime), ScaledBits(NBITS_HARD, 8, 1));
+        BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_HARD, 30 * ONE_DAY, nBlockTime), NBITS_POS_LIMIT);
+    }
+    BOOST_CHECK_EQUAL(ComputeMinStake(NBITS_HARD, 0, 0), 0x1c1ffffeU);
+}
+
+/* GetLastBlockIndex walks back to the last block of the asked type; with no
+ * such block it stops at the start of the chain */
+BOOST_AUTO_TEST_CASE(get_last_block_index)
+{
+    SyntheticChain chain;
+    CBlockIndex* pindexWork = chain.Extend(nullptr, 3, SPACING, NBITS_EASY);
+    BOOST_CHECK(GetLastBlockIndex(pindexWork, false) == pindexWork);
+    BOOST_CHECK(GetLastBlockIndex(pindexWork, true) == chain.Genesis());
+
+    CBlockIndex* pindexStake = AddStake(chain, pindexWork, pindexWork->GetBlockTime() + SPACING, NBITS_POS_LIMIT);
+    pindexStake = AddStake(chain, pindexStake, pindexStake->GetBlockTime() + SPACING, NBITS_POS_LIMIT);
+    BOOST_CHECK(GetLastBlockIndex(pindexStake, true) == pindexStake);
+    BOOST_CHECK(GetLastBlockIndex(pindexStake, false) == pindexWork);
+    BOOST_CHECK(GetLastBlockIndex(nullptr, false) == nullptr);
+    BOOST_CHECK(GetLastBlockIndex(chain.Genesis(), true) == chain.Genesis());
+}
+
+/* Before the fork, a proof-of-work block after k proof-of-stake blocks is
+ * retargeted from the last two proof-of-work blocks, with a target spacing of
+ * 60 * (1 + k) seconds, at most 720 s */
+BOOST_AUTO_TEST_CASE(next_target_pre_fork_work_after_stake)
+{
+    ConsensusGlobalsGuard globals;
+    globals.Set(1000, 10);
+    SyntheticChain chain;
+    CBlockIndex* pindexWork4 = chain.Extend(nullptr, 4, SPACING, NBITS_HARD);
+    // The last proof-of-work block came 90 s after the one before it
+    const ::int64_t nActualSpacing = 90;
+    CBlockIndex* pindexWork5 = chain.Add(pindexWork4, pindexWork4->GetBlockTime() + nActualSpacing, NBITS_EASY);
+
+    std::map<int, unsigned int> mapExpected;
+    CBlockIndex* pindexStake = pindexWork5;
+    for (int k = 1; k <= 14; k++) {
+        pindexStake = AddStake(chain, pindexStake, pindexStake->GetBlockTime() + SPACING, NBITS_POS_LIMIT);
+        const ::int64_t nTargetSpacing = std::min((::int64_t)720, (::int64_t)60 * (1 + k));
+        const ::int64_t nInterval = 7 * 24 * 60 * 60 / nTargetSpacing;
+        // From the last proof-of-work block's nBits, not the proof-of-stake tip's
+        unsigned int nBits = GetNextTargetRequired(pindexStake, false);
+        BOOST_CHECK_EQUAL(nBits, ScaledBits(NBITS_EASY, (nInterval - 1) * nTargetSpacing + 2 * nActualSpacing,
+                                            (nInterval + 1) * nTargetSpacing));
+        mapExpected[k] = nBits;
+    }
+    // Spacing 120 s, 360 s, then 720 s from 11 proof-of-stake blocks on
+    BOOST_CHECK_EQUAL(mapExpected[1], 0x1d0fff96U);
+    BOOST_CHECK_EQUAL(mapExpected[5], 0x1d0ffc57U);
+    BOOST_CHECK_EQUAL(mapExpected[11], 0x1d0ff779U);
+    BOOST_CHECK_EQUAL(mapExpected[12], 0x1d0ff779U);
+    BOOST_CHECK_EQUAL(mapExpected[14], 0x1d0ff779U);
+}
+
+/* Before the fork, a proof-of-stake block is retargeted from the last two
+ * proof-of-stake blocks with a 60 s spacing, capped at the proof-of-stake limit */
+BOOST_AUTO_TEST_CASE(next_target_pre_fork_stake)
+{
+    ConsensusGlobalsGuard globals;
+    globals.Set(1000, 10);
+    SyntheticChain chain;
+    const Consensus::Params& params = Params().GetConsensus();
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(nullptr, true), NBITS_POS_LIMIT);
+
+    CBlockIndex* pindexWork = chain.Extend(nullptr, 4, SPACING, NBITS_EASY);
+    // No proof-of-stake block yet, then only one: initialHashTarget
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexWork, true), params.initialHashTarget.GetCompact());
+    CBlockIndex* pindexStake = AddStake(chain, pindexWork, pindexWork->GetBlockTime() + SPACING, NBITS_HARD);
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexStake, true), params.initialHashTarget.GetCompact());
+
+    // A fast proof-of-stake block (30 s): the target falls
+    CBlockIndex* pindexFast = AddStake(chain, pindexStake, pindexStake->GetBlockTime() + SPACING / 2, NBITS_HARD);
+    const ::int64_t nInterval = 7 * 24 * 60 * 60 / SPACING;
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexFast, true),
+                      ScaledBits(NBITS_HARD, (nInterval - 1) * SPACING + SPACING, (nInterval + 1) * SPACING));
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexFast, true), 0x1c0fff96U);
+    // A proof-of-work block after it doesn't change the proof-of-stake target
+    CBlockIndex* pindexWorkAfter = chain.Add(pindexFast, pindexFast->GetBlockTime() + SPACING, NBITS_EASY);
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexWorkAfter, true), 0x1c0fff96U);
+
+    // At the limit and slow (600 s): stays at the limit
+    CBlockIndex* pindexLimit = AddStake(chain, pindexFast, pindexFast->GetBlockTime() + SPACING, NBITS_POS_LIMIT);
+    pindexLimit = AddStake(chain, pindexLimit, pindexLimit->GetBlockTime() + 10 * SPACING, NBITS_POS_LIMIT);
+    // Uncapped, the target would be above the limit
+    CBigNum bnUncapped;
+    bnUncapped.SetCompact(ScaledBits(NBITS_POS_LIMIT, (nInterval - 1) * SPACING + 20 * SPACING, (nInterval + 1) * SPACING));
+    BOOST_CHECK(bnUncapped > CBigNum(~uint256(0) >> 30));
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexLimit, true), NBITS_POS_LIMIT);
+}
+
+/** Appends nDifficultyInterval proof-of-work blocks with nBits after pprev; the last one gets nTimeLast */
+static CBlockIndex* AddEpoch(SyntheticChain& chain, CBlockIndex* pprev, ::int64_t nTimeLast, unsigned int nBits)
+{
+    const ::int64_t nSpacing = (nTimeLast - pprev->GetBlockTime()) / nDifficultyInterval;
+    CBlockIndex* pindex = chain.Extend(pprev, nDifficultyInterval - 1, nSpacing, nBits);
+    return chain.Add(pindex, nTimeLast, nBits);
+}
+
+/* The retargets at the real epoch boundaries 1911000, 1932000 and 1953000, from
+ * the times of the last block before each boundary (mainnet reference node,
+ * master commit 6d723834; every block from 1890000 on has nBits 0x1e0fffff).
+ * Each epoch took far more than four times the nominal 21000 minutes, so the
+ * timespan is clamped and the new target capped: 0x1e0fffff (powLimit) again. */
+BOOST_AUTO_TEST_CASE(next_target_mainnet_epoch_boundaries)
+{
+    ConsensusGlobalsGuard globals;
+    globals.Set(1890000, 21000);
+    SyntheticChain chain;
+    const Consensus::Params& params = Params().GetConsensus();
+    const unsigned int MAINNET_BITS = 0x1e0fffff;
+
+    // Blocks 1889998 and 1889999, the last before the fork, directly on genesis
+    // (with only genesis below, block 1889999 would count as the second block of
+    // the chain and get initialHashTarget)
+    CBlockIndex* pindexLast = chain.Add(nullptr, 1619045956 - 60, MAINNET_BITS);
+    pindexLast->nHeight = 1889998;
+    pindexLast = chain.Add(pindexLast, 1619045956, MAINNET_BITS);
+    BOOST_CHECK_EQUAL(pindexLast->nHeight, 1889999);
+    BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexLast, false), params.powLimit.GetCompact());
+
+    // Expected on any build: four times the previous target, capped at three times
+    // the highest difficulty since the fork and at powLimit
+    CBigNum bnExpected = CBigNum().SetCompact(MAINNET_BITS) * 4;
+    bnExpected = std::min(bnExpected, std::min(CBigNum().SetCompact(MAINNET_BITS) * 3, params.powLimit));
+
+    // Last block before 1911000, 1932000, 1953000: height, time
+    const std::pair<int, ::int64_t> boundaries[] = {
+        {1910999, 1681853461},
+        {1931999, 1719202031},
+        {1952999, 1756476341},
+    };
+    for (const auto& boundary : boundaries) {
+        const ::int64_t nTimeFirst = pindexLast->GetBlockTime();
+        pindexLast = AddEpoch(chain, pindexLast, boundary.second, MAINNET_BITS);
+        chain.Register(pindexLast);
+        BOOST_CHECK_EQUAL(pindexLast->nHeight, boundary.first);
+        BOOST_CHECK(boundary.second - nTimeFirst > 4 * 21000 * params.nPowTargetSpacing);
+
+        unsigned int nBits = GetNextTargetRequired(pindexLast, false);
+        BOOST_CHECK_EQUAL(nBits, bnExpected.GetCompact());
+        BOOST_CHECK_EQUAL(nBits, CalculateNextWorkRequired(pindexLast, nTimeFirst, params));
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+        BOOST_CHECK_EQUAL(nBits, MAINNET_BITS);
+#endif
+        // Inside the epoch the target stays
+        BOOST_CHECK_EQUAL(GetNextTargetRequired(pindexLast->pprev, false), MAINNET_BITS);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(check_proof_of_work)

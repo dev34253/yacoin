@@ -8,12 +8,15 @@
 Mine 39 blocks with epochinterval=10 and check, after every block, that the
 coinbase pays the reward computed from the money supply at the end of the
 previous epoch, the block value (getmininginfo, which should equal
-getsubsidy, the next block's reward), the difficulty, and the money supply
-after each epoch. Then a transaction fee is burned: the coinbase doesn't claim it
-and the money supply grows by the reward minus the fee.
+getsubsidy, the next block's reward), the difficulty, the money supply after
+each epoch, the size and sigops limits getblocktemplate gives for the next
+block (from that block's reward), and that the block's nBits only change on
+the first block of an epoch (and on block 1). Then a transaction fee is burned:
+the coinbase doesn't claim it and the money supply grows by the reward minus
+the fee.
 """
 
-from test_framework.blocktools import TIME_GENESIS_BLOCK, epoch_reward
+from test_framework.blocktools import TIME_GENESIS_BLOCK, epoch_reward, get_template
 from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import TestNode
@@ -22,6 +25,12 @@ from test_framework.util import (
     assert_equal,
 )
 from test_framework.yac_tx import key_from_wif, p2pkh_script, sign_p2pkh_input
+
+
+# Fee unit of the block size limit (MIN_TX_FEE, 0.01 YAC) and the pre-fork
+# block size (MAX_GENESIS_BLOCK_SIZE)
+MIN_TX_FEE = 10000
+MAX_GENESIS_BLOCK_SIZE = 1000000
 
 
 class EpochTest(BitcoinTestFramework):
@@ -42,11 +51,29 @@ class EpochTest(BitcoinTestFramework):
         coinbase = self.nodes[0].getblock(block_hash, 2)['tx'][0]
         return sum(int(out['value'] * COIN) for out in coinbase['vout'])
 
+    def check_limits_and_bits(self, block_hash, height):
+        """Block limits of the next block from its reward, nBits constant inside
+        an epoch"""
+        node = self.nodes[0]
+        interval = node.getmininginfo()['Epoch Interval']
+        template = get_template(node)
+        assert_equal(template['height'], height + 1)
+        size_limit = self.expected_reward(height + 1) * 1000 // MIN_TX_FEE
+        assert_equal(template['sizelimit'], size_limit)
+        assert_equal(template['sigoplimit'], max(size_limit, MAX_GENESIS_BLOCK_SIZE) // 50)
+        bits = node.getblock(block_hash)['bits']
+        # Blocks 1 and 2 get initialHashTarget, after the genesis block's powLimit
+        if height % interval != 0 and height > 1:
+            assert_equal(bits, node.getblock(node.getblockhash(height - 1))['bits'])
+        if (height + 1) % interval != 0:
+            assert_equal(template['bits'], bits)
+
     def mine_blocks(self, n, blockvalue, moneysupply_at_end, difficulty):
         node = self.nodes[0]
         for _ in range(n):
             block_hash = self.mine_with_mocktime(node, 1, spacing=120, sync=False)[0]
             height = node.getblockcount()
+            self.check_limits_and_bits(block_hash, height)
             reward = self.expected_reward(height)
             assert_equal(self.coinbase_value(block_hash), reward)
             assert_equal(int(node.getblock(block_hash)['mint'] * COIN), reward)

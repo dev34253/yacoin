@@ -1,13 +1,12 @@
 {
   "tolerance": 0.1,
-  "overall": {"unit_lines": 55.9},
+  "overall": {"unit_lines": 56.0},
   "tiers": {
     "tier-1": {"unit_lines": 90.0, "unit_branches": 70.0},
     "tier-2": {"all_lines": 90.0, "unit_lines": 50.0}
   },
   "files": [
     {"group": "tier-1", "file": "src/validation.cpp", "target": "tier-1", "met": false},
-    {"group": "tier-1", "file": "src/pow.cpp", "target": "tier-1", "met": false},
     {"group": "tier-1", "file": "src/primitives/block.cpp", "target": "tier-1", "met": false},
     {"group": "tier-1", "file": "src/consensus/tx_verify.cpp", "target": "tier-1", "met": false},
     {"group": "tier-1", "file": "src/coins.cpp", "target": "tier-1", "met": false},
@@ -22,6 +21,7 @@
     {"group": "guarded", "file": "src/scrypt.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/kernel.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/primitives/block.h", "target": "tier-1", "met": true},
+    {"group": "guarded", "file": "src/pow.cpp", "target": "tier-1", "met": true},
     {"group": "tier-2", "file": "src/wallet/wallet.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/wallet/crypter.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/wallet/walletdb.cpp", "target": "tier-2", "met": false},
