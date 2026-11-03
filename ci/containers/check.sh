@@ -4,7 +4,8 @@
 # Usage: ci/containers/check.sh [--steps LIST] [image...]
 #
 # Steps (default: lint,tag,static,build,smoke,ccache; all images by default):
-#   lint    bash -n and shellcheck --severity=warning on the scripts here
+#   lint    bash -n and shellcheck --severity=warning on the scripts here, and
+#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE)
 #   tag     test-image-tag.sh: the image tags (image-tag.sh) and the CI
 #           workflow's use of them
 #   static  every Dockerfile pins its base image by digest and sets
@@ -84,6 +85,22 @@ step_lint() {
     done
     (cd "$HERE" && shellcheck_cmd -x --severity=warning "${scripts[@]}") &&
         pass "lint: shellcheck ${scripts[*]}" || fail "lint: shellcheck"
+    # Under pipefail, grep -q at the end of a pipe may exit on the first
+    # match, the command before it gets SIGPIPE and the pipe reads as no
+    # match. A pipe continued on the next line counts too; comments do not.
+    local piped
+    piped=$(cd "$HERE" && awk '
+        FNR == 1 { prev = "" }
+        { line = $0; if (prev ~ /(^|[^|])\|[[:space:]]*$/) line = "|" line; prev = $0 }
+        $0 !~ /^[[:space:]]*#/ &&
+        line ~ /(^|[^|])\|[[:space:]]*grep[[:space:]]+(-[A-Za-z]+[[:space:]]+)*(-[A-Za-z]*q|--quiet|--silent)/ {
+            print FILENAME ":" FNR ": " $0
+        }' "${scripts[@]}")
+    if [[ -z "$piped" ]]; then
+        pass "lint: no grep -q at the end of a pipe"
+    else
+        while read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$piped"
+    fi
 }
 
 step_tag() {
