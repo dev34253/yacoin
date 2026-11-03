@@ -9,7 +9,10 @@
   the target in little-endian order; the constant hash1.
 - A solution (found through calculatescrypthash) is accepted: the stored
   header has the submitted nonce and time, the coinbase pays the wallet's
-  key (P2PK) and the block is signed. A rolled nTime is accepted too.
+  key (P2PK) and the block is signed with that key over the block hash. A
+  rolled nTime is accepted too.
+- Every block is proof of work; getblock shows no signature for them, and
+  blocks from generate are not signed.
 - False for a stale solution, a hash above the target and unknown work;
   argument errors.
 - Two solutions of the same work submitted at the same time.
@@ -23,7 +26,7 @@ import copy
 import threading
 
 from test_framework.authproxy import JSONRPCException
-from test_framework.blocktools import solve_block
+from test_framework.blocktools import block_signer, solve_block
 from test_framework.messages import CBlock, CBlockHeader, FromHex, uint256_from_compact
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -74,7 +77,11 @@ class GetWorkTest(BitcoinTestFramework):
 
     def run_test(self):
         node = self.nodes[0]
-        self.mine_with_mocktime(node, 20)
+        hashes = self.mine_with_mocktime(node, 20)
+        self.log.info("Blocks from generate: proof of work, not signed")
+        for block_hash in hashes:
+            self.assert_proof_of_work(node, block_hash)
+            assert_equal(FromHex(CBlock(), node.getblock(block_hash, 0)).vchBlockSig, b"")
 
         self.log.info("Without a peer")
         disconnect_nodes(node, 1)
@@ -130,6 +137,8 @@ class GetWorkTest(BitcoinTestFramework):
         assert_equal(node.gettransaction(coinbase['txid'])['details'][0]['category'], 'immature')
         # signed with the coinbase key
         assert FromHex(CBlock(), node.getblock(tip, 0)).vchBlockSig
+        assert_equal(block_signer(node, tip).hex(), coinbase['vout'][0]['scriptPubKey']['hex'][2:-2])
+        self.assert_proof_of_work(node, tip)
 
         self.log.info("A second solution of the same work is stale")
         # Only while no getwork() call has been made since the block: such a
@@ -166,6 +175,13 @@ class GetWorkTest(BitcoinTestFramework):
         self.known_failure("R-4 (%s)" % BUG_CARD,
                            lambda: self.assert_not_coinbase_address(address, coinbase_address),
                            expected="returned the coinbase address")
+
+    @staticmethod
+    def assert_proof_of_work(node, block_hash):
+        block = node.getblock(block_hash)
+        assert_equal(block['flags'].split()[0], 'proof-of-work')
+        # shown for proof-of-stake blocks only
+        assert 'signature' not in block
 
     @staticmethod
     def assert_not_coinbase_address(address, coinbase_address):

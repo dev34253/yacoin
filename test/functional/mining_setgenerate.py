@@ -5,8 +5,9 @@
 """Test the internal miner: setgenerate, getgenerate, gethashespersec, -gen.
 
 - Defaults and argument errors.
-- setgenerate(true, 1) mines blocks paying a wallet key (P2PK) and reserves
-  that key; setgenerate(false) stops the thread before it returns. A block the
+- setgenerate(true, 1) mines proof-of-work blocks paying a wallet key (P2PK),
+  signed with that key over the block hash, and reserves that key;
+  setgenerate(false) stops the thread before it returns. A block the
   thread finds while it is being stopped can be stored without being
   connected (the stop interrupts block processing in between); the next chain
   activation connects it.
@@ -25,6 +26,7 @@ import os
 import re
 
 from test_framework.authproxy import JSONRPCException
+from test_framework.blocktools import block_signer
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -106,9 +108,13 @@ class SetGenerateTest(BitcoinTestFramework):
 
         addresses = set()
         for h in range(height + 1, new_height + 1):
-            txid = node.getblock(node.getblockhash(h))['tx'][0]
+            block_hash = node.getblockhash(h)
+            block = node.getblock(block_hash)
+            assert_equal(block['flags'].split()[0], 'proof-of-work')
+            txid = block['tx'][0]
             script = node.getrawtransaction(txid, 1)['vout'][0]['scriptPubKey']
             assert_equal(script['type'], 'pubkey')
+            assert_equal(block_signer(node, block_hash).hex(), script['hex'][2:-2])
             addresses.update(script['addresses'])
             # in the wallet; 'generate' once 6 deep (the miner may find more
             # blocks before it is stopped)
