@@ -130,7 +130,11 @@ against the hash of the one in that image.
 ## GitHub Actions
 
 Every job of `.github/workflows/yacoinbuildmultiplatform.yml` runs an image built from this directory. The local action
-`.github/actions/yacoin-build-image` provides it:
+`.github/actions/yacoin-build-image` provides it. The workflow runs on every pull request commit, and on pushes only to `master`,
+to `scratch/` branches and to tags; `.github/workflows/depends-sources.yml` runs the same way, without tags, when the depends recipes
+change, and on demand. A branch without a pull request therefore gets CI only as a `scratch/` branch.
+
+How a job gets its image:
 
 1. `image-tag.sh` computes the tag `ghcr.io/<owner>/yacoin-build:<image>-<hash>` (`<owner>`: the repository owner, `dev34253`). `<hash>`
    is the first 12 hex digits of a SHA-256 over `Dockerfile.<image>` and every file it COPYs or ADDs (the entrypoint), their contents

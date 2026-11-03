@@ -1,12 +1,20 @@
 name: Yacoin multi platform build
 
-on: [push, pull_request]
+# Pull requests run on every commit. Pushes run only on master, scratch/
+# branches and tags: a branch with a pull request runs through it, and a
+# scratch/ branch checks CI without one.
+on:
+  push:
+    branches: [master, 'scratch/**']
+    tags: ['**']
+  pull_request:
 
 permissions:
   contents: read
 
-# A new push to a PR cancels that PR's older run. Pushes (master merges
-# included) each get their own group, so release builds are never cancelled.
+# A new push to a PR cancels that PR's older run. Pushes to master, scratch/
+# branches and tags each get their own group, so release builds are never
+# cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
