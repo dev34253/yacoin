@@ -231,8 +231,10 @@ BOOST_AUTO_TEST_CASE(reject_duplicates_and_missing_inputs)
     BOOST_CHECK(fMissingInputs);
     BOOST_CHECK(state.IsValid());
     BOOST_CHECK(state.GetRejectReason().empty());
-    BOOST_CHECK(!Submit(orphan, state));
-    BOOST_CHECK(state.IsValid());
+    CValidationState stateNoFlag;
+    BOOST_CHECK(!Submit(orphan, stateNoFlag));
+    BOOST_CHECK(stateNoFlag.IsValid());
+    BOOST_CHECK(stateNoFlag.GetRejectReason().empty());
     BOOST_CHECK(!mempool.exists(orphan.GetHash()));
 
     // A mined transaction sent again: its input is spent, its output is in the coins cache
@@ -407,7 +409,10 @@ BOOST_AUTO_TEST_CASE(version_1_and_fork_height)
     }
     {
         // Without an active chain the fork counts as not reached; the transaction then
-        // fails the first check after the version check
+        // fails the first check after the version check. With a fork height of 0 only the
+        // missing chain keeps the version check from refusing it.
+        ConsensusGlobalsGuard fork;
+        fork.Set(0, nEpochInterval);
         CMutableTransaction tx = v1();
         tx.vin.clear();
         NoActiveChain noChain;
