@@ -257,6 +257,31 @@ BOOST_AUTO_TEST_CASE(util_GetArg)
     BOOST_CHECK_EQUAL(testArgs.GetBoolArg("booltest4", false), true);
 }
 
+BOOST_AUTO_TEST_CASE(util_SoftSetArg)
+{
+    TestArgsManager testArgs;
+
+    // Unset: set in both maps
+    BOOST_CHECK(testArgs.SoftSetArg("-softtest", "first"));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softtest", "default"), "first");
+    BOOST_CHECK(testArgs.GetArgs("-softtest") == std::vector<std::string>{"first"});
+
+    // Already set: left as it is
+    BOOST_CHECK(!testArgs.SoftSetArg("-softtest", "second"));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softtest", "default"), "first");
+    BOOST_CHECK(testArgs.GetArgs("-softtest") == std::vector<std::string>{"first"});
+
+    // Booleans as "1" and "0", through SoftSetArg
+    BOOST_CHECK(testArgs.SoftSetBoolArg("-softtrue", true));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softtrue", "default"), "1");
+    BOOST_CHECK(testArgs.GetArgs("-softtrue") == std::vector<std::string>{"1"});
+    BOOST_CHECK(testArgs.SoftSetBoolArg("-softfalse", false));
+    BOOST_CHECK_EQUAL(testArgs.GetArg("-softfalse", "default"), "0");
+    BOOST_CHECK(testArgs.GetArgs("-softfalse") == std::vector<std::string>{"0"});
+    BOOST_CHECK(!testArgs.SoftSetBoolArg("-softfalse", true));
+    BOOST_CHECK_EQUAL(testArgs.GetBoolArg("-softfalse", true), false);
+}
+
 BOOST_AUTO_TEST_CASE(util_FormatMoney)
 {
     BOOST_CHECK_EQUAL(FormatMoney(0), "0.00");
