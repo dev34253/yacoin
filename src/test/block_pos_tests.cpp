@@ -254,7 +254,7 @@ BOOST_AUTO_TEST_CASE(classification_real_headers)
     const Case cases[] = {
         // all conditions hold: the general rule
         {HEADER_1889995_HEX, true},
-        // nonce not 0, nBits below and above the threshold
+        // nonce not 0, nBits below the threshold (block 644, above it, follows the table)
         {HEADER_60540_HEX, false},
         // nonce 0, nBits above the threshold, no forced hash
         {HEADER_151785_HEX, false},
@@ -804,6 +804,25 @@ BOOST_AUTO_TEST_CASE(coin_age)
     vPos.emplace_back(hashOther, CDiskTxPos(disk.pos, 1));
     vPos.emplace_back(hashPastEnd, CDiskTxPos(CDiskBlockPos(7, disk.pos.nPos + 100000), 1));
     BOOST_REQUIRE(pblocktree->WriteTxIndex(vPos));
+    // Each case takes its own path: no entry; an entry at a readable transaction with
+    // another hash; an entry past the end of the file
+    CDiskTxPos postx;
+    BOOST_CHECK(!pblocktree->ReadTxIndex(hashMissing, postx));
+    BOOST_REQUIRE(pblocktree->ReadTxIndex(hashOther, postx));
+    {
+        CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
+        BOOST_REQUIRE(!file.IsNull());
+        CBlockHeader header;
+        CTransaction txRead;
+        file >> header;
+        fseek(file.Get(), postx.nTxOffset, SEEK_CUR);
+        file >> txRead;
+        BOOST_CHECK(txRead.GetHash() == disk.real.txPrev().GetHash());
+        BOOST_CHECK(txRead.GetHash() != hashOther);
+    }
+    BOOST_REQUIRE(pblocktree->ReadTxIndex(hashPastEnd, postx));
+    BOOST_CHECK_EQUAL(postx.nFile, 7);
+    BOOST_CHECK_GT(postx.nPos, fs::file_size(GetBlockPosFilename(postx, "blk")));
     for (const uint256& hash : {hashMissing, hashOther, hashPastEnd}) {
         CoinView coins;
         CTransaction spend = coinstake;
