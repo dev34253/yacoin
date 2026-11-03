@@ -8,7 +8,8 @@ Issue, transfer, transferfromaddress and reissue of YA, sub and unique
 tokens; gettokendata; listmytokens, listtokens, listaddressesbytoken and
 listtokenbalancesbyaddress with their paging arguments; IPFS hashes in CIDv0
 and CIDv1 form; parameter errors; the token RPCs before activation; the fee
-lock output of an issue and when it can be spent.
+lock output of an issue and when it can be spent; raw transfers of a held
+token, whose token outputs must equal its token inputs.
 """
 
 from decimal import Decimal
@@ -27,7 +28,7 @@ from test_framework.util import (
     connect_nodes,
     wait_until,
 )
-from test_framework.yac_tx import key_from_wif, p2pkh_script, sign_p2pkh_input
+from test_framework.yac_tx import key_from_wif, p2pkh_script, sign_p2pkh_input, token_transfer_script
 
 IPFS1 = "QmcvyefkqQX3PpjpY5L8B2yMd47XrVwAipr6cxUt2zvYU8"
 IPFS1_V1 = "bafybeigyz3d6i6dpwfgdsvrwdoxxh7vuy7zl35c2ceoab2jipnmzzkvrhe"
@@ -783,6 +784,58 @@ class TokenRPCTest(BitcoinTestFramework):
         self.mine_with_mocktime(n0, 1)
         assert_equal(n0.gettransaction(spent)["confirmations"], 1)
 
+    def token_conservation_checks(self):
+        self.log.info("Checking that a raw transfer's token outputs equal its token inputs...")
+        n0 = self.nodes[0]
+        n0.issue("CONSERVE", 1000)
+        self.mine_with_mocktime(n0, 1)
+        holder = n0.getnewaddress()
+        transfer_txid = n0.transfer("CONSERVE", 10, holder)
+        self.mine_with_mocktime(n0, 1)
+
+        # The token output paid to the holder's P2PKH script, and a plain YAC output for the fee
+        token_key = key_from_wif(n0.dumpprivkey(holder)["private_key"])
+        prefix = p2pkh_script(token_key.get_pubkey().get_bytes())
+        transfer = n0.decoderawtransaction(n0.gettransaction(transfer_txid)["hex"])
+        token_outs = [out for out in transfer["vout"]
+                      if bytes.fromhex(out["scriptPubKey"]["hex"]).startswith(bytes(prefix))
+                      and len(out["scriptPubKey"]["hex"]) > 2 * len(prefix)]
+        assert_equal(len(token_outs), 1)
+        token_out = token_outs[0]
+        token_script = CScript(bytes.fromhex(token_out["scriptPubKey"]["hex"]))
+        yac = max((u for u in n0.listunspent(1) if "token_name" not in u
+                   and len(u["scriptPubKey"]) == 50 and u["scriptPubKey"].startswith("76a914")),
+                  key=lambda u: u["amount"])
+        yac_key = key_from_wif(n0.dumpprivkey(yac["address"])["private_key"])
+        change = int(yac["amount"] * COIN) - int(Decimal("0.1") * COIN)
+
+        def raw_transfer(token_scripts):
+            tx = CTransaction()
+            tx.nTime = self.mocktime
+            tx.vin = [CTxIn(COutPoint(int(transfer_txid, 16), token_out["n"])),
+                      CTxIn(COutPoint(int(yac["txid"], 16), yac["vout"]))]
+            tx.vout = [CTxOut(0, script) for script in token_scripts]
+            tx.vout.append(CTxOut(change, CScript(bytes.fromhex(yac["scriptPubKey"]))))
+            sign_p2pkh_input(tx, 0, token_key, token_script)
+            sign_p2pkh_input(tx, 1, yac_key)
+            return tx.serialize().hex()
+
+        # More out than in, a token input without a token output, a token that doesn't exist
+        assert_raises_rpc_error(-26, "bad-tx-inputs-outputs-mismatch", n0.sendrawtransaction,
+                                raw_transfer([token_transfer_script(prefix, "CONSERVE", 11 * COIN)]))
+        assert_raises_rpc_error(-26, "bad-tx-token-inputs-size-does-not-match-outputs-size", n0.sendrawtransaction,
+                                raw_transfer([]))
+        assert_raises_rpc_error(-26, "bad-txns-transfer-token-not-exist", n0.sendrawtransaction,
+                                raw_transfer([token_transfer_script(prefix, "CONSERVE", 10 * COIN),
+                                              token_transfer_script(prefix, "NOSUCHTOKEN", COIN)]))
+
+        # All of the input in the outputs is accepted and mined
+        spent = n0.sendrawtransaction(raw_transfer([token_transfer_script(prefix, "CONSERVE", 6 * COIN),
+                                                    token_transfer_script(prefix, "CONSERVE", 4 * COIN)]))
+        self.mine_with_mocktime(n0, 1)
+        assert_equal(n0.gettransaction(spent)["confirmations"], 1)
+        assert_equal(n0.listaddressesbytoken("CONSERVE")[holder], "10")
+
     def run_test(self):
         self.activate_tokens()
         self.big_test()
@@ -795,6 +848,7 @@ class TokenRPCTest(BitcoinTestFramework):
         self.paging_checks()
         self.cidv1_checks()
         self.fee_lock_checks()
+        self.token_conservation_checks()
 
 
 if __name__ == "__main__":

@@ -5,8 +5,9 @@
 
 // Consensus rules for token transactions: the structural checks in
 // CheckTransaction (VerifyNewToken, VerifyReissueToken, VerifyNewUniqueToken,
-// IsNewOwnerTxValid) and the input/output balance in Consensus::CheckTxTokens,
-// including the transfer overflow fixed in #112. Balance cases adapted from
+// IsNewOwnerTxValid), the input/output balance in Consensus::CheckTxTokens,
+// including the transfer overflow fixed in #112, and its contextual checks of
+// token outputs, reissues and unique issues. Balance cases adapted from
 // Ravencoin's asset_tx_tests.
 
 #include "coins.h"
@@ -14,6 +15,7 @@
 #include "consensus/validation.h"
 #include "tokens/tokens.h"
 
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -175,6 +177,158 @@ BOOST_AUTO_TEST_CASE(unique_structure)
     BOOST_CHECK_EQUAL(strReason, "bad-txns-issue-unique-token-compare-failed");
 }
 
+/* The structural verifiers called on their own: the outputs they require and
+ * the payloads they decode, each with its reason */
+static std::string VerifyUniqueError(const CMutableTransaction& mtx)
+{
+    std::string strError;
+    BOOST_CHECK(!CTransaction(mtx).VerifyNewUniqueToken(strError));
+    return strError;
+}
+
+static std::string VerifyReissueError(const CMutableTransaction& mtx)
+{
+    std::string strError;
+    BOOST_CHECK(!CTransaction(mtx).VerifyReissueToken(strError));
+    return strError;
+}
+
+BOOST_AUTO_TEST_CASE(verify_new_token_outputs)
+{
+    const CNewToken token("ISSUED", 10 * COIN, 0, 1, 0, "");
+    const CTransaction issue = IssueTx(token);
+    std::string strError;
+    BOOST_CHECK(issue.VerifyNewToken(strError));
+
+    // At least the lock, the owner token and the new token
+    CMutableTransaction twoOutputs(issue);
+    twoOutputs.vout.erase(twoOutputs.vout.begin());
+    BOOST_CHECK_EQUAL(VerifyIssueError(twoOutputs), "bad-txns-issue-vout-size-to-small");
+
+    // The new token is the last output, the owner token the one before it
+    CMutableTransaction issueNotLast(issue);
+    issueNotLast.vout.push_back(CTxOut(COIN, TestTokenScriptBase()));
+    BOOST_CHECK_EQUAL(VerifyIssueError(issueNotLast), "bad-txns-issue-data-not-found");
+    CMutableTransaction ownerNotBeforeIssue(issue);
+    std::swap(ownerNotBeforeIssue.vout[0], ownerNotBeforeIssue.vout[1]);
+    BOOST_CHECK_EQUAL(VerifyIssueError(ownerNotBeforeIssue), "bad-txns-issue-owner-data-not-found");
+
+    // Payloads that end early
+    CMutableTransaction issueTruncated(issue);
+    issueTruncated.vout[2].scriptPubKey = TruncatedIssueScript("ISSUED");
+    BOOST_CHECK(CTransaction(issueTruncated).IsNewToken());
+    BOOST_CHECK_EQUAL(VerifyIssueError(issueTruncated), "bad-txns-issue-serialzation-failed");
+    CMutableTransaction ownerTruncated(issue);
+    ownerTruncated.vout[1].scriptPubKey = TruncatedOwnerScript("ISSUED");
+    BOOST_CHECK(CTransaction(ownerTruncated).IsNewToken());
+    BOOST_CHECK_EQUAL(VerifyIssueError(ownerTruncated), "bad-txns-issue-owner-serialzation-failed");
+}
+
+BOOST_AUTO_TEST_CASE(verify_reissue_token_outputs)
+{
+    const CTransaction reissue = ReissueTx(CReissueToken("ABC", COIN, -1, 1, ""));
+
+    // At least the lock, the owner token change and the reissue
+    CMutableTransaction twoOutputs(reissue);
+    twoOutputs.vout.erase(twoOutputs.vout.begin());
+    BOOST_CHECK_EQUAL(VerifyReissueError(twoOutputs), "bad-txns-vout-size-to-small");
+
+    // The reissue is the last output
+    CMutableTransaction reissueNotLast(reissue);
+    reissueNotLast.vout.push_back(CTxOut(COIN, TestTokenScriptBase()));
+    BOOST_CHECK_EQUAL(VerifyReissueError(reissueNotLast), "bad-txns-reissue-data-not-found");
+
+    // A reissue payload that ends early, also through CheckTransaction
+    CMutableTransaction truncated(reissue);
+    truncated.vout[2].scriptPubKey = TruncatedReissueScript("ABC");
+    BOOST_CHECK(CTransaction(truncated).IsReissueToken());
+    BOOST_CHECK_EQUAL(VerifyReissueError(truncated), "bad-txns-reissue-serialization-failed");
+    CValidationState state;
+    BOOST_CHECK(!CheckTransaction(CTransaction(truncated), state));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-reissue-serialization-failed");
+    int nDoS = 0;
+    BOOST_CHECK(state.IsInvalid(nDoS));
+    BOOST_CHECK_EQUAL(nDoS, 100);
+}
+
+BOOST_AUTO_TEST_CASE(verify_unique_token_outputs)
+{
+    std::string strReason;
+    const CTransaction unique = UniqueTx("ABC", {"ONE"});
+    std::string strError;
+    BOOST_CHECK(unique.VerifyNewUniqueToken(strError));
+
+    // At least the lock, the owner token change and one unique token
+    CMutableTransaction twoOutputs(unique);
+    twoOutputs.vout.erase(twoOutputs.vout.begin());
+    BOOST_CHECK_EQUAL(VerifyUniqueError(twoOutputs), "bad-txns-unique-vout-size-to-small");
+
+    // No unique token output; one whose payload ends early isn't one
+    CMutableTransaction noUnique(unique);
+    noUnique.vout.back() = CTxOut(COIN, TestTokenScriptBase());
+    BOOST_CHECK_EQUAL(VerifyUniqueError(noUnique), "bad-txns-issue-unique-token-bad-outpoint-count");
+    CMutableTransaction truncatedUnique(unique);
+    truncatedUnique.vout.back().scriptPubKey = TruncatedIssueScript("ABC#ONE");
+    BOOST_CHECK(!IsScriptNewUniqueToken(truncatedUnique.vout.back().scriptPubKey));
+    BOOST_CHECK_EQUAL(VerifyUniqueError(truncatedUnique), "bad-txns-issue-unique-token-bad-outpoint-count");
+
+    // Only the unique tokens are created: no owner token, no reissue, and every
+    // issue output is a unique token that decodes
+    CMutableTransaction withOwner(unique);
+    withOwner.vout.insert(withOwner.vout.end() - 1, CTxOut(0, OwnerTokenScript(CNewToken("XYZ", COIN))));
+    BOOST_CHECK_EQUAL(VerifyUniqueError(withOwner), "bad-txns-failed-unique-token-formatting-check");
+    BOOST_CHECK(!CheckTx(CTransaction(withOwner), strReason));
+    BOOST_CHECK_EQUAL(strReason, "bad-txns-failed-unique-token-formatting-check");
+    CMutableTransaction withReissue(unique);
+    withReissue.vout.insert(withReissue.vout.end() - 1, CTxOut(0, ReissueTokenScript(CReissueToken("ABC", COIN, -1, 1, ""))));
+    BOOST_CHECK_EQUAL(VerifyUniqueError(withReissue), "bad-txns-failed-unique-token-formatting-check");
+    CMutableTransaction withTruncatedIssue(unique);
+    withTruncatedIssue.vout.insert(withTruncatedIssue.vout.end() - 1, CTxOut(0, TruncatedIssueScript("ABC#TWO")));
+    BOOST_CHECK_EQUAL(VerifyUniqueError(withTruncatedIssue), "bad-txns-failed-unique-token-formatting-check");
+}
+
+BOOST_AUTO_TEST_CASE(new_owner_tx_valid)
+{
+    const CTransaction issue = IssueTx(CNewToken("OWNED", COIN));
+    std::string strError;
+    BOOST_CHECK(IsNewOwnerTxValid(issue, "OWNED", TestTokenAddress(), strError));
+
+    // The owner output must decode, in an issue
+    CMutableTransaction ownerTruncated(issue);
+    ownerTruncated.vout[1].scriptPubKey = TruncatedOwnerScript("OWNED");
+    BOOST_CHECK(!IsNewOwnerTxValid(CTransaction(ownerTruncated), "OWNED", TestTokenAddress(), strError));
+    BOOST_CHECK_EQUAL(strError, "bad-txns-bad-owner");
+    BOOST_CHECK(!IsNewOwnerTxValid(ReissueTx(CReissueToken("OWNED", COIN, -1, 1, "")), "OWNED", TestTokenAddress(), strError));
+    BOOST_CHECK_EQUAL(strError, "bad-txns-bad-owner");
+
+    // It goes to the issue's address
+    BOOST_CHECK(!IsNewOwnerTxValid(issue, "OWNED", TestTokenAddress(2), strError));
+    BOOST_CHECK_EQUAL(strError, "bad-txns-owner-address-mismatch");
+
+    // Its name has at least 3 characters before the owner tag
+    BOOST_CHECK(!IsNewOwnerTxValid(IssueTx(CNewToken("AB", COIN)), "AB", TestTokenAddress(), strError));
+    BOOST_CHECK_EQUAL(strError, "bad-txns-owner-token-length");
+
+    // It is the owner token of the issued token
+    BOOST_CHECK(!IsNewOwnerTxValid(issue, "OTHER", TestTokenAddress(), strError));
+    BOOST_CHECK_EQUAL(strError, "bad-txns-owner-name-mismatch");
+}
+
+BOOST_AUTO_TEST_CASE(issue_rejected_without_reason)
+{
+    CMutableTransaction noLock(IssueTx(CNewToken("NOLOCK", COIN)));
+    noLock.vout[0] = CTxOut(noLock.vout[0].nValue, TestTokenScriptBase());
+    BOOST_CHECK_EQUAL(VerifyIssueError(noLock), "bad-txns-issue-timelock-not-found");
+
+    CValidationState state;
+    BOOST_CHECK(!CheckTransaction(CTransaction(noLock), state));
+    int nDoS = 0;
+    BOOST_CHECK(state.IsInvalid(nDoS));
+    BOOST_CHECK_EQUAL(nDoS, 100);
+    // known defect, MG-046: the reason of the failed check is not passed on
+    KNOWN_FAILURE_EQUAL("MG-046", state.GetRejectReason(), "bad-txns-issue-timelock-not-found", "");
+}
+
 BOOST_AUTO_TEST_CASE(transfer_outputs)
 {
     std::string strReason;
@@ -242,6 +396,29 @@ struct TokenBalanceSetup {
         bool fValid = Consensus::CheckTxTokens(CTransaction(mtx), state, view, &cache, false, vReissues);
         strReason = state.GetRejectReason();
         return fValid;
+    }
+
+    /** CheckTxTokens of a whole tx; the reason, or "" if valid. A rejection has DoS 100 */
+    std::string Reject(const CMutableTransaction& mtx)
+    {
+        CValidationState state;
+        std::vector<std::pair<std::string, uint256> > vReissues;
+        if (Consensus::CheckTxTokens(CTransaction(mtx), state, view, &cache, false, vReissues))
+            return "";
+        int nDoS = 0;
+        BOOST_CHECK(state.IsInvalid(nDoS));
+        BOOST_CHECK_EQUAL(nDoS, 100);
+        return state.GetRejectReason();
+    }
+
+    /** A tx spending a YAC coin with these outputs */
+    CMutableTransaction Spend(const std::vector<CScript>& scripts)
+    {
+        CMutableTransaction mtx;
+        mtx.vin.push_back(CTxIn(AddCoin(TestTokenScriptBase(), COIN)));
+        for (const CScript& script : scripts)
+            mtx.vout.push_back(CTxOut(0, script));
+        return mtx;
     }
 };
 
@@ -352,6 +529,122 @@ BOOST_AUTO_TEST_CASE(reissue_chaining)
     // The recorded tx itself still passes
     CValidationState state2;
     BOOST_CHECK(Consensus::CheckTxTokens(tx, state2, s.view, &s.cache, false, vReissues));
+}
+
+/* CheckTxTokens: every token output decodes, a transfer matches the token's
+ * metadata, an issue, reissue or unique issue passes its contextual check, and
+ * a tx of no such kind only transfers */
+BOOST_AUTO_TEST_CASE(token_outputs_decode_and_match)
+{
+    TokenBalanceSetup s;
+
+    // Transfer and reissue outputs that don't decode
+    BOOST_CHECK_EQUAL(s.Reject(s.Spend({TruncatedTransferScript("ABC")})), "bad-tx-token-transfer-bad-deserialize");
+    BOOST_CHECK_EQUAL(s.Reject(s.Spend({TruncatedReissueScript("ABC"), TestTokenScriptBase()})),
+                      "bad-tx-token-reissue-bad-deserialize");
+
+    // An issue whose new token doesn't decode
+    CMutableTransaction issue = s.Spend({});
+    issue.vout = IssueTx(CNewToken("ISSUED", COIN)).vout;
+    issue.vout.back().scriptPubKey = TruncatedIssueScript("ISSUED");
+    BOOST_CHECK(CTransaction(issue).IsNewToken());
+    BOOST_CHECK_EQUAL(s.Reject(issue), "bad-txns-issue-serialzation-failed");
+
+    // The metadata found for a transferred token must be that token's
+    tokensCache->Put("CORRUPT", CDatabasedTokenData(CNewToken("OTHER", 10 * COIN, 6, 1, 0, ""), 1, uint256()));
+    CMutableTransaction mismatch;
+    mismatch.vin.push_back(CTxIn(s.AddTokenCoin("CORRUPT", COIN)));
+    mismatch.vout.push_back(CTxOut(0, TransferTokenScript(CTokenTransfer("CORRUPT", COIN), 2)));
+    BOOST_CHECK_EQUAL(s.Reject(mismatch), "bad-txns-token-database-corrupted");
+
+    // A reissue of a token that doesn't exist
+    CMutableTransaction reissue(ReissueTx(CReissueToken("XYZ", COIN, -1, 1, "")));
+    reissue.vin[0] = CTxIn(s.AddTokenCoin("XYZ!", OWNER_TOKEN_AMOUNT));
+    BOOST_CHECK_EQUAL(s.Reject(reissue),
+                      "bad-txns-reissue-contextual-Unable to reissue token: token_name 'XYZ' doesn't exist in the database");
+
+    // A unique token whose name is taken
+    BOOST_CHECK(s.cache.AddNewToken(CNewToken("ABC#ONE", UNIQUE_TOKEN_AMOUNT, 0, 0, 0, ""), TestTokenAddress(), 1, uint256()));
+    const COutPoint owner = s.AddTokenCoin("ABC!", OWNER_TOKEN_AMOUNT);
+    CMutableTransaction taken(UniqueTx("ABC", {"ONE"}));
+    taken.vin[0] = CTxIn(owner);
+    BOOST_CHECK_EQUAL(s.Reject(taken),
+                      "bad-txns-issue-unique-contextual-Invalid parameter: token_name 'ABC#ONE' has already been used");
+    CMutableTransaction fresh(UniqueTx("ABC", {"TWO"}));
+    fresh.vin[0] = CTxIn(owner);
+    BOOST_CHECK_EQUAL(s.Reject(fresh), "");
+
+    // Outside an issue or reissue, only transfers
+    BOOST_CHECK_EQUAL(s.Reject(s.Spend({OwnerTokenScript(CNewToken("ABC", COIN)), TestTokenScriptBase()})),
+                      "bad-txns-bad-token-transaction");
+    CScript notToken = TestTokenScriptBase();
+    notToken << OP_YAC_TOKEN << std::vector<unsigned char>{YAC_Y, YAC_A, YAC_C, 'x', 1, 2, 3, 4, 5, 6, 7, 8} << OP_DROP;
+    BOOST_CHECK(!notToken.IsTokenScript());
+    BOOST_CHECK_EQUAL(s.Reject(s.Spend({notToken})), "bad-txns-bad-token-script");
+    BOOST_CHECK_EQUAL(s.Reject(s.Spend({TestTokenScriptBase()})), "");
+}
+
+/* ContextualCheckReissueToken against the reissued token's metadata */
+BOOST_AUTO_TEST_CASE(contextual_check_reissue)
+{
+    TokenBalanceSetup s;
+    BOOST_CHECK(s.cache.AddNewToken(CNewToken("FIXED", COIN, 0, 0, 0, ""), TestTokenAddress(), 1, uint256()));
+    BOOST_CHECK(s.cache.AddNewToken(CNewToken("UNITS", 1000 * COIN, 3, 1, 0, ""), TestTokenAddress(), 1, uint256()));
+    const CTransaction tx = ReissueTx(CReissueToken("UNITS", COIN, -1, 1, ""));
+    std::string strNotEncodable;
+    BOOST_CHECK(!CheckEncoded(std::string(34, 'x'), strNotEncodable));
+    BOOST_CHECK_EQUAL(strNotEncodable, "Invalid parameter: ipfs_hash is not valid");
+
+    auto check = [&](const CReissueToken& reissue, std::string& strError) {
+        return ContextualCheckReissueToken(&s.cache, reissue, strError, tx);
+    };
+    std::string strError;
+    BOOST_CHECK(check(CReissueToken("UNITS", COIN, -1, 1, ""), strError));
+    BOOST_CHECK(check(CReissueToken("UNITS", MAX_MONEY - 1000 * COIN, 3, 0, TestIpfsHash()), strError));
+    BOOST_CHECK(check(CReissueToken("UNITS", 0, 6, 1, ""), strError));
+
+    // The tx must be a reissue
+    BOOST_CHECK(!ContextualCheckReissueToken(&s.cache, CReissueToken("UNITS", COIN, -1, 1, ""), strError,
+                                             IssueTx(CNewToken("UNITS", COIN))));
+    BOOST_CHECK_EQUAL(strError, "bad-txns-reissue-token-contextual-check");
+
+    BOOST_CHECK(!check(CReissueToken("UNITS", -1, -1, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: amount must be 0 or larger");
+    BOOST_CHECK(!check(CReissueToken("NOSUCH", COIN, -1, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: token_name 'NOSUCH' doesn't exist in the database");
+    BOOST_CHECK(!check(CReissueToken("FIXED", COIN, -1, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: reissuable is set to false");
+    // The total after the reissue is at most MAX_MONEY
+    BOOST_CHECK(!check(CReissueToken("UNITS", MAX_MONEY - 1000 * COIN + 1000, -1, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: token_name 'UNITS' the amount trying to reissue is to large");
+    BOOST_CHECK(!check(CReissueToken("UNITS", 1, -1, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: amount must be divisible by the smaller unit assigned to the token");
+    BOOST_CHECK(!check(CReissueToken("UNITS", COIN, 2, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: unit must be larger than current unit selection");
+    BOOST_CHECK(!check(CReissueToken("UNITS", COIN, -1, 1, "short"), strError));
+    BOOST_CHECK_EQUAL(strError, "Invalid parameter: ipfs_hash must be 34 bytes");
+    BOOST_CHECK(!check(CReissueToken("UNITS", COIN, -1, 1, std::string(34, 'x')), strError));
+    BOOST_CHECK_EQUAL(strError, strNotEncodable);
+
+    // Without the tx; without a cache only the token's own data is checked
+    BOOST_CHECK(ContextualCheckReissueToken(&s.cache, CReissueToken("UNITS", COIN, -1, 1, ""), strError));
+    BOOST_CHECK(ContextualCheckReissueToken(nullptr, CReissueToken("NOSUCH", COIN, -1, 1, TestIpfsHash()), strError));
+    BOOST_CHECK(!ContextualCheckReissueToken(nullptr, CReissueToken("NOSUCH", COIN, 7, 1, ""), strError));
+    BOOST_CHECK_EQUAL(strError, "Unable to reissue token: unit must be between 6 and -1");
+    BOOST_CHECK(!ContextualCheckReissueToken(nullptr, CReissueToken("NOSUCH", COIN, -1, 1, "short"), strError));
+    BOOST_CHECK_EQUAL(strError, "Invalid parameter: ipfs_hash must be 34 bytes");
+    BOOST_CHECK(!ContextualCheckReissueToken(nullptr, CReissueToken("NOSUCH", COIN, -1, 1, std::string(34, 'x')), strError));
+    BOOST_CHECK_EQUAL(strError, strNotEncodable);
+}
+
+BOOST_AUTO_TEST_CASE(contextual_check_unique_tx)
+{
+    TokenBalanceSetup s;
+    BOOST_CHECK(s.cache.AddNewToken(CNewToken("ABC#ONE", UNIQUE_TOKEN_AMOUNT, 0, 0, 0, ""), TestTokenAddress(), 1, uint256()));
+    std::string strError;
+    BOOST_CHECK(ContextualCheckUniqueTokenTx(&s.cache, strError, UniqueTx("ABC", {"TWO", "THREE"})));
+    BOOST_CHECK(!ContextualCheckUniqueTokenTx(&s.cache, strError, UniqueTx("ABC", {"TWO", "ONE"})));
+    BOOST_CHECK_EQUAL(strError, "Invalid parameter: token_name 'ABC#ONE' has already been used");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

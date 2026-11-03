@@ -489,6 +489,152 @@ BOOST_AUTO_TEST_CASE(boolean_expression_resolve)
     BOOST_CHECK_EQUAL(LibBoolEE::removeCharacter("#A&#B", '#'), "A&B");
 }
 
+/* The decoders of the issue, owner and reissue payloads: each decodes only its
+ * own type, and a payload that ends early does not decode */
+BOOST_AUTO_TEST_CASE(script_decoders)
+{
+    const CNewToken token("DECODE", 21 * COIN, 2, 1, 0, "");
+    const CReissueToken reissue("DECODE", 5 * COIN, 3, 0, "");
+    const CScript issueScript = NewTokenScript(token, 3);
+    const CScript ownerScript = OwnerTokenScript(token, 3);
+    const CScript reissueScript = ReissueTokenScript(reissue, 3);
+    const CScript transferScript = TransferTokenScript(CTokenTransfer("DECODE", COIN), 3);
+
+    CNewToken parsedToken;
+    std::string strOwner;
+    CReissueToken parsedReissue;
+    std::string strAddress;
+
+    BOOST_CHECK(TokenFromScript(issueScript, parsedToken, strAddress));
+    BOOST_CHECK_EQUAL(parsedToken.strName, "DECODE");
+    BOOST_CHECK_EQUAL(parsedToken.nAmount, 21 * COIN);
+    BOOST_CHECK_EQUAL(parsedToken.units, 2);
+    BOOST_CHECK_EQUAL(strAddress, TestTokenAddress(3));
+
+    strAddress.clear();
+    BOOST_CHECK(OwnerTokenFromScript(ownerScript, strOwner, strAddress));
+    BOOST_CHECK_EQUAL(strOwner, "DECODE!");
+    BOOST_CHECK_EQUAL(strAddress, TestTokenAddress(3));
+
+    strAddress.clear();
+    BOOST_CHECK(ReissueTokenFromScript(reissueScript, parsedReissue, strAddress));
+    BOOST_CHECK_EQUAL(parsedReissue.strName, "DECODE");
+    BOOST_CHECK_EQUAL(parsedReissue.nAmount, 5 * COIN);
+    BOOST_CHECK_EQUAL(parsedReissue.nUnits, 3);
+    BOOST_CHECK_EQUAL(parsedReissue.nReissuable, 0);
+    BOOST_CHECK_EQUAL(strAddress, TestTokenAddress(3));
+
+    // A script of another token type, or no token script, is not decoded
+    for (const CScript& other : {ownerScript, reissueScript, transferScript, TestTokenScriptBase()})
+        BOOST_CHECK(!TokenFromScript(other, parsedToken, strAddress));
+    for (const CScript& other : {issueScript, reissueScript, transferScript, TestTokenScriptBase()})
+        BOOST_CHECK(!OwnerTokenFromScript(other, strOwner, strAddress));
+    for (const CScript& other : {issueScript, ownerScript, transferScript, TestTokenScriptBase()})
+        BOOST_CHECK(!ReissueTokenFromScript(other, parsedReissue, strAddress));
+
+    // The prefix and the marker are in place, the payload ends early
+    const CScript truncatedIssue = TruncatedIssueScript("DECODE");
+    const CScript truncatedOwner = TruncatedOwnerScript("DECODE");
+    const CScript truncatedReissue = TruncatedReissueScript("DECODE");
+    BOOST_CHECK(IsScriptNewToken(truncatedIssue));
+    BOOST_CHECK(IsScriptOwnerToken(truncatedOwner));
+    BOOST_CHECK(IsScriptReissueToken(truncatedReissue));
+    BOOST_CHECK(!TokenFromScript(truncatedIssue, parsedToken, strAddress));
+    BOOST_CHECK(!OwnerTokenFromScript(truncatedOwner, strOwner, strAddress));
+    BOOST_CHECK(!ReissueTokenFromScript(truncatedReissue, parsedReissue, strAddress));
+}
+
+/* ParseTokenScript (used by the address index): name, amount and the key hash
+ * of the P2PKH prefix of every token script type */
+BOOST_AUTO_TEST_CASE(parse_token_script)
+{
+    const uint160 keyHash(std::vector<unsigned char>(20, 4));
+    const CNewToken token("PARSED", 30 * COIN, 0, 1, 0, "");
+    struct Case {
+        CScript script;
+        std::string strName;
+        CAmount nAmount;
+    };
+    const std::vector<Case> cases = {
+        {NewTokenScript(token, 4), "PARSED", 30 * COIN},
+        {OwnerTokenScript(token, 4), "PARSED!", OWNER_TOKEN_AMOUNT},
+        {ReissueTokenScript(CReissueToken("PARSED", 7 * COIN, -1, 1, ""), 4), "PARSED", 7 * COIN},
+        {TransferTokenScript(CTokenTransfer("PARSED", 3 * COIN), 4), "PARSED", 3 * COIN},
+    };
+    BOOST_CHECK_EQUAL(OWNER_TOKEN_AMOUNT, COIN);
+    for (const Case& c : cases) {
+        uint160 hashBytes;
+        std::string strName;
+        CAmount nAmount = -1;
+        BOOST_CHECK(ParseTokenScript(c.script, hashBytes, strName, nAmount));
+        BOOST_CHECK(hashBytes == keyHash);
+        BOOST_CHECK_EQUAL(strName, c.strName);
+        BOOST_CHECK_EQUAL(nAmount, c.nAmount);
+    }
+
+    // Each type with a payload that ends early, and a plain P2PKH
+    for (const CScript& script : {TruncatedIssueScript("PARSED", 4), TruncatedOwnerScript("PARSED", 4),
+                                  TruncatedReissueScript("PARSED", 4), TruncatedTransferScript("PARSED", 4),
+                                  TestTokenScriptBase(4)}) {
+        uint160 hashBytes;
+        std::string strName;
+        CAmount nAmount = -1;
+        BOOST_CHECK(!ParseTokenScript(script, hashBytes, strName, nAmount));
+        BOOST_CHECK(hashBytes.IsNull());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(unique_token_from_transaction)
+{
+    // The last output of a unique issue is decoded
+    CNewToken token;
+    std::string strAddress;
+    BOOST_CHECK(UniqueTokenFromTransaction(UniqueTx("ABC", {"ONE", "TWO"}), token, strAddress));
+    BOOST_CHECK_EQUAL(token.strName, "ABC#TWO");
+    BOOST_CHECK_EQUAL(token.nAmount, UNIQUE_TOKEN_AMOUNT);
+    BOOST_CHECK_EQUAL(strAddress, TestTokenAddress());
+
+    // Not for an issue of another token type, nor for a reissue
+    CNewToken other;
+    std::string strOtherAddress;
+    BOOST_CHECK(!UniqueTokenFromTransaction(IssueTx(CNewToken("ABC", COIN)), other, strOtherAddress));
+    BOOST_CHECK(!UniqueTokenFromTransaction(ReissueTx(CReissueToken("ABC", COIN, -1, 1, "")), other, strOtherAddress));
+    BOOST_CHECK(strOtherAddress.empty());
+}
+
+BOOST_AUTO_TEST_CASE(new_token_to_string)
+{
+    CNewToken token("ABC", 1000 * COIN, 2, 1, 0, "");
+    BOOST_CHECK_EQUAL(token.ToString(),
+                      "Printing an token\nname : ABC\namount : 1000000000\nunits : 2\nreissuable : 1\nhas_ipfs : 0\n");
+
+    // The IPFS hash is printed as it is stored (34 bytes), without a newline
+    CNewToken withIpfs("ABC/SUB", 5 * COIN, 0, 0, 1, TestIpfsHash());
+    BOOST_CHECK_EQUAL(withIpfs.ToString(),
+                      "Printing an token\nname : ABC/SUB\namount : 5000000\nunits : 0\nreissuable : 0\nhas_ipfs : 1\n"
+                      "ipfs_hash : " + TestIpfsHash());
+}
+
+/* CTokenTransfer::IsValid, the check of createrawtransaction's token outputs */
+BOOST_AUTO_TEST_CASE(token_transfer_is_valid)
+{
+    const std::string strBadName = "Invalid parameter: token_name must only consist of valid characters and have a size "
+                                   "between 3 and 30 characters. See help for more details.";
+    const std::string strBadAmount = "Invalid parameter: token amount can't be equal to or less than zero.";
+    std::string strError = "not cleared";
+    BOOST_CHECK(CTokenTransfer("ABC", 1).IsValid(strError));
+    BOOST_CHECK_EQUAL(strError, "");
+    BOOST_CHECK(CTokenTransfer("ABC!", OWNER_TOKEN_AMOUNT).IsValid(strError));
+    BOOST_CHECK(CTokenTransfer("ABC/SUB#tag", UNIQUE_TOKEN_AMOUNT).IsValid(strError));
+
+    BOOST_CHECK(!CTokenTransfer("abc", COIN).IsValid(strError));
+    BOOST_CHECK_EQUAL(strError, strBadName);
+    BOOST_CHECK(!CTokenTransfer("ABC", 0).IsValid(strError));
+    BOOST_CHECK_EQUAL(strError, strBadAmount);
+    BOOST_CHECK(!CTokenTransfer("ABC", -COIN).IsValid(strError));
+    BOOST_CHECK_EQUAL(strError, strBadAmount);
+}
+
 static std::string UserError(ErrorReport::ErrorType type)
 {
     ErrorReport report;

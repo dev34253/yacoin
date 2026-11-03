@@ -105,7 +105,8 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         of an in-pool parent leaves the mempool when the tip is invalidated; the parent, which
         spends an older coinbase, stays."""
         node = self.nodes[0]
-        new_blocks = node.generate(7)
+        # A fresh address: a block identical to the invalidated one would be refused
+        new_blocks = node.generatetoaddress(7, node.getnewaddress())
         self.sync_all(timeout=720)
         tip = new_blocks[-1]
         # Coinbases mature at depth 6 of the next block: the one of new_blocks[1] only at the tip
