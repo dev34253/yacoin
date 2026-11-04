@@ -170,10 +170,16 @@ directory; the next `./dev.sh depends` and builds start cold.
   recipes with the cache or by hand.
 - `./dev.sh depends` in two checkouts at once runs one after the other: the
   second waits for a lock (`depends.lock` in the cache) and then finds the
-  packages built. Builds take no lock. As before, the last `./dev.sh depends`
-  or `./dev.sh depends qt` decides whether the prefix holds Qt; switching
-  replaces the prefix, so don't switch while another checkout with the same
-  recipes builds.
+  packages built. Builds take no lock.
+- depends removes the prefix and unpacks it again on every run, even with
+  nothing to build, which would pull it away under another checkout's build.
+  So `./dev.sh depends` skips depends when the last successful run for these
+  recipes had the same inputs (the Qt choice and the compiler versions,
+  recorded in `depends/<key>/depends.stamp`). A skipped run does not recheck
+  the cached packages; removing the stamp (or the cache) forces a full run.
+  As before, the last `./dev.sh depends` or `./dev.sh depends qt` decides
+  whether the prefix holds Qt; switching, or a compiler update, replaces the
+  prefix, so don't do it while another checkout with the same recipes builds.
 - ccache handles parallel use itself. `dev.sh` creates `ccache.conf` before the
   first compile (ccache 3.3.4 races for it otherwise) and sets
   `CCACHE_MAXSIZE` to 10G unless set; a `CCACHE_DIR` from the environment is

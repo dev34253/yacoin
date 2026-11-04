@@ -16,7 +16,8 @@
 #           DEV_CACHE, the help, one depends prefix for two copies, a new one
 #           after a recipe change but not for untracked files under depends/,
 #           the arguments depends gets, ccache.conf created, two depends runs
-#           one after the other, a build directory of another prefix refused
+#           one after the other, a repeated run skipping make unless its
+#           inputs (Qt) changed, a build directory of another prefix refused
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts and
@@ -170,12 +171,16 @@ step_devsh() {
     pb=$(depends_prefix "$b" "$c")
     [[ "$pa" != "$pb" && "$pb" =~ $want ]] && pass "devsh: a recipe change gives a new prefix ($pb)" ||
         fail "devsh: a recipe change gave the prefix $pb"
-    # A stub make records its arguments and the start and end of its run.
+    # A stub make records its arguments and the start and end of its run,
+    # and writes the config.site of the prefix it gets. (b has other
+    # recipes now, so both runs build.)
     local bin="$work/devsh/bin" log="$work/devsh/make.log"
     mkdir -p "$bin"; rm -f "$log"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s
-' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep 1; echo "end" >> "$STUB_LOG"' > "$bin/make"
+' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep 1; echo "end" >> "$STUB_LOG"' \
+        'for x in "$@"; do [[ $x != x86_64_linux_prefix=* ]] || { mkdir -p "${x#*=}/share"; : > "${x#*=}/share/config.site"; }; done' \
+        > "$bin/make"
     chmod +x "$bin/make"
     PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" depends > "$work/devsh/a.log" 2>&1 & local pid=$!
     PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$b/dev.sh" depends > "$work/devsh/b.log" 2>&1 || fail "devsh: depends in b"
@@ -191,6 +196,17 @@ step_devsh() {
     done
     (( ok == 0 )) || pass "devsh: depends builds into the cache: ${got#start }"
     [[ -f "$c/ccache/ccache.conf" ]] && pass "devsh: ccache.conf created" || fail "devsh: no $c/ccache/ccache.conf"
+    # A run with the same inputs as the last successful one leaves the prefix
+    # alone (depends would unpack it again); another Qt choice runs make.
+    local runs
+    runs=$(grep -c '^start' "$log")
+    PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" depends > "$work/devsh/a.log" 2>&1 || fail "devsh: second depends in a"
+    [[ "$(grep -c '^start' "$log")" == "$runs" ]] && pass "devsh: a second depends run with the same inputs skips make" ||
+        fail "devsh: a second depends run with the same inputs ran make"
+    PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" depends qt > "$work/devsh/a.log" 2>&1 || fail "devsh: depends qt in a"
+    got=$(tail -n 2 "$log" | head -n 1)
+    [[ "$(grep -c '^start' "$log")" == $((runs + 1)) && " $got " != *" NO_QT=1 "* ]] &&
+        pass "devsh: depends qt after depends runs make" || fail "devsh: depends qt after depends did not run make: $got"
     # A build directory configured against another prefix is refused.
     mkdir -p "$a/build/dev"; : > "$a/build/dev/Makefile"; echo "CPPFLAGS=-I$a/depends/x86_64-pc-linux-gnu/include" > "$a/build/dev/config.status"
     expect_status 1 "devsh: a build directory of another prefix is refused" env DEV_CACHE="$c" "$a/dev.sh" build dev

@@ -140,9 +140,27 @@ cmd_depends() {
     local lock="$DEV_CACHE/depends.lock" fd
     exec {fd}>> "$lock"
     flock -n "$fd" || { log "Waiting for another depends build ($lock)"; flock "$fd"; }
+    # Even with nothing to build, depends removes the prefix and unpacks it
+    # again, under the builds of other checkouts with the same recipes. So
+    # make is skipped when the last successful run had the same inputs: the
+    # Qt choice and the compilers whose versions are in depends' build ids
+    # (the recipes are in the key). A skipped run does not recheck the cached
+    # packages; removing the stamp (or the cache) forces a full run.
+    local stamp="$DEPENDS_DIR/depends.stamp" inputs t v
+    inputs="qt: ${1:-}"$'\n'
+    for t in gcc g++ "$DEV_HOST-gcc" "$DEV_HOST-g++"; do
+        v=$("$t" --version 2>/dev/null) || v=""
+        inputs+="$t: ${v%%$'\n'*}"$'\n'
+    done
+    if [[ -f "$DEPENDS_PREFIX/share/config.site" && "$(cat "$stamp" 2>/dev/null)"$'\n' == "$inputs" ]]; then
+        log "Dependencies up to date in $DEPENDS_PREFIX"
+        return
+    fi
+    rm -f "$stamp"
     # The depends packages run their own configure scripts with their own
     # settings; they must not read the config.site meant for yacoind.
     env -u CONFIG_SITE make "${args[@]}"
+    printf '%s' "$inputs" > "$stamp"
 }
 
 # A build directory configured against another prefix (older recipes, or a
