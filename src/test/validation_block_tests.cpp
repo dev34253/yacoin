@@ -33,7 +33,12 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
+
+#ifdef __linux__
+#include <sys/stat.h>
+#endif
 
 #include <boost/test/unit_test.hpp>
 
@@ -188,6 +193,23 @@ public:
     std::vector<uint256> GetHeadBlocks() const override { return heads; }
 };
 
+/** Coins view that runs hook once, the first time the coin `trigger` is looked up */
+class HookView : public CCoinsViewBacked
+{
+public:
+    COutPoint trigger;
+    mutable std::function<void()> hook;
+    explicit HookView(CCoinsView* base) : CCoinsViewBacked(base) {}
+    bool GetCoin(const COutPoint& outpoint, Coin& coin) const override
+    {
+        if (hook && outpoint == trigger) {
+            hook();
+            hook = nullptr;
+        }
+        return CCoinsViewBacked::GetCoin(outpoint, coin);
+    }
+};
+
 /** Copy of the current UTXO set (flushed to the coins database first). TestingSetup
  * keeps its coins database in a member that hides the global pcoinsdbview. */
 struct UtxoSnapshot {
@@ -220,18 +242,18 @@ struct AbortGuard {
     ~AbortGuard() { SetMiscWarning(""); }
 };
 
-/** Points a block's data or undo position past the end of its file while it lives,
- *  so reading it fails; Restore() puts it back earlier */
+/** Points a block's data or undo position elsewhere while it lives, by default past the
+ *  end of its file, so reading it fails; Restore() puts it back earlier */
 class BrokenPos
 {
     unsigned int& m_pos;
     const unsigned int m_saved;
 
 public:
-    explicit BrokenPos(unsigned int& pos) : m_pos(pos), m_saved(pos)
+    explicit BrokenPos(unsigned int& pos, unsigned int value = 0x7fffffff) : m_pos(pos), m_saved(pos)
     {
         LOCK(cs_main);
-        m_pos = 0x7fffffff;
+        m_pos = value;
     }
     void Restore()
     {
@@ -686,6 +708,208 @@ BOOST_AUTO_TEST_CASE(replay_without_undo_data)
     BOOST_CHECK_EQUAL(restored.nTime, tipCoin.nTime);
     BOOST_CHECK(atX.coins.GetBestBlock() == pindexX->pprev->GetBlockHash());
     pindexX->nUndoPos = nUndoPos;
+}
+
+/* A block can't be read while rolling forward to it or back from it: the replay fails and
+ * the view keeps its best block */
+BOOST_AUTO_TEST_CASE(replay_read_failure)
+{
+    const uint256 hashStart = Tip()->GetBlockHash();
+    UtxoSnapshot atStart(pcoinsdbview);
+    BOOST_REQUIRE(Submit(BuildBlock({Spend(matureCoinbases[0])})));
+    CBlockIndex* pindexX = Tip();
+    UtxoSnapshot atX(pcoinsdbview);
+    BrokenPos broken(pindexX->nDataPos);
+
+    HeadsView forward(&atStart.coins);
+    forward.heads = {pindexX->GetBlockHash(), hashStart};
+    BOOST_CHECK(!ReplayBlocks(Params(), &forward));
+    BOOST_CHECK(atStart.coins.GetBestBlock() == hashStart);
+
+    HeadsView back(&atX.coins);
+    back.heads = {hashStart, pindexX->GetBlockHash()};
+    BOOST_CHECK(!ReplayBlocks(Params(), &back));
+    BOOST_CHECK(atX.coins.GetBestBlock() == pindexX->GetBlockHash());
+
+    broken.Restore();
+    BOOST_CHECK(ReplayBlocks(Params(), &back));
+    BOOST_CHECK(atX.coins.GetBestBlock() == hashStart);
+}
+
+/* Reading a block from a disk position, and for an index entry */
+BOOST_AUTO_TEST_CASE(read_block_from_disk)
+{
+    const Consensus::Params& params = Params().GetConsensus();
+    CBlockIndex* pindexTip = Tip();
+    CBlockIndex* pindexPrev = pindexTip->pprev;
+    const CDiskBlockPos pos = pindexTip->GetBlockPos();
+    CBlock block;
+
+    // No position; a file that doesn't exist (and isn't created by the read); the end of a file
+    BOOST_CHECK(!ReadBlockFromDisk(block, CDiskBlockPos(), params));
+    BOOST_CHECK(!ReadBlockFromDisk(block, CDiskBlockPos(99, 0), params));
+    BOOST_CHECK(!fs::exists(GetBlockPosFilename(CDiskBlockPos(99, 0), "blk")));
+    const uintmax_t nFileSize = fs::file_size(GetBlockPosFilename(pos, "blk"));
+    BOOST_CHECK(!ReadBlockFromDisk(block, CDiskBlockPos(pos.nFile, nFileSize), params));
+
+    // A stored block whose header fails the proof-of-work check is refused
+    CBlock badPow;
+    BOOST_REQUIRE(ReadBlockFromDisk(badPow, pindexTip, params));
+    for (int i = 0; i < 1000 && CheckProofOfWork(badPow.GetHash(), badPow.nBits, params); i++)
+        ++badPow.nNonce;
+    BOOST_REQUIRE(!CheckProofOfWork(badPow.GetHash(), badPow.nBits, params));
+    const CDiskBlockPos posBad(98, 0);
+    {
+        CAutoFile out(fsbridge::fopen(GetBlockPosFilename(posBad, "blk"), "wb"), SER_DISK, CLIENT_VERSION);
+        out << badPow;
+    }
+    BOOST_CHECK(!ReadBlockFromDisk(block, posBad, params));
+
+    // Without a block hash record for the position the block is still read and its hash
+    // computed; with one, the block's hash is the one read from the index
+    LOCK(cs_main);
+    const auto hashKey = std::make_pair(std::string("blockhash"), std::make_pair(pos.nFile, pos.nPos));
+    BOOST_REQUIRE(pblocktree->Erase(hashKey, true));
+    BOOST_CHECK(ReadBlockFromDisk(block, pos, params));
+    BOOST_CHECK(block.GetHash() == pindexTip->GetBlockHash());
+    BOOST_REQUIRE(pblocktree->WriteBlockHash(pos, pindexPrev->GetBlockHash()));
+    BOOST_CHECK(ReadBlockFromDisk(block, pos, params));
+    BOOST_CHECK(block.GetHash() == pindexPrev->GetBlockHash());
+    BOOST_REQUIRE(pblocktree->WriteBlockHash(pos, pindexTip->GetBlockHash()));
+
+    // An index entry pointing at another block's data, or past the end of its file
+    {
+        BrokenPos other(pindexTip->nDataPos, pindexPrev->nDataPos);
+        BOOST_CHECK(!ReadBlockFromDisk(block, pindexTip, params));
+    }
+    {
+        BrokenPos broken(pindexTip->nDataPos);
+        BOOST_CHECK(!ReadBlockFromDisk(block, pindexTip, params));
+    }
+    BOOST_CHECK(ReadBlockFromDisk(block, pindexTip, params));
+
+#ifdef __linux__
+    // A position past the start of a file that can't seek, a FIFO (which, opened for
+    // reading and writing, doesn't block on Linux)
+    const fs::path fifo = GetBlockPosFilename(CDiskBlockPos(97, 0), "blk");
+    BOOST_REQUIRE_EQUAL(mkfifo(fifo.string().c_str(), 0600), 0);
+    BOOST_CHECK(!ReadBlockFromDisk(block, CDiskBlockPos(97, 8), params));
+    fs::remove(fifo);
+#endif
+}
+
+static bool Verify(int nLevel, int nDepth, CCoinsView* view = pcoinsTip)
+{
+    return CVerifyDB().VerifyDB(Params(), view, nLevel, nDepth);
+}
+
+/** Writes block over the stored data of pindex */
+static void OverwriteBlock(const CBlockIndex* pindex, const CBlock& block)
+{
+    CAutoFile file(OpenBlockFile(pindex->GetBlockPos()), SER_DISK, CLIENT_VERSION);
+    BOOST_REQUIRE(!file.IsNull());
+    file << block;
+}
+
+/* What each VerifyDB level finds, and how far down the chain it looks */
+BOOST_AUTO_TEST_CASE(verify_db_failures)
+{
+    const CTransaction& cb = matureCoinbases[0];
+    Coin spentCoin;
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(pcoinsTip->GetCoin(COutPoint(cb.GetHash(), 0), spentCoin));
+    }
+    CTransaction spend = Spend(cb);
+    BOOST_REQUIRE(Submit(BuildBlock({spend})));
+    CBlockIndex* pindexTip = Tip();
+    const int nHeight = pindexTip->nHeight;
+    LOCK(cs_main);
+
+    // Without a tip, or with the tip at genesis, there is nothing to verify
+    chainActive.SetTip(nullptr);
+    BOOST_CHECK(Verify(4, 0));
+    chainActive.SetTip(pindexTip->GetAncestor(0));
+    BOOST_CHECK(Verify(4, 0));
+    chainActive.SetTip(pindexTip);
+
+    // Level 0 reads the blocks. Depth n covers the tip and the n blocks below it; a depth of
+    // 0 or less, or above the height, covers the whole chain
+    {
+        BrokenPos broken(chainActive[nHeight - 2]->nDataPos);
+        BOOST_CHECK(Verify(0, 1));
+        BOOST_CHECK(!Verify(0, 2));
+        BOOST_CHECK(!Verify(0, 0));
+        BOOST_CHECK(!Verify(0, -1));
+        BOOST_CHECK(!Verify(0, nHeight + 1));
+    }
+    {
+        // A shutdown request stops it after the tip, with success
+        BrokenPos broken(pindexTip->pprev->nDataPos);
+        AbortGuard abort;
+        StartShutdown();
+        BOOST_CHECK(Verify(0, 0));
+    }
+
+    // Level 1 checks the blocks: the tip's coinbase amount changed in the block file
+    CBlock block;
+    BOOST_REQUIRE(ReadBlockFromDisk(block, pindexTip, Params().GetConsensus()));
+    CBlock changed = block;
+    changed.vtx[0].vout[0].nValue += 1;
+    BOOST_REQUIRE_EQUAL(::GetSerializeSize(changed, SER_DISK, CLIENT_VERSION),
+                        ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION));
+    OverwriteBlock(pindexTip, changed);
+    BOOST_CHECK(Verify(0, 1));
+    BOOST_CHECK(Verify(-1, 1)); // as level 0
+    BOOST_CHECK(!Verify(1, 1));
+    OverwriteBlock(pindexTip, block);
+    BOOST_CHECK(Verify(1, 1));
+
+    // Level 2 reads the undo data, level 3 disconnects the blocks with it, level 4 connects
+    // them again
+    const unsigned int nUndoPos = pindexTip->nUndoPos;
+    CBlockUndo undo;
+    undo.vtxundo.resize(1);
+    undo.vtxundo[0].vprevout.push_back(spentCoin);
+    WriteUndo(pindexTip, undo, true); // wrong checksum
+    BOOST_CHECK(Verify(1, 1));
+    BOOST_CHECK(!Verify(2, 1));
+    WriteUndo(pindexTip, CBlockUndo()); // no entry for the block's spend
+    BOOST_CHECK(Verify(2, 1));
+    BOOST_CHECK(!Verify(3, 1));
+    undo.vtxundo[0].vprevout[0].out.nValue = 1; // restores the spent coin with a smaller amount
+    WriteUndo(pindexTip, undo);
+    BOOST_CHECK(Verify(3, 1));
+    BOOST_CHECK(!Verify(4, 1));
+    BOOST_CHECK(!Verify(5, 1)); // as level 4
+    pindexTip->nUndoPos = nUndoPos;
+    BOOST_CHECK(Verify(5, 1));
+
+    // Level 3 finds a coins view without one of the tip's outputs, unless the coin caches are
+    // too large for the disconnect
+    CCoinsViewCache missing(pcoinsTip);
+    BOOST_REQUIRE(missing.SpendCoin(COutPoint(spend.GetHash(), 0)));
+    BOOST_CHECK(Verify(2, 1, &missing));
+    BOOST_CHECK(!Verify(3, 1, &missing));
+    const size_t nCacheUsage = nCoinCacheUsage;
+    nCoinCacheUsage = 0;
+    BOOST_CHECK(Verify(4, 1, &missing));
+    nCoinCacheUsage = nCacheUsage;
+
+    // Level 4 reads the blocks again: the block below the tip can't be read by then (it
+    // becomes unreadable when level 3 looks up its coinbase output)
+    CBlock below;
+    BOOST_REQUIRE(ReadBlockFromDisk(below, pindexTip->pprev, Params().GetConsensus()));
+    HookView hooked(pcoinsTip);
+    hooked.trigger = COutPoint(below.vtx[0].GetHash(), 0);
+    std::unique_ptr<BrokenPos> broken;
+    hooked.hook = [&]() { broken.reset(new BrokenPos(pindexTip->pprev->nDataPos)); };
+    BOOST_CHECK(Verify(3, 1, &hooked));
+    BOOST_CHECK(broken);
+    broken.reset();
+    hooked.hook = [&]() { broken.reset(new BrokenPos(pindexTip->pprev->nDataPos)); };
+    BOOST_CHECK(!Verify(4, 1, &hooked));
+    BOOST_CHECK(broken);
 }
 
 
