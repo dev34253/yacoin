@@ -20,6 +20,7 @@
 #include "consensus/consensus.h"
 #include "consensus/validation.h"
 #include "fs.h"
+#include "init.h"
 #include "kernel.h"
 #include "miner.h"
 #include "net_processing.h"
@@ -34,6 +35,7 @@
 #include "utiltime.h"
 #include "validation.h"
 #include "validationinterface.h"
+#include "warnings.h"
 
 #include "test/consensus_test_util.h"
 #include "test/known_failure.h"
@@ -52,6 +54,7 @@
 #endif
 #ifdef __linux__
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #endif
 
 #include <atomic>
@@ -1337,6 +1340,164 @@ BOOST_AUTO_TEST_CASE(import_blocks_into_fresh_datadir)
         AppendBytes(out, std::vector<unsigned char>(1000, 'x'));
     }
     BOOST_CHECK(!Import(junk));
+}
+
+/* LoadGenesisBlock writes the genesis block into an empty data directory, and writes nothing
+ * once it is indexed; it fails, indexing nothing, when the block file can't be written */
+BOOST_AUTO_TEST_CASE(load_genesis_block)
+{
+    const CChainParams& params = Params();
+    const uint256 hashGenesis = params.GetConsensus().hashGenesisBlock;
+    const fs::path blocks = GetDataDir() / "blocks";
+    const fs::path blk = GetBlockPosFilename(CDiskBlockPos(0, 0), "blk");
+    auto load = [&params]() {
+        LOCK(cs_main);
+        return LoadGenesisBlock(params);
+    };
+    {
+        LOCK(cs_main);
+        const CBlockFileInfo info = *GetBlockFileInfo(0);
+        BOOST_CHECK(LoadGenesisBlock(params));
+        BOOST_CHECK_EQUAL(GetBlockFileInfo(0)->nBlocks, info.nBlocks);
+        BOOST_CHECK_EQUAL(GetBlockFileInfo(0)->nSize, info.nSize);
+    }
+    // A new data directory without the blocks directory, up to the call
+    auto fresh = [&]() {
+        FreshNode(false);
+        fs::remove_all(blocks);
+        LOCK(cs_main);
+        BOOST_REQUIRE(LoadBlockIndex(params));
+    };
+
+    fresh();
+    BOOST_CHECK(load());
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(mapBlockIndex.count(hashGenesis));
+        const CBlockIndex* p = mapBlockIndex[hashGenesis];
+        BOOST_CHECK(p->nStatus & BLOCK_HAVE_DATA);
+        BOOST_CHECK_EQUAL(p->nFile, 0);
+        BOOST_CHECK_EQUAL(p->nDataPos, 8U);
+        BOOST_CHECK_EQUAL(GetBlockFileInfo(0)->nBlocks, 1U);
+    }
+
+    // The block file is a directory, so it can't be opened
+    fresh();
+    fs::create_directories(blk);
+    BOOST_CHECK(!load());
+    BOOST_CHECK(!Known(hashGenesis));
+
+    // The blocks directory is a regular file, so it can't be created
+    fresh();
+    std::ofstream(blocks.string()).put('x');
+    BOOST_CHECK(!load());
+    BOOST_CHECK(!Known(hashGenesis));
+
+#ifdef __linux__
+    // The block file is a FIFO (which, opened for reading and writing, doesn't block on
+    // Linux), so the write position can't be told
+    fresh();
+    fs::create_directories(blocks);
+    BOOST_REQUIRE_EQUAL(mkfifo(blk.string().c_str(), 0600), 0);
+    BOOST_CHECK(!load());
+    BOOST_CHECK(!Known(hashGenesis));
+#endif
+
+    FreshNode();
+    BOOST_CHECK(Tip()->GetBlockHash() == hashGenesis);
+}
+
+#ifndef WIN32
+/* Only the genesis block is indexed, and its data can't be read. LoadChainTip, which connects
+ * it, should fail and leave no tip, and an import of a file that starts with it should fail
+ * and stop there. Today the process ends with a segmentation fault instead: after the failed
+ * connect, the mempool is updated for the tip of the still empty chain. The calls run in a
+ * child process. Once the block can be read, both succeed. */
+BOOST_AUTO_TEST_CASE(genesis_unreadable_on_empty_chain)
+{
+    std::vector<CBlock> b = ReadChain();
+    const uint256 hash1 = b[1].GetHash();
+    const fs::path file = DataFile("bootstrap.dat");
+    {
+        CAutoFile out(fsbridge::fopen(file, "wb"), SER_DISK, CLIENT_VERSION);
+        AppendBlock(out, b[0]);
+        AppendBlock(out, b[1]);
+    }
+    FreshNode(false);
+    fs::remove_all(GetDataDir() / "blocks");
+    CBlockIndex* pgenesis;
+    unsigned int nDataPos;
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE(LoadBlockIndex(Params()));
+        BOOST_REQUIRE(LoadGenesisBlock(Params()));
+        pgenesis = mapBlockIndex[b[0].GetHash()];
+        nDataPos = pgenesis->nDataPos;
+        pgenesis->nDataPos = 0x7fffffff;
+    }
+    ChildResult child;
+    {
+        ShutdownRequestRecorder recorder; // records the abort's shutdown request in the child
+        child = RunInChild([&file, &hash1]() {
+            {
+                LOCK(cs_main);
+                if (LoadChainTip(Params()) || chainActive.Tip()) return 1;
+            }
+            if (LoadExternalBlockFile(Params(), fsbridge::fopen(file, "rb"))) return 2;
+            return Known(hash1) ? 3 : 0;
+        }, DataFile("child-stderr.log"));
+    }
+    KNOWN_FAILURE_EQUAL("MG-081", child.status, "exit 0", strprintf("signal %d", SIGSEGV));
+
+    {
+        LOCK(cs_main);
+        pgenesis->nDataPos = nDataPos;
+        BOOST_CHECK(LoadChainTip(Params()));
+    }
+    BOOST_CHECK(Tip() == pgenesis);
+    BOOST_CHECK(Import(file));
+    BOOST_CHECK(Tip()->GetBlockHash() == hash1);
+}
+#endif
+
+/* An import of a file that starts with the genesis block activates the best chain; when a
+ * stored block on top of genesis can't be read, the activation aborts and the import stops */
+BOOST_AUTO_TEST_CASE(import_stops_when_activation_fails)
+{
+    std::vector<CBlock> b = ReadChain();
+    const fs::path file = DataFile("bootstrap.dat");
+    {
+        CAutoFile out(fsbridge::fopen(file, "wb"), SER_DISK, CLIENT_VERSION);
+        AppendBlock(out, b[0]);
+        AppendBlock(out, b[2]);
+    }
+    FreshNode();
+    CBlockIndex* pgenesis = Tip();
+    ShutdownRequestRecorder recorder;
+    StartShutdown(); // block 1 is stored, not connected
+    Submit(b[1]);
+    ShutdownRequestRecorder::Reset();
+    CBlockIndex* p1 = Index(b[1].GetHash());
+    BOOST_REQUIRE(p1 && (p1->nStatus & BLOCK_HAVE_DATA));
+    BOOST_REQUIRE(Tip() == pgenesis);
+    unsigned int nDataPos;
+    {
+        LOCK(cs_main);
+        nDataPos = p1->nDataPos;
+        p1->nDataPos = 0x7fffffff;
+    }
+    BOOST_CHECK(!Import(file));
+    BOOST_CHECK(ShutdownRequested());
+    BOOST_CHECK(Tip() == pgenesis);
+    BOOST_CHECK(!Known(b[2].GetHash()));
+    ShutdownRequestRecorder::Reset();
+    SetMiscWarning("");
+    {
+        LOCK(cs_main);
+        p1->nDataPos = nDataPos;
+    }
+    BOOST_CHECK(Import(file));
+    BOOST_CHECK(Tip()->GetBlockHash() == b[2].GetHash());
 }
 
 BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)

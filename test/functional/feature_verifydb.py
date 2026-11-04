@@ -16,6 +16,9 @@ run with -checkblockindex=1 while it is built.
 - -checkblocks/-checklevel at startup, and the number of blocks checked.
 - Corrupted undo data: init error at -checklevel=2, not at 1; -reindex
   recovers.
+- Corrupted block data (a coinbase amount changed in blk00000.dat, the header
+  intact): init error at -checklevel=1, not at 0; the node starts normally
+  once the bytes are back.
 - -checkblockindex=1: the first block after a restart aborts the node (known
   bug uF3zsEiV).
 - The -help defaults of -checkblocks/-checklevel, and debug options missing
@@ -26,7 +29,7 @@ import http.client
 import os
 import subprocess
 
-from test_framework.messages import COIN
+from test_framework.messages import COIN, CBlock, FromHex
 from test_framework.mininode import MAGIC_BYTES
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch, FailedToStartError, describe_exit_code
@@ -171,6 +174,37 @@ class VerifyDBTest(BitcoinTestFramework):
         self.start_node(0, BASE + ["-checklevel=1", "-checkblocks=5"])
         self.stop_node(0)
         self.start_node(0, BASE + ["-reindex"])
+        assert_equal(node0.getbestblockhash(), tip)
+        self.verifychain_ok(3, 0)
+
+        self.log.info("Corrupted block data")
+        height = 58
+        original = bytes.fromhex(node0.getblock(node0.getblockhash(height), False))
+        block = FromHex(CBlock(), original.hex())
+        assert_equal(block.serialize(), original)
+        block.vtx[0].vout[0].nValue += 1
+        corrupted = block.serialize()
+        assert_equal(len(corrupted), len(original))
+        self.stop_node(0)
+        blk = os.path.join(node0.datadir, 'blocks', 'blk00000.dat')
+        with open(blk, 'rb') as f:
+            data = f.read()
+        offset = data.find(original)
+        assert offset > 0 and data.find(original, offset + 1) == -1
+
+        def write_block(content):
+            with open(blk, 'r+b') as f:
+                f.seek(offset)
+                f.write(content)
+        write_block(corrupted)
+        with node0.assert_debug_log(["found bad block at %d" % height]):
+            node0.assert_start_raises_init_error(BASE + ["-checklevel=1", "-checkblocks=5"],
+                                                 "Corrupted block database detected", match=ErrorMatch.PARTIAL_REGEX)
+        self.start_node(0, BASE + ["-checklevel=0", "-checkblocks=5"])
+        assert_equal(node0.getbestblockhash(), tip)
+        self.stop_node(0)
+        write_block(original)
+        self.start_node(0, BASE + ["-checklevel=1", "-checkblocks=5"])
         assert_equal(node0.getbestblockhash(), tip)
         self.verifychain_ok(3, 0)
 
