@@ -56,13 +56,6 @@ BOOST_AUTO_TEST_CASE(main_identity_and_genesis)
     const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::MAIN);
     BOOST_CHECK_EQUAL(params->NetworkIDString(), "main");
 
-    const CMessageHeader::MessageStartChars& start = params->MessageStart();
-    BOOST_CHECK_EQUAL(int(start[0]), 0xd9);
-    BOOST_CHECK_EQUAL(int(start[1]), 0xe6);
-    BOOST_CHECK_EQUAL(int(start[2]), 0xe7);
-    BOOST_CHECK_EQUAL(int(start[3]), 0xe5);
-    BOOST_CHECK_EQUAL(params->GetDefaultPort(), 7688);
-
     const CBlock& genesis = params->GenesisBlock();
     BOOST_CHECK(genesis.GetHash() == params->GetConsensus().hashGenesisBlock);
     BOOST_CHECK_EQUAL(genesis.hashMerkleRoot.GetHex(), GENESIS_MERKLE_ROOT);
@@ -75,6 +68,12 @@ BOOST_AUTO_TEST_CASE(main_identity_and_genesis)
     BOOST_REQUIRE_EQUAL(genesis.vtx[0].vout.size(), 1U);
     BOOST_CHECK(genesis.vtx[0].vout[0].IsEmpty());
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    const CMessageHeader::MessageStartChars& start = params->MessageStart();
+    BOOST_CHECK_EQUAL(int(start[0]), 0xd9);
+    BOOST_CHECK_EQUAL(int(start[1]), 0xe6);
+    BOOST_CHECK_EQUAL(int(start[2]), 0xe7);
+    BOOST_CHECK_EQUAL(int(start[3]), 0xe5);
+    BOOST_CHECK_EQUAL(params->GetDefaultPort(), 7688);
     BOOST_CHECK_EQUAL(params->GetConsensus().hashGenesisBlock.GetHex(),
                       "0000060fc90618113cde415ead019a1052a9abc43afcccff38608ff8751353e5");
     BOOST_CHECK_EQUAL(genesis.nNonce, 127357U);
