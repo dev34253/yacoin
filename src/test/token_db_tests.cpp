@@ -10,6 +10,7 @@
 #include "tinyformat.h"
 #include "uint256.h"
 
+#include "test/known_failure.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -214,8 +215,19 @@ BOOST_AUTO_TEST_CASE(address_token_quantity)
     BOOST_CHECK(!ptokensdb->ReadAddressTokenQuantity(a1, "ABC", nQuantity));
 }
 
-/* A negative start counts back from the end, but the listing then starts at the
- * first key of the whole database: it only finds entries that come first there */
+/** A listing as one string, for the known-failure checks */
+static std::string Joined(const std::vector<std::string>& entries)
+{
+    std::string result;
+    for (const std::string& entry : entries)
+        result += (result.empty() ? "" : ",") + entry;
+    return result;
+}
+
+/* A negative start counts back from the end of the entries of the token or
+ * address. After counting, the listing starts again at the first key of the
+ * whole database instead of at the entries, so it only finds them when they
+ * are the first keys of the database. */
 BOOST_AUTO_TEST_CASE(holder_listings_from_the_end)
 {
     const std::string a1 = TestTokenAddress(1);
@@ -223,22 +235,24 @@ BOOST_AUTO_TEST_CASE(holder_listings_from_the_end)
     const std::vector<std::string> all = TokenEntriesInDbOrder(holders);
     for (const auto& entry : holders)
         BOOST_REQUIRE(ptokensdb->WriteTokenAddressQuantity("ABC", entry.first, entry.second));
+    // These work only because ABC's entries are the first keys of the database
     TOKEN_CHECK_LIST(TokenHolders("ABC", 1, -1), {all[2]});
     TOKEN_CHECK_LIST(TokenHolders("ABC", 10, -2), {all[1], all[2]});
     TOKEN_CHECK_LIST(TokenHolders("ABC", 10, -3), all);
     // ABCD's entries come after ABC's
     BOOST_REQUIRE(ptokensdb->WriteTokenAddressQuantity("ABCD", a1, 4 * COIN));
-    TOKEN_CHECK_LIST(TokenHolders("ABCD", 10, -1), {});
+    KNOWN_FAILURE_EQUAL("MG-046", Joined(TokenHolders("ABCD", 10, -1)), Entry(a1, 4 * COIN), "");
     TOKEN_CHECK_LIST(TokenHolders("ABCD", 10, 0), {Entry(a1, 4 * COIN)});
 
     // The token-to-address table comes before the address-to-token table
     BOOST_REQUIRE(ptokensdb->WriteAddressTokenQuantity(a1, "XYZ", 3 * COIN));
     BOOST_REQUIRE(ptokensdb->WriteAddressTokenQuantity(a1, "ABC", 1 * COIN));
-    TOKEN_CHECK_LIST(TokenHoldings(a1, 10, -1), {});
+    KNOWN_FAILURE_EQUAL("MG-046", Joined(TokenHoldings(a1, 10, -1)), "XYZ=3000000", "");
     TOKEN_CHECK_LIST(TokenHoldings(a1, 10, 0), {"ABC=1000000", "XYZ=3000000"});
     for (const auto& entry : holders)
         BOOST_REQUIRE(ptokensdb->EraseTokenAddressQuantity("ABC", entry.first));
     BOOST_REQUIRE(ptokensdb->EraseTokenAddressQuantity("ABCD", a1));
+    // These work only because a1's entries are now the first keys of the database
     TOKEN_CHECK_LIST(TokenHoldings(a1, 1, -1), {"XYZ=3000000"});
     TOKEN_CHECK_LIST(TokenHoldings(a1, 10, -2), {"ABC=1000000", "XYZ=3000000"});
 }
