@@ -393,6 +393,8 @@ Ubuntu 22.04, 8 cores, 15 GB RAM.
 | Configure one variant | 48 s |
 | Clean build of a variant, cold ccache | 6 min 52 s – 7 min 55 s |
 | Rebuild of a variant after reconfiguring it, warm ccache | 67 s |
+| `depends` in another checkout with the same recipes (shared cache) | 0 s |
+| First build of a variant in another checkout, same variant built before (shared cache) | 46 – 64 s (most of it configure) |
 | Rebuild `test_bitcoin` after changing one source file | 7 s |
 | All unit tests, serial | 29 s |
 | All unit tests, parallel (`./dev.sh unit`) | 15 s |
