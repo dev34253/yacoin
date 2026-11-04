@@ -7,7 +7,8 @@
 // that fail while being connected (InvalidBlockFound), VerifyDB, ReplayBlocks
 // after an interrupted flush (RollforwardBlock) and without usable undo data, and
 // moving the tip (ActivateBestChain, ConnectTip, DisconnectTip, InvalidateBlock)
-// when undo data can't be read or the block is on a side branch.
+// when a block or its undo data can't be read, a shutdown is requested, or the
+// block is on a side branch.
 //
 // Note: script checks only run above the last checkpoint (fScriptChecks), and
 // the checkpoint map is mainnet's, so signatures aren't verified here.
@@ -15,6 +16,7 @@
 #include "chainparams.h"
 #include "coins.h"
 #include "consensus/validation.h"
+#include "init.h"
 #include "miner.h"
 #include "pow.h"
 #include "random.h"
@@ -23,7 +25,9 @@
 #include "tokens/tokens.h"
 #include "txdb.h"
 #include "txmempool.h"
+#include "utilstrencodings.h"
 #include "validation.h"
+#include "warnings.h"
 
 #include "test/test_bitcoin.h"
 
@@ -204,8 +208,20 @@ struct UtxoSnapshot {
     }
 };
 
+/** Records shutdown requests while it lives, and clears the misc warning that
+ *  AbortNode sets, both now with Reset() and again when it goes out of scope */
+struct AbortGuard {
+    ShutdownRequestRecorder recorder;
+    static void Reset()
+    {
+        ShutdownRequestRecorder::Reset();
+        SetMiscWarning("");
+    }
+    ~AbortGuard() { SetMiscWarning(""); }
+};
+
 /** Points a block's data or undo position past the end of its file while it lives,
- *  so reading it fails */
+ *  so reading it fails; Restore() puts it back earlier */
 class BrokenPos
 {
     unsigned int& m_pos;
@@ -217,11 +233,12 @@ public:
         LOCK(cs_main);
         m_pos = 0x7fffffff;
     }
-    ~BrokenPos()
+    void Restore()
     {
         LOCK(cs_main);
         m_pos = m_saved;
     }
+    ~BrokenPos() { Restore(); }
     BrokenPos(const BrokenPos&) = delete;
     BrokenPos& operator=(const BrokenPos&) = delete;
 };
@@ -671,6 +688,112 @@ BOOST_AUTO_TEST_CASE(replay_without_undo_data)
     pindexX->nUndoPos = nUndoPos;
 }
 
+
+/* The tip's block can't be read: InvalidateBlock fails with an error state (not an
+ * invalid one), aborts (shutdown requested, warning set) and changes nothing; once the
+ * block can be read again, the same call succeeds */
+BOOST_AUTO_TEST_CASE(disconnect_tip_read_failure)
+{
+    AbortGuard abort;
+    BOOST_REQUIRE(Submit(BuildBlock({})));
+    CBlockIndex* pindexTip = Tip();
+    CTransaction spend = Spend(matureCoinbases[0]);
+    AddToMempool(spend);
+    {
+        BrokenPos broken(pindexTip->nDataPos);
+        LOCK(cs_main);
+        CValidationState state;
+        BOOST_CHECK(!InvalidateBlock(state, Params(), pindexTip));
+        BOOST_CHECK(state.IsError());
+        BOOST_CHECK(!state.IsInvalid());
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "DisconnectTip(): Failed to read block");
+        BOOST_CHECK(ShutdownRequested());
+        BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "DisconnectTip(): Failed to read block");
+        BOOST_CHECK(chainActive.Tip() == pindexTip);
+        BOOST_CHECK(pcoinsTip->GetBestBlock() == pindexTip->GetBlockHash());
+        BOOST_CHECK(!(pindexTip->nStatus & BLOCK_FAILED_MASK));
+        BOOST_CHECK(mempool.exists(spend.GetHash()));
+    }
+    AbortGuard::Reset();
+
+    LOCK(cs_main);
+    CValidationState state;
+    BOOST_CHECK(InvalidateBlock(state, Params(), pindexTip));
+    BOOST_CHECK(state.IsValid());
+    BOOST_CHECK(!ShutdownRequested());
+    BOOST_CHECK(chainActive.Tip() == pindexTip->pprev);
+    BOOST_CHECK(pindexTip->nStatus & BLOCK_FAILED_VALID);
+    BOOST_CHECK(mempool.exists(spend.GetHash()));
+}
+
+/* A block that is stored but not connected yet, and can't be read when its turn comes:
+ * ActivateBestChain fails with an error and aborts; the block isn't marked invalid and
+ * stays a candidate, so the next call connects it once it can be read */
+BOOST_AUTO_TEST_CASE(connect_tip_read_failure)
+{
+    AbortGuard abort;
+    CBlockIndex* pindexStart = Tip();
+    CBlock block = BuildBlock({});
+    // Stored without being connected: ActivateBestChain stops at once on a shutdown request
+    StartShutdown();
+    BOOST_REQUIRE(!Submit(block));
+    AbortGuard::Reset();
+    CBlockIndex* pindex = Index(block);
+    BOOST_REQUIRE(pindex->nStatus & BLOCK_HAVE_DATA);
+    BOOST_REQUIRE(Tip() == pindexStart);
+    {
+        BrokenPos broken(pindex->nDataPos);
+        CValidationState state;
+        BOOST_CHECK(!ActivateBestChain(state, Params()));
+        BOOST_CHECK(state.IsError());
+        BOOST_CHECK(!state.IsInvalid());
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "Failed to read block");
+        BOOST_CHECK(ShutdownRequested());
+        BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "Failed to read block");
+        BOOST_CHECK(Tip() == pindexStart);
+        BOOST_CHECK(!Failed(pindex));
+        BOOST_CHECK(pindex->nStatus & BLOCK_HAVE_DATA);
+    }
+    AbortGuard::Reset();
+
+    CValidationState state;
+    BOOST_CHECK(ActivateBestChain(state, Params()));
+    BOOST_CHECK(state.IsValid());
+    BOOST_CHECK(Tip() == pindex);
+    BOOST_CHECK(!ShutdownRequested());
+}
+
+/* With a shutdown requested ActivateBestChain returns success without moving the tip,
+ * and the next call after the request is gone connects the waiting block; -stopatheight
+ * requests the shutdown once a block at that height is connected */
+BOOST_AUTO_TEST_CASE(activate_best_chain_shutdown_requested)
+{
+    AbortGuard abort;
+    CBlockIndex* pindexStart = Tip();
+    CBlock block = BuildBlock({});
+    StartShutdown();
+    BOOST_CHECK(!Submit(block));
+    BOOST_CHECK(Tip() == pindexStart);
+    {
+        CValidationState state;
+        BOOST_CHECK(ActivateBestChain(state, Params()));
+        BOOST_CHECK(state.IsValid());
+        BOOST_CHECK(Tip() == pindexStart);
+    }
+    AbortGuard::Reset();
+    {
+        CValidationState state;
+        BOOST_CHECK(ActivateBestChain(state, Params()));
+        BOOST_CHECK(Tip()->GetBlockHash() == block.GetHash());
+    }
+
+    ArgGuard stop("-stopatheight", itostr(Tip()->nHeight + 2));
+    BOOST_CHECK(Submit(BuildBlock({})));
+    BOOST_CHECK(!ShutdownRequested());
+    BOOST_CHECK(Submit(BuildBlock({})));
+    BOOST_CHECK(ShutdownRequested());
+    BOOST_CHECK_EQUAL(Tip()->nHeight, pindexStart->nHeight + 3);
+}
 
 /* The tip's undo data can't be read: InvalidateBlock fails in DisconnectBlock with the
  * state still valid and changes nothing; with the undo data back, the same call succeeds */
