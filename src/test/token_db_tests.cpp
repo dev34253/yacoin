@@ -198,4 +198,49 @@ BOOST_AUTO_TEST_CASE(address_dir_totals_and_paging)
     TOKEN_CHECK_LIST(TokenHoldings(a3, 10, 1), {});
 }
 
+BOOST_AUTO_TEST_CASE(address_token_quantity)
+{
+    const std::string a1 = TestTokenAddress(1);
+    CAmount nQuantity = -1;
+    BOOST_CHECK(!ptokensdb->ReadAddressTokenQuantity(a1, "ABC", nQuantity));
+    BOOST_CHECK_EQUAL(nQuantity, -1);
+    BOOST_REQUIRE(ptokensdb->WriteAddressTokenQuantity(a1, "ABC", 4 * COIN));
+    BOOST_CHECK(ptokensdb->ReadAddressTokenQuantity(a1, "ABC", nQuantity));
+    BOOST_CHECK_EQUAL(nQuantity, 4 * COIN);
+    // The other table and the swapped key are separate entries
+    BOOST_CHECK(!ptokensdb->ReadTokenAddressQuantity("ABC", a1, nQuantity));
+    BOOST_CHECK(!ptokensdb->ReadAddressTokenQuantity("ABC", a1, nQuantity));
+    BOOST_CHECK(ptokensdb->EraseAddressTokenQuantity(a1, "ABC"));
+    BOOST_CHECK(!ptokensdb->ReadAddressTokenQuantity(a1, "ABC", nQuantity));
+}
+
+/* A negative start counts back from the end, but the listing then starts at the
+ * first key of the whole database: it only finds entries that come first there */
+BOOST_AUTO_TEST_CASE(holder_listings_from_the_end)
+{
+    const std::string a1 = TestTokenAddress(1);
+    const std::vector<std::pair<std::string, CAmount> > holders = {{a1, 1 * COIN}, {TestTokenAddress(2), 2 * COIN}, {TestTokenAddress(3), 3 * COIN}};
+    const std::vector<std::string> all = TokenEntriesInDbOrder(holders);
+    for (const auto& entry : holders)
+        BOOST_REQUIRE(ptokensdb->WriteTokenAddressQuantity("ABC", entry.first, entry.second));
+    TOKEN_CHECK_LIST(TokenHolders("ABC", 1, -1), {all[2]});
+    TOKEN_CHECK_LIST(TokenHolders("ABC", 10, -2), {all[1], all[2]});
+    TOKEN_CHECK_LIST(TokenHolders("ABC", 10, -3), all);
+    // ABCD's entries come after ABC's
+    BOOST_REQUIRE(ptokensdb->WriteTokenAddressQuantity("ABCD", a1, 4 * COIN));
+    TOKEN_CHECK_LIST(TokenHolders("ABCD", 10, -1), {});
+    TOKEN_CHECK_LIST(TokenHolders("ABCD", 10, 0), {Entry(a1, 4 * COIN)});
+
+    // The token-to-address table comes before the address-to-token table
+    BOOST_REQUIRE(ptokensdb->WriteAddressTokenQuantity(a1, "XYZ", 3 * COIN));
+    BOOST_REQUIRE(ptokensdb->WriteAddressTokenQuantity(a1, "ABC", 1 * COIN));
+    TOKEN_CHECK_LIST(TokenHoldings(a1, 10, -1), {});
+    TOKEN_CHECK_LIST(TokenHoldings(a1, 10, 0), {"ABC=1000000", "XYZ=3000000"});
+    for (const auto& entry : holders)
+        BOOST_REQUIRE(ptokensdb->EraseTokenAddressQuantity("ABC", entry.first));
+    BOOST_REQUIRE(ptokensdb->EraseTokenAddressQuantity("ABCD", a1));
+    TOKEN_CHECK_LIST(TokenHoldings(a1, 1, -1), {"XYZ=3000000"});
+    TOKEN_CHECK_LIST(TokenHoldings(a1, 10, -2), {"ABC=1000000", "XYZ=3000000"});
+}
+
 BOOST_AUTO_TEST_SUITE_END()

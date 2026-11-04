@@ -14,6 +14,9 @@
 - The state survives a restart, -reindex and -reindex-fast.
 - A reissue that was flushed to the token DB and then reorged away is undone
   from the DB, including its token address entry.
+- A transfer and a transferfromaddress that were flushed to the token DB and
+  then invalidated are undone from the token address index, also after a
+  restart; mined again, every node shows them.
 
 Node 0 mines nothing on the common chain, so its side-branch transactions
 depend on side-branch coinbases and can't return to the mempool after the
@@ -80,6 +83,7 @@ class TokenReorgTest(BitcoinTestFramework):
         self.join()
         self.persistence()
         self.reissue_undo_after_flush()
+        self.transfer_undo_after_flush()
 
     def common_chain(self):
         self.log.info("Mine the common chain on node 2 and issue FLUSHME")
@@ -209,7 +213,7 @@ class TokenReorgTest(BitcoinTestFramework):
         assert_equal(self.state(n1), pre2)
 
     def reissue_undo_after_flush(self):
-        """Last step: the reissue goes back to the mempool, nothing is mined after it."""
+        """The reissue goes back to the mempool."""
         self.log.info("Undo a reissue that was flushed to the token DB")
         n0, n1, n2 = self.nodes
         disconnect_nodes(n1, 0)
@@ -274,6 +278,49 @@ class TokenReorgTest(BitcoinTestFramework):
         self.restart_node(2)
         assert_equal(n2.listaddressesbytoken("FLUSHME"), ref_holders)
         assert_equal(n2.gettokendata("FLUSHME"), orig)
+
+    def index_state(self, node, addrs):
+        return ({name: node.listaddressesbytoken(name) for name in ["FLUSHME", "FLUSHME!"]},
+                {a: node.listtokenbalancesbyaddress(a) for a in addrs})
+
+    def check_transferred(self, node, to_from, to):
+        holders = node.listaddressesbytoken("FLUSHME")
+        # 4 units: the block holds the reissue too
+        assert_equal((holders[to_from], holders[to]), ("4.0000", "20.0000"))
+
+    def transfer_undo_after_flush(self):
+        """Node 2 (not connected since its restart) mines transfers alone, node 0 is the reference."""
+        self.log.info("Undo transfers that were flushed to the token DB")
+        n0, n1, n2 = self.nodes
+        to_from, to = n2.getnewaddress(), n2.getnewaddress()
+        assert_equal(n2.listtokenbalancesbyaddress(self.a2x), {"FLUSHME": "10.00"})
+        # The reissue of the last step is still in node 2's mempool
+        assert_equal(len(n2.getrawmempool()), 1)
+        n2.transferfromaddress("FLUSHME", self.a2x, 4, to_from)
+        n2.transfer("FLUSHME", 20, to)
+        block = self.mine_with_mocktime(n2, 1, sync=False)[0]
+        addrs = sorted(set(n2.listaddressesbytoken("FLUSHME")) | set(n0.listaddressesbytoken("FLUSHME")) |
+                       {self.a2f, self.a2F, self.a2x})
+        self.check_transferred(n2, to_from, to)
+        ref = self.index_state(n0, addrs)
+        assert_equal(n0.getbestblockhash(), n2.getblockheader(block)["previousblockhash"])
+        # The listings wrote the transfers to the token DB; the restart empties the caches
+        self.restart_node(2)
+        n2.invalidateblock(block)
+        assert_equal(n2.getbestblockhash(), n0.getbestblockhash())
+        assert_equal(self.index_state(n2, addrs), ref)
+        self.restart_node(2)
+        assert_equal(self.index_state(n2, addrs), ref)
+
+        # Mined again, to a fresh address so the block differs from the invalidated one
+        self.set_mocktime(self.mocktime + 60)
+        n2.generatetoaddress(1, n2.getnewaddress())
+        connect_nodes(n2, 0)
+        connect_nodes(n2, 1)
+        self.sync_blocks()
+        self.check_transferred(n2, to_from, to)
+        for node in [n0, n1]:
+            assert_equal(self.index_state(node, addrs), self.index_state(n2, addrs))
 
 
 if __name__ == "__main__":
