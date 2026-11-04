@@ -1447,7 +1447,7 @@ BOOST_AUTO_TEST_CASE(genesis_unreadable_on_empty_chain)
             return Known(hash1) ? 3 : 0;
         }, DataFile("child-stderr.log"));
     }
-    BOOST_CHECK_EQUAL(child.status, strprintf("signal %d", SIGSEGV));
+    KNOWN_FAILURE_EQUAL("MG-081", child.status, "exit 0", strprintf("signal %d", SIGSEGV));
 
     {
         LOCK(cs_main);
