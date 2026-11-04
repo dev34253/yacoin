@@ -3,8 +3,9 @@
 #
 # Always builds against the pinned libraries from depends/ (never system
 # libraries), so local builds use the same dependency versions as CI.
-# All build output, caches and test data stay inside .devbuild/ and build/.
-# See doc/developer-build.md for the workflow.
+# Build output and test data stay inside .devbuild/ and build/; the compiler
+# cache and the built dependencies are in one cache directory that all
+# checkouts share (DEV_CACHE). See doc/developer-build.md for the workflow.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +16,28 @@ DEV_HOST="${DEV_HOST:-$DEFAULT_HOST}"
 # these on, so the images keep their own (CI's) defaults.
 CALLER_JOBS="${JOBS:-}" CALLER_CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-}"
 JOBS="${JOBS:-$(nproc)}"
-DEPENDS_PREFIX="$ROOT/depends/$DEV_HOST"
+
+# The cache shared by all checkouts: ccache, the depends sources, and per set
+# of depends inputs (key) the built packages, depends' work area and the
+# install prefix. Packages contain their install prefix, so checkouts with the
+# same recipes share one prefix at one path, and other recipes get their own.
+DEV_CACHE="${DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev}"
+[[ "$DEV_CACHE" == /* ]] || DEV_CACHE="$PWD/$DEV_CACHE"
+# The content of the files git tracks under depends/, and the host. Not a git
+# checkout: a key of its own, nothing shared.
+depends_key() {
+    local inputs
+    if [[ "$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$ROOT" && pwd -P)" ]]; then
+        inputs=$(cd "$ROOT" && git ls-files -z -- depends | xargs -0 -r sha256sum -- 2>/dev/null) || true
+    else
+        inputs="tree $ROOT"
+    fi
+    printf '%s\nhost %s\n' "$inputs" "$DEV_HOST" | sha256sum | cut -c1-16
+}
+# A path component named "depends", so the coverage filter "*/depends/*"
+# removes the dependency headers from reports.
+DEPENDS_DIR="$DEV_CACHE/depends/$(depends_key)"
+DEPENDS_PREFIX="$DEPENDS_DIR/$DEV_HOST"
 # Builds for other hosts get their own directories, so a variant is never
 # silently reused for a different host.
 if [[ "$DEV_HOST" == "$DEFAULT_HOST" ]]; then
@@ -29,14 +51,16 @@ fi
 export CONFIG_SITE="$DEPENDS_PREFIX/share/config.site"
 DEVBUILD="$ROOT/.devbuild"
 
-# Keep ccache and temporary test data inside the repository, even if the
-# environment points CCACHE_DIR elsewhere.
-export CCACHE_DIR="$DEVBUILD/ccache"
+# The shared ccache, even if the environment points CCACHE_DIR elsewhere.
+# With -g, ccache includes the build directory in the cache key, with the
+# debug prefix map applied (variant_flags): variants get their own entries,
+# while the same variant in another checkout gets the same ones. Coverage
+# builds keep entries per checkout, as ccache also keys them on the path of
+# their .gcda files.
+export CCACHE_DIR="$DEV_CACHE/ccache"
 export CCACHE_BASEDIR="$ROOT"
 export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-10G}"
-# One cache for all variants. With -g, ccache includes the build directory in
-# the cache key, so each variant gets its own entries and its debug info points
-# at its own build directory.
+# Temporary test data stays inside the checkout.
 export TMPDIR="$DEVBUILD/tmp"
 
 usage() {
@@ -60,6 +84,7 @@ Usage: ./dev.sh <command> [args]
   all                     dev build, unit, ftest and release build; runs every
                           step and prints a summary
   ccache-stats            Show ccache statistics
+  cache                   Print the paths of the shared cache
   container [options] [image] [mode]
                           Build a CI image from ci/containers/ and run a mode
                           in it on this checkout (default: ubuntu.22.04 build;
@@ -69,6 +94,10 @@ Variants: dev (mainnet consensus, no GUI, -O1 -g), func (dev + low difficulty),
           release (default optimisation),
           asan (dev + AddressSanitizer/UndefinedBehaviorSanitizer),
           cov-unit and cov-func (coverage builds used by "cov")
+
+Cache shared by all checkouts (ccache and the built dependencies; DEV_CACHE
+sets it, removing the directory clears it):
+  $DEV_CACHE
 EOF
 }
 
@@ -82,15 +111,48 @@ timed() {
 
 ensure_dirs() {
     mkdir -p "$CCACHE_DIR" "$TMPDIR" "$DEVBUILD/logs"
+    # ccache 3.3.4 creates its config on first use, and parallel first
+    # compiles on an empty cache race for it ("ccache.conf: No such file or
+    # directory"). An empty file means the defaults.
+    [[ -e "$CCACHE_DIR/ccache.conf" ]] || touch "$CCACHE_DIR/ccache.conf"
+}
+
+cmd_cache() {
+    printf '%s=%s\n' DEV_CACHE "$DEV_CACHE" CCACHE_DIR "$CCACHE_DIR" SOURCES_PATH "$DEV_CACHE/depends/sources" \
+        DEPENDS_DIR "$DEPENDS_DIR" DEPENDS_PREFIX "$DEPENDS_PREFIX"
 }
 
 cmd_depends() {
     ensure_dirs  # TMPDIR is used by the package builds
-    local args=(-C "$ROOT/depends" -j"$JOBS" HOST="$DEV_HOST")
+    # depends' make variable for the install prefix: <arch>_<os>_prefix.
+    local canon os
+    canon=$("$ROOT/depends/config.sub" "$DEV_HOST")
+    case "$canon" in
+        *linux*) os=linux ;; *darwin*) os=darwin ;; *mingw32*) os=mingw32 ;; *) os="${canon#*-*-}" ;;
+    esac
+    local w="$DEPENDS_DIR/work"
+    local args=(-C "$ROOT/depends" -j"$JOBS" HOST="$DEV_HOST" "${canon%%-*}_${os}_prefix=$DEPENDS_PREFIX"
+                BASE_CACHE="$DEPENDS_DIR/built" SOURCES_PATH="$DEV_CACHE/depends/sources"
+                base_build_dir="$w/build" base_staging_dir="$w/staging" base_download_dir="$w/download")
     [[ "${1:-}" == qt ]] || args+=(NO_QT=1)
+    # One depends build at a time in the cache: the prefix is depends' work
+    # area while it builds, and the sources are shared by all keys.
+    local lock="$DEV_CACHE/depends.lock" fd
+    exec {fd}>> "$lock"
+    flock -n "$fd" || { log "Waiting for another depends build ($lock)"; flock "$fd"; }
     # The depends packages run their own configure scripts with their own
     # settings; they must not read the config.site meant for yacoind.
     env -u CONFIG_SITE make "${args[@]}"
+}
+
+# A build directory configured against another prefix (older recipes, or a
+# checkout from before the shared cache) would mix two sets of libraries.
+check_prefix() {
+    [[ ! -f "$1/config.status" ]] || grep -qF -- "$DEPENDS_PREFIX/" "$1/config.status" || {
+        echo "${1#"$ROOT"/} was configured against other dependencies than $DEPENDS_PREFIX." >&2
+        echo "Remove it (rm -rf ${1#"$ROOT"/}) to build it again." >&2
+        exit 1
+    }
 }
 
 # Runs autogen.sh when configure or the helper files it needs are missing.
@@ -124,7 +186,9 @@ ensure_autogen() {
 # Sets the configure arguments for a build variant in the array "flags".
 variant_flags() {
     local san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
-    flags=(--without-gui --disable-man --enable-ccache)
+    # Debug info names paths relative to the checkout (gdb finds the sources
+    # when started in it), so other checkouts can share the cached objects.
+    flags=(--without-gui --disable-man --enable-ccache "CPPFLAGS=-fdebug-prefix-map=$ROOT=.")
     # Unit tests run on the mainnet build (CI also runs them on the
     # low-difficulty one), while the functional tests need the low-difficulty
     # build, as in CI.
@@ -162,9 +226,10 @@ cmd_configure() {
         echo "Run 'make distclean' in $ROOT first." >&2
         exit 1
     fi
+    local dir="$BUILD_ROOT/$variant"
+    check_prefix "$dir"
     ensure_dirs
     ensure_autogen
-    local dir="$BUILD_ROOT/$variant"
     mkdir -p "$dir"
     (cd "$dir" && "$ROOT/configure" "${flags[@]}")
     # The functional test runner reads ../config.ini relative to its own path,
@@ -177,6 +242,7 @@ cmd_build() {
     local variant="${1:?variant required}"
     local dir="$BUILD_ROOT/$variant"
     ensure_dirs
+    check_prefix "$dir"
     [[ -f "$dir/Makefile" ]] || cmd_configure "$variant"
     # Nothing in "make all" depends on test/config.ini, so changes to
     # test/config.ini.in would otherwise only reach it on a reconfigure.
@@ -226,6 +292,7 @@ cmd_cov() {
     ensure_dirs
     # Only configure here: the make targets build what they need.
     for v in cov-unit cov-func; do
+        check_prefix "$BUILD_ROOT/$v"
         [[ -f "$BUILD_ROOT/$v/Makefile" ]] || cmd_configure "$v"
     done
     make -s -C "$BUILD_ROOT/cov-func" test/config.ini
@@ -339,6 +406,7 @@ cmd_all() {
 }
 
 case "${1:-}" in
+    cache) cmd_cache ;;
     depends|configure|build|unit|check|ftest|asan|cov|cov-check|all|container)
         c="${1//-/_}"; shift; timed "cmd_$c" "$@" ;;
     # configure picks up the pinned ccache built by depends, so query that one.

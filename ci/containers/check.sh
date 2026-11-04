@@ -3,13 +3,20 @@
 #
 # Usage: ci/containers/check.sh [--steps LIST] [image...]
 #
-# Steps (default: lint,tag,static,build,smoke,ccache; all images by default):
+# Steps (default: lint,tag,static,devsh,build,smoke,ccache; all images by
+# default):
 #   lint    bash -n and shellcheck --severity=warning on the scripts here, and
 #           no grep -q at the end of a pipe in them (pipefail and SIGPIPE)
 #   tag     test-image-tag.sh: the image tags (image-tag.sh) and the CI
 #           workflow's use of them
 #   static  every Dockerfile pins its base image by digest and sets
 #           YACOIN_BUILD_IMAGE to its own name
+#   devsh   dev.sh's shared cache, on copies of dev.sh and depends/ (no
+#           Docker, a stub make): the default path (XDG_CACHE_HOME, HOME),
+#           DEV_CACHE, the help, one depends prefix for two copies, a new one
+#           after a recipe change but not for untracked files under depends/,
+#           the arguments depends gets, ccache.conf created, two depends runs
+#           one after the other, a build directory of another prefix refused
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts and
@@ -39,7 +46,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 # shellcheck source=run.sh
 source "$HERE/run.sh"
 
-steps=lint,tag,static,build,smoke,ccache
+steps=lint,tag,static,devsh,build,smoke,ccache
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --steps) steps="$2"; shift 2 ;;
@@ -122,6 +129,72 @@ step_static() {
         [[ "$env" == "$image" ]] && pass "static: $image: YACOIN_BUILD_IMAGE=$env" ||
             fail "static: $image: YACOIN_BUILD_IMAGE is '$env'"
     done
+}
+
+# A copy of dev.sh and the tracked files of depends/ in its own git index.
+make_devsh_copy() {
+    rm -rf "$1"; mkdir -p "$1"
+    (cd "$ROOT" && git ls-files -z -- dev.sh depends | tar --null -T - -c) | tar -x -C "$1"
+    git -C "$1" init -q && git -C "$1" add -A
+}
+
+# dev_cache <copy> [env...]: the cache paths of dev.sh in <copy> (dev.sh cache).
+dev_cache() {
+    local d="$1"; shift
+    env -u DEV_CACHE -u XDG_CACHE_HOME "$@" "$d/dev.sh" cache 2>&1 || echo "dev.sh cache failed"
+}
+# depends_prefix <copy> <cache>: the depends prefix of dev.sh in <copy>.
+depends_prefix() { dev_cache "$1" DEV_CACHE="$2" | sed -n 's/^DEPENDS_PREFIX=//p'; }
+
+step_devsh() {
+    local a="$work/devsh/a" b="$work/devsh/other/b" c="$work/devsh/cache" out want got pa pb
+    make_devsh_copy "$a"; make_devsh_copy "$b"
+    got=$(dev_cache "$a" HOME="$work/home" XDG_CACHE_HOME="$work/xdg")
+    [[ "$got" == *"DEV_CACHE=$work/xdg/yacoin-dev"* ]] && pass "devsh: default cache under XDG_CACHE_HOME" ||
+        fail "devsh: default cache under XDG_CACHE_HOME: $got"
+    got=$(dev_cache "$a" HOME="$work/home")
+    [[ "$got" == *"DEV_CACHE=$work/home/.cache/yacoin-dev"* && "$got" == *"CCACHE_DIR=$work/home/.cache/yacoin-dev/ccache"* ]] &&
+        pass "devsh: default cache under HOME" || fail "devsh: default cache under HOME: $got"
+    out=$(env DEV_CACHE="$c" "$a/dev.sh" 2>&1) || true
+    [[ "$out" == *"$c"* ]] && pass "devsh: the help shows the cache" || fail "devsh: the help does not show $c"
+    pa=$(depends_prefix "$a" "$c")
+    pb=$(depends_prefix "$b" "$c")
+    want="^$c/depends/[0-9a-f]{16}/x86_64-pc-linux-gnu\$"
+    [[ "$pa" =~ $want && "$pa" == "$pb" ]] && pass "devsh: DEV_CACHE, one depends prefix for two copies ($pa)" ||
+        fail "devsh: depends prefixes: $pa and $pb"
+    mkdir -p "$b/depends/work" "$b/depends/built"; : > "$b/depends/work/x"; : > "$b/depends/packages/untracked.mk"
+    pb=$(depends_prefix "$b" "$c")
+    [[ -n "$pb" && "$pa" == "$pb" ]] && pass "devsh: untracked files under depends/ keep the prefix" ||
+        fail "devsh: untracked files under depends/ changed the prefix to $pb"
+    echo "# changed" >> "$b/depends/packages/zlib.mk"
+    pb=$(depends_prefix "$b" "$c")
+    [[ "$pa" != "$pb" && "$pb" =~ $want ]] && pass "devsh: a recipe change gives a new prefix ($pb)" ||
+        fail "devsh: a recipe change gave the prefix $pb"
+    # A stub make records its arguments and the start and end of its run.
+    local bin="$work/devsh/bin" log="$work/devsh/make.log"
+    mkdir -p "$bin"; rm -f "$log"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s
+' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep 1; echo "end" >> "$STUB_LOG"' > "$bin/make"
+    chmod +x "$bin/make"
+    PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" depends > "$work/devsh/a.log" 2>&1 & local pid=$!
+    PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$b/dev.sh" depends > "$work/devsh/b.log" 2>&1 || fail "devsh: depends in b"
+    wait "$pid" || fail "devsh: depends in a"
+    got=$(sed 's/ .*//' "$log" 2>/dev/null | tr '\n' ' ')
+    [[ "$got" == "start end start end " ]] && pass "devsh: two depends runs one after the other" ||
+        fail "devsh: two depends runs overlap or did not run: $got"
+    got=$(grep -m1 "^start -C $a/depends " "$log" || echo "no run in a")
+    local arg ok=1
+    for arg in "x86_64_linux_prefix=$pa" "BASE_CACHE=${pa%/*}/built" "SOURCES_PATH=$c/depends/sources" \
+               "base_build_dir=${pa%/*}/work/build" NO_QT=1; do
+        [[ " $got " == *" $arg "* ]] || { fail "devsh: depends gets no $arg: $got"; ok=0; }
+    done
+    (( ok == 0 )) || pass "devsh: depends builds into the cache: ${got#start }"
+    [[ -f "$c/ccache/ccache.conf" ]] && pass "devsh: ccache.conf created" || fail "devsh: no $c/ccache/ccache.conf"
+    # A build directory configured against another prefix is refused.
+    mkdir -p "$a/build/dev"; : > "$a/build/dev/Makefile"; echo "CPPFLAGS=-I$a/depends/x86_64-pc-linux-gnu/include" > "$a/build/dev/config.status"
+    expect_status 1 "devsh: a build directory of another prefix is refused" env DEV_CACHE="$c" "$a/dev.sh" build dev
+    grep -q 'rm -rf build/dev' "$work/out.txt" || fail "devsh: the refusal does not say to remove build/dev"
 }
 
 step_build() {
@@ -418,7 +491,7 @@ step_cache() {
     done
 }
 
-for s in lint tag static build smoke ccache cache; do
+for s in lint tag static devsh build smoke ccache cache; do
     if has_step "$s"; then echo "== $s =="; "step_$s"; fi
 done
 echo "== ${#failures[@]} failure(s) =="
