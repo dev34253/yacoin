@@ -14,7 +14,8 @@
 #   devsh   dev.sh's shared cache, on copies of dev.sh and depends/ (no
 #           Docker, a stub make): the default path (XDG_CACHE_HOME, HOME),
 #           DEV_CACHE, the help, one depends prefix for two copies, a new one
-#           after a recipe change but not for untracked files under depends/,
+#           after a recipe change (untracked recipe files too) but not for
+#           ignored files under depends/,
 #           the arguments depends gets, ccache.conf created, two depends runs
 #           one after the other, a repeated run skipping make unless its
 #           inputs (Qt) changed, a build directory of another prefix refused
@@ -163,10 +164,19 @@ step_devsh() {
     want="^$c/depends/[0-9a-f]{16}/x86_64-pc-linux-gnu\$"
     [[ "$pa" =~ $want && "$pa" == "$pb" ]] && pass "devsh: DEV_CACHE, one depends prefix for two copies ($pa)" ||
         fail "devsh: depends prefixes: $pa and $pb"
-    mkdir -p "$b/depends/work" "$b/depends/built"; : > "$b/depends/work/x"; : > "$b/depends/packages/untracked.mk"
+    mkdir -p "$b/depends/work" "$b/depends/built"; : > "$b/depends/work/x"; : > "$b/depends/built/x"
     pb=$(depends_prefix "$b" "$c")
-    [[ -n "$pb" && "$pa" == "$pb" ]] && pass "devsh: untracked files under depends/ keep the prefix" ||
-        fail "devsh: untracked files under depends/ changed the prefix to $pb"
+    [[ -n "$pb" && "$pa" == "$pb" ]] && pass "devsh: ignored files under depends/ keep the prefix" ||
+        fail "devsh: ignored files under depends/ changed the prefix to $pb"
+    # A recipe file not yet added to git counts, also when it changes.
+    local pn
+    mkdir -p "$b/depends/patches/miniupnpc"; echo "a" > "$b/depends/patches/miniupnpc/new.patch"
+    pn=$(depends_prefix "$b" "$c")
+    echo "b" > "$b/depends/patches/miniupnpc/new.patch"
+    pb=$(depends_prefix "$b" "$c")
+    [[ "$pn" =~ $want && "$pb" =~ $want && "$pn" != "$pa" && "$pb" != "$pn" ]] &&
+        pass "devsh: an untracked patch, and a change to it, give a new prefix" ||
+        fail "devsh: an untracked patch gave the prefixes $pn and then $pb (tracked only: $pa)"
     echo "# changed" >> "$b/depends/packages/zlib.mk"
     pb=$(depends_prefix "$b" "$c")
     [[ "$pa" != "$pb" && "$pb" =~ $want ]] && pass "devsh: a recipe change gives a new prefix ($pb)" ||

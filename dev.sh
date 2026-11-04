@@ -23,12 +23,13 @@ JOBS="${JOBS:-$(nproc)}"
 # same recipes share one prefix at one path, and other recipes get their own.
 DEV_CACHE="${DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev}"
 [[ "$DEV_CACHE" == /* ]] || DEV_CACHE="$PWD/$DEV_CACHE"
-# The content of the files git tracks under depends/, and the host. Not a git
+# The content of the files under depends/ that git does not ignore (tracked
+# or not, so a recipe or patch not yet added counts), and the host. Not a git
 # checkout: a key of its own, nothing shared.
 depends_key() {
     local inputs
     if [[ "$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$ROOT" && pwd -P)" ]]; then
-        inputs=$(cd "$ROOT" && git ls-files -z -- depends | xargs -0 -r sha256sum -- 2>/dev/null) || true
+        inputs=$(cd "$ROOT" && git ls-files -z -co --exclude-standard -- depends | xargs -0 -r sha256sum -- 2>/dev/null) || true
     else
         inputs="tree $ROOT"
     fi
@@ -163,8 +164,8 @@ cmd_depends() {
     printf '%s' "$inputs" > "$stamp"
 }
 
-# A build directory configured against another prefix (older recipes, or a
-# checkout from before the shared cache) would mix two sets of libraries.
+# A build directory configured against another prefix (other recipes, or
+# the prefix inside the checkout) would mix two sets of libraries.
 check_prefix() {
     [[ ! -f "$1/config.status" ]] || grep -qF -- "$DEPENDS_PREFIX/" "$1/config.status" || {
         echo "${1#"$ROOT"/} was configured against other dependencies than $DEPENDS_PREFIX." >&2

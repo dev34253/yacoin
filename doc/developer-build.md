@@ -163,21 +163,23 @@ directory; the next `./dev.sh depends` and builds start cold.
 
 - The built dependencies contain their install prefix, so checkouts share a
   prefix only when their dependency recipes are the same: the directory
-  `depends/<key>/` is named after a hash of the files git tracks under
-  `depends/` and the host. A checkout with changed recipes gets a new
+  `depends/<key>/` is named after a hash of the files under `depends/` that
+  git does not ignore (tracked or not, so a new recipe or patch counts before
+  it is added to git) and the host. A checkout with changed recipes gets a new
   directory and builds all packages again into it; the others are not
   touched. Each such directory is a few hundred MB; remove the ones of old
   recipes with the cache or by hand.
 - `./dev.sh depends` in two checkouts at once runs one after the other: the
-  second waits for a lock (`depends.lock` in the cache) and then finds the
-  packages built. Builds take no lock.
+  second waits for a lock (`depends.lock` in the cache). With the same recipes
+  it then finds the packages built; with other recipes it builds its own key.
+  Builds take no lock.
 - depends removes the prefix and unpacks it again on every run, even with
   nothing to build, which would pull it away under another checkout's build.
   So `./dev.sh depends` skips depends when the last successful run for these
   recipes had the same inputs (the Qt choice and the compiler versions,
   recorded in `depends/<key>/depends.stamp`). A skipped run does not recheck
   the cached packages; removing the stamp (or the cache) forces a full run.
-  As before, the last `./dev.sh depends` or `./dev.sh depends qt` decides
+  The last `./dev.sh depends` or `./dev.sh depends qt` decides
   whether the prefix holds Qt; switching, or a compiler update, replaces the
   prefix, so don't do it while another checkout with the same recipes builds.
 - ccache handles parallel use itself. `dev.sh` creates `ccache.conf` before the
@@ -186,19 +188,20 @@ directory; the next `./dev.sh depends` and builds start cold.
   ignored.
 - Cached objects are shared between checkouts because `dev.sh` builds with
   `-fdebug-prefix-map=<checkout>=.` and `CCACHE_BASEDIR=<checkout>`: debug info
-  and `__FILE__` hold paths relative to the checkout, so an object is the same
-  in every checkout. gdb finds the sources when started in the checkout or
+  holds paths relative to the checkout, and `__FILE__` holds paths relative
+  to the build directory (ccache passes the compiler relative paths), so an
+  object is the same in every checkout. gdb finds the sources when started in the checkout or
   in the build directory; started elsewhere, give it the checkout with
   `directory <checkout>`. Coverage builds keep their own entries per checkout,
   because ccache also keys them on the path of their `.gcda` files, so their
   `.gcno` files name the checkout they are built in.
 - A build directory configured against another prefix (after a recipe change,
-  or in a checkout built before the cache was shared, whose dependencies were
-  in `depends/<host>/`) would mix two sets of libraries. `dev.sh` refuses it
-  with a message; remove the build directory (`rm -rf build/<variant>`) and
-  build again. `depends/<host>/`, `depends/built/`, `depends/sources/`,
-  `depends/work/` and `.devbuild/ccache/` of such a checkout are no longer
-  used and can be removed.
+  or against a prefix inside the checkout, `depends/<host>/`) would mix two
+  sets of libraries. `dev.sh` refuses it with a message; remove the build
+  directory (`rm -rf build/<variant>`) and build again. `depends/<host>/`,
+  `depends/built/`, `depends/sources/`, `depends/work/` and
+  `.devbuild/ccache/` in a checkout are not used by `dev.sh` and can be
+  removed.
 - `./dev.sh container` does not use this cache; it keeps its own per image in
   `.devbuild/container-cache/`.
 
