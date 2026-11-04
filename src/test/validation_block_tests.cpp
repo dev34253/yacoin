@@ -4,8 +4,10 @@
 
 // Block validation paths: the rules TestBlockValidity applies (relative time
 // locks included), connecting and invalidating blocks (DisconnectBlock), blocks
-// that fail while being connected (InvalidBlockFound), VerifyDB, and ReplayBlocks
-// after an interrupted flush (RollforwardBlock) and without usable undo data.
+// that fail while being connected (InvalidBlockFound), VerifyDB, ReplayBlocks
+// after an interrupted flush (RollforwardBlock) and without usable undo data, and
+// moving the tip (ActivateBestChain, ConnectTip, DisconnectTip, InvalidateBlock)
+// when undo data can't be read or the block is on a side branch.
 //
 // Note: script checks only run above the last checkpoint (fScriptChecks), and
 // the checkpoint map is mainnet's, so signatures aren't verified here.
@@ -18,6 +20,7 @@
 #include "random.h"
 #include "script/sign.h"
 #include "tokens/tokendb.h"
+#include "tokens/tokens.h"
 #include "txdb.h"
 #include "txmempool.h"
 #include "validation.h"
@@ -25,6 +28,8 @@
 #include "test/test_bitcoin.h"
 
 #include <functional>
+#include <map>
+#include <string>
 
 #include <boost/test/unit_test.hpp>
 
@@ -105,6 +110,40 @@ struct ValidationSetup : public TestChain100Setup {
 
     CBlock BuildBlock(const std::vector<CTransaction>& txs) { return BuildBlock(txs, scriptPubKey); }
 
+    /** A valid block on pprev, which need not be the tip */
+    CBlock BuildOn(CBlockIndex* pprev, const std::vector<CTransaction>& txs, const CScript& coinbaseScript)
+    {
+        CBlock block = BuildBlock(txs, coinbaseScript);
+        block.hashPrevBlock = pprev->GetBlockHash();
+        block.nBits = GetNextTargetRequired(pprev, false);
+        block.nTime = std::max(block.GetBlockTime(), pprev->GetMedianTimePast() + 1);
+        unsigned int nExtraNonce = 0;
+        IncrementExtraNonce(&block, pprev, nExtraNonce); // coinbase height and merkle root
+        Mine(block);
+        return block;
+    }
+
+    static CBlockIndex* Index(const CBlock& block)
+    {
+        LOCK(cs_main);
+        BlockMap::iterator it = mapBlockIndex.find(block.GetHash());
+        BOOST_REQUIRE(it != mapBlockIndex.end());
+        return it->second;
+    }
+
+    static void AddToMempool(const CTransaction& tx)
+    {
+        LOCK(cs_main);
+        CValidationState state;
+        BOOST_REQUIRE(AcceptToMemoryPool(mempool, state, MakeTransactionRef(tx), nullptr));
+    }
+
+    static bool Failed(const CBlockIndex* pindex)
+    {
+        LOCK(cs_main);
+        return pindex->nStatus & BLOCK_FAILED_MASK;
+    }
+
     /** TestBlockValidity on top of the tip: "" if valid, else the reject reason (the debug message if it has none) */
     static std::string Validity(const CBlock& block, bool fCheckPOW = true)
     {
@@ -162,6 +201,39 @@ struct UtxoSnapshot {
             coins.AddCoin(key, std::move(coin), false);
         }
         coins.SetBestBlock(pcoinsdbview->GetBestBlock());
+    }
+};
+
+/** Points a block's data or undo position past the end of its file while it lives,
+ *  so reading it fails */
+class BrokenPos
+{
+    unsigned int& m_pos;
+    const unsigned int m_saved;
+
+public:
+    explicit BrokenPos(unsigned int& pos) : m_pos(pos), m_saved(pos)
+    {
+        LOCK(cs_main);
+        m_pos = 0x7fffffff;
+    }
+    ~BrokenPos()
+    {
+        LOCK(cs_main);
+        m_pos = m_saved;
+    }
+    BrokenPos(const BrokenPos&) = delete;
+    BrokenPos& operator=(const BrokenPos&) = delete;
+};
+
+/** Restores the reissue maps of the token layer when it goes out of scope */
+struct ReissueMapsGuard {
+    const std::map<uint256, std::string> savedTx = mapReissuedTx;
+    const std::map<std::string, uint256> savedTokens = mapReissuedTokens;
+    ~ReissueMapsGuard()
+    {
+        mapReissuedTx = savedTx;
+        mapReissuedTokens = savedTokens;
     }
 };
 
@@ -597,6 +669,131 @@ BOOST_AUTO_TEST_CASE(replay_without_undo_data)
     BOOST_CHECK_EQUAL(restored.nTime, tipCoin.nTime);
     BOOST_CHECK(atX.coins.GetBestBlock() == pindexX->pprev->GetBlockHash());
     pindexX->nUndoPos = nUndoPos;
+}
+
+
+/* The tip's undo data can't be read: InvalidateBlock fails in DisconnectBlock with the
+ * state still valid and changes nothing; with the undo data back, the same call succeeds */
+BOOST_AUTO_TEST_CASE(disconnect_tip_undo_failure)
+{
+    BOOST_REQUIRE(Submit(BuildBlock({})));
+    CBlockIndex* pindexTip = Tip();
+    CTransaction spend = Spend(matureCoinbases[0]);
+    AddToMempool(spend);
+    {
+        BrokenPos broken(pindexTip->nUndoPos);
+        LOCK(cs_main);
+        CValidationState state;
+        BOOST_CHECK(!InvalidateBlock(state, Params(), pindexTip));
+        BOOST_CHECK(state.IsValid());
+        BOOST_CHECK(chainActive.Tip() == pindexTip);
+        BOOST_CHECK(pcoinsTip->GetBestBlock() == pindexTip->GetBlockHash());
+        BOOST_CHECK(!(pindexTip->nStatus & BLOCK_FAILED_MASK));
+        BOOST_CHECK(mempool.exists(spend.GetHash()));
+    }
+
+    LOCK(cs_main);
+    CValidationState state;
+    BOOST_CHECK(InvalidateBlock(state, Params(), pindexTip));
+    BOOST_CHECK(chainActive.Tip() == pindexTip->pprev);
+    BOOST_CHECK(pcoinsTip->GetBestBlock() == pindexTip->pprev->GetBlockHash());
+    BOOST_CHECK(pindexTip->nStatus & BLOCK_FAILED_VALID);
+}
+
+/* A fork with more work arrives while the active tip's undo data can't be read: the
+ * reorg fails before anything is disconnected, with the state still valid; with the
+ * undo data back, ActivateBestChain moves to the fork */
+BOOST_AUTO_TEST_CASE(reorg_disconnect_failure)
+{
+    CBlockIndex* pindexFork = Tip();
+    BOOST_REQUIRE(Submit(BuildBlock({})));
+    CBlockIndex* pindexA = Tip();
+    // Same work as A, received later: stays on the side
+    CBlock blockB1 = BuildOn(pindexFork, {}, CScript() << OP_TRUE);
+    BOOST_REQUIRE(!Submit(blockB1));
+    CBlockIndex* pindexB1 = Index(blockB1);
+    CBlock blockB2 = BuildOn(pindexB1, {}, CScript() << OP_TRUE);
+    CTransaction spend = Spend(matureCoinbases[0]);
+    AddToMempool(spend);
+    {
+        BrokenPos broken(pindexA->nUndoPos);
+        BOOST_CHECK(!Submit(blockB2));
+        CBlockIndex* pindexB2 = Index(blockB2);
+        BOOST_CHECK(pindexB2->nStatus & BLOCK_HAVE_DATA);
+        BOOST_CHECK(!Failed(pindexB2));
+
+        // The same again, called directly
+        CValidationState state;
+        BOOST_CHECK(!ActivateBestChain(state, Params()));
+        BOOST_CHECK(state.IsValid());
+        BOOST_CHECK(Tip() == pindexA);
+        BOOST_CHECK(!Failed(pindexA));
+        BOOST_CHECK(!Failed(pindexB2));
+        BOOST_CHECK(mempool.exists(spend.GetHash()));
+        LOCK(cs_main);
+        BOOST_CHECK(pcoinsTip->GetBestBlock() == pindexA->GetBlockHash());
+    }
+
+    CValidationState state;
+    BOOST_CHECK(ActivateBestChain(state, Params()));
+    BOOST_CHECK(Tip()->GetBlockHash() == blockB2.GetHash());
+    BOOST_CHECK(Tip()->pprev == pindexB1);
+    BOOST_CHECK(!Failed(pindexA));
+    BOOST_CHECK(mempool.exists(spend.GetHash()));
+    LOCK(cs_main);
+    BOOST_CHECK(pcoinsTip->GetBestBlock() == blockB2.GetHash());
+}
+
+/* Connecting a block removes the reissue entries of the transactions it includes, both
+ * by transaction and by token name; other entries stay */
+BOOST_AUTO_TEST_CASE(connect_tip_clears_reissue_entries)
+{
+    ReissueMapsGuard maps;
+    CTransaction spend = Spend(matureCoinbases[0]);
+    const uint256 other = InsecureRand256();
+    mapReissuedTx[spend.GetHash()] = "REISSUED";
+    mapReissuedTokens["REISSUED"] = spend.GetHash();
+    mapReissuedTx[other] = "OTHER";
+    mapReissuedTokens["OTHER"] = other;
+
+    BOOST_REQUIRE(Submit(BuildBlock({spend})));
+    BOOST_CHECK(!mapReissuedTx.count(spend.GetHash()));
+    BOOST_CHECK(!mapReissuedTokens.count("REISSUED"));
+    BOOST_CHECK(mapReissuedTx.count(other) && mapReissuedTx[other] == "OTHER");
+    BOOST_CHECK(mapReissuedTokens.count("OTHER") && mapReissuedTokens["OTHER"] == other);
+}
+
+/* Invalidating a block on a side branch leaves the active chain alone; when the tip is
+ * invalidated later, the chain falls back to the fork point, not to the side branch */
+BOOST_AUTO_TEST_CASE(invalidate_side_branch)
+{
+    CBlockIndex* pindexFork = Tip();
+    BOOST_REQUIRE(Submit(BuildBlock({})));
+    CBlockIndex* pindexA = Tip();
+    CBlock blockB = BuildOn(pindexFork, {}, CScript() << OP_TRUE);
+    BOOST_REQUIRE(!Submit(blockB));
+    CBlockIndex* pindexB = Index(blockB);
+
+    LOCK(cs_main);
+    {
+        CValidationState state;
+        BOOST_CHECK(InvalidateBlock(state, Params(), pindexB));
+        BOOST_CHECK(state.IsValid());
+    }
+    BOOST_CHECK(chainActive.Tip() == pindexA);
+    BOOST_CHECK(pindexB->nStatus & BLOCK_FAILED_VALID);
+    BOOST_CHECK(!(pindexA->nStatus & BLOCK_FAILED_MASK));
+
+    // A has the same work as B, which is already recorded as invalid
+    BOOST_REQUIRE(pindexA->bnChainTrust == pindexB->bnChainTrust);
+    {
+        CValidationState state;
+        BOOST_CHECK(InvalidateBlock(state, Params(), pindexA));
+        BOOST_CHECK(ActivateBestChain(state, Params()));
+    }
+    BOOST_CHECK(chainActive.Tip() == pindexFork);
+    BOOST_CHECK(pindexA->nStatus & BLOCK_FAILED_VALID);
+    BOOST_CHECK(pindexB->nStatus & BLOCK_FAILED_VALID);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
