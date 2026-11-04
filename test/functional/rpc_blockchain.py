@@ -23,6 +23,7 @@ Tests correspond to code in rpc/blockchain.cpp.
 from decimal import Decimal
 import json
 import threading
+import time
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -37,6 +38,12 @@ from test_framework.util import (
 )
 from test_framework.blocktools import TIME_GENESIS_BLOCK
 from test_framework.messages import CBlock, CBlockHeader, FromHex, hash256, uint256_from_compact
+
+# The main network's chain transaction data (chainparams.cpp): time, transaction
+# count at that time, and transactions per second after it
+CHAIN_TX_TIME = 1749704574
+CHAIN_TX_COUNT = 2525586
+CHAIN_TX_RATE = 0.0005
 
 
 class BlockchainTest(BitcoinTestFramework):
@@ -66,6 +73,8 @@ class BlockchainTest(BitcoinTestFramework):
         self._test_gettxout()
         self._test_waitfor()
         self._test_getchaintxstats_same_time()
+        # More transactions than at the first check: the estimate rose
+        assert self._check_verificationprogress() > self.progress
         # Last: the invalidation can't be undone.
         self._test_getchaintxstats_not_in_main_chain()
 
@@ -100,6 +109,21 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(res['blocks'], 40)
         assert_equal(res['headers'], 40)
         assert_equal(res['txcount'], 41)
+        self.progress = self._check_verificationprogress()
+
+    def _check_verificationprogress(self):
+        """verificationprogress is the tip's transaction count over the count the
+        chain data expects now (the node's clock, not the mock time)."""
+        before = time.time()
+        res = self.nodes[0].gettimechaininfo()
+        after = time.time() + 1
+        progress = float(res['verificationprogress'])
+
+        def expected(now):
+            return res['txcount'] / (CHAIN_TX_COUNT + (int(now) - CHAIN_TX_TIME) * CHAIN_TX_RATE)
+        assert 0 < progress <= 1
+        assert expected(after) * (1 - 1e-9) <= progress <= expected(before) * (1 + 1e-9), progress
+        return progress
 
     def _test_getchaintxstats(self):
         self.log.info("Test getchaintxstats")
