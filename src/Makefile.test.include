@@ -103,6 +103,7 @@ BITCOIN_TESTS =\
   test/univalue_tests.cpp \
   test/util_tests.cpp \
   test/validation_block_tests.cpp \
+  test/validation_flush_tests.cpp \
   test/validation_header_tests.cpp
 
 if ENABLE_WALLET
