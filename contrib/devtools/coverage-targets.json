@@ -1,6 +1,6 @@
 {
   "tolerance": 0.1,
-  "overall": {"unit_lines": 57.03},
+  "overall": {"unit_lines": 57.15},
   "tiers": {
     "tier-1": {"unit_lines": 90.0, "unit_branches": 70.0},
     "tier-2": {"all_lines": 90.0, "unit_lines": 50.0}
@@ -33,8 +33,8 @@
     {"group": "prerequisite", "file": "src/coins.h", "target": "tier-1", "met": true},
     {"group": "prerequisite", "file": "src/undo.h", "target": "tier-1", "met": true},
     {"group": "prerequisite", "file": "src/validation.h", "target": "tier-1", "met": true},
-    {"group": "prerequisite", "file": "src/chainparams.h", "target": "tier-1", "met": false},
-    {"group": "prerequisite", "file": "src/chainparamsbase.cpp", "target": "tier-1", "met": false},
+    {"group": "prerequisite", "file": "src/chainparams.h", "target": "tier-1", "met": true},
+    {"group": "prerequisite", "file": "src/chainparamsbase.cpp", "target": "tier-1", "met": true},
     {"group": "prerequisite", "file": "src/init.cpp", "functions": ["HelpMessage", "InitParameterInteraction", "AppInitParameterInteraction"], "target": {"unit_lines": 90.0}, "met": false},
     {"group": "prerequisite", "file": "src/init.cpp", "target": {"unit_lines": 25.0}, "met": false},
     {"group": "prerequisite", "file": "src/init.cpp", "recorded": {"all_lines": 86.8}}
