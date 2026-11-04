@@ -5,15 +5,25 @@ development on Linux (tested on Ubuntu 22.04, 8 cores). It always builds
 against the pinned libraries from `depends/`, never system libraries, so local
 builds use the same dependency versions as the CI and release builds.
 
-Everything it creates stays inside the repository and is ignored by git:
+Builds, test data and logs stay inside the checkout and are ignored by git:
 
 | Path | Contents |
 |---|---|
-| `depends/x86_64-pc-linux-gnu/` | Built dependencies (shared by all variants) |
 | `build/<variant>/` | Out-of-tree build directories (`build/<host>/<variant>/` for a non-default `DEV_HOST`) |
-| `.devbuild/ccache/` | Compiler cache (one directory, separate entries per variant) |
 | `.devbuild/tmp/` | Temporary data directories of unit and functional tests |
 | `.devbuild/logs/` | Logs, including one log per unit test suite |
+
+The compiler cache and the built dependencies are in one cache directory
+outside the checkout, which all checkouts and worktrees of the repository
+share (see [Shared cache](#shared-cache)): `$DEV_CACHE`, by default
+`${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`.
+
+| Path in the cache | Contents |
+|---|---|
+| `ccache/` | Compiler cache (separate entries per variant) |
+| `depends/sources/` | Downloaded source files of the dependencies |
+| `depends/<key>/x86_64-pc-linux-gnu/` | Built dependencies (the install prefix; shared by all variants) |
+| `depends/<key>/built/`, `depends/<key>/work/` | depends' package cache and work area |
 
 ## One-time setup
 
@@ -23,8 +33,8 @@ Install the host tools (needs sudo):
 sudo apt install build-essential autoconf automake libtool bison bsdmainutils ccache pkg-config python3 curl
 ```
 
-Build the dependencies once. Later runs reuse `depends/built/` unless a
-package version changes.
+Build the dependencies once. Later runs, in this or any other checkout,
+reuse the built packages unless a recipe changes.
 
 ```sh
 ./dev.sh depends        # without Qt, enough for yacoind and all tests
@@ -35,13 +45,14 @@ Some upstream download hosts accept the connection but never send data (seen
 with samba.org for ccache). Depends gives up on a download that stays below
 1 KiB/s for 30 s, retries it three times, and then fetches the file from the
 depends mirror, so such a host costs about two minutes per file. To skip the
-wait, download the file from the mirror into `depends/sources/` yourself and
-run `./dev.sh depends` again; depends checks the package hash either way. The
+wait, download the file from the mirror into the sources directory of the
+cache (`SOURCES_PATH` in the output of `./dev.sh cache`) yourself and run
+`./dev.sh depends` again; depends checks the package hash either way. The
 mirror is `FALLBACK_DOWNLOAD_PATH` in `depends/Makefile`; it stores every file
 under the recipe's file name. For example:
 
 ```sh
-curl -fL -o depends/sources/ccache-3.3.4.tar.bz2 \
+curl -fL -o "${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev/depends/sources/ccache-3.3.4.tar.bz2" \
     https://github.com/dev34253/yacoin-depends-sources/releases/download/sources/ccache-3.3.4.tar.bz2
 ```
 
@@ -111,9 +122,9 @@ contrib/devtools/run-unit-suites.sh build/func/src/test/test_bitcoin .devbuild/l
 ```
 
 All variants use one ccache directory. Because they're built with `-g`, ccache
-keys entries on the build directory, so variants don't share cached objects
-and debug info always points at the variant's own build directory. The first
-build of each variant is therefore a cold build. The `asan` variant builds
+keys entries on the build directory, so variants don't share cached objects.
+The first build of each variant is therefore a cold build, unless another
+checkout has built that variant already (see [Shared cache](#shared-cache)). The `asan` variant builds
 secp256k1 without its x86_64 assembly, which doesn't compile under ASan.
 
 ## Commands
@@ -130,6 +141,7 @@ secp256k1 without its x86_64 assembly, which doesn't compile under ASan.
 ./dev.sh asan                       # unit tests under ASan/LSan/UBSan
 ./dev.sh all                        # build dev, unit, ftest, build release
 ./dev.sh ccache-stats
+./dev.sh cache                      # the paths of the shared cache
 ```
 
 A variant is configured automatically on first use; `./dev.sh configure
@@ -139,6 +151,59 @@ fails, and ends with a PASS/FAIL summary.
 Out-of-tree builds don't work if the source tree itself was configured in
 place (`./configure` in the repository root). `dev.sh` stops with a message
 in that case; run `make distclean` in the repository root once.
+
+### Shared cache
+
+All checkouts and worktrees of the repository on a machine share one cache
+directory, so the first build in a new checkout takes its dependencies and
+most of its compiles from the cache. `DEV_CACHE` sets the directory (default
+`${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`); `./dev.sh cache` and the help
+(`./dev.sh` without arguments) print it. To clear the cache, remove the
+directory; the next `./dev.sh depends` and builds start cold.
+
+- The built dependencies contain their install prefix, so checkouts share a
+  prefix only when their dependency recipes are the same: the directory
+  `depends/<key>/` is named after a hash of the files under `depends/` that
+  git does not ignore (tracked or not, so a new recipe or patch counts before
+  it is added to git) and the host. A checkout with changed recipes gets a new
+  directory and builds all packages again into it; the others are not
+  touched. Each such directory is a few hundred MB; remove the ones of old
+  recipes with the cache or by hand.
+- `./dev.sh depends` in two checkouts at once runs one after the other: the
+  second waits for a lock (`depends.lock` in the cache). With the same recipes
+  it then finds the packages built; with other recipes it builds its own key.
+  Builds take no lock.
+- depends removes the prefix and unpacks it again on every run, even with
+  nothing to build, which would pull it away under another checkout's build.
+  So `./dev.sh depends` skips depends when the last successful run for these
+  recipes had the same inputs (the Qt choice and the compiler versions,
+  recorded in `depends/<key>/depends.stamp`). A skipped run does not recheck
+  the cached packages; removing the stamp (or the cache) forces a full run.
+  The last `./dev.sh depends` or `./dev.sh depends qt` decides
+  whether the prefix holds Qt; switching, or a compiler update, replaces the
+  prefix, so don't do it while another checkout with the same recipes builds.
+- ccache handles parallel use itself. `dev.sh` creates `ccache.conf` before the
+  first compile (ccache 3.3.4 races for it otherwise) and sets
+  `CCACHE_MAXSIZE` to 10G unless set; a `CCACHE_DIR` from the environment is
+  ignored.
+- Cached objects are shared between checkouts because `dev.sh` builds with
+  `-fdebug-prefix-map=<checkout>=.` and `CCACHE_BASEDIR=<checkout>`: debug info
+  holds paths relative to the checkout, and `__FILE__` holds paths relative
+  to the build directory (ccache passes the compiler relative paths), so an
+  object is the same in every checkout. gdb finds the sources when started in the checkout or
+  in the build directory; started elsewhere, give it the checkout with
+  `directory <checkout>`. Coverage builds keep their own entries per checkout,
+  because ccache also keys them on the path of their `.gcda` files, so their
+  `.gcno` files name the checkout they are built in.
+- A build directory configured against another prefix (after a recipe change,
+  or against a prefix inside the checkout, `depends/<host>/`) would mix two
+  sets of libraries. `dev.sh` refuses it with a message; remove the build
+  directory (`rm -rf build/<variant>`) and build again. `depends/<host>/`,
+  `depends/built/`, `depends/sources/`, `depends/work/` and
+  `.devbuild/ccache/` in a checkout are not used by `dev.sh` and can be
+  removed.
+- `./dev.sh container` does not use this cache; it keeps its own per image in
+  `.devbuild/container-cache/`.
 
 ### TDD loop
 
@@ -331,6 +396,8 @@ Ubuntu 22.04, 8 cores, 15 GB RAM.
 | Configure one variant | 48 s |
 | Clean build of a variant, cold ccache | 6 min 52 s – 7 min 55 s |
 | Rebuild of a variant after reconfiguring it, warm ccache | 67 s |
+| `depends` in another checkout with the same recipes (shared cache) | 0 s |
+| First build of a variant in another checkout, same variant built before (shared cache) | 46 – 64 s (most of it configure) |
 | Rebuild `test_bitcoin` after changing one source file | 7 s |
 | All unit tests, serial | 29 s |
 | All unit tests, parallel (`./dev.sh unit`) | 15 s |
@@ -366,10 +433,12 @@ Each line says when and on which state of `master` it was measured.
 - `aclocal.m4` and the libtool and automake helper files under `build-aux/`
   are generated by `autogen.sh` with the local autotools versions and are not
   tracked by git.
-- The ccache shipped by depends is used, always with the cache in
-  `.devbuild/ccache/` (a `CCACHE_DIR` from the environment is ignored);
-  `./dev.sh ccache-stats` queries it.
+- The ccache shipped by depends is used, always with the cache in the
+  `ccache/` directory of the shared cache (a `CCACHE_DIR` from the
+  environment is ignored); `./dev.sh ccache-stats` queries it.
 - Environment overrides:
+  - `DEV_CACHE`: the shared cache directory, default
+    `${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`.
   - `DEV_HOST`: depends target triplet, default `x86_64-pc-linux-gnu`. Other
     hosts build in `build/<host>/<variant>/`.
   - `JOBS`: make jobs, default the number of cores.
