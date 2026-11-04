@@ -7,8 +7,8 @@
 // token database (LoadTokens), the startup reward/difficulty summary
 // (LoadBlockRewardAndHighestDiff), the block hash index rebuild
 // (BuildMapHash, BuildBlockHashIndex), mempool persistence (DumpMempool,
-// LoadMempool) and block import (LoadExternalBlockFile, for -loadblock and
-// -reindex).
+// LoadMempool), transaction lookup (GetTransaction) and block import
+// (LoadExternalBlockFile, for -loadblock and -reindex).
 //
 // The databases in TestingSetup are in-memory LevelDBs, so a restart here keeps
 // the database objects and only throws away the in-memory state built from
@@ -39,6 +39,7 @@
 
 #include "test/consensus_test_util.h"
 #include "test/known_failure.h"
+#include "test/stake_test_util.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -69,6 +70,7 @@ namespace {
 
 // Database keys, as defined (file-static) in txdb.cpp and tokens/tokendb.cpp
 const char DB_BLOCK_INDEX = 'b';
+const char DB_TXINDEX = 't';
 const char DB_TOKEN = 'A';
 const char DB_TOKEN_ADDRESS_QUANTITY = 'B';
 
@@ -1645,6 +1647,153 @@ BOOST_AUTO_TEST_CASE(reindex_with_fork_at_genesis)
     KNOWN_FAILURE_EQUAL("MG-063", outcome, "chain rebuilt", "genesis rejected: bad-txns-version");
 }
 
+namespace {
+/** What GetTransaction returned */
+struct Lookup {
+    bool fFound;
+    uint256 txid; // of the transaction it set
+    uint256 hashBlock;
+};
+
+/** GetTransaction with hashBlock set to hashBefore first */
+Lookup Find(const uint256& hash, bool fAllowSlow, const uint256& hashBefore = uint256())
+{
+    CTransaction tx;
+    Lookup r;
+    r.hashBlock = hashBefore;
+    r.fFound = GetTransaction(hash, tx, r.hashBlock, fAllowSlow);
+    r.txid = tx.GetHash();
+    return r;
+}
+} // namespace
+
+// GetTransaction looks in the mempool, then in the transaction index. The block hash is the
+// block hash index's record for the block's position or, with that index off or without a
+// record, the hash of the block header.
+BOOST_AUTO_TEST_CASE(get_transaction_from_mempool_and_tx_index)
+{
+    // In the mempool: found, the block hash is left as it was
+    AdvanceTime();
+    const CTransaction unconfirmed = Spend(coinbases[0]);
+    {
+        LOCK(cs_main);
+        CValidationState state;
+        BOOST_REQUIRE(AcceptToMemoryPool(mempool, state, MakeTransactionRef(unconfirmed), nullptr));
+    }
+    const uint256 hashBefore = uint256S("0x0b");
+    Lookup r = Find(unconfirmed.GetHash(), false, hashBefore);
+    BOOST_CHECK(r.fFound);
+    BOOST_CHECK(r.txid == unconfirmed.GetHash());
+    BOOST_CHECK(r.hashBlock == hashBefore);
+
+    // In a block, through the transaction index
+    const uint256 hash = coinbases[5].GetHash();
+    const CBlockIndex* pindex = AtHeight(6);
+    CDiskTxPos postx;
+    BOOST_REQUIRE(pblocktree->ReadTxIndex(hash, postx));
+    BOOST_REQUIRE(postx.nFile == pindex->nFile && postx.nPos == pindex->nDataPos);
+    uint256 hashRecorded;
+    BOOST_REQUIRE(ReadBlockHash(pindex, hashRecorded));
+    BOOST_REQUIRE(hashRecorded == pindex->GetBlockHash());
+    for (bool fHashIndex : {false, true}) {
+        ValueGuard<bool> hashIndex(fBlockHashIndex, fHashIndex);
+        r = Find(hash, false);
+        BOOST_CHECK(r.fFound);
+        BOOST_CHECK(r.txid == hash);
+        BOOST_CHECK(r.hashBlock == pindex->GetBlockHash());
+    }
+
+    // Without a record for the block's position, the hash is computed and logged
+    EraseBlockHash(pindex);
+    std::string log;
+    {
+        LogCapture capture(DataFile("lookup.log"));
+        r = Find(hash, false);
+        log = capture.Stop();
+    }
+    BOOST_CHECK(r.fFound);
+    BOOST_CHECK(r.hashBlock == pindex->GetBlockHash());
+    BOOST_CHECK(Contains(log, "GetTransaction: can't read block hash " + pindex->GetBlockHash().ToString()));
+    BOOST_CHECK(pblocktree->WriteBlockHash(pindex->GetBlockPos(), pindex->GetBlockHash()));
+
+    // Index entries whose position can't be read, or holds another transaction: not found
+    auto findAt = [this](const CDiskTxPos& pos) {
+        const uint256 txid = InsecureRand256();
+        BOOST_REQUIRE(pblocktree->WriteTxIndex({{txid, pos}}));
+        LogCapture capture(DataFile("lookup.log"));
+        Lookup result = Find(txid, false);
+        std::string out = capture.Stop();
+        BOOST_CHECK(pblocktree->Erase(std::make_pair(DB_TXINDEX, txid), true));
+        BOOST_CHECK(!result.fFound);
+        return out;
+    };
+    const CDiskBlockPos missingFile(pindex->nFile + 1, 0);
+    BOOST_REQUIRE(!fs::exists(GetBlockPosFilename(missingFile, "blk")));
+    BOOST_CHECK(Contains(findAt(CDiskTxPos(missingFile, 0)), "GetTransaction: OpenBlockFile failed"));
+    const unsigned int nFileSize = fs::file_size(GetBlockPosFilename(pindex->GetBlockPos(), "blk"));
+    BOOST_CHECK(Contains(findAt(CDiskTxPos(pindex->GetBlockPos(), nFileSize)), "GetTransaction: Deserialize or I/O error"));
+    BOOST_CHECK(Contains(findAt(postx), "GetTransaction: txid mismatch"));
+
+    // Not in the index: found only with fAllowSlow
+    BOOST_REQUIRE(pblocktree->Erase(std::make_pair(DB_TXINDEX, hash), true));
+    BOOST_CHECK(!Find(hash, false).fFound);
+    {
+        ConsensusGlobalsGuard globals; // a fork height above genesis for AccessByTxid's size bound
+        globals.Set(1, nEpochInterval);
+        r = Find(hash, true);
+    }
+    BOOST_CHECK(r.fFound);
+    BOOST_CHECK(r.txid == hash);
+    BOOST_CHECK(r.hashBlock == pindex->GetBlockHash());
+    BOOST_CHECK(pblocktree->WriteTxIndex({{hash, postx}}));
+}
+
+// Without the transaction index, GetTransaction finds a confirmed transaction only with
+// fAllowSlow: through an unspent output of it in the coins view, in the block at that output's
+// height.
+BOOST_AUTO_TEST_CASE(get_transaction_without_tx_index)
+{
+    const CTransaction spent = coinbases[1];
+    BOOST_REQUIRE_EQUAL(spent.vout.size(), 1U);
+    Mine({Spend(spent)});
+
+    ConsensusGlobalsGuard globals; // a fork height above genesis for AccessByTxid's size bound
+    globals.Set(1, nEpochInterval);
+    ValueGuard<bool> noTxIndex(fTxIndex, false);
+    const uint256 hash = coinbases[5].GetHash();
+    const CBlockIndex* pindex = AtHeight(6);
+
+    BOOST_CHECK(!Find(hash, false).fFound);
+    Lookup r = Find(hash, true);
+    BOOST_CHECK(r.fFound);
+    BOOST_CHECK(r.txid == hash);
+    BOOST_CHECK(r.hashBlock == pindex->GetBlockHash());
+
+    // Every output spent, or none known
+    BOOST_CHECK(!Find(spent.GetHash(), true).fFound);
+    BOOST_CHECK(!Find(InsecureRand256(), true).fFound);
+
+    // The block at the output's height can't be read
+    const fs::path blockFile = GetBlockPosFilename(pindex->GetBlockPos(), "blk");
+    fs::rename(blockFile, DataFile("blk.away"));
+    r = Find(hash, true);
+    fs::rename(DataFile("blk.away"), blockFile);
+    BOOST_CHECK(!r.fFound);
+
+    // An output whose height is that of a block without the transaction
+    const COutPoint out(InsecureRand256(), 0);
+    {
+        LOCK(cs_main);
+        pcoinsTip->AddCoin(out, Coin(CTxOut(CENT, scriptPubKey), pindex->nHeight, false, false, pindex->nTime), false);
+    }
+    r = Find(out.hash, true);
+    {
+        LOCK(cs_main);
+        BOOST_CHECK(pcoinsTip->SpendCoin(out));
+    }
+    BOOST_CHECK(!r.fFound);
+}
+
 BOOST_AUTO_TEST_CASE(mempool_dump_and_load_round_trip)
 {
     // Entries accepted at different times
@@ -1791,6 +1940,18 @@ BOOST_AUTO_TEST_CASE(load_mempool_edge_cases)
     BOOST_CHECK(mempool.exists(tx1.GetHash()));
     ResetMempool();
 
+    // A shutdown requested during the load: false after the first record, the rest isn't loaded
+    WriteMempoolFile(path, 1, {{tx1, nNow, 0}, {tx3, nNow, 0}});
+    {
+        ShutdownRequestRecorder recorder;
+        StartShutdown();
+        BOOST_CHECK(!LoadMempool());
+        ShutdownRequestRecorder::Reset();
+    }
+    BOOST_CHECK(mempool.exists(tx1.GetHash()));
+    BOOST_CHECK(!mempool.exists(tx3.GetHash()));
+    ResetMempool();
+
     // Dumping an empty mempool: version, count and an empty delta map
     DumpMempool();
     BOOST_CHECK_EQUAL(fs::file_size(path), 17U);
@@ -1808,6 +1969,31 @@ BOOST_AUTO_TEST_CASE(load_mempool_edge_cases)
     DumpMempool();
     BOOST_CHECK(!fs::exists(path));
     fs::remove(DataFile("mempool.dat.new"));
+
+#ifdef __linux__
+    // Writing the temporary file fails (a full device) once more than the stdio buffer has been
+    // written: the error is logged, and mempool.dat keeps the earlier dump
+    DumpMempool();
+    BOOST_REQUIRE(fs::exists(path));
+    const std::string earlier = ReadFile(path);
+    for (int i = 0; i < 400; i++) mempool.PrioritiseTransaction(InsecureRand256(), 1);
+    fs::create_symlink("/dev/full", DataFile("mempool.dat.new"));
+    std::string log;
+    {
+        LogCapture capture(DataFile("mempool.log"));
+        DumpMempool();
+        log = capture.Stop();
+    }
+    BOOST_CHECK(Contains(log, "Failed to dump mempool: "));
+    BOOST_CHECK(fs::is_symlink(DataFile("mempool.dat.new")));
+    BOOST_CHECK(!fs::is_symlink(path));
+    BOOST_CHECK(ReadFile(path) == earlier);
+    fs::remove(DataFile("mempool.dat.new"));
+    ResetMempool();
+    BOOST_CHECK(LoadMempool());
+    BOOST_CHECK_EQUAL(mempool.size(), 1U);
+    BOOST_CHECK(mempool.exists(tx1.GetHash()));
+#endif
     ResetMempool();
 }
 

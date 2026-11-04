@@ -28,8 +28,14 @@ Test is as follows:
   - Restart node0 with -persistmempool. Verify that it has 5
     transactions in its mempool. This tests that -persistmempool=0
     does not overwrite a previously valid mempool stored on disk.
+  - (Linux only) Start node2 and send node0 a large transaction from it.
+    Stop node0 with mempool.dat.new a symbolic link to /dev/full.
+    Verify that the dump fails, that mempool.dat is unchanged and that
+    node0 loads the 5 transactions of the earlier dump on its next start.
 
 """
+import os
+import sys
 import time
 
 from test_framework.test_framework import BitcoinTestFramework
@@ -77,6 +83,41 @@ class MempoolPersistTest(BitcoinTestFramework):
         self.stop_nodes()
         self.start_node(0)
         wait_until(lambda: len(self.nodes[0].getrawmempool()) == 5)
+
+        if sys.platform.startswith('linux') and os.path.exists('/dev/full'):
+            self.test_dump_failure()
+        else:
+            self.log.info("Skipping the failed dump: it needs /dev/full (Linux)")
+
+    def test_dump_failure(self):
+        self.log.debug("Send node0 a transaction larger than the stdio buffer from node2")
+        earlier = set(self.nodes[0].getrawmempool())
+        self.start_node(2)
+        connect_nodes(self.nodes[0], 2)
+        utxo = max(self.nodes[2].listunspent(0), key=lambda u: u['amount'])
+        assert utxo['amount'] > 4
+        outputs = {self.nodes[2].getnewaddress(): Decimal("0.01") for _ in range(300)}
+        outputs[self.nodes[2].getnewaddress()] = utxo['amount'] - Decimal("4")
+        raw = self.nodes[2].createrawtransaction([{"txid": utxo['txid'], "vout": utxo['vout']}], outputs)
+        large = self.nodes[2].sendrawtransaction(self.nodes[2].signrawtransaction(raw)['hex'])
+        sync_mempools([self.nodes[0], self.nodes[2]])
+        assert large in self.nodes[0].getrawmempool()
+
+        self.log.debug("Stop node0 with mempool.dat.new pointing at a full device. Verify that the dump fails and mempool.dat keeps the earlier dump.")
+        mempool_dat = os.path.join(self.nodes[0].datadir, 'mempool.dat')
+        with open(mempool_dat, 'rb') as f:
+            earlier_dump = f.read()
+        os.symlink('/dev/full', mempool_dat + '.new')
+        with self.nodes[0].assert_debug_log(["Failed to dump mempool: "]):
+            self.stop_node(0)
+        assert os.path.islink(mempool_dat + '.new')
+        with open(mempool_dat, 'rb') as f:
+            assert_equal(f.read(), earlier_dump)
+
+        self.log.debug("Start node0 again. Verify that it loads the earlier dump.")
+        os.remove(mempool_dat + '.new')
+        self.start_node(0)
+        wait_until(lambda: set(self.nodes[0].getrawmempool()) == earlier)
 
 if __name__ == '__main__':
     MempoolPersistTest().main()

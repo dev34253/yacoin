@@ -586,6 +586,32 @@ BOOST_AUTO_TEST_CASE(sign_with_wallet)
     block = PosBlock(P2PK(NewKey().GetPubKey()));
     BOOST_CHECK(!block.SignBlock(wallet));
 }
+
+/* SignBlock with a wallet does not sign a version 6 proof-of-stake block, even with the key of
+ * the coinstake's output 1 in the wallet: true if the first coinbase output is empty, false if
+ * not */
+BOOST_AUTO_TEST_CASE(sign_with_wallet_version_6)
+{
+    const CKey key = NewKey();
+    CWallet wallet;
+    {
+        LOCK(wallet.cs_wallet);
+        BOOST_REQUIRE(wallet.AddKeyPubKey(key, key.GetPubKey()));
+    }
+    CBlock block = ParseBlock(BLOCK_82994_HEX);
+    block.nVersion = VERSION_of_block_for_yac_049;
+    block.vtx[1].vout[1].scriptPubKey = P2PK(key.GetPubKey());
+    block.vchBlockSig.clear();
+    BOOST_REQUIRE(block.IsProofOfStake());
+    BOOST_REQUIRE(block.vtx[0].vout[0].IsEmpty());
+    BOOST_CHECK(block.SignBlock(wallet));
+    BOOST_CHECK(block.vchBlockSig.empty());
+
+    block.vtx[0].vout[0] = CTxOut(CENT, P2PK(key.GetPubKey()));
+    BOOST_REQUIRE(block.IsProofOfStake());
+    BOOST_CHECK(!block.SignBlock(wallet));
+    BOOST_CHECK(block.vchBlockSig.empty());
+}
 #endif
 
 /* CheckBlockSignature: the genesis block needs an empty signature; real blocks verify; a
