@@ -12,7 +12,9 @@
 - the invalid status survives a restart; -reindex forgets it;
 - the genesis block can't be invalidated;
 - the coin set (gettxout) across a block, its invalidation, the next block
-  and a restart; verifychain at level 4 afterwards.
+  and a restart; verifychain at level 4 afterwards;
+- invalidating a block on a side branch leaves the active chain alone, and
+  the node doesn't move to that branch when its tip is invalidated later.
 """
 
 from test_framework.blocktools import create_block_yac, solve_block
@@ -166,6 +168,32 @@ class InvalidateTest(BitcoinTestFramework):
         self.restart_node(0)
         assert_equal(coins(spent + created), expected)
         assert node.verifychain(4, 3)
+
+        self.log.info("Invalidating a block on a side branch leaves the active chain alone")
+        tip = node.getbestblockhash()
+        tip_header = node.getblockheader(tip)
+        height = tip_header['height']
+        parent = tip_header['previousblockhash']
+        # Same parent and work as the tip, received later: it stays on the side
+        side = create_block_yac(node, prev=parent, nbits=int(tip_header['bits'], 16), ntime=tip_header['time'])
+        solve_block(node, side)
+        assert_equal(node.submitblock(side.serialize().hex()), "inconclusive")
+        assert_equal(node.getbestblockhash(), tip)
+        assert {"height": height, "hash": side.hash, "branchlen": 1, "status": "valid-headers"} in node.getchaintips()
+
+        node.invalidateblock(side.hash)
+        assert_equal(node.getbestblockhash(), tip)
+        assert_equal(node.getblockcount(), height)
+        assert {"height": height, "hash": side.hash, "branchlen": 1, "status": "invalid"} in node.getchaintips()
+        assert_equal(node.submitblock(side.serialize().hex()), "duplicate-invalid")
+
+        self.log.info("The node doesn't move to the invalidated side branch when its tip is invalidated")
+        node.invalidateblock(tip)
+        assert_equal(node.getbestblockhash(), parent)
+        assert_equal(node.getblockcount(), height - 1)
+        assert {"height": height, "hash": side.hash, "branchlen": 1, "status": "invalid"} in node.getchaintips()
+        assert {"height": height, "hash": tip, "branchlen": 1, "status": "invalid"} in node.getchaintips()
+        assert_equal(node.getrawmempool(), [txid])
 
 
 if __name__ == '__main__':
