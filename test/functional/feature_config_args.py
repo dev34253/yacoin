@@ -4,6 +4,8 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test command-line and config file arguments.
 
+- Chain selection: main by default, -regtest with its own data
+  subdirectory, -testnet refused at start.
 - Init errors: invalid config file lines, -testnet with -regtest, -bind
   with -listen=0, removed options (-socks, -tor, -rpcssl), an invalid
   -rpcallowip, -acceptnonstdtxn on main.
@@ -45,10 +47,32 @@ class ConfArgsTest(BitcoinTestFramework):
 
     def run_test(self):
         self.stop_node(0)
+        self.test_chain_selection()
         self.test_init_errors()
         self.test_warnings()
         self.test_options()
         self.test_config_files()
+
+    def test_chain_selection(self):
+        node = self.nodes[0]
+        regtest_dir = os.path.join(node.datadir, 'regtest')
+        self.log.info("The default chain is main, in the datadir itself")
+        self.start_node(0)
+        assert_equal(node.gettimechaininfo()['chain'], 'main')
+        self.stop_node(0)
+        assert not os.path.exists(regtest_dir)
+
+        self.log.info("-regtest selects regtest, in the regtest subdirectory")
+        self.start_node(0, ['-regtest=1'])
+        assert_equal(node.gettimechaininfo()['chain'], 'regtest')
+        assert_equal(node.getblockcount(), 0)
+        self.stop_node(0)
+        assert os.path.isfile(os.path.join(regtest_dir, 'debug.log'))
+        assert os.path.isdir(os.path.join(regtest_dir, 'blocks'))
+
+        self.log.info("-testnet alone: the chain parameters know no testnet")
+        node.assert_start_raises_init_error(['-testnet=1'], "Error: CreateChainParams: Unknown chain test.",
+                                            match=ErrorMatch.FULL_TEXT)
 
     def test_init_errors(self):
         node = self.nodes[0]
