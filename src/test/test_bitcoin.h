@@ -57,6 +57,20 @@ private:
     std::vector<std::string> m_values;
 };
 
+/** While it lives, a shutdown request in the unit tests is recorded instead of ending the
+ * process: StartShutdown() records it and ShutdownRequested() returns it. Reset() clears a
+ * recorded request. Without one, StartShutdown() ends the process with a failure status and
+ * ShutdownRequested() is false (test_bitcoin_main.cpp). One may live at a time. */
+class ShutdownRequestRecorder
+{
+public:
+    ShutdownRequestRecorder();
+    ~ShutdownRequestRecorder();
+    static void Reset();
+    ShutdownRequestRecorder(const ShutdownRequestRecorder&) = delete;
+    ShutdownRequestRecorder& operator=(const ShutdownRequestRecorder&) = delete;
+};
+
 /** Basic testing setup.
  * This just configures logging and chain parameters.
  */

@@ -4,12 +4,14 @@
 
 // A shutdown request in test_bitcoin (test_bitcoin_main.cpp) ends the process with a failure
 // status and a message on stderr, so that a test run that the code under test gave up on, for
-// example in a failed release-mode assertion (Yassert), cannot be counted as passed.
+// example in a failed release-mode assertion (Yassert), cannot be counted as passed. While a
+// ShutdownRequestRecorder lives, the request is recorded instead.
 
 #ifndef WIN32
 
 #include "Yassert.h"
 #include "init.h"
+#include "test/test_bitcoin.h"
 
 #include <cerrno>
 #include <cstdio>
@@ -117,6 +119,36 @@ BOOST_AUTO_TEST_CASE(passing_yassert_does_not_exit)
     BOOST_CHECK(end.exited);
     BOOST_CHECK_EQUAL(end.status, 0);
     BOOST_CHECK_EQUAL(end.err, "");
+}
+
+BOOST_AUTO_TEST_CASE(recorder_records_without_exit)
+{
+    const ChildEnd end = RunInChild([] {
+        ShutdownRequestRecorder recorder;
+        if (ShutdownRequested()) _exit(3);
+        StartShutdown();
+        if (!ShutdownRequested()) _exit(4);
+        ShutdownRequestRecorder::Reset();
+        if (ShutdownRequested()) _exit(5);
+        StartShutdown();
+        if (!ShutdownRequested()) _exit(6);
+    });
+    BOOST_CHECK(end.exited);
+    BOOST_CHECK_EQUAL(end.status, 0);
+    BOOST_CHECK_EQUAL(end.err, "");
+}
+
+BOOST_AUTO_TEST_CASE(start_shutdown_exits_again_after_recorder)
+{
+    const ChildEnd end = RunInChild([] {
+        {
+            ShutdownRequestRecorder recorder;
+            StartShutdown();
+        }
+        if (ShutdownRequested()) _exit(3);
+        StartShutdown();
+    });
+    CheckFailedWith(end, "StartShutdown");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
