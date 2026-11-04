@@ -11,13 +11,13 @@ the entrypoints create the ccache config before the build.
 | `image-tag.sh` | Prints an image's tag, or with `--inputs` the files its hash covers |
 | `test-image-tag.sh` | Tests of `image-tag.sh` and of the workflow's use of the tags |
 | `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
-| `check.sh` | The image checks: lint, image tags, digest pins, `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
+| `check.sh` | The image checks: lint, image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
 | `parity.sh` | Compares an image built from here with the one on Docker Hub (`dev34253/yacoin-build:<image>-2`) and runs its modes on a clean clone |
 
 ```bash
 ./dev.sh container unit-tests                  # ubuntu.22.04 image, unit-tests mode, on this checkout
 ci/containers/run.sh windows                    # the Windows release build
-ci/containers/check.sh                          # all images: lint, tag, static, build, smoke, ccache
+ci/containers/check.sh                          # all images: lint, tag, static, devsh, build, smoke, ccache
 ci/containers/image-tag.sh ubuntu.22.04         # the tag CI runs the ubuntu.22.04 image under
 ci/containers/check.sh --steps cache windows    # slow: two builds with one cache
 ci/containers/parity.sh ubuntu.22.04            # image parity, then build, unit-tests and functional-tests

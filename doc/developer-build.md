@@ -76,8 +76,8 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
   `build/docker-<image>/functional-tests/test/tmp/`.
-- The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` (for Linux the prefix `./dev.sh depends` uses),
-  configure in the source tree, and `make install` into `release-root/`. `build-low-difficulty` does the same with
+- The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` in the checkout (not into the
+  shared cache of `./dev.sh depends`), configure in the source tree, and `make install` into `release-root/`. `build-low-difficulty` does the same with
   `--enable-low-difficulty-for-development` and then runs all unit test suites of that build's `src/test/test_bitcoin`, as the CI job
   `build-ubuntu-1604-low-difficulty` does; their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/`. Because both
   configure in place, out-of-tree builds (`dev.sh` and the test modes) refuse the tree afterwards until `make distclean`. Run release
@@ -198,10 +198,14 @@ directory; the next `./dev.sh depends` and builds start cold.
 - A build directory configured against another prefix (after a recipe change,
   or against a prefix inside the checkout, `depends/<host>/`) would mix two
   sets of libraries. `dev.sh` refuses it with a message; remove the build
-  directory (`rm -rf build/<variant>`) and build again. `depends/<host>/`,
-  `depends/built/`, `depends/sources/`, `depends/work/` and
-  `.devbuild/ccache/` in a checkout are not used by `dev.sh` and can be
-  removed.
+  directory (`rm -rf build/<variant>`) and build again. The host builds of
+  `dev.sh` do not use `depends/<host>/`, `depends/built/`, `depends/sources/`,
+  `depends/work/` or `.devbuild/ccache/` in the checkout. The release modes of
+  `./dev.sh container` (`build`, `build-low-difficulty`, `windows`, `macos`)
+  install their dependencies into `depends/<host>/`, and all container modes
+  use `depends/work/`; with `--no-cache` they also use `depends/sources/`,
+  and the release modes `depends/built/`. Remove these only when no container
+  build needs them.
 - `./dev.sh container` does not use this cache; it keeps its own per image in
   `.devbuild/container-cache/`.
 
