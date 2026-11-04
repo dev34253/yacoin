@@ -48,6 +48,7 @@ BITCOIN_TESTS =\
   test/DoS_tests.cpp \
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
+  test/init_tests.cpp \
   test/kernel_tests.cpp \
   test/key_tests.cpp \
   test/known_failure.cpp \

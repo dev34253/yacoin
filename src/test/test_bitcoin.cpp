@@ -42,7 +42,7 @@ void CConnmanTest::ClearNodes()
 namespace {
 /** ArgsManager offers no way to unset an argument, and its lock and maps are protected. The
  * product code stays as it is, so pointers to members formed in this derived class reach them
- * in gArgs. Only ArgGuard uses it. */
+ * in gArgs. Only ArgGuard and ArgsSnapshot use it. */
 class ArgsAccess : public ArgsManager
 {
 public:
@@ -81,6 +81,20 @@ ArgGuard::~ArgGuard()
     } else {
         ArgsAccess::MapMultiArgs().erase(m_arg);
     }
+}
+
+ArgsSnapshot::ArgsSnapshot()
+{
+    LOCK(ArgsAccess::Lock());
+    m_args = ArgsAccess::MapArgs();
+    m_multiArgs = ArgsAccess::MapMultiArgs();
+}
+
+ArgsSnapshot::~ArgsSnapshot()
+{
+    LOCK(ArgsAccess::Lock());
+    ArgsAccess::MapArgs() = m_args;
+    ArgsAccess::MapMultiArgs() = m_multiArgs;
 }
 
 uint256 insecure_rand_seed = GetRandHash();

@@ -14,6 +14,7 @@
 #include "txdb.h"
 #include "txmempool.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -55,6 +56,21 @@ private:
     std::string m_value;
     bool m_fHadMultiArg;
     std::vector<std::string> m_values;
+};
+
+/** Saves both maps of gArgs and puts them back on destruction, so every argument set, changed
+ * or removed while it lives (for example by ParseParameters or a soft set) is as before. */
+class ArgsSnapshot
+{
+public:
+    ArgsSnapshot();
+    ~ArgsSnapshot();
+    ArgsSnapshot(const ArgsSnapshot&) = delete;
+    ArgsSnapshot& operator=(const ArgsSnapshot&) = delete;
+
+private:
+    std::map<std::string, std::string> m_args;
+    std::map<std::string, std::vector<std::string> > m_multiArgs;
 };
 
 /** While it lives, a shutdown request in the unit tests is recorded instead of ending the
