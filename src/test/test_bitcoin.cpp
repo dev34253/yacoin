@@ -24,6 +24,7 @@
 #include "sync.h"
 #include "util.h"
 
+#include <algorithm>
 #include <map>
 #include <memory>
 
@@ -31,6 +32,12 @@ void CConnmanTest::AddNode(CNode& node)
 {
     LOCK(g_connman->cs_vNodes);
     g_connman->vNodes.push_back(&node);
+}
+
+void CConnmanTest::RemoveNode(CNode& node)
+{
+    LOCK(g_connman->cs_vNodes);
+    g_connman->vNodes.erase(std::remove(g_connman->vNodes.begin(), g_connman->vNodes.end(), &node), g_connman->vNodes.end());
 }
 
 void CConnmanTest::ClearNodes()
