@@ -104,6 +104,7 @@ class CConnman;
 class CNode;
 struct CConnmanTest {
     static void AddNode(CNode& node);
+    static void RemoveNode(CNode& node);
     static void ClearNodes();
 };
 

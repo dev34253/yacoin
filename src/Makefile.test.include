@@ -67,8 +67,11 @@ BITCOIN_TESTS =\
   test/miner_tests.cpp \
   test/miner_work_tests.cpp \
   test/multisig_tests.cpp \
+  test/net_processing_block_tests.cpp \
   test/net_tests.cpp \
   test/netbase_tests.cpp \
+  test/p2p_test_util.cpp \
+  test/p2p_test_util.h \
   test/pmt_tests.cpp \
   test/pow_tests.cpp \
   test/prevector_tests.cpp \
