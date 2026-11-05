@@ -375,6 +375,15 @@ struct TokenWalletSetup : public TestChain100Setup, public TokenGlobalsGuard {
     }
 };
 
+/** Turns a log category on while it lives, and puts the categories back afterwards */
+struct LogCategoryGuard {
+    const uint32_t saved;
+    explicit LogCategoryGuard(uint32_t category) : saved(logCategories.fetch_or(category)) {}
+    ~LogCategoryGuard() { logCategories = saved; }
+    LogCategoryGuard(const LogCategoryGuard&) = delete;
+    LogCategoryGuard& operator=(const LogCategoryGuard&) = delete;
+};
+
 BOOST_FIXTURE_TEST_SUITE(token_wallet_tests, TokenWalletSetup)
 
 BOOST_AUTO_TEST_CASE(issue_reissue_and_balances)
@@ -844,11 +853,11 @@ BOOST_AUTO_TEST_CASE(token_db_listings_after_issue_and_transfer)
     }
 }
 
-
 BOOST_AUTO_TEST_CASE(list_tokens_and_limits)
 {
     Fund({{fundDest, 2 * L + COIN}});
     CTransactionRef issue = Issue({TokenA()}, tokenAddress);
+    BOOST_REQUIRE(issue);
     const CTxDestination d2 = NewDest(*wallet);
     const CTxDestination d3 = NewDest(*wallet);
     CTransactionRef split = Transfer({{CTokenTransfer("TOKENA", 100 * COIN), EncodeDestination(d2)},
@@ -911,7 +920,6 @@ BOOST_AUTO_TEST_CASE(list_tokens_and_limits)
         BOOST_CHECK_EQUAL(wallet->GetDebit(spendToken, ISMINE_ALL), 0);
         BOOST_CHECK(wallet->IsFromMe(spendToken));
     }
-    BOOST_CHECK(issue != nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(select_token_coins)
@@ -970,11 +978,10 @@ BOOST_AUTO_TEST_CASE(select_token_coins)
     // A subset of the smaller coins that hits the target exactly (with the coin selection log
     // category on)
     {
-        const uint32_t prevCategories = logCategories.fetch_or(BCLog::SELECTCOINS);
+        LogCategoryGuard selectCoinsLog(BCLog::SELECTCOINS);
         coins = {Token(100 * COIN), Token(200 * COIN), Token(250 * COIN), Token(700 * COIN)};
         BOOST_CHECK_EQUAL(Select(300 * COIN, coins, nValue), 2U);
         BOOST_CHECK_EQUAL(nValue, 300 * COIN);
-        logCategories = prevCategories;
     }
 
     // Not enough
