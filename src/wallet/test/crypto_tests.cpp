@@ -2,10 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "key.h"
 #include "test/test_bitcoin.h"
 #include "utilstrencodings.h"
 #include "wallet/crypter.h"
 
+#include <map>
+#include <set>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -231,6 +234,441 @@ BOOST_AUTO_TEST_CASE(decrypt) {
     {
         uint256 hash(GetRandHash());
         TestCrypter::TestDecrypt(crypt, std::vector<unsigned char>(hash.begin(), hash.end()));
+    }
+}
+
+namespace {
+
+/** Exposes the protected members of CCryptoKeyStore and records the encrypted secrets that
+ *  reach AddCryptedKey; with fRefuseCryptedKeys set, AddCryptedKey refuses every key. */
+class TestCryptoKeyStore : public CCryptoKeyStore
+{
+public:
+    using CCryptoKeyStore::DecryptKeys;
+    using CCryptoKeyStore::EncryptKeys;
+    using CCryptoKeyStore::SetCrypted;
+    using CCryptoKeyStore::Unlock;
+
+    bool fRefuseCryptedKeys = false;
+    std::map<CKeyID, std::vector<unsigned char>> mapAdded;
+
+    bool AddCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret) override
+    {
+        if (fRefuseCryptedKeys)
+            return false;
+        mapAdded[vchPubKey.GetID()] = vchCryptedSecret;
+        return CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret);
+    }
+
+    size_t PlainKeyCount() const
+    {
+        std::set<CKeyID> setAddress;
+        CBasicKeyStore::GetKeys(setAddress);
+        return setAddress.size();
+    }
+};
+
+CKey NewKey(bool fCompressed)
+{
+    CKey key;
+    key.MakeNewKey(fCompressed);
+    return key;
+}
+
+CKeyingMaterial NewMasterKey()
+{
+    CKeyingMaterial vMasterKey(WALLET_CRYPTO_KEY_SIZE);
+    GetRandBytes(vMasterKey.data(), vMasterKey.size());
+    return vMasterKey;
+}
+
+std::vector<unsigned char> IVFromHash(const uint256& hash)
+{
+    return std::vector<unsigned char>(hash.begin(), hash.begin() + WALLET_CRYPTO_IV_SIZE);
+}
+
+/** The secret encrypted under the master key with the IV the key store uses for pubkey: the
+ *  first bytes of the public key's hash. */
+std::vector<unsigned char> EncryptFor(const CKeyingMaterial& vMasterKey, const CKeyingMaterial& vchSecret, const CPubKey& pubkey)
+{
+    CCrypter crypter;
+    BOOST_REQUIRE(crypter.SetKey(vMasterKey, IVFromHash(pubkey.GetHash())));
+    std::vector<unsigned char> vchCiphertext;
+    BOOST_REQUIRE(crypter.Encrypt(vchSecret, vchCiphertext));
+    return vchCiphertext;
+}
+
+CKeyingMaterial SecretOf(const CKey& key)
+{
+    return CKeyingMaterial(key.begin(), key.end());
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(crypter_key_and_iv_sizes)
+{
+    const CKeyingMaterial vKey = NewMasterKey();
+    const std::vector<unsigned char> vIV(WALLET_CRYPTO_IV_SIZE, 0x5a);
+    const CKeyingMaterial vchPlaintext(40, 0x11);
+    std::vector<unsigned char> vchCiphertext;
+    CKeyingMaterial vchDecrypted;
+
+    // Without a key nothing is encrypted or decrypted.
+    CCrypter crypter;
+    BOOST_CHECK(!crypter.Encrypt(vchPlaintext, vchCiphertext));
+    BOOST_CHECK(!crypter.Decrypt(std::vector<unsigned char>(32, 0x22), vchDecrypted));
+
+    // A key or IV of the wrong size is refused and sets no key.
+    BOOST_CHECK(!crypter.SetKey(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE - 1, 0x01), vIV));
+    BOOST_CHECK(!crypter.SetKey(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE + 1, 0x01), vIV));
+    BOOST_CHECK(!crypter.SetKey(vKey, std::vector<unsigned char>(WALLET_CRYPTO_IV_SIZE - 1, 0x01)));
+    BOOST_CHECK(!crypter.SetKey(vKey, std::vector<unsigned char>(WALLET_CRYPTO_IV_SIZE + 1, 0x01)));
+    BOOST_CHECK(!crypter.Encrypt(vchPlaintext, vchCiphertext));
+
+    // The right sizes give a key that encrypts and decrypts.
+    BOOST_CHECK(crypter.SetKey(vKey, vIV));
+    BOOST_CHECK(crypter.Encrypt(vchPlaintext, vchCiphertext));
+    BOOST_CHECK_EQUAL(vchCiphertext.size(), 48U);
+    BOOST_CHECK(crypter.Decrypt(vchCiphertext, vchDecrypted));
+    BOOST_CHECK(vchDecrypted == vchPlaintext);
+
+    // A ciphertext that is not a whole number of blocks does not decrypt.
+    BOOST_CHECK(!crypter.Decrypt(std::vector<unsigned char>(vchCiphertext.begin(), vchCiphertext.end() - 1), vchDecrypted));
+
+    // CleanKey removes the key.
+    crypter.CleanKey();
+    BOOST_CHECK(!crypter.Encrypt(vchPlaintext, vchCiphertext));
+}
+
+BOOST_AUTO_TEST_CASE(crypter_passphrase_parameters)
+{
+    const std::vector<unsigned char> vchSalt = ParseHex("0000deadbeef0000");
+    const CKeyingMaterial vchPlaintext(32, 0x33);
+    std::vector<unsigned char> vchCiphertext;
+
+    CCrypter crypter;
+    // No rounds, a salt of the wrong size and a derivation method other than 0 are refused.
+    BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", vchSalt, 0, 0));
+    BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", std::vector<unsigned char>(WALLET_CRYPTO_SALT_SIZE - 1, 0x00), 1, 0));
+    BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", std::vector<unsigned char>(WALLET_CRYPTO_SALT_SIZE + 1, 0x00), 1, 0));
+    BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", vchSalt, 1, 1));
+    BOOST_CHECK(!crypter.Encrypt(vchPlaintext, vchCiphertext));
+
+    // A refused derivation zeroes the key and IV set before, which stay in use.
+    BOOST_CHECK(crypter.SetKeyFromPassphrase("passphrase", vchSalt, 1, 0));
+    BOOST_CHECK(crypter.Encrypt(vchPlaintext, vchCiphertext));
+    std::vector<unsigned char> vchFirst = vchCiphertext;
+    BOOST_CHECK(!crypter.SetKeyFromPassphrase("other", vchSalt, 1, 1));
+    CCrypter zeroKey;
+    BOOST_CHECK(zeroKey.SetKey(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE, 0x00), std::vector<unsigned char>(WALLET_CRYPTO_IV_SIZE, 0x00)));
+    std::vector<unsigned char> vchZero;
+    BOOST_CHECK(zeroKey.Encrypt(vchPlaintext, vchZero));
+    BOOST_CHECK(crypter.Encrypt(vchPlaintext, vchCiphertext));
+    BOOST_CHECK(vchCiphertext == vchZero);
+    BOOST_CHECK(vchCiphertext != vchFirst);
+}
+
+BOOST_AUTO_TEST_CASE(keystore_plain)
+{
+    TestCryptoKeyStore store;
+    BOOST_CHECK(!store.IsCrypted());
+    BOOST_CHECK(!store.IsLocked());
+
+    const CKey key = NewKey(true);
+    const CPubKey pubkey = key.GetPubKey();
+    BOOST_CHECK(store.AddKeyPubKey(key, pubkey));
+    BOOST_CHECK(store.HaveKey(pubkey.GetID()));
+    BOOST_CHECK_EQUAL(store.PlainKeyCount(), 1U);
+    CKey keyOut;
+    BOOST_CHECK(store.GetKey(pubkey.GetID(), keyOut));
+    BOOST_CHECK(keyOut == key);
+    CPubKey pubkeyOut;
+    BOOST_CHECK(store.GetPubKey(pubkey.GetID(), pubkeyOut));
+    BOOST_CHECK(pubkeyOut == pubkey);
+    std::set<CKeyID> setAddress;
+    store.GetKeys(setAddress);
+    BOOST_CHECK(setAddress == std::set<CKeyID>{pubkey.GetID()});
+    BOOST_CHECK(!store.HaveKey(NewKey(true).GetPubKey().GetID()));
+
+    // A store with plain keys can be neither locked nor marked as encrypted, and takes no
+    // encrypted key.
+    BOOST_CHECK(!store.Lock());
+    BOOST_CHECK(!store.SetCrypted());
+    const CKey other = NewKey(true);
+    BOOST_CHECK(!store.AddCryptedKey(other.GetPubKey(), std::vector<unsigned char>(48, 0x01)));
+    BOOST_CHECK(!store.IsCrypted());
+    BOOST_CHECK(!store.IsLocked());
+    BOOST_CHECK(!store.HaveKey(other.GetPubKey().GetID()));
+
+    // An empty store is marked as encrypted, and stays so.
+    TestCryptoKeyStore empty;
+    BOOST_CHECK(empty.SetCrypted());
+    BOOST_CHECK(empty.IsCrypted());
+    BOOST_CHECK(empty.IsLocked());
+    BOOST_CHECK(empty.SetCrypted());
+}
+
+BOOST_AUTO_TEST_CASE(keystore_encrypt_keys)
+{
+    TestCryptoKeyStore store;
+    const CKey compressed = NewKey(true);
+    const CKey uncompressed = NewKey(false);
+    BOOST_CHECK(store.AddKey(compressed));
+    BOOST_CHECK(store.AddKey(uncompressed));
+
+    CKeyingMaterial vMasterKey = NewMasterKey();
+    BOOST_CHECK(store.EncryptKeys(vMasterKey));
+    BOOST_CHECK(store.IsCrypted());
+    BOOST_CHECK(store.IsLocked());
+    BOOST_CHECK_EQUAL(store.PlainKeyCount(), 0U);
+
+    for (const CKey& key : {compressed, uncompressed}) {
+        const CPubKey pubkey = key.GetPubKey();
+        BOOST_CHECK(store.HaveKey(pubkey.GetID()));
+        CPubKey pubkeyOut;
+        BOOST_CHECK(store.GetPubKey(pubkey.GetID(), pubkeyOut));
+        BOOST_CHECK(pubkeyOut == pubkey);
+        CKey keyOut;
+        BOOST_CHECK(!store.GetKey(pubkey.GetID(), keyOut));
+
+        // Each secret is encrypted under the master key with the IV taken from the hash of
+        // its public key.
+        BOOST_REQUIRE(store.mapAdded.count(pubkey.GetID()));
+        const std::vector<unsigned char>& vchCrypted = store.mapAdded[pubkey.GetID()];
+        BOOST_CHECK(vchCrypted == EncryptFor(vMasterKey, SecretOf(key), pubkey));
+        CCrypter crypter;
+        CKeyingMaterial vchSecret;
+        BOOST_CHECK(crypter.SetKey(vMasterKey, IVFromHash(pubkey.GetHash())));
+        BOOST_CHECK(crypter.Decrypt(vchCrypted, vchSecret));
+        BOOST_CHECK(vchSecret == SecretOf(key));
+
+        // Another IV or another master key does not give the secret back.
+        BOOST_CHECK(crypter.SetKey(vMasterKey, IVFromHash(Hash(pubkey.begin(), pubkey.end() - 1))));
+        BOOST_CHECK(!crypter.Decrypt(vchCrypted, vchSecret) || vchSecret != SecretOf(key));
+        BOOST_CHECK(crypter.SetKey(NewMasterKey(), IVFromHash(pubkey.GetHash())));
+        BOOST_CHECK(!crypter.Decrypt(vchCrypted, vchSecret) || vchSecret != SecretOf(key));
+    }
+
+    std::set<CKeyID> setAddress;
+    store.GetKeys(setAddress);
+    BOOST_CHECK(setAddress == (std::set<CKeyID>{compressed.GetPubKey().GetID(), uncompressed.GetPubKey().GetID()}));
+
+    // An unknown key is neither present nor readable.
+    const CKeyID unknown = NewKey(true).GetPubKey().GetID();
+    CKey keyOut;
+    CPubKey pubkeyOut;
+    BOOST_CHECK(!store.HaveKey(unknown));
+    BOOST_CHECK(!store.GetKey(unknown, keyOut));
+    BOOST_CHECK(!store.GetPubKey(unknown, pubkeyOut));
+
+    // The keys are encrypted only once.
+    BOOST_CHECK(!store.EncryptKeys(vMasterKey));
+}
+
+BOOST_AUTO_TEST_CASE(keystore_encrypt_keys_failures)
+{
+    // A master key of the wrong size encrypts nothing; the store is left marked as encrypted
+    // with its plain keys.
+    {
+        TestCryptoKeyStore store;
+        BOOST_CHECK(store.AddKey(NewKey(true)));
+        CKeyingMaterial vShortKey(WALLET_CRYPTO_KEY_SIZE - 1, 0x01);
+        BOOST_CHECK(!store.EncryptKeys(vShortKey));
+        BOOST_CHECK(store.IsCrypted());
+        BOOST_CHECK(store.mapAdded.empty());
+        BOOST_CHECK_EQUAL(store.PlainKeyCount(), 1U);
+    }
+    // A key that AddCryptedKey refuses ends the encryption.
+    {
+        TestCryptoKeyStore store;
+        BOOST_CHECK(store.AddKey(NewKey(true)));
+        store.fRefuseCryptedKeys = true;
+        CKeyingMaterial vMasterKey = NewMasterKey();
+        BOOST_CHECK(!store.EncryptKeys(vMasterKey));
+        BOOST_CHECK(store.IsCrypted());
+        BOOST_CHECK_EQUAL(store.PlainKeyCount(), 1U);
+    }
+    // A store that holds encrypted keys is not encrypted again.
+    {
+        TestCryptoKeyStore store;
+        const CKey key = NewKey(true);
+        CKeyingMaterial vMasterKey = NewMasterKey();
+        BOOST_CHECK(store.AddCryptedKey(key.GetPubKey(), EncryptFor(vMasterKey, SecretOf(key), key.GetPubKey())));
+        BOOST_CHECK(!store.EncryptKeys(vMasterKey));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(keystore_unlock_and_lock)
+{
+    TestCryptoKeyStore store;
+    const CKey compressed = NewKey(true);
+    const CKey uncompressed = NewKey(false);
+    BOOST_CHECK(store.AddKey(compressed));
+    BOOST_CHECK(store.AddKey(uncompressed));
+    CKeyingMaterial vMasterKey = NewMasterKey();
+    BOOST_CHECK(store.EncryptKeys(vMasterKey));
+
+    int nStatusChanges = 0;
+    store.NotifyStatusChanged.connect([&nStatusChanges](CCryptoKeyStore*) { ++nStatusChanges; });
+
+    // A wrong master key, or one of the wrong size, does not unlock.
+    BOOST_CHECK(!store.Unlock(NewMasterKey()));
+    BOOST_CHECK(!store.Unlock(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE + 1, 0x01)));
+    BOOST_CHECK(store.IsLocked());
+    BOOST_CHECK_EQUAL(nStatusChanges, 0);
+
+    // The right one unlocks, and the keys are readable.
+    BOOST_CHECK(store.Unlock(vMasterKey));
+    BOOST_CHECK(!store.IsLocked());
+    BOOST_CHECK_EQUAL(nStatusChanges, 1);
+    for (const CKey& key : {compressed, uncompressed}) {
+        CKey keyOut;
+        BOOST_CHECK(store.GetKey(key.GetPubKey().GetID(), keyOut));
+        BOOST_CHECK(keyOut == key);
+        BOOST_CHECK_EQUAL(keyOut.IsCompressed(), key.IsCompressed());
+    }
+
+    // Lock clears the master key.
+    BOOST_CHECK(store.Lock());
+    BOOST_CHECK(store.IsLocked());
+    BOOST_CHECK_EQUAL(nStatusChanges, 2);
+    CKey keyOut;
+    BOOST_CHECK(!store.GetKey(compressed.GetPubKey().GetID(), keyOut));
+
+    // After the first unlock a wrong key still does not unlock, and the right one does again.
+    BOOST_CHECK(!store.Unlock(NewMasterKey()));
+    BOOST_CHECK(store.IsLocked());
+    BOOST_CHECK(store.Unlock(vMasterKey));
+    BOOST_CHECK(!store.IsLocked());
+    BOOST_CHECK_EQUAL(nStatusChanges, 3);
+    BOOST_CHECK(store.GetKey(uncompressed.GetPubKey().GetID(), keyOut));
+    BOOST_CHECK(keyOut == uncompressed);
+    BOOST_CHECK(store.Lock());
+    BOOST_CHECK_EQUAL(nStatusChanges, 4);
+
+    // A store with plain keys does not unlock, and an encrypted store without keys neither.
+    TestCryptoKeyStore plain;
+    BOOST_CHECK(plain.AddKey(NewKey(true)));
+    BOOST_CHECK(!plain.Unlock(vMasterKey));
+    BOOST_CHECK(!plain.IsCrypted());
+    TestCryptoKeyStore empty;
+    BOOST_CHECK(empty.SetCrypted());
+    BOOST_CHECK(!empty.Unlock(vMasterKey));
+    BOOST_CHECK(empty.IsLocked());
+}
+
+BOOST_AUTO_TEST_CASE(keystore_add_key_when_encrypted)
+{
+    TestCryptoKeyStore store;
+    BOOST_CHECK(store.AddKey(NewKey(true)));
+    CKeyingMaterial vMasterKey = NewMasterKey();
+    BOOST_CHECK(store.EncryptKeys(vMasterKey));
+
+    // A locked store takes no key.
+    const CKey locked = NewKey(true);
+    BOOST_CHECK(!store.AddKeyPubKey(locked, locked.GetPubKey()));
+    BOOST_CHECK(!store.HaveKey(locked.GetPubKey().GetID()));
+
+    // An unlocked store encrypts the key it takes.
+    BOOST_CHECK(store.Unlock(vMasterKey));
+    const CKey key = NewKey(false);
+    BOOST_CHECK(store.AddKeyPubKey(key, key.GetPubKey()));
+    BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
+    BOOST_CHECK_EQUAL(store.PlainKeyCount(), 0U);
+    BOOST_CHECK(store.mapAdded[key.GetPubKey().GetID()] == EncryptFor(vMasterKey, SecretOf(key), key.GetPubKey()));
+    CKey keyOut;
+    BOOST_CHECK(store.GetKey(key.GetPubKey().GetID(), keyOut));
+    BOOST_CHECK(keyOut == key);
+
+    // A key that AddCryptedKey refuses is not added.
+    store.fRefuseCryptedKeys = true;
+    const CKey refused = NewKey(true);
+    BOOST_CHECK(!store.AddKeyPubKey(refused, refused.GetPubKey()));
+    BOOST_CHECK(!store.HaveKey(refused.GetPubKey().GetID()));
+}
+
+BOOST_AUTO_TEST_CASE(keystore_get_key_decrypt_failures)
+{
+    TestCryptoKeyStore store;
+    BOOST_CHECK(store.AddKey(NewKey(true)));
+    CKeyingMaterial vMasterKey = NewMasterKey();
+    BOOST_CHECK(store.EncryptKeys(vMasterKey));
+    BOOST_CHECK(store.Unlock(vMasterKey));
+
+    // A secret that decrypts to fewer than 32 bytes.
+    const CKey shortSecret = NewKey(true);
+    const CKeyingMaterial vchShort(16, 0x07);
+    BOOST_CHECK(store.AddCryptedKey(shortSecret.GetPubKey(), EncryptFor(vMasterKey, vchShort, shortSecret.GetPubKey())));
+    // A secret of another key.
+    const CKey mismatched = NewKey(true);
+    BOOST_CHECK(store.AddCryptedKey(mismatched.GetPubKey(), EncryptFor(vMasterKey, SecretOf(NewKey(true)), mismatched.GetPubKey())));
+    // A ciphertext that is not a whole number of blocks.
+    const CKey truncated = NewKey(true);
+    BOOST_CHECK(store.AddCryptedKey(truncated.GetPubKey(), std::vector<unsigned char>(47, 0x01)));
+
+    for (const CKey& key : {shortSecret, mismatched, truncated}) {
+        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
+        CKey keyOut;
+        BOOST_CHECK(!store.GetKey(key.GetPubKey().GetID(), keyOut));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(keystore_decrypt_keys)
+{
+    // A store that is not encrypted has nothing to decrypt.
+    {
+        TestCryptoKeyStore plain;
+        BOOST_CHECK(plain.AddKey(NewKey(true)));
+        BOOST_CHECK(!plain.DecryptKeys(NewMasterKey()));
+        BOOST_CHECK_EQUAL(plain.PlainKeyCount(), 1U);
+    }
+
+    const CKey key = NewKey(true);
+    CKeyingMaterial vMasterKey = NewMasterKey();
+
+    // A master key of the wrong size, or a secret that decrypts to fewer than 32 bytes, fails.
+    {
+        TestCryptoKeyStore store;
+        BOOST_CHECK(store.AddKey(key));
+        BOOST_CHECK(store.EncryptKeys(vMasterKey));
+        BOOST_CHECK(!store.DecryptKeys(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE - 1, 0x01)));
+        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
+    }
+    {
+        TestCryptoKeyStore store;
+        BOOST_CHECK(store.SetCrypted());
+        BOOST_CHECK(store.AddCryptedKey(key.GetPubKey(), EncryptFor(vMasterKey, CKeyingMaterial(16, 0x07), key.GetPubKey())));
+        BOOST_CHECK(!store.DecryptKeys(vMasterKey));
+        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
+    }
+
+    // With the right master key the decrypted keys are added through AddKeyPubKey, which on
+    // this store, still marked as encrypted, refuses them while it is locked.
+    {
+        TestCryptoKeyStore store;
+        BOOST_CHECK(store.AddKey(key));
+        BOOST_CHECK(store.EncryptKeys(vMasterKey));
+        BOOST_CHECK(!store.DecryptKeys(vMasterKey));
+        BOOST_CHECK(store.IsCrypted());
+        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
+        BOOST_CHECK_EQUAL(store.PlainKeyCount(), 0U);
+    }
+    // Unlocked, AddKeyPubKey encrypts each decrypted key again into the encrypted map, which
+    // DecryptKeys then clears: it returns true, and the store, still marked as encrypted and
+    // unlocked, holds no key at all.
+    {
+        TestCryptoKeyStore store;
+        BOOST_CHECK(store.AddKey(key));
+        BOOST_CHECK(store.EncryptKeys(vMasterKey));
+        BOOST_CHECK(store.Unlock(vMasterKey));
+        BOOST_CHECK(store.DecryptKeys(vMasterKey));
+        BOOST_CHECK(store.IsCrypted());
+        BOOST_CHECK(!store.IsLocked());
+        BOOST_CHECK_EQUAL(store.PlainKeyCount(), 0U);
+        BOOST_CHECK(!store.HaveKey(key.GetPubKey().GetID()));
+        std::set<CKeyID> setAddress;
+        store.GetKeys(setAddress);
+        BOOST_CHECK(setAddress.empty());
     }
 }
 
