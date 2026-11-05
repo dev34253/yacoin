@@ -875,6 +875,9 @@ BOOST_FIXTURE_TEST_CASE(dump_wallet, TestChain100Setup)
     BOOST_CHECK(wallet.AddCScript(cltvScript));
     BOOST_CHECK(wallet.AddCScript(csvScript));
     BOOST_CHECK(wallet.SetAddressBook(CScriptID(cltvScript), "time lock", "receive"));
+    // A redeem script of an uncompressed wallet key.
+    const CScript uncompressedScript = GetScriptForCltvP2SH(3000, change.GetPubKey());
+    BOOST_CHECK(wallet.AddCScript(uncompressedScript));
 
     const fs::path path = pathTemp / "walletdb_dump.txt";
     BOOST_CHECK(DumpWallet(&wallet, path.string()));
@@ -912,6 +915,20 @@ BOOST_FIXTURE_TEST_CASE(dump_wallet, TestChain100Setup)
     BOOST_CHECK(Contains(vLines, strprintf("%s type=CSV_P2SH_timelock change=1 redeemscript=%s # addr=%s", Wif(reserve),
                                            HexStr(csvScript.begin(), csvScript.end()), AddressOf(CScriptID(csvScript)))));
     BOOST_CHECK_EQUAL(vLines.back(), "# End of dump");
+
+    // known defect, MG-046: the P2SH lines always give the key in compressed form, whatever
+    // form the redeem script uses
+    const std::string strUncompressedSuffix = strprintf(" type=CLTV_P2SH_timelock change=1 redeemscript=%s # addr=%s",
+        HexStr(uncompressedScript.begin(), uncompressedScript.end()), AddressOf(CScriptID(uncompressedScript)));
+    std::string strUncompressedWif = "(no line)";
+    for (const std::string& line : vLines) {
+        const size_t nSpace = line.find(' ');
+        if (nSpace != std::string::npos && line.substr(nSpace) == strUncompressedSuffix)
+            strUncompressedWif = line.substr(0, nSpace);
+    }
+    CKey changeCompressed;
+    changeCompressed.Set(change.begin(), change.end(), true);
+    KNOWN_FAILURE_EQUAL("MG-046", strUncompressedWif, Wif(change), Wif(changeCompressed));
 
     // The P2PKH keys are sorted by birth time.
     auto Position = [&vLines](const std::string& line) { return std::find(vLines.begin(), vLines.end(), line) - vLines.begin(); };

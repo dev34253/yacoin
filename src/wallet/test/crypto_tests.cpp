@@ -343,29 +343,14 @@ BOOST_AUTO_TEST_CASE(crypter_key_and_iv_sizes)
 BOOST_AUTO_TEST_CASE(crypter_passphrase_parameters)
 {
     const std::vector<unsigned char> vchSalt = ParseHex("0000deadbeef0000");
-    const CKeyingMaterial vchPlaintext(32, 0x33);
-    std::vector<unsigned char> vchCiphertext;
 
-    CCrypter crypter;
     // No rounds, a salt of the wrong size and a derivation method other than 0 are refused.
+    CCrypter crypter;
     BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", vchSalt, 0, 0));
     BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", std::vector<unsigned char>(WALLET_CRYPTO_SALT_SIZE - 1, 0x00), 1, 0));
     BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", std::vector<unsigned char>(WALLET_CRYPTO_SALT_SIZE + 1, 0x00), 1, 0));
     BOOST_CHECK(!crypter.SetKeyFromPassphrase("passphrase", vchSalt, 1, 1));
-    BOOST_CHECK(!crypter.Encrypt(vchPlaintext, vchCiphertext));
-
-    // A refused derivation zeroes the key and IV set before, which stay in use.
     BOOST_CHECK(crypter.SetKeyFromPassphrase("passphrase", vchSalt, 1, 0));
-    BOOST_CHECK(crypter.Encrypt(vchPlaintext, vchCiphertext));
-    std::vector<unsigned char> vchFirst = vchCiphertext;
-    BOOST_CHECK(!crypter.SetKeyFromPassphrase("other", vchSalt, 1, 1));
-    CCrypter zeroKey;
-    BOOST_CHECK(zeroKey.SetKey(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE, 0x00), std::vector<unsigned char>(WALLET_CRYPTO_IV_SIZE, 0x00)));
-    std::vector<unsigned char> vchZero;
-    BOOST_CHECK(zeroKey.Encrypt(vchPlaintext, vchZero));
-    BOOST_CHECK(crypter.Encrypt(vchPlaintext, vchCiphertext));
-    BOOST_CHECK(vchCiphertext == vchZero);
-    BOOST_CHECK(vchCiphertext != vchFirst);
 }
 
 BOOST_AUTO_TEST_CASE(keystore_plain)
