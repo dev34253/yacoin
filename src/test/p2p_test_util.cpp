@@ -49,9 +49,8 @@ uint64_t TestNonce()
 
 } // namespace
 
-void InitP2PTestConnman(CConnman& connman)
+void InitP2PTestConnman(CConnman& connman, CConnman::Options options)
 {
-    CConnman::Options options;
     options.nSendBufferMaxSize = 1000 * DEFAULT_MAXSENDBUFFER;
     options.nReceiveFloodSize = 1000 * DEFAULT_MAXRECEIVEBUFFER;
     connman.Init(options);
@@ -81,11 +80,12 @@ std::vector<std::string> Commands(const std::vector<P2PTestMessage>& messages)
 }
 
 P2PTestPeer::P2PTestPeer(PeerLogicValidation& peerLogic, const P2PTestPeerOptions& options)
-    : m_peerLogic(peerLogic), m_options(options), m_nVersion(std::min(options.nVersion, PROTOCOL_VERSION)), m_fInConnman(false)
+    : m_peerLogic(peerLogic), m_options(options), m_nVersion(std::min(options.nVersion, PROTOCOL_VERSION)), m_fInConnman(false),
+      m_fFinalized(false)
 {
     const NodeId id = nextTestPeerId++;
-    m_node.reset(new CNode(id, NODE_NETWORK, 0, INVALID_SOCKET, TestPeerAddress(id), 0, TestNonce(), CAddress(), "",
-                           options.fInbound));
+    const CAddress address = options.address.IsValid() ? CAddress(options.address, NODE_NONE) : TestPeerAddress(id);
+    m_node.reset(new CNode(id, NODE_NETWORK, 0, INVALID_SOCKET, address, 0, TestNonce(), CAddress(), "", options.fInbound));
     m_node->fWhitelisted = options.fWhitelisted;
     m_peerLogic.InitializeNode(m_node.get());
     if (options.fInConnman) {
@@ -108,26 +108,39 @@ P2PTestPeer::P2PTestPeer(PeerLogicValidation& peerLogic, const P2PTestPeerOption
 
 P2PTestPeer::~P2PTestPeer()
 {
+    if (!m_fFinalized)
+        Finalize();
+}
+
+bool P2PTestPeer::Finalize()
+{
+    BOOST_REQUIRE(!m_fFinalized);
+    m_fFinalized = true;
     if (m_fInConnman)
         CConnmanTest::RemoveNode(*m_node);
+    m_fInConnman = false;
     bool fUpdateConnectionTime = false;
     m_peerLogic.FinalizeNode(m_node->GetId(), fUpdateConnectionTime);
+    return fUpdateConnectionTime;
 }
 
 void P2PTestPeer::Handshake()
 {
+    SendVersion();
+    SendMessage(CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERACK));
+    TakeReceived();
+}
+
+void P2PTestPeer::SendVersion()
+{
     // The time in the version message is the node's own, so the time offset sample it adds
     // (AddTimeData) is 0.
     const int64_t nTime = GetTime();
-    {
-        P2PTestMockTime now(nTime);
-        SendMessage(CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERSION, m_options.nVersion, (uint64_t)m_options.services,
-                                                           nTime, CAddress(CService(), NODE_NONE),
-                                                           CAddress(CService(), m_options.services), TestNonce(),
-                                                           std::string("/p2p_test:1.0/"), m_options.nStartingHeight, true));
-    }
-    SendMessage(CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERACK));
-    TakeReceived();
+    P2PTestMockTime now(nTime);
+    SendMessage(CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERSION, m_options.nVersion, (uint64_t)m_options.services, nTime,
+                                                       CAddress(CService(), NODE_NONE), CAddress(CService(), m_options.services),
+                                                       TestNonce(), std::string("/p2p_test:1.0/"), m_options.nStartingHeight,
+                                                       m_options.fRelay));
 }
 
 void P2PTestPeer::SendMessage(CSerializedNetMsg&& msg)
