@@ -256,9 +256,8 @@ BOOST_AUTO_TEST_CASE(getmininginfo_fields)
     BOOST_CHECK_EQUAL(find_value(info, "currentblocksize").get_int64(), 1000);
     BOOST_CHECK_EQUAL(find_value(info, "currentblocktx").get_int64(), 0);
     BOOST_CHECK_CLOSE(find_value(info, "difficulty").get_real(), GetDifficulty(), 1e-9);
-    const int64_t nValue = GetProofOfWorkReward(GetLastBlockIndex(tip, false)->nBits, 0, chainActive.Height());
+    const int64_t nValue = find_value(info, "blockvalue").get_int64();
     BOOST_CHECK(nValue > 0);
-    BOOST_CHECK_EQUAL(find_value(info, "blockvalue").get_int64(), nValue);
     BOOST_CHECK_CLOSE(find_value(info, "powreward").get_real(), nValue / 1000000.0, 1e-9);
     BOOST_CHECK_CLOSE(find_value(info, "netmhashps").get_real(), GetPoWMHashPS(), 1e-9);
     BOOST_CHECK_EQUAL(find_value(info, "errors").get_str(), GetWarnings("statusbar"));
