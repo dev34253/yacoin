@@ -115,6 +115,7 @@ BITCOIN_TESTS += \
   wallet/test/token_wallet_tests.cpp \
   wallet/test/wallet_chain_setup.h \
   wallet/test/wallet_encryption_tests.cpp \
+  wallet/test/wallet_spend_tests.cpp \
   wallet/test/wallet_tests.cpp \
   wallet/test/wallet_tracking_tests.cpp \
   wallet/test/walletdb_tests.cpp \
