@@ -414,19 +414,24 @@ BOOST_AUTO_TEST_CASE(child_of_two_packages)
     BOOST_CHECK(TemplateTxs() == std::vector<uint256>({parent1.GetHash(), parent2.GetHash(), other.GetHash(), child.GetHash(), other2.GetHash()}));
 }
 
+/** Turns debug logging on while it lives */
+struct DebugGuard {
+    const bool m_saved = fDebug;
+    DebugGuard() { fDebug = true; }
+    ~DebugGuard() { fDebug = m_saved; }
+    DebugGuard(const DebugGuard&) = delete;
+    DebugGuard& operator=(const DebugGuard&) = delete;
+};
+
 /* With -printpriority and debug logging the assembler logs each fee rate and the template
  * size; the template is the same */
 BOOST_AUTO_TEST_CASE(printpriority_logging)
 {
     const CTransaction tx = Spend(matureCoinbases[0], GetMinFee(1000));
     BOOST_CHECK(ToMemPool(tx));
-    const bool fDebugSaved = fDebug;
-    fDebug = true;
-    {
-        ArgGuard printPriority("-printpriority", "1");
-        BOOST_CHECK(TemplateTxs() == std::vector<uint256>({tx.GetHash()}));
-    }
-    fDebug = fDebugSaved;
+    DebugGuard debug;
+    ArgGuard printPriority("-printpriority", "1");
+    BOOST_CHECK(TemplateTxs() == std::vector<uint256>({tx.GetHash()}));
 }
 
 /** A child of parent's first output paying nFee, added without validation */
@@ -467,7 +472,7 @@ BOOST_AUTO_TEST_CASE(child_refused_not_final)
         LOCK(cs_main);
         nHeight = chainActive.Height() + 1;
     }
-    const CTransaction locked = AddChild(parent, 2 * GetMinFee(1000), 4, nHeight + 5, 0);
+    AddChild(parent, 2 * GetMinFee(1000), 4, nHeight + 5, 0);
     BOOST_CHECK(TemplateTxs() == std::vector<uint256>({parent.GetHash()}));
 }
 
