@@ -414,4 +414,111 @@ BOOST_AUTO_TEST_CASE(child_of_two_packages)
     BOOST_CHECK(TemplateTxs() == std::vector<uint256>({parent1.GetHash(), parent2.GetHash(), other.GetHash(), child.GetHash(), other2.GetHash()}));
 }
 
+/** Turns debug logging on while it lives */
+struct DebugGuard {
+    const bool m_saved = fDebug;
+    DebugGuard() { fDebug = true; }
+    ~DebugGuard() { fDebug = m_saved; }
+    DebugGuard(const DebugGuard&) = delete;
+    DebugGuard& operator=(const DebugGuard&) = delete;
+};
+
+/* With -printpriority and debug logging the assembler logs each fee rate and the template
+ * size; the template is the same */
+BOOST_AUTO_TEST_CASE(printpriority_logging)
+{
+    const CTransaction tx = Spend(matureCoinbases[0], GetMinFee(1000));
+    BOOST_CHECK(ToMemPool(tx));
+    DebugGuard debug;
+    ArgGuard printPriority("-printpriority", "1");
+    BOOST_CHECK(TemplateTxs() == std::vector<uint256>({tx.GetHash()}));
+}
+
+/** A child of parent's first output paying nFee, added without validation */
+static CTransaction AddChild(const CTransaction& parent, CAmount nFee, unsigned int nSigOpsCost, uint32_t nLockTime, uint32_t nSequence)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].prevout = COutPoint(parent.GetHash(), 0);
+    tx.vin[0].nSequence = nSequence;
+    tx.vout.resize(1);
+    tx.vout[0].nValue = parent.vout[0].nValue - nFee;
+    tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
+    tx.nLockTime = nLockTime;
+    const CTransaction child(tx);
+    TestMemPoolEntryHelper entry;
+    LOCK2(cs_main, mempool.cs);
+    mempool.addUnchecked(child.GetHash(), entry.Fee(nFee).SigOpsCost(nSigOpsCost).FromTx(child));
+    return child;
+}
+
+/* A child left over after its parent entered the block is refused when its sigops do not fit */
+BOOST_AUTO_TEST_CASE(child_refused_for_sigops)
+{
+    const CTransaction parent = Spend(matureCoinbases[0], 50 * GetMinFee(1000));
+    BOOST_CHECK(ToMemPool(parent));
+    // A lower fee rate than the parent's, so the parent is chosen first
+    AddChild(parent, 2 * GetMinFee(1000), GetMaxSize(MAX_BLOCK_SIGOPS), 0, CTxIn::SEQUENCE_FINAL);
+    BOOST_CHECK(TemplateTxs() == std::vector<uint256>({parent.GetHash()}));
+}
+
+/* A child left over after its parent entered the block is refused when it is not final */
+BOOST_AUTO_TEST_CASE(child_refused_not_final)
+{
+    const CTransaction parent = Spend(matureCoinbases[0], 50 * GetMinFee(1000));
+    BOOST_CHECK(ToMemPool(parent));
+    int nHeight;
+    {
+        LOCK(cs_main);
+        nHeight = chainActive.Height() + 1;
+    }
+    AddChild(parent, 2 * GetMinFee(1000), 4, nHeight + 5, 0);
+    BOOST_CHECK(TemplateTxs() == std::vector<uint256>({parent.GetHash()}));
+}
+
+/** A transaction of about nSize bytes with a random input, added without validation at
+ * nMultiple times the minimum fee */
+static CTransaction AddPadded(size_t nSize, int nMultiple)
+{
+    CMutableTransaction tx;
+    tx.vin.resize(1);
+    tx.vin[0].prevout = COutPoint(InsecureRand256(), 0);
+    tx.vout.resize(1);
+    tx.vout[0].nValue = COIN;
+    tx.vout[0].scriptPubKey = CScript() << OP_TRUE;
+    const size_t nBase = ::GetSerializeSize(CTransaction(tx), SER_NETWORK, PROTOCOL_VERSION);
+    // 503 bytes per push of 500
+    for (size_t n = nBase; n + 503 <= nSize; n += 503)
+        tx.vin[0].scriptSig << std::vector<unsigned char>(500, 0x51);
+    const CTransaction ctx(tx);
+    const size_t nActual = ::GetSerializeSize(ctx, SER_NETWORK, PROTOCOL_VERSION);
+    TestMemPoolEntryHelper entry;
+    entry.nHeight = 1;
+    mempool.addUnchecked(ctx.GetHash(), entry.Fee(nMultiple * GetMinFee(nActual)).FromTx(ctx));
+    return ctx;
+}
+
+/* Close to the size limit, more than 1000 refused packages in a row end the selection */
+BOOST_AUTO_TEST_CASE(near_full_block_stops_after_failures)
+{
+    const uint64_t nMaxSize = GetMaxSize(MAX_BLOCK_SIZE);
+    // With the coinbase's 1000 bytes, the block is about 300 to 800 bytes below the limit
+    const CTransaction big = AddPadded(nMaxSize - 1300, 4);
+    const uint64_t nBlockSize = 1000 + ::GetSerializeSize(big, SER_NETWORK, PROTOCOL_VERSION);
+    BOOST_REQUIRE(nBlockSize > nMaxSize - 1000);
+    BOOST_REQUIRE(nBlockSize < nMaxSize - 200);
+    // Too large for the rest of the block
+    for (int i = 0; i < 1000; i++)
+        BOOST_REQUIRE(::GetSerializeSize(AddPadded(1100, 3), SER_NETWORK, PROTOCOL_VERSION) > 900);
+    // Small enough, at the lowest fee rate
+    const CTransaction small = AddPadded(0, 2);
+    BOOST_REQUIRE(::GetSerializeSize(small, SER_NETWORK, PROTOCOL_VERSION) < 200);
+
+    // After 1000 failures the small transaction is still reached
+    BOOST_CHECK(TemplateTxs() == std::vector<uint256>({big.GetHash(), small.GetHash()}));
+    // After 1001 it is not
+    AddPadded(1100, 3);
+    BOOST_CHECK(TemplateTxs() == std::vector<uint256>({big.GetHash()}));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

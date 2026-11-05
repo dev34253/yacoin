@@ -523,7 +523,7 @@ class CommittedTargetFileTest(unittest.TestCase):
         # Every tier-1 file is guarded, so the tier-1 group is empty
         self.assertEqual(sorted(groups), ["guarded", "prerequisite", "tier-2"])
         self.assertEqual(len(groups.get("tier-1", [])), 0)
-        self.assertEqual(len([e for e in groups["tier-2"]]), 5)
+        self.assertEqual(len([e for e in groups["tier-2"]]), 3)
         self.assertTrue(all(e.met for e in groups["guarded"]))
         self.assertFalse(any(e.met for e in groups.get("tier-1", []) + groups["tier-2"]))
 

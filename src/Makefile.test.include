@@ -61,6 +61,7 @@ BITCOIN_TESTS =\
   test/mempool_tests.cpp \
   test/merkle_tests.cpp \
   test/miner_tests.cpp \
+  test/miner_work_tests.cpp \
   test/multisig_tests.cpp \
   test/net_tests.cpp \
   test/netbase_tests.cpp \
@@ -71,6 +72,8 @@ BITCOIN_TESTS =\
   test/random_tests.cpp \
   test/restart_tests.cpp \
   test/reverselock_tests.cpp \
+  test/rpc_mining_tests.cpp \
+  test/rpc_test_util.h \
   test/rpc_tests.cpp \
   test/sanity_tests.cpp \
   test/scheduler_tests.cpp \
@@ -115,6 +118,7 @@ BITCOIN_TESTS += \
   wallet/test/token_wallet_tests.cpp \
   wallet/test/wallet_chain_setup.h \
   wallet/test/wallet_encryption_tests.cpp \
+  wallet/test/wallet_mining_tests.cpp \
   wallet/test/wallet_spend_tests.cpp \
   wallet/test/wallet_tests.cpp \
   wallet/test/wallet_tracking_tests.cpp \
