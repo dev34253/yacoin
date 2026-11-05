@@ -249,18 +249,25 @@ BOOST_AUTO_TEST_CASE(decrypt_wallet)
 
 BOOST_AUTO_TEST_CASE(decrypt_wallet_with_keys_in_memory)
 {
-    // A wallet on the database whose master key and encrypted key are only in memory. With
-    // the passphrase DecryptWallet returns true, but the keys are decrypted through the key
-    // store, which is still marked as encrypted: it encrypts each key again (and writes the
-    // encrypted key record) into the map it clears at the end. The wallet is left marked as
-    // encrypted, unlocked and without any key, and the database holds the encrypted key and
-    // no master key.
+    // A wallet on the database whose master key is in memory and in the database, and whose
+    // encrypted key is only in memory. With the passphrase DecryptWallet returns true, but the
+    // keys are decrypted through the key store, which is still marked as encrypted: it
+    // encrypts each key again (and writes the encrypted key record) into the map it clears at
+    // the end. The wallet is left marked as encrypted, unlocked and without any key; the
+    // master key record is erased from the database, the encrypted key record is there.
     std::unique_ptr<CWallet> wallet = NewMockWallet("wallet_decrypt_memory.dat");
     const CKey key = NewWalletTestKey();
     CKeyingMaterial vMasterKey(WALLET_CRYPTO_KEY_SIZE);
     GetRandBytes(vMasterKey.data(), vMasterKey.size());
-    wallet->mapMasterKeys[1] = MasterKeyFor(vMasterKey, PASSPHRASE);
+    const CMasterKey masterKey = MasterKeyFor(vMasterKey, PASSPHRASE);
+    wallet->mapMasterKeys[1] = masterKey;
+    BOOST_REQUIRE(CWalletDB(wallet->GetDBHandle()).WriteMasterKey(1, masterKey));
     BOOST_REQUIRE(wallet->LoadCryptedKey(key.GetPubKey(), CryptedSecret(vMasterKey, key)));
+    {
+        Reloaded before("wallet_decrypt_memory.dat");
+        BOOST_REQUIRE_EQUAL(before.wallet.mapMasterKeys.size(), 1U);
+        BOOST_REQUIRE(!before.wallet.HaveKey(key.GetPubKey().GetID()));
+    }
     int nStatusChanged = 0;
     boost::signals2::scoped_connection connection(
         wallet->NotifyStatusChanged.connect([&nStatusChanged](CCryptoKeyStore*) { nStatusChanged++; }));
@@ -275,12 +282,12 @@ BOOST_AUTO_TEST_CASE(decrypt_wallet_with_keys_in_memory)
     BOOST_CHECK(setKeys.empty());
     BOOST_CHECK_EQUAL(wallet->mapMasterKeys.size(), 1U);
 
-    Reloaded reloaded("wallet_decrypt_memory.dat");
-    BOOST_CHECK(reloaded.wallet.mapMasterKeys.empty());
-    BOOST_CHECK(reloaded.wallet.IsCrypted());
-    BOOST_CHECK(reloaded.wallet.HaveKey(key.GetPubKey().GetID()));
+    Reloaded after("wallet_decrypt_memory.dat");
+    BOOST_CHECK(after.wallet.mapMasterKeys.empty());
+    BOOST_CHECK(after.wallet.IsCrypted());
+    BOOST_CHECK(after.wallet.HaveKey(key.GetPubKey().GetID()));
     CKey keyOut;
-    BOOST_CHECK(!reloaded.wallet.GetKey(key.GetPubKey().GetID(), keyOut));
+    BOOST_CHECK(!after.wallet.GetKey(key.GetPubKey().GetID(), keyOut));
 }
 
 BOOST_AUTO_TEST_CASE(decrypt_wallet_without_database)
@@ -393,7 +400,7 @@ BOOST_AUTO_TEST_CASE(keypool_of_locked_wallet)
 {
     LockedWallet locked;
     CWallet& wallet = locked.wallet;
-    SetMockTime(1600000000);
+    ScopedMockTime mockTime(1600000000);
 
     // Nothing can be taken from or added to an empty keypool while locked
     CPubKey pubkey;
@@ -404,7 +411,6 @@ BOOST_AUTO_TEST_CASE(keypool_of_locked_wallet)
     BOOST_CHECK(!script);
     // The oldest key time of an empty keypool is the current time
     BOOST_CHECK_EQUAL(wallet.GetOldestKeyPoolTime(), 1600000000);
-    SetMockTime(0);
 }
 
 BOOST_AUTO_TEST_CASE(keypool_entries_that_do_not_match)
@@ -490,7 +496,6 @@ BOOST_AUTO_TEST_CASE(send_money_refusals)
     BOOST_CHECK(wtx.tx->IsNull());
 }
 
-
 BOOST_AUTO_TEST_CASE(load_wallet_needing_rewrite)
 {
     // An encrypted wallet of file version 40000 needs a rewrite, which LoadWallet reports
@@ -508,7 +513,6 @@ BOOST_AUTO_TEST_CASE(load_wallet_needing_rewrite)
     BOOST_CHECK(wallet.IsCrypted());
     BOOST_CHECK(!fFirstRun);
 }
-
 
 BOOST_AUTO_TEST_CASE(key_generation_failures)
 {
