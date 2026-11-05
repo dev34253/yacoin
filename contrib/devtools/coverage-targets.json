@@ -1,6 +1,6 @@
 {
   "tolerance": 0.1,
-  "overall": {"unit_lines": 64.78},
+  "overall": {"unit_lines": 66.73},
   "tiers": {
     "tier-1": {"unit_lines": 90.0, "unit_branches": 70.0},
     "tier-2": {"all_lines": 90.0, "unit_lines": 50.0}
@@ -27,8 +27,8 @@
     {"group": "guarded", "file": "src/wallet/wallet.cpp", "target": "tier-2", "met": true},
     {"group": "guarded", "file": "src/rpc/mining.cpp", "target": "tier-2", "met": true},
     {"group": "guarded", "file": "src/miner.cpp", "target": "tier-2", "met": true},
-    {"group": "tier-2", "file": "src/httpserver.cpp", "target": "tier-2", "met": false},
-    {"group": "tier-2", "file": "src/httprpc.cpp", "target": "tier-2", "met": false},
+    {"group": "guarded", "file": "src/httpserver.cpp", "target": "tier-2", "met": true},
+    {"group": "guarded", "file": "src/httprpc.cpp", "target": "tier-2", "met": true},
     {"group": "tier-2", "file": "src/net_processing.cpp", "target": "tier-2", "met": false},
     {"group": "prerequisite", "file": "src/coins.h", "target": "tier-1", "met": true},
     {"group": "prerequisite", "file": "src/undo.h", "target": "tier-1", "met": true},
