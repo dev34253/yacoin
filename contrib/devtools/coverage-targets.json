@@ -1,6 +1,6 @@
 {
   "tolerance": 0.1,
-  "overall": {"unit_lines": 58.39},
+  "overall": {"unit_lines": 60.70},
   "tiers": {
     "tier-1": {"unit_lines": 90.0, "unit_branches": 70.0},
     "tier-2": {"all_lines": 90.0, "unit_lines": 50.0}
@@ -22,9 +22,9 @@
     {"group": "guarded", "file": "src/tokens/tokens.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/tokens/tokendb.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/validation.cpp", "target": "tier-1", "met": true},
+    {"group": "guarded", "file": "src/wallet/crypter.cpp", "target": "tier-2", "met": true},
+    {"group": "guarded", "file": "src/wallet/walletdb.cpp", "target": "tier-2", "met": true},
     {"group": "tier-2", "file": "src/wallet/wallet.cpp", "target": "tier-2", "met": false},
-    {"group": "tier-2", "file": "src/wallet/crypter.cpp", "target": "tier-2", "met": false},
-    {"group": "tier-2", "file": "src/wallet/walletdb.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/rpc/mining.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/miner.cpp", "target": "tier-2", "met": false},
     {"group": "tier-2", "file": "src/httpserver.cpp", "target": "tier-2", "met": false},
