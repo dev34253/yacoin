@@ -509,4 +509,26 @@ BOOST_AUTO_TEST_CASE(load_wallet_needing_rewrite)
     BOOST_CHECK(!fFirstRun);
 }
 
+
+BOOST_AUTO_TEST_CASE(key_generation_failures)
+{
+    // A locked wallet cannot store a new key
+    {
+        LockedWallet locked;
+        LOCK(locked.wallet.cs_wallet);
+        CWalletDB walletdb(locked.wallet.GetDBHandle());
+        BOOST_CHECK_THROW(locked.wallet.GenerateNewKey(walletdb), std::runtime_error);
+        BOOST_CHECK_THROW(locked.wallet.GenerateNewHDMasterKey(), std::runtime_error);
+    }
+
+    // An HD chain whose master key the wallet does not hold derives no key
+    CWallet wallet;
+    CHDChain chain;
+    chain.masterKeyID = NewWalletTestKey().GetPubKey().GetID();
+    BOOST_REQUIRE(wallet.SetHDChain(chain, true));
+    LOCK(wallet.cs_wallet);
+    CWalletDB walletdb(wallet.GetDBHandle());
+    BOOST_CHECK_THROW(wallet.GenerateNewKey(walletdb), std::runtime_error);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
