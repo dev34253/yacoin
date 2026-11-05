@@ -131,7 +131,7 @@ BOOST_AUTO_TEST_CASE(hash_buffers_64bit_time)
 /* Before version 7: the 80-byte header with its 32-bit time */
 BOOST_AUTO_TEST_CASE(hash_buffers_32bit_time)
 {
-    CBlock block = FixedBlock(CURRENT_VERSION_of_block, 1400000123);
+    CBlock block = FixedBlock(6, 1400000123);
     BOOST_REQUIRE(block.nVersion < VERSION_of_block_for_yac_05x_new);
     HashBuffers buffers = Format(block);
     BOOST_CHECK_EQUAL(buffers.data, HexStr(ExpectedData(block)));
