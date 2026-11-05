@@ -375,6 +375,15 @@ struct TokenWalletSetup : public TestChain100Setup, public TokenGlobalsGuard {
     }
 };
 
+/** Turns a log category on while it lives, and puts the categories back afterwards */
+struct LogCategoryGuard {
+    const uint32_t saved;
+    explicit LogCategoryGuard(uint32_t category) : saved(logCategories.fetch_or(category)) {}
+    ~LogCategoryGuard() { logCategories = saved; }
+    LogCategoryGuard(const LogCategoryGuard&) = delete;
+    LogCategoryGuard& operator=(const LogCategoryGuard&) = delete;
+};
+
 BOOST_FIXTURE_TEST_SUITE(token_wallet_tests, TokenWalletSetup)
 
 BOOST_AUTO_TEST_CASE(issue_reissue_and_balances)
@@ -842,6 +851,149 @@ BOOST_AUTO_TEST_CASE(token_db_listings_after_issue_and_transfer)
         std::vector<std::pair<std::string, CAmount> > held(entry.second.begin(), entry.second.end());
         TOKEN_CHECK_LIST(TokenHoldings(entry.first, 100, 0), TokenEntriesInDbOrder(held));
     }
+}
+
+BOOST_AUTO_TEST_CASE(list_tokens_and_limits)
+{
+    Fund({{fundDest, 2 * L + COIN}});
+    CTransactionRef issue = Issue({TokenA()}, tokenAddress);
+    BOOST_REQUIRE(issue);
+    const CTxDestination d2 = NewDest(*wallet);
+    const CTxDestination d3 = NewDest(*wallet);
+    CTransactionRef split = Transfer({{CTokenTransfer("TOKENA", 100 * COIN), EncodeDestination(d2)},
+                                      {CTokenTransfer("TOKENA", 200 * COIN), EncodeDestination(d3)}});
+    std::map<std::string, std::vector<COutput> > available;
+    wallet->AvailableTokens(available);
+    BOOST_REQUIRE_EQUAL(available["TOKENA"].size(), 3U);
+    BOOST_REQUIRE_EQUAL(available["TOKENA!"].size(), 1U);
+
+    // ListTokens lists the spendable token coins by address (of the first non-change output
+    // up their chain of parents), and locked token coins as not safe; locked coins without a
+    // token are not listed
+    auto Listed = [this](std::vector<COutPoint>& unsafe) {
+        unsafe.clear();
+        size_t nCoins = 0;
+        for (const auto& entry : wallet->ListTokens()) {
+            BOOST_CHECK(IsValidDestination(entry.first));
+            for (const COutput& out : entry.second) {
+                nCoins++;
+                BOOST_CHECK(out.tx->tx->vout[out.i].scriptPubKey.IsTokenScript());
+                if (!out.fSafe)
+                    unsafe.push_back(COutPoint(out.tx->GetHash(), out.i));
+            }
+        }
+        return nCoins;
+    };
+    std::vector<COutPoint> unsafe;
+    BOOST_CHECK_EQUAL(Listed(unsafe), 4U);
+    BOOST_CHECK(unsafe.empty());
+    const COutPoint lockedToken(available["TOKENA"][0].tx->GetHash(), available["TOKENA"][0].i);
+    const unsigned int nYac = FindOutput(*split, [](const CScript& s) { return !s.IsTokenScript(); });
+    {
+        LOCK2(cs_main, wallet->cs_wallet);
+        wallet->LockCoin(lockedToken);
+        wallet->LockCoin(COutPoint(split->GetHash(), nYac));
+        wallet->LockCoin(COutPoint(uint256S("0x1234"), 0)); // not a wallet transaction
+    }
+    BOOST_CHECK_EQUAL(Listed(unsafe), 4U);
+    BOOST_CHECK(unsafe == std::vector<COutPoint>({lockedToken}));
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->UnlockAllCoins();
+    }
+
+    // A minimum sum or a maximum count stops the search for a token once reached
+    std::map<std::string, std::vector<COutput> > limited;
+    wallet->AvailableTokens(limited, true, nullptr, 1, MAX_MONEY, 1);
+    BOOST_CHECK_EQUAL(limited["TOKENA"].size(), 1U);
+    BOOST_CHECK_EQUAL(limited["TOKENA!"].size(), 1U);
+    limited.clear();
+    wallet->AvailableTokens(limited, true, nullptr, 1, MAX_MONEY, MAX_MONEY, 2);
+    BOOST_CHECK_EQUAL(limited["TOKENA"].size(), 2U);
+    BOOST_CHECK_EQUAL(limited["TOKENA!"].size(), 1U);
+
+    // A transaction that spends only a token coin of the wallet is from the wallet
+    CTransaction spendToken;
+    spendToken.vin.push_back(CTxIn(lockedToken));
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK_EQUAL(wallet->GetDebit(spendToken, ISMINE_ALL), 0);
+        BOOST_CHECK(wallet->IsFromMe(spendToken));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(select_token_coins)
+{
+    // Coins of wallet transactions that are not in the wallet's map, as the selection gets them
+    std::vector<std::unique_ptr<CWalletTx> > txs;
+    auto Coin = [&](const CScript& script, int nDepth, bool fSpendable) {
+        CMutableTransaction mtx;
+        mtx.nLockTime = txs.size(); // unique hashes
+        mtx.vout.push_back(CTxOut(0, script));
+        txs.emplace_back(new CWalletTx(wallet.get(), MakeTransactionRef(mtx)));
+        return COutput(txs.back().get(), 0, nDepth, fSpendable, true, true);
+    };
+    auto Token = [&](CAmount nAmount, int nDepth = 6, bool fSpendable = true) {
+        CScript script = GetScriptForDestination(tokenDest);
+        CTokenTransfer("TOKENA", nAmount).ConstructTransaction(script);
+        return Coin(script, nDepth, fSpendable);
+    };
+    auto Select = [&](CAmount nTarget, const std::vector<COutput>& coins, CAmount& nValueRet) {
+        std::set<CInputCoin> setCoins;
+        const bool fFound = wallet->SelectTokensMinConf(nTarget, 1, 6, 0, "TOKENA", coins, setCoins, nValueRet);
+        CAmount nSetValue = 0;
+        for (const CInputCoin& coin : setCoins) {
+            CTokenTransfer transfer;
+            std::string address;
+            BOOST_REQUIRE(TransferTokenFromScript(coin.txout.scriptPubKey, transfer, address));
+            nSetValue += transfer.nAmount;
+        }
+        BOOST_CHECK_EQUAL(nSetValue, fFound ? nValueRet : 0);
+        return fFound ? setCoins.size() : 0;
+    };
+    CAmount nValue = 0;
+
+    // Coins that are not tokens, not spendable or too shallow are skipped; the smaller coins
+    // that add up to the target exactly are all taken
+    const COutput yac = Coin(GetScriptForDestination(tokenDest), 6, true);
+    std::vector<COutput> coins = {Token(100 * COIN), Token(200 * COIN), Token(700 * COIN), yac,
+                                  Token(300 * COIN, 6, false), Token(300 * COIN, 2)};
+    BOOST_CHECK_EQUAL(Select(300 * COIN, coins, nValue), 2U);
+    BOOST_CHECK_EQUAL(nValue, 300 * COIN);
+
+    // The smaller coins cover the target with change: they are taken rather than a larger coin
+    BOOST_CHECK_EQUAL(Select(250 * COIN, coins, nValue), 2U);
+    BOOST_CHECK_EQUAL(nValue, 300 * COIN);
+
+    // A larger coin that is not above what the smaller coins add up to is taken instead
+    coins = {Token(100 * COIN), Token(200 * COIN), Token(290 * COIN)};
+    BOOST_CHECK_EQUAL(Select(280 * COIN, coins, nValue), 1U);
+    BOOST_CHECK_EQUAL(nValue, 290 * COIN);
+
+    // Smaller coins that would leave change below the minimum lose to a larger coin
+    coins = {Token(100 * COIN), Token(150 * COIN + MIN_CHANGE / 2), Token(400 * COIN)};
+    BOOST_CHECK_EQUAL(Select(250 * COIN, coins, nValue), 1U);
+    BOOST_CHECK_EQUAL(nValue, 400 * COIN);
+
+    // A subset of the smaller coins that hits the target exactly (with the coin selection log
+    // category on)
+    {
+        LogCategoryGuard selectCoinsLog(BCLog::SELECTCOINS);
+        coins = {Token(100 * COIN), Token(200 * COIN), Token(250 * COIN), Token(700 * COIN)};
+        BOOST_CHECK_EQUAL(Select(300 * COIN, coins, nValue), 2U);
+        BOOST_CHECK_EQUAL(nValue, 300 * COIN);
+    }
+
+    // Of several larger coins the lowest is taken, whatever their order
+    for (const std::pair<CAmount, CAmount>& larger : {std::make_pair(400 * COIN, 500 * COIN), std::make_pair(500 * COIN, 400 * COIN)}) {
+        coins = {Token(100 * COIN), Token(larger.first), Token(larger.second)};
+        BOOST_CHECK_EQUAL(Select(250 * COIN, coins, nValue), 1U);
+        BOOST_CHECK_EQUAL(nValue, 400 * COIN);
+    }
+
+    // Not enough
+    coins = {Token(100 * COIN), Token(150 * COIN)};
+    BOOST_CHECK_EQUAL(Select(300 * COIN, coins, nValue), 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
