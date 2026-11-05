@@ -50,6 +50,7 @@ BITCOIN_TESTS =\
   test/hash_tests.cpp \
   test/http_test_util.cpp \
   test/http_test_util.h \
+  test/httprpc_tests.cpp \
   test/httpserver_tests.cpp \
   test/init_tests.cpp \
   test/kernel_tests.cpp \
