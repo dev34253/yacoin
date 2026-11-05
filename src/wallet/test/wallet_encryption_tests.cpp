@@ -22,8 +22,7 @@ namespace {
 
 const SecureString PASSPHRASE("first passphrase");
 
-/** A wallet on strFile of the mock environment, holding the keys of a second wallet object
- *  that loads the file, as a restart would */
+/** A second wallet object that loads strFile of the mock environment, as a restart would */
 struct Reloaded {
     CWallet wallet;
     DBErrors result;
