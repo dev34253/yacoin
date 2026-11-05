@@ -420,11 +420,11 @@ BOOST_AUTO_TEST_CASE(submitblock_results)
     BOOST_CHECK(TipHash() == next.GetHash());
     BOOST_CHECK_EQUAL(CallRPCHandler("submitblock", RPCParams(BlockHex(badHeight))).get_str(), "duplicate-invalid");
 
-    // A block that misses its target is refused (the result string is not asserted here)
+    // A block that misses its target is refused without a reject reason (known failure)
     CBlock unsolved = NewBlock();
     Unsolve(unsolved);
     const UniValue result = CallRPCHandler("submitblock", RPCParams(BlockHex(unsolved)));
-    BOOST_CHECK(result.isStr());
+    KNOWN_FAILURE_EQUAL("MG-046", result.get_str(), "high-hash", "rejected");
     BOOST_CHECK(TipHash() == next.GetHash());
 }
 
