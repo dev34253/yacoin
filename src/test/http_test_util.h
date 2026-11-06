@@ -9,6 +9,7 @@
 #include "httpserver.h"
 #include "netaddress.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <map>
@@ -20,6 +21,17 @@
 
 /** Upper bound for every socket operation and every wait of the HTTP test helpers */
 static const int HTTP_TEST_TIMEOUT_MS = 30000;
+
+/** Waits on cond until pred holds, for at most HTTP_TEST_TIMEOUT_MS; returns pred's last value.
+ * ThreadSanitizer of gcc 11 does not see std::condition_variable waits on the steady clock
+ * (pthread_cond_clockwait); a system_clock deadline waits through pthread_cond_timedwait, which it
+ * does see. The wall-clock deadline is deliberate: a clock change only stretches or shortens this
+ * 30 s upper bound. */
+template <typename Predicate>
+bool WaitForHTTPTest(std::condition_variable& cond, std::unique_lock<std::mutex>& lock, Predicate pred)
+{
+    return cond.wait_until(lock, std::chrono::system_clock::now() + std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS), pred);
+}
 
 /** Sets gArgs to exactly the given "-name=value" arguments, as the command line would; -datadir
  * keeps its value. The caller holds an ArgsSnapshot that puts the previous arguments back. */
