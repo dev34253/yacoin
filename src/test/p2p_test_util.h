@@ -34,9 +34,10 @@ class CBlockIndex;
  */
 
 /** Sets the send and receive buffer limits of a test's CConnman as the node's defaults do
- * (-maxsendbuffer, -maxreceivebuffer). Without them the first message the node sends to a peer
- * pauses the peer, and the node then processes nothing more from it. */
-void InitP2PTestConnman(CConnman& connman);
+ * (-maxsendbuffer, -maxreceivebuffer), and its other options to the given ones. Without the
+ * buffer limits the first message the node sends to a peer pauses the peer, and the node then
+ * processes nothing more from it. */
+void InitP2PTestConnman(CConnman& connman, CConnman::Options options = CConnman::Options());
 
 /** One message the node sent to a test peer */
 struct P2PTestMessage {
@@ -72,6 +73,10 @@ struct P2PTestPeerOptions {
     int nVersion = PROTOCOL_VERSION;
     //! The starting height the peer reports in its version message
     int nStartingHeight = 0;
+    //! The relay flag of its version message: whether it wants transaction announcements
+    bool fRelay = true;
+    //! The peer's address; without one, a distinct private IPv4 address per peer
+    CService address;
     //! Exchange version and verack on creation
     bool fHandshake = true;
     //! Listed in the CConnman's nodes, so the node's per-peer loops (ForEachNode) reach it
@@ -82,7 +87,8 @@ struct P2PTestPeerOptions {
  * A peer of the node under test. Creating it starts the node's state for it (InitializeNode),
  * adds it to the CConnman and, unless the options say otherwise, exchanges version and verack
  * as a peer does; the node's answers to the handshake are discarded. Destroying it removes it
- * from the CConnman, ends the node's state for it (FinalizeNode) and frees the CNode.
+ * from the CConnman, ends the node's state for it (FinalizeNode) unless Finalize() did, and
+ * frees the CNode.
  *
  * Needs the CConnman of g_connman (TestingSetup's) and its PeerLogicValidation.
  */
@@ -99,6 +105,10 @@ public:
 
     /** The peer's version message, then its verack; the node's answers are discarded */
     void Handshake();
+
+    /** The peer's version message alone, as Handshake sends it; the node's answers stay to be
+     * read */
+    void SendVersion();
 
     /** The peer sends a message with this command and payload; the node processes it and
      * everything queued before it */
@@ -127,12 +137,18 @@ public:
     /** The node's statistics for the peer (GetNodeStateStats) */
     CNodeStateStats Stats() const;
 
+    /** Ends the node's state for the peer now, as the node does when the connection closes:
+     * removes it from the CConnman and calls FinalizeNode. Returns FinalizeNode's
+     * fUpdateConnectionTime. The destructor then only frees the CNode. */
+    bool Finalize();
+
 private:
     PeerLogicValidation& m_peerLogic;
     std::unique_ptr<CNode> m_node;
     const P2PTestPeerOptions m_options;
     const int m_nVersion;
     bool m_fInConnman;
+    bool m_fFinalized;
 };
 
 /** Sets a global while it lives and puts the previous value back */
