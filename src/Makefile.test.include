@@ -156,7 +156,9 @@ test_test_bitcoin_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -s
 test_fuzz_fuzz_SOURCES = \
   test/fuzz/deserialize.cpp \
   test/fuzz/fuzz.cpp \
-  test/fuzz/fuzz.h
+  test/fuzz/fuzz.h \
+  test/fuzz/fuzz_util.cpp \
+  test/fuzz/fuzz_util.h
 test_fuzz_fuzz_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 test_fuzz_fuzz_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 test_fuzz_fuzz_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -fsanitize=fuzzer
