@@ -66,13 +66,15 @@ with this checkout mounted:
 ./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel
 ./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
+./dev.sh container unit-tests-asan           # all unit test suites under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-tsan`, `cov-unit` and `cov-functional`; `windows` and `macos` only build.
+`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `cov-unit` and `cov-functional`; `windows` and
+`macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
@@ -139,7 +141,7 @@ secp256k1 without its x86_64 assembly, which doesn't compile under ASan.
 ./dev.sh ftest                      # the base functional tests, 4 in parallel
 ./dev.sh ftest --extended           # the base and the three slow extended scripts
 ./dev.sh ftest feature_tokens.py    # selected functional tests
-./dev.sh asan                       # unit tests under ASan/LSan/UBSan
+./dev.sh asan                       # unit tests under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh all                        # build dev, unit, ftest, build release
 ./dev.sh ccache-stats
 ./dev.sh cache                      # the paths of the shared cache
@@ -236,6 +238,34 @@ debugging, such as a log level, need `test_bitcoin` run directly with its
 options (see `src/test/README.md`). In `test_bitcoin`, a node shutdown request
 (`StartShutdown`, for example after a failed release-mode assertion) prints a
 message to stderr and ends the process with a failure status.
+
+### AddressSanitizer, LeakSanitizer and UBSan
+
+`./dev.sh asan [suite...]` builds `test_bitcoin` in `build/asan` with
+`-fsanitize=address,undefined -fno-omit-frame-pointer
+-fno-sanitize-recover=undefined` and runs the suites like `./dev.sh unit`,
+with these runtime options:
+
+- `ASAN_OPTIONS=detect_leaks=1`: LeakSanitizer checks for leaks at exit.
+- `LSAN_OPTIONS=suppressions=<checkout>/test/sanitizer_suppressions/lsan`.
+- `UBSAN_OPTIONS=print_stacktrace=1`: every UBSan report has its stack.
+
+Options of your own in these variables are kept and come after the defaults,
+so they win; the suppression file is always added last. A report that is not
+suppressed fails its suite: AddressSanitizer and UBSan stop the process at
+the first report, LeakSanitizer reports at exit and ends the process with a
+failure status.
+
+`test/sanitizer_suppressions/lsan` holds the LeakSanitizer suppressions. Each
+entry names a library or one of its functions, never a test or a suite, with a
+one-line reason above it; a leak in a test is fixed in the test.
+
+CI runs the same build and options in the `unit-tests-asan` job (the
+`unit-tests-asan` mode of the Ubuntu 22.04 image; the other images refuse it),
+like the other jobs on every pull request commit and every push to `master`;
+`./dev.sh container unit-tests-asan` runs it locally, with ccache off
+(`CCACHE_DISABLE=1`), as CI does. Its logs are in
+`build/docker-ubuntu.22.04/unit-tests-asan/unit-test-logs/`.
 
 ### ThreadSanitizer
 
@@ -452,14 +482,6 @@ Each line says when and on which state of `master` it was measured.
 - Functional tests (CI `functional-tests` job, 2026-11-02, `master` 06329a8b):
   119 of 119 test runs pass, none skipped (a script run with arguments counts
   separately).
-- Sanitizers (`asan`, 2026-11-02, `master` 06329a8b): 66 of 70 suites
-  pass; the other four run all their test cases without errors and fail on
-  LeakSanitizer's report at exit. Findings:
-  - `DoS_tests`: `CNode` objects created by `stale_tip_peer_management`
-    (`AddRandomOutboundPeer`) are never freed.
-  - `accounting_tests`, `token_wallet_tests`, `wallet_tests`: small leaks
-    inside Berkeley DB (`__os_malloc`).
-  - No UBSan findings.
 - Every unit test file in `src/test/` and `src/wallet/test/` is compiled.
 
 ## Notes
