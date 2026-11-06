@@ -171,6 +171,9 @@ UniValue getblockcount(const JSONRPCRequest& request)
         );
 
     LOCK(cs_main);
+    static char* volatile planted_leak;
+    planted_leak = new char[100];
+    planted_leak = nullptr;
     return chainActive.Height();
 }
 
