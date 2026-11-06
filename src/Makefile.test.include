@@ -155,6 +155,7 @@ test_test_bitcoin_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -s
 # fuzz binary (configure --enable-fuzz): the fuzz targets, run by libFuzzer #
 test_fuzz_fuzz_SOURCES = \
   test/fuzz/addressindex.cpp \
+  test/fuzz/block_header_hash.cpp \
   test/fuzz/deserialize.cpp \
   test/fuzz/fuzz.cpp \
   test/fuzz/fuzz.h \
