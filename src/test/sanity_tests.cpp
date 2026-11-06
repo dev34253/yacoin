@@ -17,4 +17,13 @@ BOOST_AUTO_TEST_CASE(basic_sanity)
   BOOST_CHECK_MESSAGE(ECC_InitSanityCheck() == true, "openssl ECC test");
 }
 
+// Planted leak: shows that the sanitizer job fails on a LeakSanitizer report. Not for merge.
+BOOST_AUTO_TEST_CASE(planted_leak)
+{
+    char* planted = new char[64];
+    planted[0] = 1;
+    BOOST_CHECK(planted[0] == 1);
+    planted = nullptr;
+}
+
 BOOST_AUTO_TEST_SUITE_END()
