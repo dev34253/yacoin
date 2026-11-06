@@ -27,6 +27,8 @@
 #include "version.h"
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <ios>
 
 namespace {
@@ -64,6 +66,8 @@ void DeserializeInput(const FuzzBufferType& buffer)
 
 FUZZ_TARGET(block_deserialize)
 {
+    // Planted for a CI run that shows the job fails; never merged.
+    if (buffer.size() == 8 && std::memcmp(buffer.data(), "PLANTED!", 8) == 0) std::abort();
     DeserializeInput<CBlock>(buffer);
 }
 
