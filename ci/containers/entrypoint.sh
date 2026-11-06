@@ -14,6 +14,12 @@
 #                     unit-test-logs, recreated on every run)
 #   unit-tests        build test_bitcoin (mainnet consensus) and run all unit
 #                     test suites in parallel
+#   unit-tests-tsan   unit-tests under ThreadSanitizer, with the suppressions
+#                     of test/sanitizer_suppressions/tsan; any report fails
+#                     its suite. The suites run with address randomisation
+#                     off (setarch -R), which needs the container started
+#                     with --security-opt seccomp=unconfined (run.sh and the
+#                     CI job do); Ubuntu 22.04 image only
 #   functional-tests  low-difficulty build, then all functional test scripts,
 #                     the extended ones too, FTEST_JOBS in parallel
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
@@ -65,8 +71,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|functional-tests|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-tsan|functional-tests|cov-unit|cov-functional) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-tsan, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -85,9 +91,25 @@ if (( ! release )); then
     [[ ! -f "$SRC/config.status" ]] ||
         die "$SRC was configured in place (e.g. by the build mode); run 'make distclean' in it first"
 fi
-if [[ "$MODE" == unit-tests || "$MODE" == build-low-difficulty ]]; then
+if [[ "$MODE" == unit-tests || "$MODE" == unit-tests-tsan || "$MODE" == build-low-difficulty ]]; then
     [[ -x contrib/devtools/run-unit-suites.sh ]] ||
         die "this YaCoin tree has no contrib/devtools/run-unit-suites.sh (needs master after PR #114)"
+fi
+# ThreadSanitizer fails every run when its suppression file can't be read.
+tsan_suppressions="$SRC/test/sanitizer_suppressions/tsan"
+if [[ "$MODE" == unit-tests-tsan ]]; then
+    # The mode, its runtime options and the tests are verified with this
+    # image's compiler (gcc 11) only.
+    [[ "$IMAGE" == ubuntu.22.04 ]] || die "unit-tests-tsan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
+    [[ -f "$tsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/tsan"
+    # gcc 11's ThreadSanitizer runtime stops at start ("unexpected memory
+    # mapping") under the address randomisation of current kernels, so the
+    # suites run with it turned off for their processes. Docker's default
+    # seccomp filter refuses that. The personality is read back, since an
+    # older setarch (util-linux 2.27) ignores the refusal.
+    personality=$(setarch "$(uname -m)" -R cat /proc/self/personality 2>/dev/null) || personality=""
+    [[ "$personality" =~ ^[0-9a-f]+$ ]] && (( (16#$personality & 16#0040000) != 0 )) ||
+        die "unit-tests-tsan cannot turn address randomisation off (setarch -R); start the container with --security-opt seccomp=unconfined"
 fi
 if [[ "$MODE" == cov-unit || "$MODE" == cov-functional ]]; then
     grep -q "^$MODE:" Makefile.am ||
@@ -194,6 +216,9 @@ else
     flags=(--without-gui --disable-man --enable-ccache)
     case "$MODE" in
         unit-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
+        unit-tests-tsan)
+            san="-fsanitize=thread -fno-omit-frame-pointer"
+            flags+=("CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=-fsanitize=thread") ;;
         functional-tests) flags+=(--enable-low-difficulty-for-development "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         cov-unit) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
         cov-functional) flags+=(--enable-lcov --enable-low-difficulty-for-development "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
@@ -201,9 +226,20 @@ else
     (cd "$builddir" && "$SRC/configure" "${flags[@]}")
     export TMPDIR="$builddir/test/tmp"; mkdir -p "$TMPDIR"
     case "$MODE" in
-        unit-tests)
+        unit-tests|unit-tests-tsan)
             make -C "$builddir/src" -j"$JOBS" test/test_bitcoin
-            contrib/devtools/run-unit-suites.sh "$builddir/src/test/test_bitcoin" \
+            [[ -x "$builddir/src/test/test_bitcoin" ]] || die "the build made no $builddir/src/test/test_bitcoin"
+            runner=()
+            if [[ "$MODE" == unit-tests-tsan ]]; then
+                # The tree's suppressions; every report of a run is printed
+                # (the process goes on and exits with a failure status at
+                # the end), and lock-order reports show both stacks.
+                export TSAN_OPTIONS="suppressions=$tsan_suppressions:halt_on_error=0:second_deadlock_stack=1"
+                runner=(setarch "$(uname -m)" -R)
+            fi
+            # ${runner[@]+...}: an empty array is "unbound" under set -u in
+            # bash < 4.4.
+            ${runner[@]+"${runner[@]}"} contrib/devtools/run-unit-suites.sh "$builddir/src/test/test_bitcoin" \
                 "$builddir/unit-test-logs" "$JOBS"
             ;;
         functional-tests)
