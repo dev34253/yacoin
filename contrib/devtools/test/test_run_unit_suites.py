@@ -5,13 +5,17 @@ The test binary is a fake: a shell script that lists suites for
 and exits with the given status. A run marked "colour" prints its stderr in
 colour unless --color_output=no is given, whatever the environment says. A
 run marked "xml" prints that stderr instead when BOOST_TEST_OUTPUT_FORMAT is
-set, whatever the options say, as Boost 1.64 does. Every call also records
-the BOOST_TEST_* variables it was started with.
+set, whatever the options say, as Boost 1.64 does. A run with "cases" prints
+an "Entering test case" line for each of its cases that no
+--run_test=!<selector>/<case> option leaves out, as Boost 1.64 applies such
+disabling filters after the selector. Every call also records the
+BOOST_TEST_* variables it was started with.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -30,6 +34,11 @@ XML_REPORT = '<TestResult><TestSuite name="Bitcoin Test Suite" result="passed"/>
 ENTERING = "Entering test module \"Bitcoin Test Suite\"\n" \
            "test/x.cpp(10): Entering test suite \"{0}\"\n" \
            "test/x.cpp(12): Entering test case \"{0}_case\"\n"
+# --list_content of the suites with several cases (the fake prints it on
+# stderr, as Boost.Test does: a "*" after the name of a unit enabled by
+# default, then its description, if any)
+CASES_LISTING = "a_tests*\n    case_one*\n    case_two*: the second case\n    case_three*\n" \
+                "b_tests*\n    b_case*\n    nested_tests*\n        inner_case*\n"
 
 
 def passing(stdout="", stderr=NO_ERRORS):
@@ -50,7 +59,8 @@ class RunUnitSuitesTest(unittest.TestCase):
     def write_bin(self, suites, listing=None, listing_status=0):
         """suites: selector -> {"stdout", "stderr", "status"} and optionally
         "colour": the stderr printed instead unless --color_output=no is given,
-        "xml": the stderr printed instead when BOOST_TEST_OUTPUT_FORMAT is set.
+        "xml": the stderr printed instead when BOOST_TEST_OUTPUT_FORMAT is set,
+        "cases": the names of the test cases the selector runs.
         listing: the output of --list_content (default: every selector as a
         suite)."""
         if listing is None:
@@ -68,6 +78,10 @@ class RunUnitSuitesTest(unittest.TestCase):
         for selector, run in suites.items():
             lines.append("--run_test=%s)" % shlex.quote(selector))
             lines.append("    printf %s " + shlex.quote(run["stdout"]))
+            for case in run.get("cases", []):
+                disabler = "--run_test=!%s/%s" % (selector, case)
+                lines.append('    run=yes; for a in "$@"; do [ "$a" = %s ] && run=no; done' % shlex.quote(disabler))
+                lines.append('    [ "$run" = no ] || printf "Entering test case \\"%s\\"\\n" ' + shlex.quote(case))
             if "xml" in run:
                 lines.append('    if [ -n "${BOOST_TEST_OUTPUT_FORMAT+set}" ]; then printf %s '
                              + shlex.quote(run["xml"]) + " >&2")
@@ -86,11 +100,39 @@ class RunUnitSuitesTest(unittest.TestCase):
             f.write("\n".join(lines) + "\n")
         os.chmod(self.bin, 0o755)
 
-    def run_runner(self, *selectors, jobs="2", env=None):
+    def run_runner(self, *selectors, jobs="2", env=None, exclude=None):
         env = dict(os.environ, TMPDIR=self.tmp, **(env or {}))
-        return subprocess.run(["bash", SCRIPT, self.bin, self.logdir, jobs] + list(selectors),
+        options = ["--exclude-cases", exclude] if exclude is not None else []
+        return subprocess.run(["bash", SCRIPT] + options + [self.bin, self.logdir, jobs] + list(selectors),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               universal_newlines=True, env=env)
+
+    def write_list(self, text):
+        """A list of test cases to leave out, for --exclude-cases"""
+        path = os.path.join(self.tmp, "excluded-cases")
+        with open(path, "w") as f:
+            f.write(text)
+        return path
+
+    def write_cases_bin(self, listing_status=0):
+        self.write_bin({
+            "a_tests": dict(passing(), cases=["case_one", "case_two", "case_three"]),
+            "b_tests": dict(passing(), cases=["b_case", "nested_tests/inner_case"]),
+        }, listing=CASES_LISTING, listing_status=listing_status)
+
+    def log_of(self, selector):
+        """The log the runner wrote for selector"""
+        name = selector.replace("/", "_")
+        logs = [n for n in os.listdir(self.logdir) if n.partition("-")[2] == name + ".log"]
+        self.assertEqual(len(logs), 1, (selector, os.listdir(self.logdir)))
+        with open(os.path.join(self.logdir, logs[0])) as f:
+            return f.read()
+
+    def entered_cases(self, selector):
+        return re.findall(r'^Entering test case "([^"]*)"$', self.log_of(selector), re.M)
+
+    def disablers(self, call):
+        return [a for a in call if a.startswith("--run_test=!")]
 
     def summary(self):
         with open(os.path.join(self.logdir, "summary.txt")) as f:
@@ -279,6 +321,118 @@ class RunUnitSuitesTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
         self.assertEqual(self.run_calls(), [])
 
+
+    # Test cases left out with --exclude-cases
+
+    def test_listed_case_is_left_out_and_the_other_cases_of_its_suite_run(self):
+        self.write_cases_bin()
+        result = self.run_runner(exclude=self.write_list("a_tests/case_two\n"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.summary(), ["PASS a_tests", "PASS b_tests"])
+        self.assertEqual(self.entered_cases("a_tests"), ["case_one", "case_three"])
+        self.assertEqual(self.entered_cases("b_tests"), ["b_case", "nested_tests/inner_case"])
+        calls = self.run_calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            # The selector comes first, the disabling filter with it.
+            self.assertTrue(call[0] in ("--run_test=a_tests", "--run_test=b_tests"), call)
+            self.assertEqual(self.disablers(call), ["--run_test=!a_tests/case_two"])
+        self.assertIn("a_tests/case_two", result.stdout)
+
+    def test_listed_cases_are_left_out_of_explicit_selectors(self):
+        self.write_cases_bin()
+        result = self.run_runner("a_tests", "b_tests",
+                                 exclude=self.write_list("a_tests/case_one\nb_tests/nested_tests/inner_case\n"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.entered_cases("a_tests"), ["case_two", "case_three"])
+        self.assertEqual(self.entered_cases("b_tests"), ["b_case"])
+        for call in self.run_calls():
+            self.assertEqual(self.disablers(call),
+                             ["--run_test=!a_tests/case_one", "--run_test=!b_tests/nested_tests/inner_case"])
+
+    def test_without_a_list_nothing_is_left_out(self):
+        self.write_cases_bin()
+        result = self.run_runner()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.entered_cases("a_tests"), ["case_one", "case_two", "case_three"])
+        for call in self.run_calls():
+            self.assertEqual([a for a in call if a.startswith("--run_test")], [call[0]])
+        # Explicit selectors still need no listing (it fails here).
+        self.write_cases_bin(listing_status=1)
+        result = self.run_runner("a_tests")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.entered_cases("a_tests"), ["case_one", "case_two", "case_three"])
+
+    def test_listed_case_that_does_not_exist_fails(self):
+        self.write_cases_bin()
+        for entry in ("a_tests/no_such_case", "no_such_tests/case_one", "b_tests/case_one",
+                      "b_tests/inner_case", "a_tests/case_one/more",
+                      # a suite, not a test case
+                      "a_tests", "b_tests/nested_tests"):
+            with self.subTest(entry=entry):
+                shutil.rmtree(self.argsdir); os.mkdir(self.argsdir)
+                for selectors in ((), ("a_tests",)):
+                    result = self.run_runner(*selectors, exclude=self.write_list("a_tests/case_two\n" + entry + "\n"))
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn(entry, result.stderr)
+                    self.assertEqual(self.run_calls(), [])
+
+    def test_malformed_entry_fails(self):
+        self.write_cases_bin()
+        for entry in ("a_tests/*", "!a_tests/case_two", "+a_tests/case_two", "a_tests/case_two b_tests/b_case",
+                      "/case_two", "a_tests/", "a_tests//case_two", "@label", "a_tests/case_one,case_two",
+                      "a_tests/case_one:b_tests/b_case"):
+            with self.subTest(entry=entry):
+                result = self.run_runner(exclude=self.write_list(entry + "\n"))
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(entry, result.stderr)
+                self.assertEqual(self.run_calls(), [])
+
+    def test_comments_and_blank_lines_are_ignored(self):
+        self.write_cases_bin()
+        text = ("# Test cases left out\n"
+                "\n"
+                "   \n"
+                "\t\n"
+                "  # an indented comment\n"
+                "a_tests/case_two   # a comment after the entry\n"
+                "  b_tests/b_case\t\n"
+                "#a_tests/case_one\n"
+                "a_tests/case_three")  # no newline at the end
+        result = self.run_runner(exclude=self.write_list(text))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.entered_cases("a_tests"), ["case_one"])
+        self.assertEqual(self.entered_cases("b_tests"), ["nested_tests/inner_case"])
+        for call in self.run_calls():
+            self.assertEqual(self.disablers(call), ["--run_test=!a_tests/case_two", "--run_test=!b_tests/b_case",
+                                                    "--run_test=!a_tests/case_three"])
+
+    def test_list_of_comments_only_leaves_nothing_out(self):
+        self.write_cases_bin()
+        result = self.run_runner(exclude=self.write_list("# nothing\n\n"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.entered_cases("a_tests"), ["case_one", "case_two", "case_three"])
+        for call in self.run_calls():
+            self.assertEqual(self.disablers(call), [])
+
+    def test_missing_list_exits_2(self):
+        self.write_cases_bin()
+        result = self.run_runner(exclude=os.path.join(self.tmp, "no-such-list"))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no-such-list", result.stderr)
+        self.assertEqual(self.run_calls(), [])
+        result = subprocess.run(["bash", SCRIPT, "--exclude-cases"], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+    def test_list_needs_the_listing(self):
+        # The entries are checked against the listing, also with explicit
+        # selectors; a failed listing fails the run.
+        self.write_cases_bin(listing_status=1)
+        result = self.run_runner("a_tests", exclude=self.write_list("a_tests/case_two\n"))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("--list_content' failed", result.stderr)
+        self.assertEqual(self.run_calls(), [])
 
 if __name__ == "__main__":
     unittest.main()
