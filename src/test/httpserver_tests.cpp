@@ -179,7 +179,7 @@ void HTTPServerTestingSetup::CheckOneWorkerAndQueueOfOne(const std::vector<std::
     std::thread readThird(readOne, std::ref(third));
     {
         std::unique_lock<std::mutex> lock(mutex);
-        BOOST_CHECK(cond.wait_for(lock, std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS), [&] { return !responses.empty(); }));
+        BOOST_CHECK(WaitForHTTPTest(cond, lock, [&] { return !responses.empty(); }));
         BOOST_CHECK_EQUAL(responses.size(), 1U);
         if (!responses.empty()) {
             BOOST_CHECK_EQUAL(responses[0].status, HTTP_INTERNAL_SERVER_ERROR);

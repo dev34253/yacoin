@@ -62,6 +62,7 @@
 #include <cerrno>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <sstream>
 
 #include <boost/test/unit_test.hpp>
@@ -105,27 +106,64 @@ int DupFd(int fd) { return _dup(fd); }
 int Dup2Fd(int from, int to) { return _dup2(from, to); }
 int CloseFd(int fd) { return _close(fd); }
 int OpenForWrite(const char* path) { return _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC, _S_IREAD | _S_IWRITE); }
+const char* const NULL_DEVICE = "NUL";
 #else
 int StdoutFd() { return fileno(stdout); }
 int DupFd(int fd) { return dup(fd); }
 int Dup2Fd(int from, int to) { return dup2(from, to); }
 int CloseFd(int fd) { return close(fd); }
 int OpenForWrite(const char* path) { return open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600); }
+const char* const NULL_DEVICE = "/dev/null";
 #endif
 
-/** Sends log output (LogPrintf goes to stdout with fPrintToConsole) into a file while alive */
+/** Points stdout at path; returns the descriptor stdout had, for RestoreStdout */
+int RedirectStdout(const char* path)
+{
+    fflush(stdout);
+    const int saved = DupFd(StdoutFd());
+    const int fd = OpenForWrite(path);
+    Dup2Fd(fd, StdoutFd());
+    CloseFd(fd);
+    return saved;
+}
+
+void RestoreStdout(int saved)
+{
+    fflush(stdout);
+    Dup2Fd(saved, StdoutFd());
+    CloseFd(saved);
+}
+
+/** Sends log output to stdout (fPrintToConsole) for the fixture's lifetime. A base class listed
+ *  before the fixture's, so the setting is made before the fixture's threads start, which log
+ *  and so read it, and restored after they have ended. Meanwhile stdout goes to the null device
+ *  except while a LogCapture runs, and Boost.Test's log, which is written to std::cout by default,
+ *  goes to std::cerr, so it stays in the suite's output. */
+struct ConsoleLogging {
+    const bool m_prevConsole;
+    int m_savedStdout;
+    ConsoleLogging() : m_prevConsole(fPrintToConsole)
+    {
+        boost::unit_test::unit_test_log.set_stream(std::cerr);
+        m_savedStdout = RedirectStdout(NULL_DEVICE);
+        fPrintToConsole = true;
+    }
+    ~ConsoleLogging()
+    {
+        fPrintToConsole = m_prevConsole;
+        RestoreStdout(m_savedStdout);
+        boost::unit_test::unit_test_log.set_stream(std::cout);
+    }
+};
+
+/** Sends log output, which goes to stdout under ConsoleLogging, into a file while alive */
 class LogCapture
 {
 public:
     explicit LogCapture(const fs::path& path) : m_path(path)
     {
-        fflush(stdout);
-        m_saved = DupFd(StdoutFd());
-        int fd = OpenForWrite(path.string().c_str());
-        Dup2Fd(fd, StdoutFd());
-        CloseFd(fd);
-        m_prevConsole = fPrintToConsole;
-        fPrintToConsole = true;
+        BOOST_REQUIRE(fPrintToConsole);
+        m_saved = RedirectStdout(path.string().c_str());
     }
     ~LogCapture() { Restore(); }
 
@@ -142,16 +180,12 @@ private:
     void Restore()
     {
         if (m_saved < 0) return;
-        fflush(stdout);
-        Dup2Fd(m_saved, StdoutFd());
-        CloseFd(m_saved);
+        RestoreStdout(m_saved);
         m_saved = -1;
-        fPrintToConsole = m_prevConsole;
     }
 
     fs::path m_path;
     int m_saved;
-    bool m_prevConsole;
 };
 
 /** The rest of the log line that starts with prefix ("" if there is none) */
@@ -407,7 +441,7 @@ void Solve(CBlock& block)
 
 /** Regtest chain with mature coinbases, the token databases init creates, and helpers to
  *  restart the node in-process. */
-struct RestartSetup : public TestChain100Setup {
+struct RestartSetup : public ConsoleLogging, public TestChain100Setup {
     CScript scriptPubKey;
     std::vector<CTransaction> coinbases; // coinbases[h - 1] is the coinbase of the block at height h
     CTokensDB* prevTokensDb;
@@ -1998,7 +2032,11 @@ BOOST_AUTO_TEST_CASE(load_mempool_edge_cases)
 }
 
 // LoadBlockRewardAndHighestDiff only logs what it computes, so the log is checked.
-BOOST_FIXTURE_TEST_CASE(load_block_reward_and_highest_diff, TestingSetup)
+/** TestingSetup with log output on stdout, for LogCapture */
+struct ConsoleTestingSetup : public ConsoleLogging, public TestingSetup {
+};
+
+BOOST_FIXTURE_TEST_CASE(load_block_reward_and_highest_diff, ConsoleTestingSetup)
 {
     ConsensusGlobalsGuard guard;
     SyntheticChain chain;

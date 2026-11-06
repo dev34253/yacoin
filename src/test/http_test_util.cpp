@@ -365,8 +365,8 @@ bool HTTPTestServer::Start()
         std::unique_lock<std::mutex> lock(barrier->mutex);
         barrier->nArrived++;
         barrier->cond.notify_all();
-        const bool fAll = barrier->cond.wait_for(lock, std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS),
-                                                 [&barrier] { return barrier->nArrived >= barrier->nExpected; });
+        const bool fAll = WaitForHTTPTest(barrier->cond, lock,
+                                          [&barrier] { return barrier->nArrived >= barrier->nExpected; });
         lock.unlock();
         req->WriteReply(fAll ? HTTP_OK : HTTP_INTERNAL_SERVER_ERROR);
         return fAll;
@@ -382,8 +382,7 @@ bool HTTPTestServer::Start()
             return false;
         // One request at a time waits in the queue, whose depth may be 1
         std::unique_lock<std::mutex> lock(barrier->mutex);
-        if (!barrier->cond.wait_for(lock, std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS),
-                                    [&barrier, i] { return barrier->nArrived > i; }))
+        if (!WaitForHTTPTest(barrier->cond, lock, [&barrier, i] { return barrier->nArrived > i; }))
             return false;
     }
     for (const auto& client : clients) {
@@ -442,7 +441,7 @@ HandlerSteps::~HandlerSteps()
     Finish();
     std::unique_lock<std::mutex> lock(m_mutex);
     if (m_fServing)
-        m_cond.wait_for(lock, std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS), [this] { return m_fReturned; });
+        WaitForHTTPTest(m_cond, lock, [this] { return m_fReturned; });
 }
 
 void HandlerSteps::Serve(HTTPRequest* req)
@@ -470,7 +469,7 @@ void HandlerSteps::Serve(HTTPRequest* req)
 bool HandlerSteps::WaitServing()
 {
     std::unique_lock<std::mutex> lock(m_mutex);
-    return m_cond.wait_for(lock, std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS), [this] { return m_fServing; });
+    return WaitForHTTPTest(m_cond, lock, [this] { return m_fServing; });
 }
 
 std::string HandlerSteps::Run(const Step& step)
@@ -480,7 +479,7 @@ std::string HandlerSteps::Run(const Step& step)
     m_fHaveStep = true;
     m_fHaveResult = false;
     m_cond.notify_all();
-    if (!m_cond.wait_for(lock, std::chrono::milliseconds(HTTP_TEST_TIMEOUT_MS), [this] { return m_fHaveResult; }))
+    if (!WaitForHTTPTest(m_cond, lock, [this] { return m_fHaveResult; }))
         return "<timeout>";
     return m_result;
 }

@@ -1,0 +1,4 @@
+# ThreadSanitizer suppressions of the unit tests, used by the unit-tests-tsan
+# mode of the CI images (TSAN_OPTIONS=suppressions=...).
+# Each entry names a library or one of its functions, never a test, with the
+# reason in the comment above it.

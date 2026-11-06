@@ -68,6 +68,7 @@ optional mode as its argument:
 | `build` (default) | Release build: depends, configure with glibc back-compat, make, `make install` into `/src/release-root` |
 | `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests), then all unit test suites of its `src/test/test_bitcoin` in parallel (`contrib/devtools/run-unit-suites.sh`, logs in `/src/build/docker-<image>/build-low-difficulty/unit-test-logs`) |
 | `unit-tests` | Builds `test_bitcoin` and runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`) |
+| `unit-tests-tsan` | `unit-tests` under ThreadSanitizer (`-fsanitize=thread -fno-omit-frame-pointer`, mainnet consensus); the suites run with `TSAN_OPTIONS=suppressions=/src/test/sanitizer_suppressions/tsan:halt_on_error=0:second_deadlock_stack=1` and address randomisation off (`setarch -R`), so any report that is not suppressed fails its suite and the mode. Needs `docker run --security-opt seccomp=unconfined`, see below. Ubuntu 22.04 image only; the others refuse it |
 | `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.6 or newer, so it only works in the Ubuntu 22.04 image |
 | `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 2.6 or newer (Ubuntu 22.04 image only) |
@@ -103,6 +104,12 @@ docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$image" cov-functio
   container per image cache at a time. Cache statistics are printed at the
   end of every run, also when it fails.
 - Files written to `/src` and `/cache` are owned by root.
+- gcc 11's ThreadSanitizer runtime stops at start ("unexpected memory
+  mapping") under the address randomisation of current kernels, so
+  `unit-tests-tsan` runs the suites under `setarch -R`. Docker's default
+  seccomp filter refuses that; start the container with
+  `--security-opt seccomp=unconfined` (`run.sh` and the CI job do, for this
+  mode only). Without it the mode stops before the build with a message.
 
 ## Windows and macOS images, cache
 
@@ -160,14 +167,16 @@ Nothing outside this repository changes what CI builds with: a tag names the fil
 reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own, which `build-ubuntu-1604` runs first) checks the tags
 and that every `docker run` in the workflow runs a tagged image of this directory.
 
-The unit tests run in two jobs: `unit-tests` on the mainnet build, and `build-ubuntu-1604-low-difficulty` (the `build-low-difficulty`
-mode) on the low-difficulty build, so a test that only passes with the mainnet parameters fails in CI. Each uploads its unit test logs
-when it fails (`unit-test-logs`, `unit-test-logs-low-difficulty`, kept 14 days).
+The unit tests run in three jobs: `unit-tests` on the mainnet build, `build-ubuntu-1604-low-difficulty` (the `build-low-difficulty`
+mode) on the low-difficulty build, so a test that only passes with the mainnet parameters fails in CI, and `unit-tests-tsan` (the
+`unit-tests-tsan` mode of the Ubuntu 22.04 image) on the mainnet build under ThreadSanitizer. Each uploads its unit test logs when it
+fails (`unit-test-logs`, `unit-test-logs-low-difficulty`, `unit-test-logs-tsan`, kept 14 days). `test-image-tag.sh` also checks that
+only the `unit-tests-tsan` container runs without the seccomp filter.
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache, one per job kind and image
 (`release-<image>-…`, `low-difficulty-<image>-…`, `unit-tests-<image>-…`, `functional-tests-<image>-…`, keyed by the depends
 definitions). Only pushes to `master` save them; the release jobs (including `build-ubuntu-1604-low-difficulty`) build from scratch there.
 Other runs restore the newest matching cache; the low-difficulty job falls back to the 16.04 release cache if it has none of its own.
-The coverage jobs (`coverage-unit`, `coverage-functional`) restore the `functional-tests-<image>-…` cache for their depends packages
-(the same image, packages and prefix) and never save one; they build with ccache off, since their `-O0` objects never match the
-cached ones. `coverage-report` merges their tracefiles and runs `contrib/devtools/coverage-check.py`.
+The coverage jobs (`coverage-unit`, `coverage-functional`) and `unit-tests-tsan` restore the `functional-tests-<image>-…` cache for
+their depends packages (the same image, packages and prefix) and never save one; they build with ccache off, since their `-O0` or
+sanitizer objects never match the cached ones. `coverage-report` merges their tracefiles and runs `contrib/devtools/coverage-check.py`.

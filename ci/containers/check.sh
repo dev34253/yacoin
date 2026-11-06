@@ -18,16 +18,25 @@
 #           ignored files under depends/,
 #           the arguments depends gets, ccache.conf created, two depends runs
 #           one after the other, a repeated run skipping make unless its
-#           inputs (Qt) changed, a build directory of another prefix refused
+#           inputs (Qt) changed, a build directory of another prefix refused,
+#           container passing the mode to run.sh, and run.sh adding the
+#           seccomp option and CCACHE_DISABLE=1 for unit-tests-tsan only
+#           (stub docker)
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
-#           that run tests stop early on a tree without the scripts and
-#           targets they need, the Linux release build modes (build,
-#           build-low-difficulty) and the coverage modes (cov-unit,
-#           cov-functional; 22.04 image) configure with their flags,
-#           build-low-difficulty runs the unit test suites of its build
-#           with JOBS and fails when one fails, and functional-tests runs
-#           the test runner with --extended and FTEST_JOBS
+#           that run tests stop early on a tree without the scripts,
+#           targets and files they need, the Linux release build modes
+#           (build, build-low-difficulty), unit-tests-tsan and the coverage
+#           modes (cov-unit, cov-functional; 22.04 image) configure with
+#           their flags, build-low-difficulty, unit-tests and
+#           unit-tests-tsan run the unit test suites of their build with
+#           JOBS (unit-tests-tsan with the ThreadSanitizer options and
+#           address randomisation off) and fail when one fails or the build
+#           made no test_bitcoin, unit-tests-tsan stops when it cannot turn
+#           address randomisation off (this case assumes the engine's
+#           default seccomp profile) and is refused by the images other
+#           than 22.04, and functional-tests runs the test runner with
+#           --extended and FTEST_JOBS
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -221,6 +230,32 @@ step_devsh() {
     mkdir -p "$a/build/dev"; : > "$a/build/dev/Makefile"; echo "CPPFLAGS=-I$a/depends/x86_64-pc-linux-gnu/include" > "$a/build/dev/config.status"
     expect_status 1 "devsh: a build directory of another prefix is refused" env DEV_CACHE="$c" "$a/dev.sh" build dev
     grep -q 'rm -rf build/dev' "$work/out.txt" || fail "devsh: the refusal does not say to remove build/dev"
+    # container passes the mode to run.sh, and run.sh starts the container
+    # with Docker's seccomp filter off and ccache disabled (as the CI job)
+    # for unit-tests-tsan only (a stub docker that records its arguments;
+    # run.sh and an image's Dockerfile copied into a).
+    mkdir -p "$a/ci/containers"
+    cp "$HERE/run.sh" "$a/ci/containers/"; : > "$a/ci/containers/Dockerfile.ubuntu.22.04"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/bash' '[[ "${1:-}" != run ]] || echo "$*" >> "$STUB_DOCKER"' > "$bin/docker"
+    chmod +x "$bin/docker"
+    local dlog="$work/devsh/docker.log" mode
+    for mode in unit-tests-tsan unit-tests; do
+        rm -f "$dlog"
+        PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" "$a/dev.sh" container --no-image-build --no-cache "$mode" \
+            > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
+        got=$(grep -m1 -- '--cidfile' "$dlog" 2>/dev/null || echo "no docker run")
+        if [[ "$got" != *" $LOCAL_REPO:ubuntu.22.04 $mode" ]]; then
+            fail "devsh: container $mode runs: $got"
+        elif [[ $mode == unit-tests-tsan && " $got " == *" --security-opt seccomp=unconfined "* &&
+                " $got " == *" -e CCACHE_DISABLE=1 "* ]]; then
+            pass "devsh: container $mode runs the image with the seccomp filter off and ccache disabled: $got"
+        elif [[ $mode != unit-tests-tsan && "$got" != *seccomp* && "$got" != *CCACHE_DISABLE* ]]; then
+            pass "devsh: container $mode runs the image with the seccomp filter on and ccache enabled: $got"
+        else
+            fail "devsh: container $mode runs: $got"
+        fi
+    done
 }
 
 step_build() {
@@ -257,11 +292,13 @@ step_smoke() {
             expect_status 2 "smoke: $image: an argument is rejected" docker run --rm "$tag" build
             continue
         fi
-        # An unknown mode must be rejected before anything is built.
+        # An unknown mode must be rejected before anything is built, with
+        # the list of the modes.
         expect_status 2 "smoke: $image: unknown mode rejected" docker run --rm "$tag" no-such-mode
+        grep -q 'unit-tests-tsan' "$work/out.txt" || fail "smoke: $image: the mode list does not name unit-tests-tsan"
         # The modes that run tests must stop early, with a clear message, on
         # a tree without the scripts and targets they need.
-        for mode in unit-tests build-low-difficulty cov-unit cov-functional; do
+        for mode in unit-tests unit-tests-tsan build-low-difficulty cov-unit cov-functional; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -308,6 +345,97 @@ step_smoke() {
         grep -q 'error: the build made no src/test/test_bitcoin' "$work/out.txt" ||
             fail "smoke: $image: a build without test_bitcoin gave no 'error: ' message"
         [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: run-unit-suites.sh ran without test_bitcoin"
+        # unit-tests-tsan runs in the 22.04 image only; the others refuse it
+        # before the build.
+        local san="-fsanitize=thread -fno-omit-frame-pointer" unconfined=(--security-opt seccomp=unconfined)
+        local unit_modes=(unit-tests unit-tests-tsan)
+        if [[ "$image" != ubuntu.22.04 ]]; then
+            unit_modes=(unit-tests)
+            make_tests_stub "$stub" "$tag" 0
+            expect_status 1 "smoke: $image: unit-tests-tsan is refused (22.04 image only)" \
+                docker run --rm "${unconfined[@]}" -v "$stub:/src" "$tag" unit-tests-tsan
+            grep -q 'error: unit-tests-tsan .*Ubuntu 22.04 image' "$work/out.txt" ||
+                fail "smoke: $image: the refusal of unit-tests-tsan gave no 'error: ' message naming the 22.04 image"
+            [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-tsan configured in this image"
+        fi
+        # unit-tests-tsan configures out of tree with ThreadSanitizer and
+        # mainnet consensus. Its test runs need the seccomp filter off (see
+        # the entrypoint), as run.sh and the CI job start it.
+        if [[ "$image" == ubuntu.22.04 ]]; then
+            make_configure_stub "$stub" "$tag"
+            docker run --rm "${unconfined[@]}" -v "$stub:/src" "$tag" unit-tests-tsan > "$work/out.txt" 2>&1 || true
+            args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+            if [[ " $args " == *" CXXFLAGS=-O1 -g $san "* && " $args " == *" CFLAGS=-O1 -g $san "* &&
+                  " $args " == *" LDFLAGS=-fsanitize=thread "* &&
+                  " $args " == *" --without-gui --disable-man --enable-ccache "* &&
+                  " $args " != *" --enable-low-difficulty-for-development "* ]]; then
+                pass "smoke: $image: unit-tests-tsan configures with: $args"
+            else
+                tail -n 5 "$work/out.txt"; fail "smoke: $image: unit-tests-tsan configure arguments: $args"
+            fi
+        fi
+        # The out-of-tree unit test modes run every suite of the test_bitcoin
+        # they built, JOBS at a time, logs in their build directory, and fail
+        # when a suite fails or the build made no test_bitcoin.
+        # unit-tests-tsan runs them with the ThreadSanitizer options (the
+        # tree's suppressions) and address randomisation off.
+        local env_got pers_got want_env
+        want_env="TSAN_OPTIONS=suppressions=/src/test/sanitizer_suppressions/tsan:halt_on_error=0:second_deadlock_stack=1"
+        for mode in "${unit_modes[@]}"; do
+            local opts=()
+            [[ $mode != unit-tests-tsan ]] || opts=("${unconfined[@]}")
+            want_args="/src/build/docker-$image/$mode/src/test/test_bitcoin /src/build/docker-$image/$mode/unit-test-logs 3"
+            make_tests_stub "$stub" "$tag" 0
+            docker run --rm ${opts[@]+"${opts[@]}"} -v "$stub:/src" -e JOBS=3 "$tag" "$mode" > "$work/out.txt" 2>&1 &&
+                status=0 || status=$?
+            args=$(cat "$stub/suites-args" 2>/dev/null || echo "run-unit-suites.sh did not run")
+            if [[ $mode == unit-tests-tsan ]]; then
+                env_got=$(cat "$stub/suites-env" 2>/dev/null || echo "run-unit-suites.sh did not run")
+                [[ "$env_got" == "$want_env" ]] && pass "smoke: $image: $mode runs the suites with: $env_got" ||
+                    fail "smoke: $image: $mode runs the suites with the ThreadSanitizer options: $env_got"
+                # ADDR_NO_RANDOMIZE (0x0040000) in the runner's personality.
+                pers_got=$(cat "$stub/suites-personality" 2>/dev/null || echo "run-unit-suites.sh did not run")
+                [[ "$pers_got" =~ ^[0-9a-f]+$ ]] && (( (16#$pers_got & 16#0040000) != 0 )) &&
+                    pass "smoke: $image: $mode runs the suites with address randomisation off (personality $pers_got)" ||
+                    fail "smoke: $image: $mode runs the suites with the personality: $pers_got"
+            fi
+            if [[ $status == 0 && "$args" == "$want_args" ]]; then
+                pass "smoke: $image: $mode runs: run-unit-suites.sh $args"
+            else
+                tail -n 5 "$work/out.txt"
+                fail "smoke: $image: $mode (exit status $status) runs: run-unit-suites.sh $args"
+            fi
+            make_tests_stub "$stub" "$tag" 3
+            expect_status 3 "smoke: $image: $mode fails when a unit test suite fails" \
+                docker run --rm ${opts[@]+"${opts[@]}"} -v "$stub:/src" "$tag" "$mode"
+            [[ -f "$stub/suites-args" ]] || fail "smoke: $image: the failing $mode run did not reach run-unit-suites.sh"
+            make_tests_stub "$stub" "$tag" 0 no-binary
+            expect_status 1 "smoke: $image: $mode stops when the build made no test_bitcoin" \
+                docker run --rm ${opts[@]+"${opts[@]}"} -v "$stub:/src" "$tag" "$mode"
+            grep -q 'error: the build made no .*src/test/test_bitcoin' "$work/out.txt" ||
+                fail "smoke: $image: $mode without test_bitcoin gave no 'error: ' message"
+            [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: $mode ran run-unit-suites.sh without test_bitcoin"
+        done
+        # Without the suppression file every suite would fail on reading it;
+        # the mode stops before the build instead.
+        if [[ "$image" == ubuntu.22.04 ]]; then
+            make_tests_stub "$stub" "$tag" 0
+            rm "$stub/test/sanitizer_suppressions/tsan"
+            expect_status 1 "smoke: $image: unit-tests-tsan stops on a tree without its suppression file" \
+                docker run --rm "${unconfined[@]}" -v "$stub:/src" "$tag" unit-tests-tsan
+            grep -q 'error: .*test/sanitizer_suppressions/tsan' "$work/out.txt" ||
+                fail "smoke: $image: unit-tests-tsan without the suppression file gave no 'error: ' message"
+            [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-tsan configured without the suppression file"
+            # Docker's default seccomp filter refuses to turn address
+            # randomisation off: the mode stops before the build with its own
+            # message, not with ThreadSanitizer's at the first suite.
+            make_tests_stub "$stub" "$tag" 0
+            expect_status 1 "smoke: $image: unit-tests-tsan stops when it cannot turn address randomisation off" \
+                docker run --rm -v "$stub:/src" "$tag" unit-tests-tsan
+            grep -q 'error: .*seccomp=unconfined' "$work/out.txt" ||
+                fail "smoke: $image: unit-tests-tsan under the seccomp filter gave no 'error: ' message naming the option"
+            [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-tsan configured under the seccomp filter"
+        fi
         # The functional-tests mode runs every script, the extended ones
         # too, FTEST_JOBS (default 4) at a time, and fails when the runner
         # fails.
@@ -370,10 +498,36 @@ make_configure_stub() {
     printf '#!/bin/sh\nexit 0\n' > "$d/autogen.sh"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'exit 1' > "$d/configure"
-    # The early check of build-low-difficulty needs the unit test runner.
-    mkdir -p "$d/contrib/devtools"
+    # The early checks of the unit test modes need the unit test runner, and
+    # unit-tests-tsan the ThreadSanitizer suppressions.
+    mkdir -p "$d/contrib/devtools" "$d/test/sanitizer_suppressions"
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-unit-suites.sh"
+    : > "$d/test/sanitizer_suppressions/tsan"
     chmod +x "$d/autogen.sh" "$d/configure" "$d/contrib/devtools/run-unit-suites.sh"
+}
+
+# A stub source tree for the out-of-tree unit test modes (unit-tests,
+# unit-tests-tsan): depends, autogen.sh, configure and make are no-ops,
+# configure leaves src/test/test_bitcoin in the build directory (not with
+# "no-binary"), and contrib/devtools/run-unit-suites.sh records its arguments
+# in /src/suites-args, the ThreadSanitizer options it gets in /src/suites-env
+# and its personality in /src/suites-personality, then exits with <status>.
+# make_tests_stub <dir> <tag> <status> [no-binary]
+make_tests_stub() {
+    local d="$1" tag="$2" bin=""
+    make_configure_stub "$d" "$tag"
+    [[ "${4:-}" == no-binary ]] ||
+        bin='printf "#!/bin/sh\nexit 1\n" > src/test/test_bitcoin; chmod +x src/test/test_bitcoin'
+    # configure runs in the build directory and leaves a src/Makefile there.
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'mkdir -p src/test' \
+        'printf "test/test_bitcoin:\n" > src/Makefile' "$bin" > "$d/configure"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/suites-args' \
+        'echo "TSAN_OPTIONS=${TSAN_OPTIONS:-}" > /src/suites-env' \
+        'cat /proc/self/personality > /src/suites-personality' \
+        "exit $3" > "$d/contrib/devtools/run-unit-suites.sh"
+    chmod +x "$d/configure"
 }
 
 # A stub source tree for build-low-difficulty: depends, autogen.sh, configure,
