@@ -31,6 +31,14 @@ RUN cd /tmp && \
     rm -rf lcov-2.6 lcov-2.6.tar.gz && \
     lcov --version
 
+# clang 14 with libFuzzer and the sanitizer runtimes, and LLVM 14 for
+# llvm-symbolizer, for the fuzz-corpus mode; from Ubuntu's archive, as the
+# packages above. A layer of its own, so the layers above keep their cache.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends clang-14 llvm-14 && \
+    clang++-14 --version && \
+    /usr/lib/llvm-14/bin/llvm-symbolizer --version
+
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh

@@ -68,12 +68,13 @@ with this checkout mounted:
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ./dev.sh container unit-tests-asan           # all unit test suites under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
+./dev.sh container fuzz-corpus               # the fuzz binary (clang), every input of the fuzz corpus once (doc/fuzzing.md)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `cov-unit` and `cov-functional`; `windows` and
+`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `cov-unit` and `cov-functional`; `windows` and
 `macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
@@ -304,6 +305,15 @@ with a one-line reason above it; a race in a test is fixed in the test.
 
 CI runs the same mode in the `unit-tests-tsan` job, like the other jobs on
 every pull request commit and every push to `master`.
+
+### Fuzzing
+
+`./dev.sh container fuzz-corpus` builds the libFuzzer binary
+`src/test/fuzz/fuzz` with clang under ASan/LSan/UBSan and runs every input of
+the corpus in `test/fuzz/corpus/` once through its target, as the CI job
+`fuzz-corpus` does. [fuzzing.md](fuzzing.md) describes the targets, the build
+(`configure --enable-fuzz`), how to fuzz locally and how inputs are added to
+the corpus.
 
 ### Functional tests
 

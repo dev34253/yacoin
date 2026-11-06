@@ -27,6 +27,13 @@
 #                     off (setarch -R), which needs the container started
 #                     with --security-opt seccomp=unconfined (run.sh and the
 #                     CI job do); Ubuntu 22.04 image only
+#   fuzz-corpus       build the libFuzzer binary src/test/fuzz/fuzz with clang
+#                     (--enable-fuzz) under AddressSanitizer, LeakSanitizer
+#                     and UBSan, then run every input of the corpus in
+#                     test/fuzz/corpus/<target>/ once through its target
+#                     (contrib/devtools/run-fuzz-corpus.py, logs in
+#                     /src/build/docker-<image>/fuzz-corpus/fuzz-corpus-logs);
+#                     any report fails the mode. Ubuntu 22.04 image only
 #   functional-tests  low-difficulty build, then all functional test scripts,
 #                     the extended ones too, FTEST_JOBS in parallel
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
@@ -78,8 +85,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|functional-tests|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|cov-unit|cov-functional) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -128,6 +135,16 @@ if [[ "$MODE" == unit-tests-tsan ]]; then
     personality=$(setarch "$(uname -m)" -R cat /proc/self/personality 2>/dev/null) || personality=""
     [[ "$personality" =~ ^[0-9a-f]+$ ]] && (( (16#$personality & 16#0040000) != 0 )) ||
         die "unit-tests-tsan cannot turn address randomisation off (setarch -R); start the container with --security-opt seccomp=unconfined"
+fi
+# The fuzz binary is built with this image's clang 14 (its libFuzzer and
+# sanitizer runtimes; llvm-symbolizer for the stack traces).
+fuzz_corpus="$SRC/test/fuzz/corpus"
+llvm_bin=/usr/lib/llvm-14/bin
+if [[ "$MODE" == fuzz-corpus ]]; then
+    [[ "$IMAGE" == ubuntu.22.04 ]] || die "fuzz-corpus runs only in the Ubuntu 22.04 image (this is $IMAGE)"
+    [[ -x contrib/devtools/run-fuzz-corpus.py ]] || die "this YaCoin tree has no contrib/devtools/run-fuzz-corpus.py"
+    [[ -d "$fuzz_corpus" ]] || die "this YaCoin tree has no fuzz corpus in test/fuzz/corpus"
+    [[ -x "$llvm_bin/clang++" ]] || die "this image has no clang in $llvm_bin"
 fi
 if [[ "$MODE" == cov-unit || "$MODE" == cov-functional ]]; then
     grep -q "^$MODE:" Makefile.am ||
@@ -243,6 +260,21 @@ else
         unit-tests-tsan)
             san="-fsanitize=thread -fno-omit-frame-pointer"
             flags+=("CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=-fsanitize=thread") ;;
+        fuzz-corpus)
+            # The sanitizer flags of unit-tests-asan, with clang. Programs
+            # are linked position dependent (-no-pie, also configure's test
+            # programs): clang 14's AddressSanitizer runtime fails at random
+            # at start in a position-independent one under the address
+            # randomisation of current kernels. The depends config.site sets
+            # the compilers, so a site file that reads it and then names
+            # clang takes its place. (The depends file finds its prefix from
+            # its own path, ac_site_file.)
+            san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
+            flags+=(--enable-fuzz --with-asm=no "CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=$san -no-pie")
+            export PATH="$llvm_bin:$PATH"
+            printf '%s\n' "ac_site_file='$CONFIG_SITE'" '. "$ac_site_file"' 'CC=clang' 'CXX=clang++' \
+                > "$builddir/config.site"
+            export CONFIG_SITE="$builddir/config.site" ;;
         functional-tests) flags+=(--enable-low-difficulty-for-development "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         cov-unit) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
         cov-functional) flags+=(--enable-lcov --enable-low-difficulty-for-development "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
@@ -274,6 +306,15 @@ else
             # bash < 4.4.
             ${runner[@]+"${runner[@]}"} contrib/devtools/run-unit-suites.sh ${suites_opts[@]+"${suites_opts[@]}"} \
                 "$builddir/src/test/test_bitcoin" "$builddir/unit-test-logs" "$JOBS"
+            ;;
+        fuzz-corpus)
+            make -C "$builddir/src" -j"$JOBS" test/fuzz/fuzz
+            [[ -x "$builddir/src/test/fuzz/fuzz" ]] || die "the build made no $builddir/src/test/fuzz/fuzz"
+            # Leak checks at exit, and a stack trace with every UBSan report
+            # (it stops the process, as built with -fno-sanitize-recover).
+            export ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1
+            contrib/devtools/run-fuzz-corpus.py --jobs "$JOBS" "$builddir/src/test/fuzz/fuzz" "$fuzz_corpus" \
+                "$builddir/fuzz-corpus-logs"
             ;;
         functional-tests)
             # The functional tests only run yacoind and yacoin-cli.
