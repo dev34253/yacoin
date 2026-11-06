@@ -66,12 +66,13 @@ with this checkout mounted:
 ./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel
 ./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
+./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, `cov-unit` and `cov-functional` (22.04 only); `windows` and `macos` only build.
+`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-tsan`, `cov-unit` and `cov-functional`; `windows` and `macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
@@ -235,6 +236,35 @@ debugging, such as a log level, need `test_bitcoin` run directly with its
 options (see `src/test/README.md`). In `test_bitcoin`, a node shutdown request
 (`StartShutdown`, for example after a failed release-mode assertion) prints a
 message to stderr and ends the process with a failure status.
+
+### ThreadSanitizer
+
+`./dev.sh container unit-tests-tsan` builds `test_bitcoin` in
+`build/docker-ubuntu.22.04/unit-tests-tsan/` with `-O1 -g -fsanitize=thread
+-fno-omit-frame-pointer` (mainnet consensus) and runs every suite like
+`unit-tests`, with
+`TSAN_OPTIONS=suppressions=<checkout>/test/sanitizer_suppressions/tsan:halt_on_error=0:second_deadlock_stack=1`:
+every report of a run is printed, the process goes on and ends with a failure
+status, so the suite fails. Logs are in the mode's `unit-test-logs/`. The mode
+runs only in the Ubuntu 22.04 image (its gcc 11 is the setup it is verified
+with); `run.sh` starts it with ccache off (`CCACHE_DISABLE=1`), as CI does.
+
+gcc 11's ThreadSanitizer runtime stops at start ("unexpected memory mapping")
+under the address randomisation of current kernels, so the suites run under
+`setarch -R`, which Docker's default seccomp filter refuses: `run.sh` starts
+this mode with `--security-opt seccomp=unconfined`, and the mode stops before
+the build with a message when it cannot turn the randomisation off. The same
+runtime does not see `std::condition_variable` waits on the steady clock
+(`wait_for`, which calls `pthread_cond_clockwait`), so it reports races on
+data such a wait protects; tests wait until a `std::chrono::system_clock`
+deadline instead.
+
+`test/sanitizer_suppressions/tsan` holds the ThreadSanitizer suppressions.
+Each entry names a library or one of its functions, never a test or a suite,
+with a one-line reason above it; a race in a test is fixed in the test.
+
+CI runs the same mode in the `unit-tests-tsan` job, like the other jobs on
+every pull request commit and every push to `master`.
 
 ### Functional tests
 

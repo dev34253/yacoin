@@ -42,6 +42,7 @@ host, build in the CI images.
 ./dev.sh container unit-tests                # build test_bitcoin and run all unit test suites
 ./dev.sh container functional-tests          # low-difficulty build, then all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
+./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer, as CI's unit-tests-tsan job
 ```
 
 The build modes (`build`, `build-low-difficulty`, `windows`, `macos`) configure the source tree in place
