@@ -14,6 +14,11 @@
 #                     unit-test-logs, recreated on every run)
 #   unit-tests        build test_bitcoin (mainnet consensus) and run all unit
 #                     test suites in parallel
+#   unit-tests-asan   unit-tests under AddressSanitizer, LeakSanitizer and
+#                     UBSan (the flags of dev.sh's asan variant), with the
+#                     LeakSanitizer suppressions of
+#                     test/sanitizer_suppressions/lsan; any report fails
+#                     its suite. Ubuntu 22.04 image only
 #   unit-tests-tsan   unit-tests under ThreadSanitizer, with the suppressions
 #                     of test/sanitizer_suppressions/tsan; any report fails
 #                     its suite. The suites run with address randomisation
@@ -71,8 +76,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|unit-tests-tsan|functional-tests|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-tsan, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|functional-tests|cov-unit|cov-functional) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -91,9 +96,17 @@ if (( ! release )); then
     [[ ! -f "$SRC/config.status" ]] ||
         die "$SRC was configured in place (e.g. by the build mode); run 'make distclean' in it first"
 fi
-if [[ "$MODE" == unit-tests || "$MODE" == unit-tests-tsan || "$MODE" == build-low-difficulty ]]; then
+if [[ "$MODE" == unit-tests || "$MODE" == unit-tests-asan || "$MODE" == unit-tests-tsan || "$MODE" == build-low-difficulty ]]; then
     [[ -x contrib/devtools/run-unit-suites.sh ]] ||
         die "this YaCoin tree has no contrib/devtools/run-unit-suites.sh (needs master after PR #114)"
+fi
+# LeakSanitizer fails every run when its suppression file can't be read.
+lsan_suppressions="$SRC/test/sanitizer_suppressions/lsan"
+if [[ "$MODE" == unit-tests-asan ]]; then
+    # The mode, its runtime options and the tests are verified with this
+    # image's compiler (gcc 11) only.
+    [[ "$IMAGE" == ubuntu.22.04 ]] || die "unit-tests-asan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
+    [[ -f "$lsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/lsan"
 fi
 # ThreadSanitizer fails every run when its suppression file can't be read.
 tsan_suppressions="$SRC/test/sanitizer_suppressions/tsan"
@@ -216,6 +229,12 @@ else
     flags=(--without-gui --disable-man --enable-ccache)
     case "$MODE" in
         unit-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
+        unit-tests-asan)
+            # As dev.sh's asan variant: secp256k1's x86_64 field assembly
+            # needs more registers than are left under ASan, so it is built
+            # in plain C.
+            san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
+            flags+=(--with-asm=no "CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=$san") ;;
         unit-tests-tsan)
             san="-fsanitize=thread -fno-omit-frame-pointer"
             flags+=("CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=-fsanitize=thread") ;;
@@ -226,11 +245,18 @@ else
     (cd "$builddir" && "$SRC/configure" "${flags[@]}")
     export TMPDIR="$builddir/test/tmp"; mkdir -p "$TMPDIR"
     case "$MODE" in
-        unit-tests|unit-tests-tsan)
+        unit-tests|unit-tests-asan|unit-tests-tsan)
             make -C "$builddir/src" -j"$JOBS" test/test_bitcoin
             [[ -x "$builddir/src/test/test_bitcoin" ]] || die "the build made no $builddir/src/test/test_bitcoin"
             runner=()
-            if [[ "$MODE" == unit-tests-tsan ]]; then
+            if [[ "$MODE" == unit-tests-asan ]]; then
+                # Leak checks at exit, the tree's suppressions, and a stack
+                # trace with every UBSan report (it stops the process, as
+                # built with -fno-sanitize-recover).
+                export ASAN_OPTIONS=detect_leaks=1
+                export LSAN_OPTIONS="suppressions=$lsan_suppressions"
+                export UBSAN_OPTIONS=print_stacktrace=1
+            elif [[ "$MODE" == unit-tests-tsan ]]; then
                 # The tree's suppressions; every report of a run is printed
                 # (the process goes on and exits with a failure status at
                 # the end), and lock-order reports show both stacks.
