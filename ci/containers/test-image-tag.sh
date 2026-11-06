@@ -14,7 +14,9 @@
 #     image-tag.sh, for an image defined here, and the workflow leaves the
 #     ccache config to the entrypoints;
 #   - only the docker runs of the unit-tests-tsan mode turn Docker's seccomp
-#     filter off (the mode needs it, see entrypoint.sh), and they do.
+#     filter off (the mode needs it, see entrypoint.sh), and they do;
+#   - the sanitizer jobs run their modes (unit-tests-asan, unit-tests-tsan),
+#     with ccache off.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -189,13 +191,19 @@ for wf in "$ROOT"/.github/workflows/*.yml; do
         else
             check "$name: $container keeps the seccomp filter" test "${run/seccomp/}" = "$run"
         fi
+        if [[ "$run" =~ \"\$IMAGE_TAG\"[[:space:]]+(unit-tests-asan|unit-tests-tsan)[[:space:]]*$ ]]; then
+            check "$name: $container (${BASH_REMATCH[1]}) runs with ccache off" \
+                test "${run/ -e CCACHE_DISABLE=1 /}" != "$run"
+        fi
     done < <(grep -E '^[[:space:]]*docker run ' <<< "$joined" || true)
 done
-# The ThreadSanitizer job runs its mode.
+# The sanitizer jobs run their modes.
 wf="$ROOT/.github/workflows/yacoinbuildmultiplatform.yml"
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$wf")
-check "${wf#"$ROOT"/}: a docker run of the unit-tests-tsan mode" \
-    grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+unit-tests-tsan[[:space:]]*$' <<< "$joined"
+for mode in unit-tests-asan unit-tests-tsan; do
+    check "${wf#"$ROOT"/}: a docker run of the $mode mode" \
+        grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+'"$mode"'[[:space:]]*$' <<< "$joined"
+done
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do

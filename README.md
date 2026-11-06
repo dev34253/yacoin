@@ -42,6 +42,7 @@ host, build in the CI images.
 ./dev.sh container unit-tests                # build test_bitcoin and run all unit test suites
 ./dev.sh container functional-tests          # low-difficulty build, then all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
+./dev.sh container unit-tests-asan           # all unit test suites under ASan, LSan and UBSan, as CI's unit-tests-asan job
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer, as CI's unit-tests-tsan job
 ```
 
@@ -77,7 +78,7 @@ variants.
 ./dev.sh ftest                      # the base functional tests (test/functional/, low-difficulty build build/func), 4 in parallel
 ./dev.sh ftest --extended           # the base and the three slow extended scripts
 ./dev.sh ftest feature_tokens.py    # selected functional tests
-./dev.sh asan                       # unit tests under AddressSanitizer and UndefinedBehaviorSanitizer
+./dev.sh asan                       # unit tests under AddressSanitizer, LeakSanitizer and UBSan, as CI's unit-tests-asan job
 ./dev.sh all                        # build dev, unit, ftest and build release, with a summary
 ```
 

@@ -76,7 +76,9 @@ Usage: ./dev.sh <command> [args]
   check                   Full "make check" on build/dev (serial, as upstream)
   ftest [test...]         Functional tests on build/func, FTEST_JOBS in
                           parallel (default 4)
-  asan [suite...]         Build and run unit tests with ASan + UBSan
+  asan [suite...]         Build and run unit tests with ASan + UBSan (the
+                          suppressions and the test cases left out in
+                          test/sanitizer_suppressions/)
   cov                     Unit, functional and combined coverage reports
                           (needs lcov 2.6+) in .devbuild/coverage/, then cov-check
   cov-check [args]        Check .devbuild/coverage/ against the targets in
@@ -275,9 +277,11 @@ cmd_build() {
 
 # Runs Boost test suites as separate parallel processes (see the script).
 # Logs are per variant, so e.g. unit and asan can run at the same time.
+# run_unit_suites <variant> <test_bitcoin> [--exclude-cases <list>] [selector...]
 run_unit_suites() {
-    local variant="$1" bin="$2"; shift 2
-    "$ROOT/contrib/devtools/run-unit-suites.sh" "$bin" "$DEVBUILD/logs/unit-$variant" \
+    local variant="$1" bin="$2" opts=(); shift 2
+    if [[ "${1:-}" == --exclude-cases ]]; then opts=("$1" "$2"); shift 2; fi
+    "$ROOT/contrib/devtools/run-unit-suites.sh" ${opts[@]+"${opts[@]}"} "$bin" "$DEVBUILD/logs/unit-$variant" \
         "${UNIT_JOBS:-$JOBS}" "$@"
 }
 
@@ -296,10 +300,19 @@ cmd_ftest() {
     "$BUILD_ROOT/func/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --tmpdirprefix="$TMPDIR" "$@"
 }
 
+# The sanitizer options of CI's unit-tests-asan mode (ci/containers/
+# entrypoint.sh): leak checks, the tree's LeakSanitizer suppressions and a
+# stack trace with every UBSan report. The caller's own options come after
+# the defaults, so they win; the suppression file comes last, so it is
+# always used. As in the mode, the test cases of the tree's list are left
+# out of every suite.
 cmd_asan() {
     cmd_build asan test/test_bitcoin
-    ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" \
-        run_unit_suites asan "$BUILD_ROOT/asan/src/test/test_bitcoin" "$@"
+    ASAN_OPTIONS="detect_leaks=1${ASAN_OPTIONS:+:$ASAN_OPTIONS}" \
+    LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}suppressions=$ROOT/test/sanitizer_suppressions/lsan" \
+    UBSAN_OPTIONS="print_stacktrace=1${UBSAN_OPTIONS:+:$UBSAN_OPTIONS}" \
+        run_unit_suites asan "$BUILD_ROOT/asan/src/test/test_bitcoin" \
+        --exclude-cases "$ROOT/test/sanitizer_suppressions/asan-excluded-cases" "$@"
 }
 
 # Unit test coverage (mainnet build) and functional test coverage
@@ -397,7 +410,7 @@ cmd_container() {
         esac
     done
     case "${1:-}" in
-        ""|build|build-low-difficulty|unit-tests|unit-tests-tsan|functional-tests|cov-unit|cov-functional) ;;
+        ""|build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|functional-tests|cov-unit|cov-functional) ;;
         *) image="$1"; shift ;;
     esac
     local env_args=(-u JOBS -u CCACHE_MAXSIZE)

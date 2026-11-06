@@ -221,6 +221,61 @@ jobs:
             build/docker-*/unit-tests/unit-test-logs/
             build/docker-*/unit-tests/config.log
           retention-days: 14
+  unit-tests-asan:
+    # Every unit test suite under AddressSanitizer, LeakSanitizer and UBSan
+    # (unit-tests-asan mode of the yacoin-build image: the flags of dev.sh's
+    # asan variant, the suppressions in test/sanitizer_suppressions/); any
+    # report that is not suppressed fails its suite and the job. Cache as in
+    # coverage-unit: the functional-tests job's, restored only, for the
+    # depends packages; ccache is off, since sanitizer objects never hit the
+    # cached ones.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ubuntu.22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - name: cache dir and key
+        run: |
+          echo "ASAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.ASAN_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            functional-tests-${{ env.IMAGE }}-
+      - name: build and run the unit tests under the sanitizers
+        # Below the job timeout, so a hang fails this step and the logs are
+        # still uploaded.
+        timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$ASAN_CACHE"
+          docker run --rm --init --name unit-tests-asan -v "$GITHUB_WORKSPACE":/src -v "$ASAN_CACHE":/cache \
+            -e CCACHE_DISABLE=1 "$IMAGE_TAG" unit-tests-asan
+      - name: stop the container and make the logs readable
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f unit-tests-asan 2>/dev/null || true
+          # The unit test logs, written by root with umask 077.
+          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: unit-test-logs-asan
+          path: |
+            build/docker-*/unit-tests-asan/unit-test-logs/
+            build/docker-*/unit-tests-asan/config.log
+          retention-days: 14
   unit-tests-tsan:
     # Every unit test suite under ThreadSanitizer (unit-tests-tsan mode of the
     # yacoin-build image, the suppressions in test/sanitizer_suppressions/);

@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions of the unit tests, used by "./dev.sh asan" and
+# the unit-tests-asan mode of the CI images (LSAN_OPTIONS=suppressions=...).
+# Each entry names a library or one of its functions, never a test, with the
+# reason in the comment above it.
+
+# Berkeley DB, the wallet database library: memory from its allocator.
+leak:__os_malloc

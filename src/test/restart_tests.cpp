@@ -1449,6 +1449,8 @@ BOOST_AUTO_TEST_CASE(load_genesis_block)
  * and stop there. Today the process ends with a segmentation fault instead: after the failed
  * connect, the mempool is updated for the tip of the still empty chain. The calls run in a
  * child process. Once the block can be read, both succeed. */
+/* In the sanitizer build, UBSan reports the null member access and the child exits with status 1
+ * before the fault (the build combines ASan and UBSan; gcc defines only `__SANITIZE_ADDRESS__`). */
 BOOST_AUTO_TEST_CASE(genesis_unreadable_on_empty_chain)
 {
     std::vector<CBlock> b = ReadChain();
@@ -1483,7 +1485,11 @@ BOOST_AUTO_TEST_CASE(genesis_unreadable_on_empty_chain)
             return Known(hash1) ? 3 : 0;
         }, DataFile("child-stderr.log"));
     }
+#ifdef __SANITIZE_ADDRESS__
+    KNOWN_FAILURE_EQUAL("MG-081", child.status, "exit 0", "exit 1");
+#else
     KNOWN_FAILURE_EQUAL("MG-081", child.status, "exit 0", strprintf("signal %d", SIGSEGV));
+#endif
 
     {
         LOCK(cs_main);
