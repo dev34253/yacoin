@@ -138,6 +138,12 @@ AC_ARG_ENABLE(gui-tests,
     [use_gui_tests=$enableval],
     [use_gui_tests=$use_tests])
 
+AC_ARG_ENABLE([fuzz],
+    [AS_HELP_STRING([--enable-fuzz],
+    [build only the libFuzzer binary src/test/fuzz/fuzz with the fuzz targets, no other program; needs a compiler with libFuzzer, such as clang (default is no)])],
+    [enable_fuzz=$enableval],
+    [enable_fuzz=no])
+
 AC_ARG_WITH([comparison-tool],
     AS_HELP_STRING([--with-comparison-tool],[path to java comparison tool (requires --enable-tests)]),
     [use_comparison_tool=$withval],
@@ -748,6 +754,29 @@ fi
 
 BITCOIN_QT_INIT
 
+if test x$enable_fuzz = xyes; then
+  dnl The fuzz binary is the only program of this build; it takes the place
+  dnl of test_bitcoin.
+  if test x$use_tests != xyes; then
+    AC_MSG_ERROR([--enable-fuzz cannot be combined with --disable-tests])
+  fi
+  build_bitcoin_utils=no
+  build_bitcoind=no
+  build_bitcoin_libs=no
+  bitcoin_qt_want_version=no
+  dnl libFuzzer provides main() and links only into the fuzz binary; the
+  dnl other code gets the coverage instrumentation it needs.
+  AX_CHECK_LINK_FLAG([[-fsanitize=fuzzer]], [],
+    [AC_MSG_ERROR([--enable-fuzz needs a compiler with libFuzzer (-fsanitize=fuzzer), such as clang: configure with CC=clang CXX=clang++])],
+    [], [AC_LANG_SOURCE([[
+      #include <cstddef>
+      #include <cstdint>
+      extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) { return 0; }
+    ]])])
+  AX_CHECK_COMPILE_FLAG([[-fsanitize=fuzzer-no-link]], [FUZZ_CXXFLAGS="-fsanitize=fuzzer-no-link"],
+    [AC_MSG_ERROR([--enable-fuzz needs a compiler that accepts -fsanitize=fuzzer-no-link, such as clang])])
+fi
+
 dnl sets $bitcoin_enable_qt, $bitcoin_enable_qt_test, $bitcoin_enable_qt_dbus
 BITCOIN_QT_CONFIGURE([$use_pkgconfig], [qt5])
 
@@ -1172,7 +1201,11 @@ fi
 
 AC_MSG_CHECKING([whether to build test_bitcoin])
 if test x$use_tests = xyes; then
-  AC_MSG_RESULT([yes])
+  if test x$enable_fuzz = xyes; then
+    AC_MSG_RESULT([no, the fuzz binary instead])
+  else
+    AC_MSG_RESULT([yes])
+  fi
   BUILD_TEST="yes"
 else
   AC_MSG_RESULT([no])
@@ -1195,6 +1228,7 @@ AM_CONDITIONAL([BUILD_DARWIN], [test x$BUILD_OS = xdarwin])
 AM_CONDITIONAL([TARGET_WINDOWS], [test x$TARGET_OS = xwindows])
 AM_CONDITIONAL([ENABLE_WALLET],[test x$enable_wallet = xyes])
 AM_CONDITIONAL([ENABLE_TESTS],[test x$BUILD_TEST = xyes])
+AM_CONDITIONAL([ENABLE_FUZZ],[test x$enable_fuzz = xyes])
 AM_CONDITIONAL([ENABLE_QT],[test x$bitcoin_enable_qt = xyes])
 AM_CONDITIONAL([ENABLE_QT_TESTS],[test x$BUILD_TEST_QT = xyes])
 AM_CONDITIONAL([USE_QRCODE], [test x$use_qr = xyes])
@@ -1243,6 +1277,7 @@ AC_SUBST(USE_UPNP)
 AC_SUBST(USE_QRCODE)
 AC_SUBST(BOOST_LIBS)
 AC_SUBST(TESTDEFS)
+AC_SUBST(FUZZ_CXXFLAGS)
 AC_SUBST(LEVELDB_TARGET_FLAGS)
 AC_SUBST(MINIUPNPC_CPPFLAGS)
 AC_SUBST(MINIUPNPC_LIBS)
@@ -1318,6 +1353,7 @@ if test x$bitcoin_enable_qt != xno; then
 fi
 echo "  with zmq      = $use_zmq"
 echo "  with test     = $use_tests"
+echo "  with fuzz     = $enable_fuzz"
 echo "  with bench    = $use_bench"
 echo "  with upnp     = $use_upnp"
 echo "  debug enabled = $enable_debug"
