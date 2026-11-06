@@ -164,6 +164,66 @@ jobs:
             build/docker-*/functional-tests/test/tmp/test_runner_*/**/std*/*
             build/docker-*/functional-tests/config.log
           retention-days: 14
+  functional-tests-asan:
+    # The functional-tests job's scripts under AddressSanitizer,
+    # LeakSanitizer and UBSan (functional-tests-asan mode of the yacoin-build
+    # image: the flags and options of unit-tests-asan on the low-difficulty
+    # build), but those listed in
+    # test/sanitizer_suppressions/asan-excluded-scripts. Every process a
+    # script starts writes its reports to a file named after the script; any
+    # report that is not suppressed fails its script and the job, and the
+    # reports are printed at the end of the log.
+    # Cache as in unit-tests-asan: the functional-tests job's, restored only,
+    # for the depends packages; ccache is off.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ubuntu.22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - name: cache dir and key
+        run: |
+          echo "ASAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.ASAN_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            functional-tests-${{ env.IMAGE }}-
+      - name: build and run the functional tests under the sanitizers
+        # Below the job timeout, so a hang fails this step and the logs are
+        # still uploaded.
+        timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$ASAN_CACHE"
+          docker run --rm --init --name functional-tests-asan -v "$GITHUB_WORKSPACE":/src -v "$ASAN_CACHE":/cache \
+            -e CCACHE_DISABLE=1 "$IMAGE_TAG" functional-tests-asan
+      - name: stop the container and make the logs readable
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f functional-tests-asan 2>/dev/null || true
+          # The nodes write their datadirs with umask 077 as root.
+          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: functional-test-logs-asan
+          path: |
+            build/docker-*/functional-tests-asan/sanitizer-logs/
+            build/docker-*/functional-tests-asan/test/tmp/test_runner_*/**/*.log
+            build/docker-*/functional-tests-asan/test/tmp/test_runner_*/**/std*/*
+            build/docker-*/functional-tests-asan/config.log
+          retention-days: 14
   unit-tests:
     # Mainnet consensus build of test_bitcoin, every unit test suite in
     # parallel (unit-tests mode of the yacoin-build image). Depends packages,
