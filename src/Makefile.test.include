@@ -161,6 +161,8 @@ test_fuzz_fuzz_SOURCES = \
   test/fuzz/fuzz.h \
   test/fuzz/fuzz_util.cpp \
   test/fuzz/fuzz_util.h \
+  test/fuzz/mempool_load.cpp \
+  test/fuzz/process_messages.cpp \
   test/fuzz/token_script.cpp \
   test/fuzz/tokendb.cpp
 test_fuzz_fuzz_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
