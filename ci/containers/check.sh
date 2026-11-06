@@ -21,7 +21,8 @@
 #           inputs (Qt) changed, a build directory of another prefix refused,
 #           container passing the mode to run.sh, and run.sh adding the
 #           seccomp option and CCACHE_DISABLE=1 for unit-tests-tsan only
-#           (stub docker)
+#           (stub docker), asan's sanitizer options (the suppression file,
+#           the caller's own options kept)
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts,
@@ -256,6 +257,30 @@ step_devsh() {
             fail "devsh: container $mode runs: $got"
         fi
     done
+    # asan runs the suites with the tree's LeakSanitizer suppressions and its
+    # default options, and keeps the caller's own (a configured build
+    # directory, the stub make, and a runner that records its environment).
+    mkdir -p "$a/build/asan" "$a/contrib/devtools"; : > "$a/build/asan/Makefile"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/bash' 'printf "%s\n" "$ASAN_OPTIONS" "$LSAN_OPTIONS" "$UBSAN_OPTIONS" > "$STUB_ENV"' \
+        > "$a/contrib/devtools/run-unit-suites.sh"
+    chmod +x "$a/contrib/devtools/run-unit-suites.sh"
+    local supp="suppressions=$a/test/sanitizer_suppressions/lsan" envlog="$work/devsh/asan-env"
+    rm -f "$envlog"
+    PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$envlog" DEV_CACHE="$c" \
+        env -u ASAN_OPTIONS -u LSAN_OPTIONS -u UBSAN_OPTIONS "$a/dev.sh" asan > "$work/devsh/a.log" 2>&1 || fail "devsh: asan in a"
+    got=$(tr '\n' ' ' < "$envlog" 2>/dev/null || echo "the runner did not run")
+    [[ "$got" == "detect_leaks=1 $supp print_stacktrace=1 " ]] &&
+        pass "devsh: asan runs the suites with the suppressions and the default options" ||
+        fail "devsh: asan runs the suites with: $got"
+    rm -f "$envlog"
+    PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$envlog" DEV_CACHE="$c" ASAN_OPTIONS=detect_leaks=0 \
+        LSAN_OPTIONS=verbosity=1 UBSAN_OPTIONS=halt_on_error=1 "$a/dev.sh" asan > "$work/devsh/a.log" 2>&1 ||
+        fail "devsh: asan in a with the caller's options"
+    got=$(tr '\n' ' ' < "$envlog" 2>/dev/null || echo "the runner did not run")
+    [[ "$got" == "detect_leaks=1:detect_leaks=0 verbosity=1:$supp print_stacktrace=1:halt_on_error=1 " ]] &&
+        pass "devsh: asan keeps the caller's options and adds the suppressions" ||
+        fail "devsh: asan with the caller's options runs the suites with: $got"
 }
 
 step_build() {

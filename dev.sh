@@ -76,7 +76,8 @@ Usage: ./dev.sh <command> [args]
   check                   Full "make check" on build/dev (serial, as upstream)
   ftest [test...]         Functional tests on build/func, FTEST_JOBS in
                           parallel (default 4)
-  asan [suite...]         Build and run unit tests with ASan + UBSan
+  asan [suite...]         Build and run unit tests with ASan + UBSan (the
+                          suppressions in test/sanitizer_suppressions/)
   cov                     Unit, functional and combined coverage reports
                           (needs lcov 2.6+) in .devbuild/coverage/, then cov-check
   cov-check [args]        Check .devbuild/coverage/ against the targets in
@@ -296,9 +297,16 @@ cmd_ftest() {
     "$BUILD_ROOT/func/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --tmpdirprefix="$TMPDIR" "$@"
 }
 
+# The sanitizer options of CI's unit-tests-asan mode (ci/containers/
+# entrypoint.sh): leak checks, the tree's LeakSanitizer suppressions and a
+# stack trace with every UBSan report. The caller's own options come after
+# the defaults, so they win; the suppression file comes last, so it is
+# always used.
 cmd_asan() {
     cmd_build asan test/test_bitcoin
-    ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" \
+    ASAN_OPTIONS="detect_leaks=1${ASAN_OPTIONS:+:$ASAN_OPTIONS}" \
+    LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}suppressions=$ROOT/test/sanitizer_suppressions/lsan" \
+    UBSAN_OPTIONS="print_stacktrace=1${UBSAN_OPTIONS:+:$UBSAN_OPTIONS}" \
         run_unit_suites asan "$BUILD_ROOT/asan/src/test/test_bitcoin" "$@"
 }
 
