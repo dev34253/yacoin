@@ -172,6 +172,11 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
     }
 
     CConnmanTest::ClearNodes();
+    // ClearNodes only removes the nodes from the connection manager; this
+    // test allocated them.
+    for (CNode *node : vNodes) {
+        delete node;
+    }
 }
 
 BOOST_AUTO_TEST_CASE(DoS_banning)
