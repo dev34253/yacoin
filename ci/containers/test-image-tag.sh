@@ -12,7 +12,9 @@
 #     directories, line continuations, heredocs) is an error, not a wrong tag;
 #   - every docker run in .github/workflows/ runs an image tagged by
 #     image-tag.sh, for an image defined here, and the workflow leaves the
-#     ccache config to the entrypoints.
+#     ccache config to the entrypoints;
+#   - only the docker runs of the unit-tests-tsan mode turn Docker's seccomp
+#     filter off (the mode needs it, see entrypoint.sh), and they do.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -177,7 +179,23 @@ for wf in "$ROOT"/.github/workflows/*.yml; do
         check "$name: IMAGE $image is defined here (Dockerfile.$image)" test -f "$HERE/Dockerfile.$image"
     done < <(sed -n 's/^ *IMAGE: *//p' "$wf" | LC_ALL=C sort -u)
     check "$name: leaves the ccache config to the entrypoints" bash -c '! grep -n "ccache\.conf" "$1"' _ "$wf"
+    n=0
+    while read -r run; do
+        n=$((n + 1)); container="docker run $n"
+        [[ ! "$run" =~ --name[[:space:]]+([^[:space:]]+) ]] || container=${BASH_REMATCH[1]}
+        if [[ "$run" =~ \"\$IMAGE_TAG\"[[:space:]]+unit-tests-tsan[[:space:]]*$ ]]; then
+            check "$name: $container (unit-tests-tsan) turns the seccomp filter off" \
+                test "${run/ --security-opt seccomp=unconfined /}" != "$run"
+        else
+            check "$name: $container keeps the seccomp filter" test "${run/seccomp/}" = "$run"
+        fi
+    done < <(grep -E '^[[:space:]]*docker run ' <<< "$joined" || true)
 done
+# The ThreadSanitizer job runs its mode.
+wf="$ROOT/.github/workflows/yacoinbuildmultiplatform.yml"
+joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$wf")
+check "${wf#"$ROOT"/}: a docker run of the unit-tests-tsan mode" \
+    grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+unit-tests-tsan[[:space:]]*$' <<< "$joined"
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do
