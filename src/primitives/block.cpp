@@ -7,6 +7,7 @@
 #include "addressindex.h"
 #include "tokens/tokendb.h"
 #include "primitives/block.h"
+#include "chain.h"
 #include "txdb.h"
 #include "checkpoints.h"
 #include "kernel.h"
@@ -33,7 +34,8 @@ uint32_t nBlockSequenceId = 1;
 void CBlockHeader::SetNull()
 {
 	// TODO: Need update for mainnet
-	if (chainActive.Height() != -1 && chainActive.Genesis() && (chainActive.Height() + 1) >= nMainnetNewLogicBlockNumber)
+	const int nTipHeight = nActiveChainTipHeight.load();
+	if (nTipHeight != -1 && (nTipHeight + 1) >= nMainnetNewLogicBlockNumber)
 	{
 		nVersion = VERSION_of_block_for_yac_05x_new;
 	}

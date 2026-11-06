@@ -16,6 +16,7 @@
 
 #include "utilmoneystr.h"
 
+#include <atomic>
 #include <vector>
 
 /**
@@ -765,6 +766,14 @@ public:
     /** Find the earliest block with timestamp equal or greater than the given. */
     CBlockIndex* FindEarliestAtLeast(int64_t nTime) const;
 };
+
+/**
+ * The height of the active chain (chainActive) as recorded at the end of every
+ * CChain::SetTip call on it: chainActive.Height() when chainActive.Genesis() is
+ * set, else -1. The default version of a block header and a transaction is
+ * chosen from it.
+ */
+extern std::atomic<int> nActiveChainTipHeight;
 
 CBlockIndex* FindBlockByHeight(int nHeight);
 #endif // YACOIN_CHAIN_H
