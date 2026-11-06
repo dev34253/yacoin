@@ -260,6 +260,15 @@ failure status.
 entry names a library or one of its functions, never a test or a suite, with a
 one-line reason above it; a leak in a test is fixed in the test.
 
+`test/sanitizer_suppressions/asan-excluded-cases` lists the unit test cases
+these runs leave out: one test case path (`suite/case`) per line, with the
+reason in a comment above it (`#` starts a comment). `run-unit-suites.sh
+--exclude-cases <list>` leaves them out of every suite it runs, so the other
+cases of their suites still run, and the other unit test runs (`./dev.sh unit`,
+the `unit-tests`, `unit-tests-tsan` and coverage jobs) run them as usual. A
+listed case that is not a test case of `test_bitcoin` fails the run before any
+suite runs.
+
 CI runs the same build and options in the `unit-tests-asan` job (the
 `unit-tests-asan` mode of the Ubuntu 22.04 image; the other images refuse it),
 like the other jobs on every pull request commit and every push to `master`;

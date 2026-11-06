@@ -1,0 +1,9 @@
+# Unit test cases left out of the AddressSanitizer, LeakSanitizer and UBSan
+# runs ("./dev.sh asan" and the unit-tests-asan mode of the CI images, through
+# contrib/devtools/run-unit-suites.sh --exclude-cases); the other unit test
+# runs still run them. One test case path (suite/case) per line, with the
+# reason in the comment above it. A listed case that does not exist fails the
+# run.
+
+# Left out of the sanitizer runs until a later phase.
+block_pos_tests/contextual_proof_of_stake_check

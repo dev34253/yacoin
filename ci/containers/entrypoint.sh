@@ -18,7 +18,9 @@
 #                     UBSan (the flags of dev.sh's asan variant), with the
 #                     LeakSanitizer suppressions of
 #                     test/sanitizer_suppressions/lsan; any report fails
-#                     its suite. Ubuntu 22.04 image only
+#                     its suite. The test cases listed in
+#                     test/sanitizer_suppressions/asan-excluded-cases are
+#                     left out. Ubuntu 22.04 image only
 #   unit-tests-tsan   unit-tests under ThreadSanitizer, with the suppressions
 #                     of test/sanitizer_suppressions/tsan; any report fails
 #                     its suite. The suites run with address randomisation
@@ -100,13 +102,16 @@ if [[ "$MODE" == unit-tests || "$MODE" == unit-tests-asan || "$MODE" == unit-tes
     [[ -x contrib/devtools/run-unit-suites.sh ]] ||
         die "this YaCoin tree has no contrib/devtools/run-unit-suites.sh (needs master after PR #114)"
 fi
-# LeakSanitizer fails every run when its suppression file can't be read.
+# LeakSanitizer fails every run when its suppression file can't be read, and
+# run-unit-suites.sh when its list of test cases to leave out can't.
 lsan_suppressions="$SRC/test/sanitizer_suppressions/lsan"
+asan_excluded_cases="$SRC/test/sanitizer_suppressions/asan-excluded-cases"
 if [[ "$MODE" == unit-tests-asan ]]; then
     # The mode, its runtime options and the tests are verified with this
     # image's compiler (gcc 11) only.
     [[ "$IMAGE" == ubuntu.22.04 ]] || die "unit-tests-asan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
     [[ -f "$lsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/lsan"
+    [[ -f "$asan_excluded_cases" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/asan-excluded-cases"
 fi
 # ThreadSanitizer fails every run when its suppression file can't be read.
 tsan_suppressions="$SRC/test/sanitizer_suppressions/tsan"
@@ -248,14 +253,16 @@ else
         unit-tests|unit-tests-asan|unit-tests-tsan)
             make -C "$builddir/src" -j"$JOBS" test/test_bitcoin
             [[ -x "$builddir/src/test/test_bitcoin" ]] || die "the build made no $builddir/src/test/test_bitcoin"
-            runner=()
+            runner=() suites_opts=()
             if [[ "$MODE" == unit-tests-asan ]]; then
                 # Leak checks at exit, the tree's suppressions, and a stack
                 # trace with every UBSan report (it stops the process, as
-                # built with -fno-sanitize-recover).
+                # built with -fno-sanitize-recover). The listed test cases
+                # are left out, as by dev.sh asan.
                 export ASAN_OPTIONS=detect_leaks=1
                 export LSAN_OPTIONS="suppressions=$lsan_suppressions"
                 export UBSAN_OPTIONS=print_stacktrace=1
+                suites_opts=(--exclude-cases "$asan_excluded_cases")
             elif [[ "$MODE" == unit-tests-tsan ]]; then
                 # The tree's suppressions; every report of a run is printed
                 # (the process goes on and exits with a failure status at
@@ -265,8 +272,8 @@ else
             fi
             # ${runner[@]+...}: an empty array is "unbound" under set -u in
             # bash < 4.4.
-            ${runner[@]+"${runner[@]}"} contrib/devtools/run-unit-suites.sh "$builddir/src/test/test_bitcoin" \
-                "$builddir/unit-test-logs" "$JOBS"
+            ${runner[@]+"${runner[@]}"} contrib/devtools/run-unit-suites.sh ${suites_opts[@]+"${suites_opts[@]}"} \
+                "$builddir/src/test/test_bitcoin" "$builddir/unit-test-logs" "$JOBS"
             ;;
         functional-tests)
             # The functional tests only run yacoind and yacoin-cli.

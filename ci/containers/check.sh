@@ -22,7 +22,8 @@
 #           container passing the mode to run.sh, and run.sh adding the
 #           seccomp option and CCACHE_DISABLE=1 for unit-tests-tsan only
 #           (stub docker), asan's sanitizer options (the suppression file,
-#           the caller's own options kept)
+#           the caller's own options kept) and its list of test cases left
+#           out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts,
@@ -34,8 +35,10 @@
 #           run the unit test suites of their build with JOBS (the sanitizer
 #           modes with their runtime options and nothing else does,
 #           unit-tests-tsan with address randomisation off) and fail when
-#           one fails or the build made no test_bitcoin, the sanitizer modes
-#           stop on a tree without their suppression file and are refused
+#           one fails or the build made no test_bitcoin, unit-tests-asan
+#           leaves the test cases of its list out (the other modes do not),
+#           the sanitizer modes stop on a tree without their suppression
+#           file (unit-tests-asan also without its list) and are refused
 #           by the images other than 22.04, unit-tests-tsan stops when it
 #           cannot turn address randomisation off (this case assumes the
 #           engine's default seccomp profile), and functional-tests runs the
@@ -268,7 +271,7 @@ step_devsh() {
     mkdir -p "$a/build/asan" "$a/contrib/devtools"; : > "$a/build/asan/Makefile"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/bash' 'printf "%s\n" "$ASAN_OPTIONS" "$LSAN_OPTIONS" "$UBSAN_OPTIONS" > "$STUB_ENV"' \
-        > "$a/contrib/devtools/run-unit-suites.sh"
+        'echo "$*" > "$STUB_ENV.args"' > "$a/contrib/devtools/run-unit-suites.sh"
     chmod +x "$a/contrib/devtools/run-unit-suites.sh"
     local supp="suppressions=$a/test/sanitizer_suppressions/lsan" envlog="$work/devsh/asan-env"
     rm -f "$envlog"
@@ -278,6 +281,25 @@ step_devsh() {
     [[ "$got" == "detect_leaks=1 $supp print_stacktrace=1 " ]] &&
         pass "devsh: asan runs the suites with the suppressions and the default options" ||
         fail "devsh: asan runs the suites with: $got"
+    # asan leaves the test cases of the tree's list out (an option of the
+    # runner, before the binary), also with selectors; unit does not.
+    local excl="--exclude-cases $a/test/sanitizer_suppressions/asan-excluded-cases"
+    got=$(cat "$envlog.args" 2>/dev/null || echo "the runner did not run")
+    [[ "$got" == "$excl $a/build/asan/src/test/test_bitcoin "* ]] &&
+        pass "devsh: asan runs: run-unit-suites.sh $got" || fail "devsh: asan runs: run-unit-suites.sh $got"
+    rm -f "$envlog.args"
+    PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$envlog" DEV_CACHE="$c" "$a/dev.sh" asan a_tests b_tests/b_case \
+        > "$work/devsh/a.log" 2>&1 || fail "devsh: asan with selectors in a"
+    got=$(cat "$envlog.args" 2>/dev/null || echo "the runner did not run")
+    [[ "$got" == "$excl $a/build/asan/src/test/test_bitcoin "*" a_tests b_tests/b_case" ]] &&
+        pass "devsh: asan with selectors runs: run-unit-suites.sh $got" ||
+        fail "devsh: asan with selectors runs: run-unit-suites.sh $got"
+    rm -f "$envlog.args" "$a/build/dev/config.status"
+    PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$envlog" DEV_CACHE="$c" "$a/dev.sh" unit a_tests \
+        > "$work/devsh/a.log" 2>&1 || fail "devsh: unit in a"
+    got=$(cat "$envlog.args" 2>/dev/null || echo "the runner did not run")
+    [[ "$got" == "$a/build/dev/src/test/test_bitcoin "*" a_tests" ]] &&
+        pass "devsh: unit runs: run-unit-suites.sh $got" || fail "devsh: unit runs: run-unit-suites.sh $got"
     rm -f "$envlog"
     PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$envlog" DEV_CACHE="$c" ASAN_OPTIONS=detect_leaks=0 \
         LSAN_OPTIONS=verbosity=1 UBSAN_OPTIONS=halt_on_error=1 "$a/dev.sh" asan > "$work/devsh/a.log" 2>&1 ||
@@ -445,6 +467,10 @@ step_smoke() {
                 *) want_env="ASAN_OPTIONS= LSAN_OPTIONS= UBSAN_OPTIONS= TSAN_OPTIONS=" ;;
             esac
             want_args="/src/build/docker-$image/$mode/src/test/test_bitcoin /src/build/docker-$image/$mode/unit-test-logs 3"
+            # unit-tests-asan, and only it, leaves the test cases of the
+            # tree's list out.
+            [[ $mode != unit-tests-asan ]] ||
+                want_args="--exclude-cases /src/test/sanitizer_suppressions/asan-excluded-cases $want_args"
             make_tests_stub "$stub" "$tag" 0
             docker run --rm ${opts[@]+"${opts[@]}"} -v "$stub:/src" -e JOBS=3 "$tag" "$mode" > "$work/out.txt" 2>&1 &&
                 status=0 || status=$?
@@ -491,6 +517,15 @@ step_smoke() {
                     fail "smoke: $image: $mode without the suppression file gave no 'error: ' message"
                 [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: $mode configured without the suppression file"
             done
+            # Without its list the runner would fail after the build; the
+            # mode stops before it.
+            make_tests_stub "$stub" "$tag" 0
+            rm "$stub/test/sanitizer_suppressions/asan-excluded-cases"
+            expect_status 1 "smoke: $image: unit-tests-asan stops on a tree without its list of test cases left out" \
+                docker run --rm -v "$stub:/src" "$tag" unit-tests-asan
+            grep -q 'error: .*test/sanitizer_suppressions/asan-excluded-cases' "$work/out.txt" ||
+                fail "smoke: $image: unit-tests-asan without its list gave no 'error: ' message"
+            [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-asan configured without its list"
             # Docker's default seccomp filter refuses to turn address
             # randomisation off: the mode stops before the build with its own
             # message, not with ThreadSanitizer's at the first suite.
@@ -564,11 +599,13 @@ make_configure_stub() {
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'exit 1' > "$d/configure"
     # The early checks of the unit test modes need the unit test runner, and
-    # the sanitizer modes their suppression files.
+    # the sanitizer modes their suppression files and unit-tests-asan its list
+    # of test cases left out.
     mkdir -p "$d/contrib/devtools" "$d/test/sanitizer_suppressions"
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-unit-suites.sh"
     : > "$d/test/sanitizer_suppressions/lsan"
     : > "$d/test/sanitizer_suppressions/tsan"
+    : > "$d/test/sanitizer_suppressions/asan-excluded-cases"
     chmod +x "$d/autogen.sh" "$d/configure" "$d/contrib/devtools/run-unit-suites.sh"
 }
 
