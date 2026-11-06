@@ -18,7 +18,10 @@
 #           ignored files under depends/,
 #           the arguments depends gets, ccache.conf created, two depends runs
 #           one after the other, a repeated run skipping make unless its
-#           inputs (Qt) changed, a build directory of another prefix refused
+#           inputs (Qt) changed, a build directory of another prefix refused,
+#           container passing the mode to run.sh, and run.sh adding the
+#           seccomp option and CCACHE_DISABLE=1 for unit-tests-tsan only
+#           (stub docker)
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts,
@@ -227,6 +230,32 @@ step_devsh() {
     mkdir -p "$a/build/dev"; : > "$a/build/dev/Makefile"; echo "CPPFLAGS=-I$a/depends/x86_64-pc-linux-gnu/include" > "$a/build/dev/config.status"
     expect_status 1 "devsh: a build directory of another prefix is refused" env DEV_CACHE="$c" "$a/dev.sh" build dev
     grep -q 'rm -rf build/dev' "$work/out.txt" || fail "devsh: the refusal does not say to remove build/dev"
+    # container passes the mode to run.sh, and run.sh starts the container
+    # with Docker's seccomp filter off and ccache disabled (as the CI job)
+    # for unit-tests-tsan only (a stub docker that records its arguments;
+    # run.sh and an image's Dockerfile copied into a).
+    mkdir -p "$a/ci/containers"
+    cp "$HERE/run.sh" "$a/ci/containers/"; : > "$a/ci/containers/Dockerfile.ubuntu.22.04"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/bash' '[[ "${1:-}" != run ]] || echo "$*" >> "$STUB_DOCKER"' > "$bin/docker"
+    chmod +x "$bin/docker"
+    local dlog="$work/devsh/docker.log" mode
+    for mode in unit-tests-tsan unit-tests; do
+        rm -f "$dlog"
+        PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" "$a/dev.sh" container --no-image-build --no-cache "$mode" \
+            > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
+        got=$(grep -m1 -- '--cidfile' "$dlog" 2>/dev/null || echo "no docker run")
+        if [[ "$got" != *" $LOCAL_REPO:ubuntu.22.04 $mode" ]]; then
+            fail "devsh: container $mode runs: $got"
+        elif [[ $mode == unit-tests-tsan && " $got " == *" --security-opt seccomp=unconfined "* &&
+                " $got " == *" -e CCACHE_DISABLE=1 "* ]]; then
+            pass "devsh: container $mode runs the image with the seccomp filter off and ccache disabled: $got"
+        elif [[ $mode != unit-tests-tsan && "$got" != *seccomp* && "$got" != *CCACHE_DISABLE* ]]; then
+            pass "devsh: container $mode runs the image with the seccomp filter on and ccache enabled: $got"
+        else
+            fail "devsh: container $mode runs: $got"
+        fi
+    done
 }
 
 step_build() {

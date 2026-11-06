@@ -14,7 +14,7 @@ Usage: ci/containers/run.sh [options] <image> [mode]
 
   image   $(cd "$HERE" && ls Dockerfile.* | sed 's/^Dockerfile\.//' | tr '\n' ' ')
   mode    Linux images: build (default), build-low-difficulty, unit-tests,
-          functional-tests, cov-unit, cov-functional
+          unit-tests-tsan, functional-tests, cov-unit, cov-functional
           windows, macos: build (the only mode)
 
 Options:
@@ -29,7 +29,10 @@ The image is tagged $LOCAL_REPO:<image>. JOBS, FTEST_JOBS, BUILDVERSION,
 CCACHE_MAXSIZE and CCACHE_COMPRESS are passed to the container if set. The
 container runs as root, as in CI; afterwards the files it wrote are given back
 to the caller (not needed and not done with rootless Docker or Podman, where
-container root already is the caller).
+container root already is the caller). The unit-tests-tsan mode runs with
+--security-opt seccomp=unconfined, as in CI: it turns address randomisation
+off for its tests, which Docker's default seccomp filter refuses. It also
+gets CCACHE_DISABLE=1, as in CI, so its objects do not evict the cache.
 EOF
 }
 
@@ -118,6 +121,11 @@ main() {
         cache="$(cd "$cache" && pwd)"
         run+=(-v "$cache:/cache")
     fi
+    # The ThreadSanitizer mode turns address randomisation off (setarch -R,
+    # see entrypoint.sh), which Docker's default seccomp filter refuses. As
+    # in CI it builds without ccache: its objects never match the cached
+    # ones and would only evict them.
+    [[ "$mode" != unit-tests-tsan ]] || run+=(--security-opt seccomp=unconfined -e CCACHE_DISABLE=1)
     local v
     for v in JOBS FTEST_JOBS BUILDVERSION CCACHE_MAXSIZE CCACHE_COMPRESS; do
         [[ -z "${!v:-}" ]] || run+=(-e "$v")
