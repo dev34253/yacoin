@@ -36,6 +36,17 @@
 #                     any report fails the mode. Ubuntu 22.04 image only
 #   functional-tests  low-difficulty build, then all functional test scripts,
 #                     the extended ones too, FTEST_JOBS in parallel
+#   functional-tests-asan
+#                     functional-tests under AddressSanitizer, LeakSanitizer
+#                     and UBSan (the flags and runtime options of
+#                     unit-tests-asan); every process a script starts writes
+#                     its reports to <builddir>/sanitizer-logs/<script's test
+#                     directory>.<executable>.<pid>. A script with a report
+#                     fails, and any report fails the mode, whatever the
+#                     scripts' outcome; the reports are printed at the end.
+#                     The scripts listed in
+#                     test/sanitizer_suppressions/asan-excluded-scripts are
+#                     left out. Ubuntu 22.04 image only
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
 #                     needs lcov 2.6 or newer (Ubuntu 22.04 image only)
 #   cov-functional    low-difficulty coverage build and "make cov-functional"
@@ -48,11 +59,11 @@
 # image (only one container per image should use the cache at a time).
 #
 # Environment: JOBS (default: number of CPUs), BUILDVERSION (passed through
-# to the version string), FTEST_JOBS (functional-tests, cov-functional:
-# functional test scripts in parallel, default 4: the CI runners' vCPUs and the
-# number the run times were measured with; a fixed default, so a local run
-# schedules the scripts as CI does whatever its CPU count). SRC_DIR and
-# CACHE_DIR override /src and /cache.
+# to the version string), FTEST_JOBS (functional-tests, functional-tests-asan,
+# cov-functional: functional test scripts in parallel, default 4: the CI
+# runners' vCPUs and the number the run times were measured with; a fixed
+# default, so a local run schedules the scripts as CI does whatever its CPU
+# count). SRC_DIR and CACHE_DIR override /src and /cache.
 set -euo pipefail
 
 MODE="${1:-build}"
@@ -85,8 +96,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -119,6 +130,21 @@ if [[ "$MODE" == unit-tests-asan ]]; then
     [[ "$IMAGE" == ubuntu.22.04 ]] || die "unit-tests-asan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
     [[ -f "$lsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/lsan"
     [[ -f "$asan_excluded_cases" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/asan-excluded-cases"
+fi
+# test_runner.py fails after the build when it can't read its list of scripts
+# to leave out; the mode checks for it first.
+asan_excluded_scripts="$SRC/test/sanitizer_suppressions/asan-excluded-scripts"
+if [[ "$MODE" == functional-tests-asan ]]; then
+    [[ "$IMAGE" == ubuntu.22.04 ]] || die "functional-tests-asan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
+    [[ -f "$lsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/lsan"
+    [[ -f "$asan_excluded_scripts" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/asan-excluded-scripts"
+    # Without the options the runner would pass them on to every script,
+    # which would all fail on them after the build.
+    runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
+    for option in --sanitizer-logs --exclude-file; do
+        grep -q -- "$option" <<< "$runner_src" ||
+            die "this YaCoin tree's test/functional/test_runner.py has no $option option"
+    done
 fi
 # ThreadSanitizer fails every run when its suppression file can't be read.
 tsan_suppressions="$SRC/test/sanitizer_suppressions/tsan"
@@ -251,12 +277,22 @@ else
     flags=(--without-gui --disable-man --enable-ccache)
     case "$MODE" in
         unit-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
-        unit-tests-asan)
+        unit-tests-asan|functional-tests-asan)
             # As dev.sh's asan variant: secp256k1's x86_64 field assembly
             # needs more registers than are left under ASan, so it is built
             # in plain C.
             san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
-            flags+=(--with-asm=no "CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=$san") ;;
+            ldflags="$san"
+            if [[ "$MODE" == functional-tests-asan ]]; then
+                # The per-script report files (see below) need every kind of
+                # report in them. gcc links the AddressSanitizer and UBSan
+                # runtimes as two shared libraries, and then UBSan's reports
+                # ignore log_path and go to stderr. Linked into the
+                # binaries, the two runtimes share one report file.
+                ldflags+=" -static-libasan -static-libubsan"
+                flags+=(--enable-low-difficulty-for-development)
+            fi
+            flags+=(--with-asm=no "CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=$ldflags") ;;
         unit-tests-tsan)
             san="-fsanitize=thread -fno-omit-frame-pointer"
             flags+=("CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=-fsanitize=thread") ;;
@@ -316,13 +352,47 @@ else
             contrib/devtools/run-fuzz-corpus.py --jobs "$JOBS" "$builddir/src/test/fuzz/fuzz" "$fuzz_corpus" \
                 "$builddir/fuzz-corpus-logs"
             ;;
-        functional-tests)
+        functional-tests|functional-tests-asan)
             # The functional tests only run yacoind and yacoin-cli.
             make -C "$builddir/src" -j"$JOBS" yacoind yacoin-cli
             # The runner reads ../config.ini relative to its own path.
             mkdir -p "$builddir/test/functional"
             ln -sf "$SRC/test/functional/test_runner.py" "$builddir/test/functional/test_runner.py"
-            "$builddir/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --extended --tmpdirprefix="$TMPDIR"
+            runner_opts=()
+            if [[ "$MODE" == functional-tests-asan ]]; then
+                # The runtime options of unit-tests-asan. The runner adds a
+                # log_path per script, so the reports of every process go to
+                # a file named after its script, also those of a process
+                # whose stderr or exit status a test expects to differ from
+                # a clean run's. A leak report that is suppressed in full
+                # would still write the suppression counts there
+                # (print_suppressions=0). A segmentation fault ends the
+                # process with the signal, as in the other functional runs
+                # (handle_segv=0). The listed scripts are left out; a listed
+                # name that is not a script of the runner fails the run.
+                export ASAN_OPTIONS=detect_leaks=1:handle_segv=0
+                export LSAN_OPTIONS="suppressions=$lsan_suppressions:print_suppressions=0"
+                export UBSAN_OPTIONS=print_stacktrace=1
+                sanitizer_logs="$builddir/sanitizer-logs"
+                runner_opts=(--sanitizer-logs="$sanitizer_logs" --exclude-file="$asan_excluded_scripts")
+            fi
+            status=0
+            "$builddir/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --extended --tmpdirprefix="$TMPDIR" \
+                ${runner_opts[@]+"${runner_opts[@]}"} || status=$?
+            if [[ "$MODE" == functional-tests-asan ]]; then
+                # Every report fails the mode, also one the runner did not
+                # see (a runner that stopped early).
+                mapfile -t reports < <(find "$sanitizer_logs" -type f 2>/dev/null | LC_ALL=C sort)
+                if (( ${#reports[@]} )); then
+                    echo "== Sanitizer reports (${#reports[@]}) in $sanitizer_logs =="
+                    for report in "${reports[@]}"; do
+                        echo "-- ${report##*/} --"
+                        cat "$report"
+                    done
+                    (( status != 0 )) || status=1
+                fi
+            fi
+            (( status == 0 )) || exit "$status"
             ;;
         cov-unit)
             make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" cov-unit

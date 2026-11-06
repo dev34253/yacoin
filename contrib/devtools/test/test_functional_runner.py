@@ -319,5 +319,20 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertEqual(self.ran, [])
 
 
+class TreeExcludedScriptsTests(unittest.TestCase):
+    def test_the_trees_list_names_scripts_of_the_runner(self):
+        # The list the functional-tests-asan mode of the CI images passes;
+        # checked here as well, so a stale entry fails before a build.
+        path = os.path.join(HERE, "..", "..", "..", "test", "sanitizer_suppressions", "asan-excluded-scripts")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                names = test_runner.read_exclude_file(path)
+            except SystemExit:
+                self.fail(out.getvalue())
+        known = {test.split()[0] for test in test_runner.ALL_SCRIPTS}
+        self.assertTrue(set(names) <= known)
+
+
 if __name__ == "__main__":
     unittest.main()
