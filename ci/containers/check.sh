@@ -20,10 +20,11 @@
 #           one after the other, a repeated run skipping make unless its
 #           inputs (Qt) changed, a build directory of another prefix refused,
 #           container passing the mode to run.sh, and run.sh adding the
-#           seccomp option and CCACHE_DISABLE=1 for unit-tests-tsan only
-#           (stub docker), asan's sanitizer options (the suppression file,
-#           the caller's own options kept) and its list of test cases left
-#           out, which unit does not pass
+#           seccomp option for unit-tests-tsan only and CCACHE_DISABLE=1 for
+#           the sanitizer modes (unit-tests-asan, unit-tests-tsan,
+#           fuzz-corpus) only (stub docker), asan's sanitizer options (the
+#           suppression file, the caller's own options kept) and its list of
+#           test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts,
@@ -41,8 +42,13 @@
 #           file (unit-tests-asan also without its list) and are refused
 #           by the images other than 22.04, unit-tests-tsan stops when it
 #           cannot turn address randomisation off (this case assumes the
-#           engine's default seccomp profile), and functional-tests runs the
-#           test runner with --extended and FTEST_JOBS
+#           engine's default seccomp profile), fuzz-corpus (22.04 image,
+#           refused by the others) configures with clang, --enable-fuzz and
+#           its sanitizer flags, runs the corpus replay with JOBS and its
+#           runtime options, fails when the replay fails or the build made no
+#           fuzz binary and stops on a tree without a corpus, and
+#           functional-tests runs the test runner with --extended and
+#           FTEST_JOBS
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -247,7 +253,7 @@ step_devsh() {
     printf '%s\n' '#!/bin/bash' '[[ "${1:-}" != run ]] || echo "$*" >> "$STUB_DOCKER"' > "$bin/docker"
     chmod +x "$bin/docker"
     local dlog="$work/devsh/docker.log" mode
-    for mode in unit-tests-tsan unit-tests-asan unit-tests; do
+    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus unit-tests; do
         rm -f "$dlog"
         PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" "$a/dev.sh" container --no-image-build --no-cache "$mode" \
             > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
@@ -257,7 +263,7 @@ step_devsh() {
         elif [[ $mode == unit-tests-tsan && " $got " == *" --security-opt seccomp=unconfined "* &&
                 " $got " == *" -e CCACHE_DISABLE=1 "* ]]; then
             pass "devsh: container $mode runs the image with the seccomp filter off and ccache disabled: $got"
-        elif [[ $mode == unit-tests-asan && "$got" != *seccomp* && " $got " == *" -e CCACHE_DISABLE=1 "* ]]; then
+        elif [[ $mode == unit-tests-asan || $mode == fuzz-corpus ]] && [[ "$got" != *seccomp* && " $got " == *" -e CCACHE_DISABLE=1 "* ]]; then
             pass "devsh: container $mode runs the image with the seccomp filter on and ccache disabled: $got"
         elif [[ $mode == unit-tests && "$got" != *seccomp* && "$got" != *CCACHE_DISABLE* ]]; then
             pass "devsh: container $mode runs the image with the seccomp filter on and ccache enabled: $got"
@@ -349,9 +355,10 @@ step_smoke() {
         expect_status 2 "smoke: $image: unknown mode rejected" docker run --rm "$tag" no-such-mode
         grep -q 'unit-tests-asan' "$work/out.txt" || fail "smoke: $image: the mode list does not name unit-tests-asan"
         grep -q 'unit-tests-tsan' "$work/out.txt" || fail "smoke: $image: the mode list does not name unit-tests-tsan"
+        grep -q 'fuzz-corpus' "$work/out.txt" || fail "smoke: $image: the mode list does not name fuzz-corpus"
         # The modes that run tests must stop early, with a clear message, on
         # a tree without the scripts and targets they need.
-        for mode in unit-tests unit-tests-asan unit-tests-tsan build-low-difficulty cov-unit cov-functional; do
+        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus build-low-difficulty cov-unit cov-functional; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -404,7 +411,7 @@ step_smoke() {
         local unit_modes=(unit-tests unit-tests-asan unit-tests-tsan)
         if [[ "$image" != ubuntu.22.04 ]]; then
             unit_modes=(unit-tests)
-            for mode in unit-tests-asan unit-tests-tsan; do
+            for mode in unit-tests-asan unit-tests-tsan fuzz-corpus; do
                 opts=()
                 [[ $mode != unit-tests-tsan ]] || opts=("${unconfined[@]}")
                 make_tests_stub "$stub" "$tag" 0
@@ -446,6 +453,7 @@ step_smoke() {
             else
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: unit-tests-tsan configure arguments: $args"
             fi
+            smoke_fuzz_corpus "$image" "$tag" "$stub"
         fi
         # The out-of-tree unit test modes run every suite of the test_bitcoin
         # they built, JOBS at a time, logs in their build directory, and fail
@@ -587,6 +595,62 @@ step_smoke() {
     done
 }
 
+# The fuzz-corpus mode (22.04 image): configures out of tree with clang,
+# --enable-fuzz and the sanitizer flags of unit-tests-asan, position-dependent
+# programs, mainnet consensus; runs the corpus replay on the fuzz binary it built with JOBS and
+# the sanitizers' runtime options; fails when the replay fails or the build
+# made no fuzz binary, and stops before the build on a tree without a corpus.
+# smoke_fuzz_corpus <image> <tag> <stub dir>
+smoke_fuzz_corpus() {
+    local image="$1" tag="$2" stub="$3" args site cxx env_got status want
+    local san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
+    local build="/src/build/docker-$image/fuzz-corpus"
+    make_fuzz_stub "$stub" "$tag" 0
+    docker run --rm -v "$stub:/src" -e JOBS=3 "$tag" fuzz-corpus > "$work/out.txt" 2>&1 && status=0 || status=$?
+    args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+    if [[ " $args " == *" --enable-fuzz "* && " $args " == *" --with-asm=no "* &&
+          " $args " == *" CXXFLAGS=-O1 -g $san "* && " $args " == *" CFLAGS=-O1 -g $san "* &&
+          " $args " == *" LDFLAGS=$san -no-pie "* && " $args " == *" --without-gui --disable-man --enable-ccache "* &&
+          " $args " != *" --enable-low-difficulty-for-development "* ]]; then
+        pass "smoke: $image: fuzz-corpus configures with: $args"
+    else
+        tail -n 5 "$work/out.txt"; fail "smoke: $image: fuzz-corpus configure arguments: $args"
+    fi
+    # The depends config.site names the compilers; the mode's site file reads
+    # it first and then names clang, which is the image's clang 14.
+    site=$(tr '\n' ' ' < "$stub/configure-site" 2>/dev/null || echo "configure did not run")
+    cxx=$(cat "$stub/configure-cxx" 2>/dev/null || echo "configure did not run")
+    want="ac_site_file='/src/build/docker-$image/depends/share/config.site' . \"\$ac_site_file\" CC=clang CXX=clang++ "
+    [[ "$site" == "$want" && "$cxx" == /usr/lib/llvm-14/bin/clang++ ]] &&
+        pass "smoke: $image: fuzz-corpus configures with the site file: $site(clang++: $cxx)" ||
+        fail "smoke: $image: fuzz-corpus configures with the site file: $site(clang++: $cxx; want $want)"
+    args=$(cat "$stub/runner-args" 2>/dev/null || echo "run-fuzz-corpus.py did not run")
+    want="--jobs 3 $build/src/test/fuzz/fuzz /src/test/fuzz/corpus $build/fuzz-corpus-logs"
+    [[ $status == 0 && "$args" == "$want" ]] && pass "smoke: $image: fuzz-corpus runs: run-fuzz-corpus.py $args" ||
+        { tail -n 5 "$work/out.txt"; fail "smoke: $image: fuzz-corpus (exit status $status) runs: run-fuzz-corpus.py $args"; }
+    env_got=$(cat "$stub/runner-env" 2>/dev/null || echo "run-fuzz-corpus.py did not run")
+    want="ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS= UBSAN_OPTIONS=print_stacktrace=1 TSAN_OPTIONS="
+    [[ "$env_got" == "$want" ]] && pass "smoke: $image: fuzz-corpus runs the corpus with: $env_got" ||
+        fail "smoke: $image: fuzz-corpus runs the corpus with: $env_got (want $want)"
+    make_fuzz_stub "$stub" "$tag" 3
+    expect_status 3 "smoke: $image: fuzz-corpus fails when the corpus replay fails" \
+        docker run --rm -v "$stub:/src" "$tag" fuzz-corpus
+    [[ -f "$stub/runner-args" ]] || fail "smoke: $image: the failing fuzz-corpus run did not reach run-fuzz-corpus.py"
+    make_fuzz_stub "$stub" "$tag" 0 no-binary
+    expect_status 1 "smoke: $image: fuzz-corpus stops when the build made no fuzz binary" \
+        docker run --rm -v "$stub:/src" "$tag" fuzz-corpus
+    grep -q 'error: the build made no .*src/test/fuzz/fuzz' "$work/out.txt" ||
+        fail "smoke: $image: fuzz-corpus without a fuzz binary gave no 'error: ' message"
+    [[ ! -f "$stub/runner-args" ]] || fail "smoke: $image: fuzz-corpus ran run-fuzz-corpus.py without a fuzz binary"
+    make_fuzz_stub "$stub" "$tag" 0
+    rm -r "$stub/test/fuzz/corpus"
+    expect_status 1 "smoke: $image: fuzz-corpus stops on a tree without a corpus" \
+        docker run --rm -v "$stub:/src" "$tag" fuzz-corpus
+    grep -q 'error: .*test/fuzz/corpus' "$work/out.txt" ||
+        fail "smoke: $image: fuzz-corpus without a corpus gave no 'error: ' message"
+    [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: fuzz-corpus configured without a corpus"
+}
+
 # A stub source tree for the release build modes: depends and autogen.sh are
 # no-ops, configure records its arguments in /src/configure-args and fails.
 make_configure_stub() {
@@ -603,10 +667,37 @@ make_configure_stub() {
     # of test cases left out.
     mkdir -p "$d/contrib/devtools" "$d/test/sanitizer_suppressions"
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-unit-suites.sh"
+    # fuzz-corpus: its replay script and corpus.
+    printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-fuzz-corpus.py"
+    mkdir -p "$d/test/fuzz/corpus"
     : > "$d/test/sanitizer_suppressions/lsan"
     : > "$d/test/sanitizer_suppressions/tsan"
     : > "$d/test/sanitizer_suppressions/asan-excluded-cases"
-    chmod +x "$d/autogen.sh" "$d/configure" "$d/contrib/devtools/run-unit-suites.sh"
+    chmod +x "$d/autogen.sh" "$d/configure" "$d/contrib/devtools/run-unit-suites.sh" "$d/contrib/devtools/run-fuzz-corpus.py"
+}
+
+# A stub source tree for fuzz-corpus: depends, autogen.sh, configure and make
+# are no-ops; configure records its arguments in /src/configure-args, the
+# site file it gets in /src/configure-site and the clang++ on its PATH in
+# /src/configure-cxx, and leaves src/test/fuzz/fuzz in the build directory
+# (not with "no-binary"); contrib/devtools/run-fuzz-corpus.py records its
+# arguments in /src/runner-args and the sanitizer options it gets in
+# /src/runner-env, then exits with <status>.
+# make_fuzz_stub <dir> <tag> <status> [no-binary]
+make_fuzz_stub() {
+    local d="$1" tag="$2" bin=""
+    make_configure_stub "$d" "$tag"
+    [[ "${4:-}" == no-binary ]] ||
+        bin='printf "#!/bin/sh\nexit 1\n" > src/test/fuzz/fuzz; chmod +x src/test/fuzz/fuzz'
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'cat "$CONFIG_SITE" > /src/configure-site' \
+        'command -v clang++ > /src/configure-cxx' 'mkdir -p src/test/fuzz' \
+        'printf "test/fuzz/fuzz:\n" > src/Makefile' "$bin" > "$d/configure"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/runner-args' \
+        'echo "ASAN_OPTIONS=${ASAN_OPTIONS:-} LSAN_OPTIONS=${LSAN_OPTIONS:-} UBSAN_OPTIONS=${UBSAN_OPTIONS:-} TSAN_OPTIONS=${TSAN_OPTIONS:-}" > /src/runner-env' \
+        "exit $3" > "$d/contrib/devtools/run-fuzz-corpus.py"
+    chmod +x "$d/configure"
 }
 
 # A stub source tree for the out-of-tree unit test modes (unit-tests,
