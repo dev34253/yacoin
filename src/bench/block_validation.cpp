@@ -114,8 +114,8 @@ CBlock BuildBlock()
     block.hashMerkleRoot = block.BuildMerkleTree();
 
     CValidationState state;
-    benchmark::Require(TestBlockValidity(state, Params(), block, pindexPrev, false, true),
-                       "the block does not pass TestBlockValidity: " + StateText(state));
+    const bool fValid = TestBlockValidity(state, Params(), block, pindexPrev, false, true);
+    benchmark::Require(fValid, "the block does not pass TestBlockValidity: " + StateText(state));
     return block;
 }
 
@@ -150,8 +150,8 @@ static void ConnectBlock1000Tx(benchmark::State& state)
         // CheckBlock() (which sets the flag only with the proof-of-work check)
         block.fChecked = false;
         CValidationState validationState;
-        benchmark::Require(CheckBlock(block, validationState, chainparams.GetConsensus(), false, true),
-                           "CheckBlock failed: " + StateText(validationState));
+        const bool fValid = CheckBlock(block, validationState, chainparams.GetConsensus(), false, true);
+        benchmark::Require(fValid, "CheckBlock failed: " + StateText(validationState));
         block.fChecked = true;
     }
     LOCK(cs_main);
