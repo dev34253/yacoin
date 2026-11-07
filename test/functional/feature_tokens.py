@@ -7,9 +7,10 @@
 Issue, transfer, transferfromaddress and reissue of YA, sub and unique
 tokens; gettokendata; listmytokens, listtokens, listaddressesbytoken and
 listtokenbalancesbyaddress with their paging arguments; IPFS hashes in CIDv0
-and CIDv1 form; parameter errors; the token RPCs before activation; the fee
-lock output of an issue and when it can be spent; raw transfers of a held
-token, whose token outputs must equal its token inputs.
+and CIDv1 form; parameter errors; the token RPCs before activation and when
+the tip moves back below the activation height; the fee lock output of an
+issue and when it can be spent; raw transfers of a held token, whose token
+outputs must equal its token inputs.
 """
 
 from decimal import Decimal
@@ -72,7 +73,20 @@ class TokenRPCTest(BitcoinTestFramework):
         # Tokens are active once the tip is at height 10.
         self.mine_with_mocktime(n0, 9)
         assert_raises_rpc_error(-1, not_active, n0.issue, "EARLY")
-        self.mine_with_mocktime(n0, 1)
+        block10 = self.mine_with_mocktime(n0, 1)[0]
+        assert_equal({}, n0.listtokens("*", True))
+
+        self.log.info("Checking the token RPCs when the tip moves back below block 10 and back to it")
+        n0.invalidateblock(block10)
+        assert_equal(n0.getblockcount(), 9)
+        assert_raises_rpc_error(-1, not_active, n0.issue, "EARLY")
+        assert_raises_rpc_error(-1, not_active, n0.listtokens)
+        # yacoind has no reconsiderblock: a new block 10 with a later time, so a block
+        # other than the invalidated one, brings the tip back to the token height. Node 1
+        # keeps its block 10 until the next blocks outgrow it.
+        new_block10 = self.mine_with_mocktime(n0, 1, sync=False)[0]
+        assert new_block10 != block10
+        assert_equal(n0.getblockcount(), 10)
         assert_equal({}, n0.listtokens("*", True))
         self.log.info("Generating YAC for node[0]")
         self.mine_with_mocktime(n0, 20)

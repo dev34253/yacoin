@@ -3,10 +3,11 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 // The default nVersion of a block header, a block and a transaction, chosen by
-// CBlockHeader::SetNull and CTransaction::SetNull from the height of the active
-// chain and the fork height nMainnetNewLogicBlockNumber: the new versions once
-// the next block (tip height + 1) is at or past the fork height, the old ones
-// before that and when the active chain has no genesis entry.
+// CBlockHeader::SetNull, CTransaction::SetNull and the default constructor of
+// CMutableTransaction from the height of the active chain and the fork height
+// nMainnetNewLogicBlockNumber: the new versions when the next block (tip
+// height + 1) is at or past the fork height, the old ones before that and when
+// the active chain has no genesis entry.
 
 #include "chain.h"
 #include "primitives/block.h"
@@ -36,7 +37,7 @@ const int TX_VERSION_NEW = CTransaction::CURRENT_VERSION;
 const int BLOCK_VERSION_OLD = CURRENT_VERSION_of_block;
 const int BLOCK_VERSION_NEW = VERSION_of_block_for_yac_05x_new;
 
-/** Checks the defaults of a newly constructed header, block and transaction. */
+/** Checks the defaults of a newly constructed header, block, transaction and mutable transaction. */
 void CheckDefaults(bool fNew, const std::string& strWhat)
 {
     const int nBlockVersion = fNew ? BLOCK_VERSION_NEW : BLOCK_VERSION_OLD;
@@ -44,12 +45,15 @@ void CheckDefaults(bool fNew, const std::string& strWhat)
     const int nHeaderGot = CBlockHeader().nVersion;
     const int nBlockGot = CBlock().nVersion;
     const int nTxGot = CTransaction().nVersion;
+    const int nMutableTxGot = CMutableTransaction().nVersion;
     BOOST_CHECK_MESSAGE(nHeaderGot == nBlockVersion,
         strWhat << ": CBlockHeader().nVersion is " << nHeaderGot << ", expected " << nBlockVersion);
     BOOST_CHECK_MESSAGE(nBlockGot == nBlockVersion,
         strWhat << ": CBlock().nVersion is " << nBlockGot << ", expected " << nBlockVersion);
     BOOST_CHECK_MESSAGE(nTxGot == nTxVersion,
         strWhat << ": CTransaction().nVersion is " << nTxGot << ", expected " << nTxVersion);
+    BOOST_CHECK_MESSAGE(nMutableTxGot == nTxVersion,
+        strWhat << ": CMutableTransaction().nVersion is " << nMutableTxGot << ", expected " << nTxVersion);
 }
 
 /** Entries at heights 1 to nTop on top of genesis; element h is at height h, element 0 is genesis. */
@@ -247,6 +251,19 @@ BOOST_AUTO_TEST_CASE(transaction_default_time_is_adjusted_time)
     SetMockTime(nMock + 100);
     tx.SetNull();
     BOOST_CHECK_EQUAL(tx.nTime, nMock + 100 + GetTimeOffset());
+}
+
+BOOST_AUTO_TEST_CASE(mutable_transaction_defaults)
+{
+    RequireActiveAtGenesis();
+    MockTimeGuard mocktime;
+    const ::int64_t nMock = 1700000000;
+    SetMockTime(nMock);
+    CMutableTransaction mtx;
+    BOOST_CHECK_EQUAL(mtx.nTime, nMock + GetTimeOffset());
+    BOOST_CHECK(mtx.vin.empty());
+    BOOST_CHECK(mtx.vout.empty());
+    BOOST_CHECK_EQUAL(mtx.nLockTime, 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

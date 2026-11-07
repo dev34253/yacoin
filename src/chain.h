@@ -770,8 +770,9 @@ public:
 /**
  * The height of the active chain (chainActive) as recorded at the end of every
  * CChain::SetTip call on it: chainActive.Height() when chainActive.Genesis() is
- * set, else -1. The default version of a block header and a transaction is
- * chosen from it.
+ * set, else -1. The default version of a block header, a transaction and a
+ * mutable transaction, and the result of AreTokensDeployed(), are chosen from
+ * it.
  */
 extern std::atomic<int> nActiveChainTipHeight;
 
