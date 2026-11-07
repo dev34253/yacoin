@@ -4722,7 +4722,8 @@ void DumpMempool(void)
 //
 bool AreTokensDeployed()
 {
-    if (chainActive.Height() != -1 && chainActive.Genesis() && chainActive.Height() >= nTokenSupportBlockNumber)
+    const int nTipHeight = nActiveChainTipHeight.load();
+    if (nTipHeight != -1 && nTipHeight >= nTokenSupportBlockNumber)
     {
         return true;
     }

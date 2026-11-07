@@ -225,8 +225,9 @@ jobs:
             build/docker-*/functional-tests-asan/config.log
           retention-days: 14
   unit-tests:
-    # Mainnet consensus build of test_bitcoin, every unit test suite in
-    # parallel (unit-tests mode of the yacoin-build image). Depends packages,
+    # Mainnet consensus build of test_bitcoin and bench_yacoin, every unit
+    # test suite in parallel, then every benchmark once in a short mode
+    # (unit-tests mode of the yacoin-build image). Depends packages,
     # depends sources and ccache are kept in /cache between runs; only master
     # pushes save that cache, so PR runs can't evict it.
     runs-on: ubuntu-latest

@@ -20,9 +20,12 @@
 #include <utility>
 
 namespace {
-std::map<std::string, TypeTestOneInput>& FuzzTargets()
+/** A target and its set-up */
+using FuzzTarget = std::pair<TypeTestOneInput, TypeInitialize>;
+
+std::map<std::string, FuzzTarget>& FuzzTargets()
 {
-    static std::map<std::string, TypeTestOneInput> g_fuzz_targets;
+    static std::map<std::string, FuzzTarget> g_fuzz_targets;
     return g_fuzz_targets;
 }
 
@@ -48,7 +51,7 @@ void Initialize()
                      "(PRINT_ALL_FUZZ_TARGETS_AND_ABORT=1 lists them)" << std::endl;
         std::exit(EXIT_FAILURE);
     }
-    g_test_one_input = &it->second;
+    g_test_one_input = &it->second.first;
 
     static ECCVerifyHandle global_verify_handle;
     // Select the main network's parameters, as the node does at start.
@@ -56,12 +59,14 @@ void Initialize()
     // The process runs for a long time: log messages are neither written to
     // a debug log nor kept in memory for one.
     fPrintToDebugLog = false;
+    // The target's own set-up
+    it->second.second();
 }
 } // namespace
 
-void FuzzFrameworkRegisterTarget(const std::string& name, TypeTestOneInput target)
+void FuzzFrameworkRegisterTarget(const std::string& name, TypeTestOneInput target, TypeInitialize init)
 {
-    if (!FuzzTargets().emplace(name, std::move(target)).second) {
+    if (!FuzzTargets().emplace(name, FuzzTarget(std::move(target), std::move(init))).second) {
         std::cerr << "error: fuzz target '" << name << "' defined twice" << std::endl;
         std::abort();
     }

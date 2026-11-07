@@ -7,6 +7,8 @@ and every push to `master`. CI never fuzzes: new inputs are searched for on a de
 
 ## Targets
 
+The binary has 24 targets.
+
 `src/test/fuzz/deserialize.cpp` holds 18 targets that each deserialise one object from a network stream: the first 4 bytes of an input
 are the stream version, the rest is the object. Inputs over 1 MiB and inputs shorter than 4 bytes are ignored, and reading past the end
 of an input ends the run.
@@ -22,12 +24,30 @@ of an input ends the run.
 | `netaddr_deserialize`, `service_deserialize`, `address_deserialize` | `CNetAddr`, `CService`, `CAddress` |
 | `messageheader_deserialize`, `inv_deserialize`, `bloomfilter_deserialize` | `CMessageHeader` (and `IsValid()`), `CInv`, `CBloomFilter` |
 
+Six targets, one file each in `src/test/fuzz/`, feed YACoin's own formats:
+
+| Target | File | What the input is and what it feeds |
+|---|---|---|
+| `token_script` | `token_script.cpp` | An output script: the token script detection functions (`CScript::IsTokenScript()` and the `IsScript…Token()` functions), the functions that read a token amount from a script, and the token decoders (`TokenFromScript()` and the other `…FromScript()` functions, `ParseTokenScript()`, `GetTokenInfoFromScript()`); a decoded token is checked as the node checks one (`CheckNewToken()`, `CheckReissueToken()`, the token name checks) |
+| `tokendb_record_deserialize` | `tokendb.cpp` | A record of the token database (`CTokensDB`), its key followed by its value; the key's first byte chooses the record kind (`A`, `B`, `C`, `U`, `Z`), other inputs are ignored |
+| `addressindex_deserialize` | `addressindex.cpp` | An address index record, its key followed by its value: `a` (`CAddressIndexKey` and the amount) or `u` (`CAddressUnspentKey`, `CAddressUnspentValue`); the key is also read as each of the keys the index lookups seek to |
+| `mempool_load` | `mempool_load.cpp` | A `mempool.dat` file, which `LoadMempool()` reads as the node does at start |
+| `p2p_process_messages` | `process_messages.cpp` | The messages of one inbound peer, processed by `PeerLogicValidation::ProcessMessages()`. The first byte chooses whether the peer first completes the handshake (bit 0); then each message is a command byte (an index into the node's message types and one unknown command), a 2-byte little-endian payload size and the payload. The target frames each message with the main network's magic and its checksum. It sends every message type except headers, block, cmpctblock and blocktxn |
+| `block_header_hash` | `block_header_hash.cpp` | A `CBlockHeader` in the input format of the `deserialize.cpp` targets, then its proof-of-work hash (`GetHash()`) and its SHA-256 hash. It hashes at the test networks' N-factor |
+
+The token database and address index targets read records as `CDBWrapper` does (disk serialisation, the client version), without a
+database. `mempool_load` and `p2p_process_messages` run on a node set up once per process (`src/test/fuzz/fuzz_util.cpp`): a temporary data
+directory, removed at exit; the consensus values as the node sets them at start, with the test networks' N-factor; the main network's
+genesis block as the only block, in-memory databases, a fixed mock time, and no threads. After each input the target puts the node's
+state back: the mempool is emptied, and the P2P target gives each input a new peer and empties the node's address and ban lists.
+
 `PRINT_ALL_FUZZ_TARGETS_AND_ABORT=1 src/test/fuzz/fuzz` prints the names of all targets and exits. A missing or unknown `FUZZ` name
 stops the binary with a message.
 
 A new target is a `FUZZ_TARGET(name) { ... }` block (`src/test/fuzz/fuzz.h`) in a file of `src/test/fuzz/` listed in
-`test_fuzz_fuzz_SOURCES` (`src/Makefile.test.include`); it needs its own corpus directory `test/fuzz/corpus/<name>/` with at least one
-input, or the corpus replay fails.
+`test_fuzz_fuzz_SOURCES` (`src/Makefile.test.include`); `FUZZ_TARGET_INIT(name, init)` also names a set-up function that runs once,
+before the first input. A target needs its own corpus directory `test/fuzz/corpus/<name>/` with at least one input, or the corpus replay
+fails.
 
 ## Building
 

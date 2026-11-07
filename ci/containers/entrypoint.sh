@@ -12,8 +12,10 @@
 #                     then all unit test suites of its test_bitcoin in parallel
 #                     (logs in /src/build/docker-<image>/build-low-difficulty/
 #                     unit-test-logs, recreated on every run)
-#   unit-tests        build test_bitcoin (mainnet consensus) and run all unit
-#                     test suites in parallel
+#   unit-tests        build test_bitcoin and bench_yacoin (mainnet consensus,
+#                     --enable-bench), run all unit test suites in parallel,
+#                     then print the CPU model and run every benchmark once in
+#                     its short mode (bench_yacoin -time=0.01)
 #   unit-tests-asan   unit-tests under AddressSanitizer, LeakSanitizer and
 #                     UBSan (the flags of dev.sh's asan variant), with the
 #                     LeakSanitizer suppressions of
@@ -71,6 +73,9 @@ SRC="${SRC_DIR:-/src}"
 CACHE="${CACHE_DIR:-/cache}"
 IMAGE="${YACOIN_BUILD_IMAGE:-unknown}"
 HOST_TRIPLET=x86_64-pc-linux-gnu
+# unit-tests: the time per benchmark of its short run, in seconds; runs
+# each benchmark once or a few times
+BENCH_TIME=0.01
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -276,7 +281,7 @@ else
     rm -rf "$builddir"; mkdir -p "$builddir"
     flags=(--without-gui --disable-man --enable-ccache)
     case "$MODE" in
-        unit-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
+        unit-tests) flags+=(--enable-bench "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         unit-tests-asan|functional-tests-asan)
             # As dev.sh's asan variant: secp256k1's x86_64 field assembly
             # needs more registers than are left under ASan, so it is built
@@ -319,8 +324,12 @@ else
     export TMPDIR="$builddir/test/tmp"; mkdir -p "$TMPDIR"
     case "$MODE" in
         unit-tests|unit-tests-asan|unit-tests-tsan)
-            make -C "$builddir/src" -j"$JOBS" test/test_bitcoin
-            [[ -x "$builddir/src/test/test_bitcoin" ]] || die "the build made no $builddir/src/test/test_bitcoin"
+            targets=(test/test_bitcoin)
+            [[ "$MODE" != unit-tests ]] || targets+=(bench/bench_yacoin)
+            make -C "$builddir/src" -j"$JOBS" "${targets[@]}"
+            for target in "${targets[@]}"; do
+                [[ -x "$builddir/src/$target" ]] || die "the build made no $builddir/src/$target"
+            done
             runner=() suites_opts=()
             if [[ "$MODE" == unit-tests-asan ]]; then
                 # Leak checks at exit, the tree's suppressions, and a stack
@@ -342,6 +351,14 @@ else
             # bash < 4.4.
             ${runner[@]+"${runner[@]}"} contrib/devtools/run-unit-suites.sh ${suites_opts[@]+"${suites_opts[@]}"} \
                 "$builddir/src/test/test_bitcoin" "$builddir/unit-test-logs" "$JOBS"
+            if [[ "$MODE" == unit-tests ]]; then
+                # Keeps the benchmarks compiling and their result checks
+                # passing; a failed benchmark fails the mode.
+                echo "== Running the benchmarks (bench_yacoin -time=$BENCH_TIME) =="
+                cpu=$(grep -m1 '^model name' /proc/cpuinfo || true)
+                echo "CPU: ${cpu#*: }"
+                "$builddir/src/bench/bench_yacoin" -time="$BENCH_TIME"
+            fi
             ;;
         fuzz-corpus)
             make -C "$builddir/src" -j"$JOBS" test/fuzz/fuzz

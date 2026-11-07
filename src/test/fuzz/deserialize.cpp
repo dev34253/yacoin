@@ -12,6 +12,7 @@
 #endif
 
 #include "test/fuzz/fuzz.h"
+#include "test/fuzz/fuzz_util.h"
 
 #include "addrdb.h"
 #include "addrman.h"
@@ -30,24 +31,6 @@
 #include <ios>
 
 namespace {
-const size_t MAX_INPUT_SIZE = 1 << 20;
-
-/** Fills ds with the input and sets its version from the first 4 bytes;
- * false if the input is to be ignored. */
-bool OpenInput(const FuzzBufferType& buffer, CDataStream& ds)
-{
-    if (buffer.size() > MAX_INPUT_SIZE) return false;
-    ds = CDataStream(buffer, SER_NETWORK, INIT_PROTO_VERSION);
-    try {
-        int nVersion;
-        ds >> nVersion;
-        ds.SetVersion(nVersion);
-    } catch (const std::ios_base::failure&) {
-        return false;
-    }
-    return true;
-}
-
 /** Deserialises one T from the input */
 template <typename T>
 void DeserializeInput(const FuzzBufferType& buffer)

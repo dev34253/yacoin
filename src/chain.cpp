@@ -9,6 +9,15 @@
 #include "consensus/consensus.h"
 #include "validation.h"
 
+std::atomic<int> nActiveChainTipHeight{-1};
+
+static void RecordActiveChainTipHeight(const CChain& chain)
+{
+    if (&chain == &chainActive) {
+        nActiveChainTipHeight.store(chain.Genesis() ? chain.Height() : -1);
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////
 //
 // CChain implementation
@@ -16,6 +25,7 @@
 void CChain::SetTip(CBlockIndex *pindex) {
     if (pindex == nullptr) {
         vChain.clear();
+        RecordActiveChainTipHeight(*this);
         return;
     }
     vChain.resize(pindex->nHeight + 1);
@@ -23,6 +33,7 @@ void CChain::SetTip(CBlockIndex *pindex) {
         vChain[pindex->nHeight] = pindex;
         pindex = pindex->pprev;
     }
+    RecordActiveChainTipHeight(*this);
 }
 
 CBlockLocator CChain::GetLocator(const CBlockIndex *pindex) const {

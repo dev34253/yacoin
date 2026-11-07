@@ -48,6 +48,7 @@ BITCOIN_TESTS =\
   test/consensus_test_util.h \
   test/crypto_tests.cpp \
   test/cuckoocache_tests.cpp \
+  test/default_version_tests.cpp \
   test/DoS_tests.cpp \
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
@@ -107,6 +108,7 @@ BITCOIN_TESTS =\
   test/timelock_tests.cpp \
   test/token_cache_tests.cpp \
   test/token_db_tests.cpp \
+  test/token_deployment_tests.cpp \
   test/token_test_util.h \
   test/token_tests.cpp \
   test/token_tx_tests.cpp \
@@ -154,9 +156,17 @@ test_test_bitcoin_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -s
 
 # fuzz binary (configure --enable-fuzz): the fuzz targets, run by libFuzzer #
 test_fuzz_fuzz_SOURCES = \
+  test/fuzz/addressindex.cpp \
+  test/fuzz/block_header_hash.cpp \
   test/fuzz/deserialize.cpp \
   test/fuzz/fuzz.cpp \
-  test/fuzz/fuzz.h
+  test/fuzz/fuzz.h \
+  test/fuzz/fuzz_util.cpp \
+  test/fuzz/fuzz_util.h \
+  test/fuzz/mempool_load.cpp \
+  test/fuzz/process_messages.cpp \
+  test/fuzz/token_script.cpp \
+  test/fuzz/tokendb.cpp
 test_fuzz_fuzz_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
 test_fuzz_fuzz_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
 test_fuzz_fuzz_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -fsanitize=fuzzer
