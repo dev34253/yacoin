@@ -58,7 +58,8 @@ std::string CTxOut::ToString() const
 
 CMutableTransaction::CMutableTransaction(){
     // TODO: Need update for mainet
-    if (chainActive.Height() != -1 && chainActive.Genesis() && (chainActive.Height() + 1) >= nMainnetNewLogicBlockNumber)
+    const int nTipHeight = nActiveChainTipHeight.load();
+    if (nTipHeight != -1 && (nTipHeight + 1) >= nMainnetNewLogicBlockNumber)
     {
         nVersion = CTransaction::CURRENT_VERSION;
     }
