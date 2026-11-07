@@ -15,7 +15,7 @@ Usage: ci/containers/run.sh [options] <image> [mode]
   image   $(cd "$HERE" && ls Dockerfile.* | sed 's/^Dockerfile\.//' | tr '\n' ' ')
   mode    Linux images: build (default), build-low-difficulty, unit-tests,
           unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests,
-          cov-unit, cov-functional
+          functional-tests-asan, cov-unit, cov-functional
           windows, macos: build (the only mode)
 
 Options:
@@ -33,8 +33,9 @@ to the caller (not needed and not done with rootless Docker or Podman, where
 container root already is the caller). The unit-tests-tsan mode runs with
 --security-opt seccomp=unconfined, as in CI: it turns address randomisation
 off for its tests, which Docker's default seccomp filter refuses. The
-sanitizer modes (unit-tests-asan, unit-tests-tsan, fuzz-corpus) get
-CCACHE_DISABLE=1, as in CI, so their objects do not evict the cache.
+sanitizer modes (unit-tests-asan, unit-tests-tsan, fuzz-corpus,
+functional-tests-asan) get CCACHE_DISABLE=1, as in CI, so their objects do
+not evict the cache.
 EOF
 }
 
@@ -128,7 +129,7 @@ main() {
     # in CI the sanitizer modes build without ccache: their objects never
     # match the cached ones and would only evict them.
     [[ "$mode" != unit-tests-tsan ]] || run+=(--security-opt seccomp=unconfined)
-    [[ "$mode" != unit-tests-asan && "$mode" != unit-tests-tsan && "$mode" != fuzz-corpus ]] || run+=(-e CCACHE_DISABLE=1)
+    case "$mode" in unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests-asan) run+=(-e CCACHE_DISABLE=1) ;; esac
     local v
     for v in JOBS FTEST_JOBS BUILDVERSION CCACHE_MAXSIZE CCACHE_COMPRESS; do
         [[ -z "${!v:-}" ]] || run+=(-e "$v")

@@ -1,0 +1,12 @@
+# Functional test scripts left out of the AddressSanitizer, LeakSanitizer and
+# UBSan runs (the functional-tests-asan mode of the CI images, through
+# test/functional/test_runner.py --exclude-file); the other functional test
+# runs still run them. One script name (with .py) per line, with the reason
+# in the comment above it. A listed name that is not a test script of the
+# runner fails the run.
+
+# Left out of the sanitizer runs until a later phase.
+feature_crash_recovery.py
+mining_getwork.py
+mining_setgenerate.py
+wallet_encryption.py

@@ -16,9 +16,10 @@
 #   - only the docker runs of the unit-tests-tsan mode turn Docker's seccomp
 #     filter off (the mode needs it, see entrypoint.sh), and they do;
 #   - the sanitizer jobs run their modes (unit-tests-asan, unit-tests-tsan,
-#     fuzz-corpus), with ccache off;
-#   - the fuzz-corpus job restores the functional-tests job's cache and saves
-#     none, and the workflow has 13 jobs.
+#     fuzz-corpus, functional-tests-asan), with ccache off;
+#   - the fuzz-corpus and functional-tests-asan jobs restore the
+#     functional-tests job's cache and save none, and the workflow has 14
+#     jobs.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -193,7 +194,7 @@ for wf in "$ROOT"/.github/workflows/*.yml; do
         else
             check "$name: $container keeps the seccomp filter" test "${run/seccomp/}" = "$run"
         fi
-        if [[ "$run" =~ \"\$IMAGE_TAG\"[[:space:]]+(unit-tests-asan|unit-tests-tsan|fuzz-corpus)[[:space:]]*$ ]]; then
+        if [[ "$run" =~ \"\$IMAGE_TAG\"[[:space:]]+(unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests-asan)[[:space:]]*$ ]]; then
             check "$name: $container (${BASH_REMATCH[1]}) runs with ccache off" \
                 test "${run/ -e CCACHE_DISABLE=1 /}" != "$run"
         fi
@@ -202,20 +203,23 @@ done
 # The sanitizer jobs run their modes.
 wf="$ROOT/.github/workflows/yacoinbuildmultiplatform.yml"
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$wf")
-for mode in unit-tests-asan unit-tests-tsan fuzz-corpus; do
+for mode in unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan; do
     check "${wf#"$ROOT"/}: a docker run of the $mode mode" \
         grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+'"$mode"'[[:space:]]*$' <<< "$joined"
 done
-# The fuzz-corpus job (from its name to the next job) restores the
-# functional-tests job's cache, for the depends packages, and saves none.
-fuzz_job=$(awk '/^  fuzz-corpus:$/ { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:$/ { exit } on' "$wf")
-check "${wf#"$ROOT"/}: the fuzz-corpus job runs the ubuntu.22.04 image" grep -qx ' *IMAGE: ubuntu.22.04' <<< "$fuzz_job"
-check "${wf#"$ROOT"/}: the fuzz-corpus job restores the functional-tests cache" \
-    grep -q 'CACHE_KEY=functional-tests-\$IMAGE-' <<< "$fuzz_job"
-check "${wf#"$ROOT"/}: the fuzz-corpus job saves no cache" bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$fuzz_job"
+# The fuzz-corpus and functional-tests-asan jobs (each from its name to the
+# next job) restore the functional-tests job's cache, for the depends
+# packages, and save none.
+for name in fuzz-corpus functional-tests-asan; do
+    job=$(awk -v name="  $name:" '$0 == name { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:$/ { exit } on' "$wf")
+    check "${wf#"$ROOT"/}: the $name job runs the ubuntu.22.04 image" grep -qx ' *IMAGE: ubuntu.22.04' <<< "$job"
+    check "${wf#"$ROOT"/}: the $name job restores the functional-tests cache" \
+        grep -q 'CACHE_KEY=functional-tests-\$IMAGE-' <<< "$job"
+    check "${wf#"$ROOT"/}: the $name job saves no cache" bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$job"
+done
 # A job added or removed is a deliberate change of this number.
 jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^[^ ]/ { exit } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
-check "${wf#"$ROOT"/}: 13 jobs ($jobs)" test "$jobs" = 13
+check "${wf#"$ROOT"/}: 14 jobs ($jobs)" test "$jobs" = 14
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do

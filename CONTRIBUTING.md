@@ -22,8 +22,9 @@ These rules apply to every contributor, human or coding agent.
 - Before opening a pull request, build and run the unit and functional tests: `./dev.sh all`, or the container modes
   `./dev.sh container unit-tests` and `./dev.sh container functional-tests` (see [`doc/developer-build.md`](doc/developer-build.md)). CI must
   pass; it also runs the unit tests under AddressSanitizer, LeakSanitizer and UBSan (the `unit-tests-asan` job) and under
-  ThreadSanitizer (the `unit-tests-tsan` job). `./dev.sh asan` or `./dev.sh container unit-tests-asan`, and
-  `./dev.sh container unit-tests-tsan`, run them the same way locally.
+  ThreadSanitizer (the `unit-tests-tsan` job), and the functional tests under AddressSanitizer, LeakSanitizer and UBSan (the
+  `functional-tests-asan` job). `./dev.sh asan` or `./dev.sh container unit-tests-asan`, `./dev.sh container unit-tests-tsan`
+  and `./dev.sh container functional-tests-asan` run them the same way locally.
 
 ## Rules
 
