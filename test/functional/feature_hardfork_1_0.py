@@ -12,6 +12,8 @@
   version 2 coinbase paying the reward that follows from the money supply,
   N-factor from -nFactorAtHardfork; coinbases mature after 6 blocks.
 - After the fork a version 1 transaction is refused.
+- createrawtransaction's default version follows the next block: 1 while it
+  is before the fork, 2 from the fork block on.
 - A reorg back below the fork: the 500-block maturity applies again, so a
   mempool spend of a pre-fork coinbase leaves the mempool; the longer branch
   wins on the other node; -reindex keeps the result.
@@ -76,6 +78,11 @@ class HardforkTest(BitcoinTestFramework):
         sign_p2pkh_input(tx, 0, self.key)
         return tx
 
+    def raw_tx_version(self, node):
+        """The version of a transaction from createrawtransaction, the node's default."""
+        raw = node.createrawtransaction([{"txid": "01" * 32, "vout": 0}], {TestNode.PRIV_KEYS[1].address: 1})
+        return node.decoderawtransaction(raw)['version']
+
     def check_blockvalue(self, node, reward):
         """getmininginfo's blockvalue at tip 29 should be the fork block's reward,
         like getsubsidy; today it is the tip's (the old subsidy)."""
@@ -100,6 +107,9 @@ class HardforkTest(BitcoinTestFramework):
             assert_equal(n0.getblock(n0.getblockhash(height), 2)['tx'][0]['version'], 1)
         assert_equal(n0.getbalance(), 0)
 
+        self.log.info("createrawtransaction gives version 1 while the next block is before the fork")
+        assert_equal(self.raw_tx_version(n0), 1)
+
         self.log.info("Before the fork coinbases need 500 blocks to mature")
         coinbase1 = n0.getblock(n0.getblockhash(1))['tx'][0]
         wallet_tx = n0.gettransaction(coinbase1)
@@ -117,6 +127,8 @@ class HardforkTest(BitcoinTestFramework):
         self.check_blockvalue(n0, reward)
         hash29 = n0.getbestblockhash()
         time29 = n0.getblockheader(hash29)['time']
+        # The next block is the fork block, so the default version is 2.
+        assert_equal(self.raw_tx_version(n0), 2)
         assert_equal(n0.getmininginfo()['Nfactor'], block_nfactor(6, time29))
         assert_equal(n0.getmininginfo()['Nfactor'], 5)
         self.log.info("The node's hash of a pre-fork (80-byte) header is the block's hash")
@@ -144,6 +156,7 @@ class HardforkTest(BitcoinTestFramework):
         assert_equal(int(block30['mint'] * COIN), reward)
         assert_equal(n0.getmininginfo()['blockvalue'], reward)
         assert_equal(n0.getmininginfo()['Nfactor'], NFACTOR_AT_HARDFORK)
+        assert_equal(self.raw_tx_version(n0), 2)
 
         self.log.info("From the fork on coinbases mature after 6 blocks")
         assert_equal(n0.sendrawtransaction(spend1.serialize().hex()), spend1.hash)

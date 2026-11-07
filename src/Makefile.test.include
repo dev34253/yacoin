@@ -48,6 +48,7 @@ BITCOIN_TESTS =\
   test/consensus_test_util.h \
   test/crypto_tests.cpp \
   test/cuckoocache_tests.cpp \
+  test/default_version_tests.cpp \
   test/DoS_tests.cpp \
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
