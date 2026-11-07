@@ -108,6 +108,7 @@ BITCOIN_TESTS =\
   test/timelock_tests.cpp \
   test/token_cache_tests.cpp \
   test/token_db_tests.cpp \
+  test/token_deployment_tests.cpp \
   test/token_test_util.h \
   test/token_tests.cpp \
   test/token_tx_tests.cpp \
