@@ -10,7 +10,8 @@ BENCH_BINARY = bench/bench_yacoin$(EXEEXT)
 bench_bench_yacoin_SOURCES = \
   bench/bench.cpp \
   bench/bench.h \
-  bench/bench_yacoin.cpp
+  bench/bench_yacoin.cpp \
+  bench/header_hash.cpp
 
 bench_bench_yacoin_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS) -I$(builddir)/bench/
 bench_bench_yacoin_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
