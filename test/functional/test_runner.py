@@ -104,6 +104,7 @@ BASE_SCRIPTS = [
     'feature_config_args.py',  # 8
     'mempool_accept.py',  # 6
     'feature_reindex.py',  # 10
+    'feature_replay_validation.py',
     'feature_signals.py',  # 10
     'feature_abortnode.py',  # 8
     'feature_verifydb.py',  # 6
