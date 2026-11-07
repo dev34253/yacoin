@@ -63,7 +63,7 @@ only Docker; `./dev.sh container` builds the image from `ci/containers/` (Docker
 with this checkout mounted:
 
 ```sh
-./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel
+./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel, then bench_yacoin once (short)
 ./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ./dev.sh container unit-tests-asan           # all unit test suites under ASan/LSan/UBSan (see AddressSanitizer below)
@@ -314,6 +314,15 @@ the corpus in `test/fuzz/corpus/` once through its target, as the CI job
 `fuzz-corpus` does. [fuzzing.md](fuzzing.md) describes the targets, the build
 (`configure --enable-fuzz`), how to fuzz locally and how inputs are added to
 the corpus.
+
+### Benchmarks
+
+`configure --enable-bench` builds the benchmark binary `src/bench/bench_yacoin`
+(make target `bench/bench_yacoin` in `src/`); `dev.sh`'s variants don't. The
+`unit-tests` mode of `./dev.sh container` builds it and runs every benchmark
+once in a short mode after the unit tests, as the CI job `unit-tests` does.
+[benchmarking.md](benchmarking.md) describes the benchmarks, the options and
+the output.
 
 ### Functional tests
 
