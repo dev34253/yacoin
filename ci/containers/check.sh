@@ -38,6 +38,8 @@
 #           unit-tests-tsan with address randomisation off) and fail when
 #           one fails or the build made no test_bitcoin, unit-tests-asan
 #           leaves the test cases of its list out (the other modes do not),
+#           unit-tests then runs bench_yacoin -time=0.01 (the others do not)
+#           and fails when it fails or the build made no bench_yacoin,
 #           the sanitizer modes stop on a tree without their suppression
 #           file (unit-tests-asan also without its list) and are refused
 #           by the images other than 22.04, unit-tests-tsan stops when it
@@ -461,7 +463,7 @@ step_smoke() {
         # modes set their sanitizers' runtime options (the tree's
         # suppressions), and only they do; unit-tests-tsan runs the suites
         # with address randomisation off.
-        local env_got pers_got want_env
+        local env_got pers_got want_env bench_got
         for mode in "${unit_modes[@]}"; do
             opts=()
             [[ $mode != unit-tests-tsan ]] || opts=("${unconfined[@]}")
@@ -498,6 +500,28 @@ step_smoke() {
             else
                 tail -n 5 "$work/out.txt"
                 fail "smoke: $image: $mode (exit status $status) runs: run-unit-suites.sh $args"
+            fi
+            # unit-tests, and only it, then runs the benchmarks once in their
+            # short mode, after printing the CPU model.
+            bench_got=$(cat "$stub/bench-args" 2>/dev/null || echo "bench_yacoin did not run")
+            if [[ $mode == unit-tests ]]; then
+                if [[ "$bench_got" == "-time=0.01" ]] && grep -q '^CPU: ' "$work/out.txt"; then
+                    pass "smoke: $image: $mode prints the CPU model and runs: bench_yacoin $bench_got"
+                else
+                    tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode runs: bench_yacoin $bench_got"
+                fi
+                make_tests_stub "$stub" "$tag" 0
+                expect_status 4 "smoke: $image: $mode fails when a benchmark fails" \
+                    docker run --rm -v "$stub:/src" -e STUB_BENCH_STATUS=4 "$tag" "$mode"
+                make_tests_stub "$stub" "$tag" 0 no-bench
+                expect_status 1 "smoke: $image: $mode stops when the build made no bench_yacoin" \
+                    docker run --rm -v "$stub:/src" "$tag" "$mode"
+                grep -q 'error: the build made no .*src/bench/bench_yacoin' "$work/out.txt" ||
+                    fail "smoke: $image: $mode without bench_yacoin gave no 'error: ' message"
+                [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: $mode ran run-unit-suites.sh without bench_yacoin"
+            else
+                [[ "$bench_got" == "bench_yacoin did not run" ]] && pass "smoke: $image: $mode runs no benchmark" ||
+                    fail "smoke: $image: $mode runs: bench_yacoin $bench_got"
             fi
             make_tests_stub "$stub" "$tag" 3
             expect_status 3 "smoke: $image: $mode fails when a unit test suite fails" \
@@ -702,21 +726,25 @@ make_fuzz_stub() {
 
 # A stub source tree for the out-of-tree unit test modes (unit-tests,
 # unit-tests-asan, unit-tests-tsan): depends, autogen.sh, configure and make
-# are no-ops, configure leaves src/test/test_bitcoin in the build directory
-# (not with "no-binary"), and contrib/devtools/run-unit-suites.sh records its
+# are no-ops, configure leaves src/test/test_bitcoin (not with "no-binary")
+# and src/bench/bench_yacoin (not with "no-binary" or "no-bench") in the
+# build directory, and contrib/devtools/run-unit-suites.sh records its
 # arguments in /src/suites-args, the sanitizer options it gets in
 # /src/suites-env and its personality in /src/suites-personality, then exits
-# with <status>.
-# make_tests_stub <dir> <tag> <status> [no-binary]
+# with <status>. bench_yacoin records its arguments in /src/bench-args and
+# exits with STUB_BENCH_STATUS (default 0).
+# make_tests_stub <dir> <tag> <status> [no-binary|no-bench]
 make_tests_stub() {
-    local d="$1" tag="$2" bin=""
+    local d="$1" tag="$2" bin="" bench=""
     make_configure_stub "$d" "$tag"
     [[ "${4:-}" == no-binary ]] ||
         bin='printf "#!/bin/sh\nexit 1\n" > src/test/test_bitcoin; chmod +x src/test/test_bitcoin'
+    [[ "${4:-}" == no-binary || "${4:-}" == no-bench ]] ||
+        bench='printf "#!/bin/sh\necho \"\$@\" > /src/bench-args\nexit \${STUB_BENCH_STATUS:-0}\n" > src/bench/bench_yacoin; chmod +x src/bench/bench_yacoin'
     # configure runs in the build directory and leaves a src/Makefile there.
     # shellcheck disable=SC2016 # expanded by the stub
-    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'mkdir -p src/test' \
-        'printf "test/test_bitcoin:\n" > src/Makefile' "$bin" > "$d/configure"
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'mkdir -p src/test src/bench' \
+        'printf "test/test_bitcoin bench/bench_yacoin:\n" > src/Makefile' "$bin" "$bench" > "$d/configure"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/suites-args' \
         'echo "ASAN_OPTIONS=${ASAN_OPTIONS:-} LSAN_OPTIONS=${LSAN_OPTIONS:-} UBSAN_OPTIONS=${UBSAN_OPTIONS:-} TSAN_OPTIONS=${TSAN_OPTIONS:-}" > /src/suites-env' \
