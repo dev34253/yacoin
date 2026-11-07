@@ -14,7 +14,8 @@ bench_bench_yacoin_SOURCES = \
   bench/bench_util.h \
   bench/bench_yacoin.cpp \
   bench/block_validation.cpp \
-  bench/header_hash.cpp
+  bench/header_hash.cpp \
+  bench/logging.cpp
 
 bench_bench_yacoin_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS) $(EVENT_PTHREADS_CFLAGS) -I$(builddir)/bench/
 bench_bench_yacoin_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
