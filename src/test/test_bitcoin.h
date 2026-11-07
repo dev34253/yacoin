@@ -100,13 +100,28 @@ struct BasicTestingSetup {
 /** Testing setup that configures a complete environment.
  * Included are data directory, coins database, script check threads setup.
  */
+class CClientUIInterface;
 class CConnman;
 class CNode;
 struct CConnmanTest {
     static void AddNode(CNode& node);
     static void RemoveNode(CNode& node);
     static void ClearNodes();
+
+    /** The same on the given connection manager instead of g_connman. Its threads must not run. */
+    static void AddNode(CConnman& connman, CNode& node);
+    static void ClearNodes(CConnman& connman);
+
+    /** Runs connman's socket handler loop on a new thread until ui, which connman was
+     * initialised with (Options::uiInterface), reports the number of connections for the first
+     * time; then interrupts the loop and joins the thread. nConnections gets the reported number.
+     * Returns false if no report came within SOCKET_HANDLER_TEST_TIMEOUT_S; the thread is
+     * interrupted and joined in that case too. */
+    static bool RunSocketHandlerUntilNotified(CConnman& connman, CClientUIInterface& ui, int& nConnections);
 };
+
+/** Upper bound for the wait of CConnmanTest::RunSocketHandlerUntilNotified */
+static const int SOCKET_HANDLER_TEST_TIMEOUT_S = 120;
 
 class PeerLogicValidation;
 struct TestingSetup: public BasicTestingSetup {
