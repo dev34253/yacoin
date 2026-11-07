@@ -63,6 +63,8 @@ BITCOIN_TESTS =\
   test/known_failure.h \
   test/known_failure_tests.cpp \
   test/limitedmap_tests.cpp \
+  test/log_test_util.cpp \
+  test/log_test_util.h \
   test/main_tests.cpp \
   test/dbwrapper_tests.cpp \
   test/mempool_accept_tests.cpp \
