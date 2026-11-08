@@ -171,12 +171,20 @@ jobs:
     # build), but those listed in
     # test/sanitizer_suppressions/asan-excluded-scripts. Every process a
     # script starts writes its reports to a file named after the script; any
-    # report that is not suppressed fails its script and the job, and the
+    # report that is not suppressed fails its script and the leg, and the
     # reports are printed at the end of the log.
+    # Each leg builds yacoind and yacoin-cli and runs one shard of the
+    # scripts (FTEST_SHARD=<leg>/<number of legs>, test_runner.py --shard:
+    # by each script's position in the runner's list), so together the legs
+    # run every script once; a new script lands in a shard by itself.
     # Cache as in unit-tests-asan: the functional-tests job's, restored only,
     # for the depends packages; ccache is off.
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     env:
       IMAGE: ubuntu.22.04
     steps:
@@ -203,10 +211,11 @@ jobs:
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          FTEST_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
         run: |
           mkdir -p "$ASAN_CACHE"
           docker run --rm --init --name functional-tests-asan -v "$GITHUB_WORKSPACE":/src -v "$ASAN_CACHE":/cache \
-            -e CCACHE_DISABLE=1 "$IMAGE_TAG" functional-tests-asan
+            -e FTEST_SHARD -e CCACHE_DISABLE=1 "$IMAGE_TAG" functional-tests-asan
       - name: stop the container and make the logs readable
         if: always()
         run: |
@@ -217,7 +226,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
-          name: functional-test-logs-asan
+          name: functional-test-logs-asan-${{ matrix.shard }}
           path: |
             build/docker-*/functional-tests-asan/sanitizer-logs/
             build/docker-*/functional-tests-asan/test/tmp/test_runner_*/**/*.log
@@ -283,15 +292,22 @@ jobs:
             build/docker-*/unit-tests/config.log
           retention-days: 14
   unit-tests-asan:
-    # Every unit test suite under AddressSanitizer, LeakSanitizer and UBSan
-    # (unit-tests-asan mode of the yacoin-build image: the flags of dev.sh's
-    # asan variant, the suppressions in test/sanitizer_suppressions/); any
-    # report that is not suppressed fails its suite and the job. Cache as in
+    # Every unit test suite under AddressSanitizer with LeakSanitizer and
+    # under UBSan (unit-tests-asan mode of the yacoin-build image: the
+    # sanitizer flags of dev.sh's asan variant with -g1, the suppressions in
+    # test/sanitizer_suppressions/), one sanitizer per leg (SANITIZE): each
+    # leg builds test_bitcoin with its sanitizer only and runs every suite.
+    # Both legs read the same left-out lists, which are unchanged. Any report
+    # that is not suppressed fails its suite and the leg. Cache as in
     # coverage-unit: the functional-tests job's, restored only, for the
     # depends packages; ccache is off, since sanitizer objects never hit the
     # cached ones.
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitize: [address, undefined]
     env:
       IMAGE: ubuntu.22.04
     steps:
@@ -318,10 +334,11 @@ jobs:
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          SANITIZE: ${{ matrix.sanitize }}
         run: |
           mkdir -p "$ASAN_CACHE"
           docker run --rm --init --name unit-tests-asan -v "$GITHUB_WORKSPACE":/src -v "$ASAN_CACHE":/cache \
-            -e CCACHE_DISABLE=1 "$IMAGE_TAG" unit-tests-asan
+            -e SANITIZE -e CCACHE_DISABLE=1 "$IMAGE_TAG" unit-tests-asan
       - name: stop the container and make the logs readable
         if: always()
         run: |
@@ -332,7 +349,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
-          name: unit-test-logs-asan
+          name: unit-test-logs-asan-${{ matrix.sanitize }}
           path: |
             build/docker-*/unit-tests-asan/unit-test-logs/
             build/docker-*/unit-tests-asan/config.log
@@ -845,17 +862,22 @@ jobs:
             build/docker-*/cov-unit/test_bitcoin.logs/
             build/docker-*/cov-unit/config.log
           retention-days: 14
-  coverage-functional:
-    # Functional test coverage: low-difficulty coverage build and "make
-    # cov-functional" (cov-functional mode of the yacoin-build image; the
-    # scripts run 4 in parallel, then the timing-sensitive ones alone). Cache as
-    # in coverage-unit: the functional-tests job's, restored only. Artifact
-    # name and outputs as in coverage-unit.
+  coverage-functional-1:
+    # Functional test coverage, shard 1 of 2: low-difficulty coverage build
+    # and "make cov-functional" with FTEST_SHARD=1/2 (cov-functional mode of
+    # the yacoin-build image; the shard's scripts run 4 in parallel, then the
+    # timing-sensitive ones alone; test_runner.py --shard picks a script's
+    # shard by its position in the runner's list). coverage-functional-2
+    # runs the other shard; written out twice, so that each job has outputs
+    # of its own. Cache as in coverage-unit: the functional-tests job's,
+    # restored only. Artifact name (per shard and attempt) and outputs as in
+    # coverage-unit.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       IMAGE: ubuntu.22.04
-      COVERAGE_ARTIFACT: coverage-functional-${{ github.run_attempt }}
+      COVERAGE_ARTIFACT: coverage-functional-1-${{ github.run_attempt }}
+      FTEST_SHARD: 1/2
     outputs:
       artifact-name: ${{ env.COVERAGE_ARTIFACT }}
       artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
@@ -886,7 +908,7 @@ jobs:
         run: |
           mkdir -p "$COV_CACHE"
           docker run --rm --init --name coverage-functional -v "$GITHUB_WORKSPACE":/src -v "$COV_CACHE":/cache \
-            -e CCACHE_DISABLE=1 "$IMAGE_TAG" cov-functional
+            -e FTEST_SHARD -e CCACHE_DISABLE=1 "$IMAGE_TAG" cov-functional
       - name: stop the container and make the build and logs readable
         if: always()
         run: |
@@ -909,22 +931,99 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
-          name: coverage-functional-logs
+          name: coverage-functional-1-logs
+          path: |
+            build/docker-*/cov-functional/*.log
+            build/docker-*/cov-functional/test/tmp/test_runner_*/**/*.log
+            build/docker-*/cov-functional/test/tmp/test_runner_*/**/std*/*
+          retention-days: 14
+  coverage-functional-2:
+    # Functional test coverage, shard 2 of 2: low-difficulty coverage build
+    # and "make cov-functional" with FTEST_SHARD=2/2 (cov-functional mode of
+    # the yacoin-build image; the shard's scripts run 4 in parallel, then the
+    # timing-sensitive ones alone; test_runner.py --shard picks a script's
+    # shard by its position in the runner's list). coverage-functional-1
+    # runs the other shard; written out twice, so that each job has outputs
+    # of its own. Cache as in coverage-unit: the functional-tests job's,
+    # restored only. Artifact name (per shard and attempt) and outputs as in
+    # coverage-unit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IMAGE: ubuntu.22.04
+      COVERAGE_ARTIFACT: coverage-functional-2-${{ github.run_attempt }}
+      FTEST_SHARD: 2/2
+    outputs:
+      artifact-name: ${{ env.COVERAGE_ARTIFACT }}
+      artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - name: cache dir and key
+        run: |
+          echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.COV_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            functional-tests-${{ env.IMAGE }}-
+      - name: build and measure the functional test coverage
+        # Below the job timeout, so a hang fails this step and the logs are
+        # still uploaded.
+        timeout-minutes: 50
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$COV_CACHE"
+          docker run --rm --init --name coverage-functional -v "$GITHUB_WORKSPACE":/src -v "$COV_CACHE":/cache \
+            -e FTEST_SHARD -e CCACHE_DISABLE=1 "$IMAGE_TAG" cov-functional
+      - name: stop the container and make the build and logs readable
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f coverage-functional 2>/dev/null || true
+          # The nodes write their datadirs with umask 077 as root.
+          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
+      - uses: actions/upload-artifact@v6
+        id: upload-coverage
+        # Also when the tests failed: the make targets capture coverage anyway.
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ env.COVERAGE_ARTIFACT }}
+          path: |
+            build/docker-${{ env.IMAGE }}/cov-functional/functional_test_coverage.info
+            build/docker-${{ env.IMAGE }}/cov-functional/functional_test_functions.json
+            build/docker-${{ env.IMAGE }}/cov-functional/functional_test.coverage/
+          if-no-files-found: warn
+          retention-days: 14
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: coverage-functional-2-logs
           path: |
             build/docker-*/cov-functional/*.log
             build/docker-*/cov-functional/test/tmp/test_runner_*/**/*.log
             build/docker-*/cov-functional/test/tmp/test_runner_*/**/std*/*
           retention-days: 14
   coverage-report:
-    # Merges the two coverage jobs' tracefiles (lcov 2.6 of the 22.04 image,
+    # Merges the tracefiles of coverage-unit and of both coverage-functional
+    # shards (lcov 2.6 of the 22.04 image,
     # with configure's LCOV_OPTS and the Makefile's GENHTML_OPTS), writes the
     # combined HTML report, and checks the files of
     # contrib/devtools/coverage-targets.json with coverage-check.py (after its
     # own tests). The table goes to the job summary; the job fails when the
     # check fails. Downloads the artifacts named in the coverage jobs'
     # outputs, which after a rerun are those of the attempt each job last ran
-    # in.
-    needs: [coverage-unit, coverage-functional]
+    # in, per job: a rerun of one shard is merged with the other shard's
+    # earlier upload.
+    needs: [coverage-unit, coverage-functional-1, coverage-functional-2]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -940,24 +1039,33 @@ jobs:
         env:
           UNIT_NAME: ${{ needs.coverage-unit.outputs.artifact-name }}
           UNIT_ID: ${{ needs.coverage-unit.outputs.artifact-id }}
-          FUNCTIONAL_NAME: ${{ needs.coverage-functional.outputs.artifact-name }}
-          FUNCTIONAL_ID: ${{ needs.coverage-functional.outputs.artifact-id }}
+          FUNCTIONAL_1_NAME: ${{ needs.coverage-functional-1.outputs.artifact-name }}
+          FUNCTIONAL_1_ID: ${{ needs.coverage-functional-1.outputs.artifact-id }}
+          FUNCTIONAL_2_NAME: ${{ needs.coverage-functional-2.outputs.artifact-name }}
+          FUNCTIONAL_2_ID: ${{ needs.coverage-functional-2.outputs.artifact-id }}
         run: |
           echo "coverage-unit: artifact '$UNIT_NAME', id '$UNIT_ID'"
-          echo "coverage-functional: artifact '$FUNCTIONAL_NAME', id '$FUNCTIONAL_ID'"
+          echo "coverage-functional-1: artifact '$FUNCTIONAL_1_NAME', id '$FUNCTIONAL_1_ID'"
+          echo "coverage-functional-2: artifact '$FUNCTIONAL_2_NAME', id '$FUNCTIONAL_2_ID'"
           # An empty id means the upload failed or found no files.
-          if [ -z "$UNIT_NAME" ] || [ -z "$UNIT_ID" ] || [ -z "$FUNCTIONAL_NAME" ] || [ -z "$FUNCTIONAL_ID" ]; then
-            echo "::error::A coverage job uploaded no coverage artifact; nothing to merge."
-            exit 1
-          fi
+          for v in "$UNIT_NAME" "$UNIT_ID" "$FUNCTIONAL_1_NAME" "$FUNCTIONAL_1_ID" "$FUNCTIONAL_2_NAME" "$FUNCTIONAL_2_ID"; do
+            if [ -z "$v" ]; then
+              echo "::error::A coverage job uploaded no coverage artifact; nothing to merge."
+              exit 1
+            fi
+          done
       - uses: actions/download-artifact@v7
         with:
           name: ${{ needs.coverage-unit.outputs.artifact-name }}
           path: coverage/unit
       - uses: actions/download-artifact@v7
         with:
-          name: ${{ needs.coverage-functional.outputs.artifact-name }}
-          path: coverage/functional
+          name: ${{ needs.coverage-functional-1.outputs.artifact-name }}
+          path: coverage/functional-1
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.coverage-functional-2.outputs.artifact-name }}
+          path: coverage/functional-2
       - name: merge, report and check
         timeout-minutes: 15
         env:
@@ -970,11 +1078,13 @@ jobs:
             # LCOV_OPTS of configure.ac and GENHTML_OPTS of Makefile.am; keep them in step.
             lcov_opts=(--config-file /src/contrib/devtools/coverage-lcovrc)
             lcov "${lcov_opts[@]}" -q -a coverage/unit/test_bitcoin_coverage.info \
-              -a coverage/functional/functional_test_coverage.info -o coverage/total.info
+              -a coverage/functional-1/functional_test_coverage.info \
+              -a coverage/functional-2/functional_test_coverage.info -o coverage/total.info
             genhtml "${lcov_opts[@]}" --demangle-cpp -s -q coverage/total.info -o coverage/total
             python3 -I -B contrib/devtools/coverage-check.py --root /src \
               --unit coverage/unit/test_bitcoin_coverage.info --all coverage/total.info \
-              --functions coverage/unit/test_bitcoin_functions.json coverage/functional/functional_test_functions.json \
+              --functions coverage/unit/test_bitcoin_functions.json \
+                coverage/functional-1/functional_test_functions.json coverage/functional-2/functional_test_functions.json \
               --markdown coverage/summary.md' || status=$?
           if [ -f coverage/summary.md ]; then cat coverage/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
           exit "$status"
