@@ -42,9 +42,11 @@ host, build in the CI images.
 ./dev.sh container unit-tests                # build test_bitcoin and run all unit test suites
 ./dev.sh container functional-tests          # low-difficulty build, then all functional tests, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
-./dev.sh container unit-tests-asan           # all unit test suites under ASan, LSan and UBSan, as CI's unit-tests-asan job
+./dev.sh container unit-tests-asan           # all unit test suites under ASan, LSan and UBSan in one build (CI runs one leg per sanitizer)
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer, as CI's unit-tests-tsan job
 ./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan, LSan and UBSan, as CI's functional-tests-asan job
+SANITIZE=address ./dev.sh container unit-tests-asan      # one leg of CI's unit-tests-asan (address: ASan and LSan; undefined: UBSan)
+FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan (1/2 or 2/2)
 ```
 
 The build modes (`build`, `build-low-difficulty`, `windows`, `macos`) configure the source tree in place
@@ -79,7 +81,7 @@ variants.
 ./dev.sh ftest                      # the base functional tests (test/functional/, low-difficulty build build/func), 4 in parallel
 ./dev.sh ftest --extended           # the base and the three slow extended scripts
 ./dev.sh ftest feature_tokens.py    # selected functional tests
-./dev.sh asan                       # unit tests under AddressSanitizer, LeakSanitizer and UBSan, as CI's unit-tests-asan job
+./dev.sh asan                       # unit tests under AddressSanitizer, LeakSanitizer and UBSan, both sanitizers in one build (CI's unit-tests-asan job runs one leg per sanitizer)
 ./dev.sh all                        # build dev, unit, ftest and build release, with a summary
 ```
 

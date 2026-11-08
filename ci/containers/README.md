@@ -69,20 +69,25 @@ optional mode as its argument:
 | `build` (default) | Release build: depends, configure with glibc back-compat, make, `make install` into `/src/release-root` |
 | `build-low-difficulty` | The release build with `--enable-low-difficulty-for-development` (mainnet proof-of-work limits relaxed, for miner tests), then all unit test suites of its `src/test/test_bitcoin` in parallel (`contrib/devtools/run-unit-suites.sh`, logs in `/src/build/docker-<image>/build-low-difficulty/unit-test-logs`) |
 | `unit-tests` | Builds `test_bitcoin` and `bench_yacoin` (`--enable-bench`, mainnet consensus), runs all unit test suites in parallel (`contrib/devtools/run-unit-suites.sh`), then prints the CPU model and runs every benchmark once in a short mode (`bench_yacoin -time=0.01`); a failed benchmark fails the mode. See `doc/benchmarking.md` |
-| `unit-tests-asan` | `unit-tests` under AddressSanitizer, LeakSanitizer and UBSan, configured like `dev.sh`'s `asan` variant (`-fsanitize=address,undefined -fno-sanitize-recover=undefined`, `--with-asm=no`, mainnet consensus); the suites run with `ASAN_OPTIONS=detect_leaks=1`, `LSAN_OPTIONS=suppressions=/src/test/sanitizer_suppressions/lsan` and `UBSAN_OPTIONS=print_stacktrace=1`, so any report that is not suppressed fails its suite and the mode. The test cases listed in `/src/test/sanitizer_suppressions/asan-excluded-cases` are left out of every suite (`run-unit-suites.sh --exclude-cases`), as by `./dev.sh asan`. Ubuntu 22.04 image only; the others refuse it |
+| `unit-tests-asan` | `unit-tests` under AddressSanitizer, LeakSanitizer and UBSan, with the sanitizer flags of `dev.sh`'s `asan` variant (`-fsanitize=address,undefined -fno-sanitize-recover=undefined`, `--with-asm=no`, mainnet consensus) and `-g1` instead of `-g`: `-g1` keeps symbolized stack traces with file and line; the generated code is unchanged (objects compared after `objcopy --strip-debug`). `SANITIZE=address` builds with AddressSanitizer and LeakSanitizer only, `SANITIZE=undefined` with UBSan only (`-fsanitize=undefined -fno-sanitize-recover=undefined`); unset, with both; any other value stops the mode before the build. The suites run with `ASAN_OPTIONS=detect_leaks=1`, `LSAN_OPTIONS=suppressions=/src/test/sanitizer_suppressions/lsan` and `UBSAN_OPTIONS=print_stacktrace=1`, so any report that is not suppressed fails its suite and the mode. The test cases listed in `/src/test/sanitizer_suppressions/asan-excluded-cases` are left out of every suite (`run-unit-suites.sh --exclude-cases`), as by `./dev.sh asan`, whatever `SANITIZE` says. Ubuntu 22.04 image only; the others refuse it |
 | `unit-tests-tsan` | `unit-tests` under ThreadSanitizer (`-fsanitize=thread -fno-omit-frame-pointer`, mainnet consensus); the suites run with `TSAN_OPTIONS=suppressions=/src/test/sanitizer_suppressions/tsan:halt_on_error=0:second_deadlock_stack=1` and address randomisation off (`setarch -R`), so any report that is not suppressed fails its suite and the mode. Needs `docker run --security-opt seccomp=unconfined`, see below. Ubuntu 22.04 image only; the others refuse it |
 | `fuzz-corpus` | Builds the libFuzzer binary `src/test/fuzz/fuzz` with clang 14 (`--enable-fuzz --with-asm=no`, mainnet consensus) under AddressSanitizer, LeakSanitizer and UBSan (the flags of `unit-tests-asan`, and `-no-pie`: clang 14's AddressSanitizer runtime fails at random at start in a position-independent executable on current kernels), then runs every input of `/src/test/fuzz/corpus/<target>/` once through its target (`contrib/devtools/run-fuzz-corpus.py`, logs in `/src/build/docker-<image>/fuzz-corpus/fuzz-corpus-logs`) with `ASAN_OPTIONS=detect_leaks=1` and `UBSAN_OPTIONS=print_stacktrace=1`; any report fails the mode. It never fuzzes; see `doc/fuzzing.md`. Ubuntu 22.04 image only; the others refuse it |
-| `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`) |
-| `functional-tests-asan` | `functional-tests` under AddressSanitizer, LeakSanitizer and UBSan: the low-difficulty build with the flags of `unit-tests-asan`, and both sanitizer runtimes linked into `yacoind` and `yacoin-cli` (`-static-libasan -static-libubsan`; as two shared libraries, UBSan's reports would ignore `log_path`). The scripts run with the runtime options of `unit-tests-asan` plus `print_suppressions=0` and `handle_segv=0` (a segmentation fault ends the process with the signal, as in `functional-tests`), and the runner's `--sanitizer-logs`: every process a script starts writes its reports to `/src/build/docker-<image>/functional-tests-asan/sanitizer-logs/<script's test directory>.<executable>.<pid>` instead of its stderr. A script with a report fails and the runner prints the report with it, whatever the script's own outcome (also for a process whose stderr or exit status the script expects to differ, or that it kills); after the runner the mode prints every report file and fails if there is one. The scripts listed in `/src/test/sanitizer_suppressions/asan-excluded-scripts` are left out (`test_runner.py --exclude-file`). Ubuntu 22.04 image only; the others refuse it |
+| `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`). With `FTEST_SHARD=K/N` only shard K of N of the scripts (`test_runner.py --shard K/N`: the scripts whose position in the runner's list, counted from 0, modulo N is K-1) |
+| `functional-tests-asan` | `functional-tests` under AddressSanitizer, LeakSanitizer and UBSan (`FTEST_SHARD` as there): the low-difficulty build with the flags of `unit-tests-asan` (both sanitizers; `SANITIZE` does not apply), and both sanitizer runtimes linked into `yacoind` and `yacoin-cli` (`-static-libasan -static-libubsan`; as two shared libraries, UBSan's reports would ignore `log_path`). The scripts run with the runtime options of `unit-tests-asan` plus `print_suppressions=0` and `handle_segv=0` (a segmentation fault ends the process with the signal, as in `functional-tests`), and the runner's `--sanitizer-logs`: every process a script starts writes its reports to `/src/build/docker-<image>/functional-tests-asan/sanitizer-logs/<script's test directory>.<executable>.<pid>` instead of its stderr. A script with a report fails and the runner prints the report with it, whatever the script's own outcome (also for a process whose stderr or exit status the script expects to differ, or that it kills); after the runner the mode prints every report file and fails if there is one. The scripts listed in `/src/test/sanitizer_suppressions/asan-excluded-scripts` are left out (`test_runner.py --exclude-file`). Ubuntu 22.04 image only; the others refuse it |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.6 or newer, so it only works in the Ubuntu 22.04 image |
-| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. Needs lcov 2.6 or newer (Ubuntu 22.04 image only) |
+| `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. With `FTEST_SHARD=K/N` (passed to make) both runs take only shard K of N of the scripts. Needs lcov 2.6 or newer (Ubuntu 22.04 image only) |
 
 ```bash
 image=$(ci/containers/image-tag.sh ubuntu.22.04)    # pullable once CI on master has published it
 docker run -v /path/to/yacoin:/src "$image" unit-tests
 docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$image" cov-unit
 docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$image" cov-functional
+docker run -v /path/to/yacoin:/src -e SANITIZE=undefined "$image" unit-tests-asan    # one leg of CI's unit-tests-asan
+docker run -v /path/to/yacoin:/src -e FTEST_SHARD=2/2 "$image" functional-tests-asan  # one shard of CI's functional-tests-asan
 ```
+
+`run.sh` and `./dev.sh container` pass `SANITIZE` and `FTEST_SHARD` on to the container, e.g.
+`FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan`.
 
 - The test modes build out of tree in
   `/src/build/docker-<image>/<mode>`, which is recreated on every run, and
@@ -178,26 +183,33 @@ and that every `docker run` in the workflow runs a tagged image of this director
 The unit tests run in four jobs: `unit-tests` on the mainnet build, `build-ubuntu-1604-low-difficulty` (the `build-low-difficulty`
 mode) on the low-difficulty build, so a test that only passes with the mainnet parameters fails in CI, and `unit-tests-asan` and
 `unit-tests-tsan` (the modes of the same names of the Ubuntu 22.04 image) on the mainnet build, under AddressSanitizer, LeakSanitizer
-and UBSan and under ThreadSanitizer. Each uploads its unit test logs when it fails (`unit-test-logs`, `unit-test-logs-low-difficulty`,
-`unit-test-logs-asan`, `unit-test-logs-tsan`, kept 14 days).
+and UBSan and under ThreadSanitizer. `unit-tests-asan` runs as two legs of a matrix, one per sanitizer (`SANITIZE=address`:
+AddressSanitizer with LeakSanitizer; `SANITIZE=undefined`: UBSan); each builds `test_bitcoin` with its sanitizer only and runs every
+suite. Both legs read the same left-out lists, which are unchanged. Each job uploads its unit test logs when it fails (`unit-test-logs`,
+`unit-test-logs-low-difficulty`, `unit-test-logs-asan-<sanitizer>`, `unit-test-logs-tsan`, kept 14 days).
 
 The functional tests run in two jobs on the low-difficulty build: `functional-tests`, and `functional-tests-asan` (the mode of the same
-name) under AddressSanitizer, LeakSanitizer and UBSan. Each uploads the logs of its failed scripts when it fails
-(`functional-test-logs`, `functional-test-logs-asan`; the latter also holds the sanitizer report files, kept 14 days).
-`test-image-tag.sh` also checks that the sanitizer jobs (`unit-tests-asan`, `unit-tests-tsan`, `functional-tests-asan`) run their
-modes with ccache off, that `functional-tests-asan` restores the `functional-tests` cache and saves none, and that only the
-`unit-tests-tsan` container runs without the seccomp filter.
+name) under AddressSanitizer, LeakSanitizer and UBSan. `functional-tests-asan` runs as two legs of a matrix, each building `yacoind`
+and `yacoin-cli` and running one shard of the scripts (`FTEST_SHARD=<leg>/<number of legs>`); a script's shard follows from its
+position in the runner's list, so the legs together run every script once and a new script needs no workflow change. Each job uploads
+the logs of its failed scripts when it fails (`functional-test-logs`, `functional-test-logs-asan-<shard>`; the latter also holds the
+sanitizer report files, kept 14 days). `test-image-tag.sh` also checks that the sanitizer jobs (`unit-tests-asan`, `unit-tests-tsan`,
+`functional-tests-asan`) run their modes with ccache off, the legs and shards above, that `functional-tests-asan` restores the
+`functional-tests` cache and saves none, and that only the `unit-tests-tsan` container runs without the seccomp filter.
 
 The `fuzz-corpus` job runs the mode of the same name of the Ubuntu 22.04 image: every input of the fuzz corpus once through its target
 under AddressSanitizer, LeakSanitizer and UBSan. It replays the committed corpus only and never fuzzes, and uploads its logs when it
 fails (`fuzz-corpus-logs`, kept 14 days). `test-image-tag.sh` checks that it runs with ccache off, restores the `functional-tests` cache
-and saves none, and that the workflow has 14 jobs.
+and saves none, and that the workflow has 15 jobs.
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache, one per job kind and image
 (`release-<image>-…`, `low-difficulty-<image>-…`, `unit-tests-<image>-…`, `functional-tests-<image>-…`, keyed by the depends
 definitions). Only pushes to `master` save them; the release jobs (including `build-ubuntu-1604-low-difficulty`) build from scratch there.
 Other runs restore the newest matching cache; the low-difficulty job falls back to the 16.04 release cache if it has none of its own.
-The coverage jobs (`coverage-unit`, `coverage-functional`) and the sanitizer jobs (`unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`,
-`functional-tests-asan`) restore the
+The coverage jobs (`coverage-unit`, `coverage-functional-1`, `coverage-functional-2`) and the sanitizer jobs (`unit-tests-asan`,
+`unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`), every leg included, restore the
 `functional-tests-<image>-…` cache for their depends packages (the same image, packages and prefix) and never save one; they build
-with ccache off, since their `-O0` or sanitizer objects never match the cached ones. `coverage-report` merges their tracefiles and runs `contrib/devtools/coverage-check.py`.
+with ccache off, since their `-O0` or sanitizer objects never match the cached ones. `coverage-functional-1` and `-2` run shard 1/2 and
+2/2 of the functional tests (`FTEST_SHARD`), each with its own artifact per attempt and its own outputs. `coverage-report` downloads
+the artifact of the attempt each coverage job last ran in, merges the unit tracefile with both shards' tracefiles, and runs
+`contrib/devtools/coverage-check.py` with every function extents file.
