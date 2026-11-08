@@ -221,22 +221,34 @@ for name in fuzz-corpus functional-tests-asan unit-tests-asan coverage-functiona
         grep -q 'CACHE_KEY=functional-tests-\$IMAGE-' <<< "$job"
     check "${wf#"$ROOT"/}: the $name job saves no cache" bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$job"
 done
+# passes_var <var> <mode> <job text>: the job's docker run of <mode>, joined
+# across its continuation lines, passes <var> to the container (-e <var>).
+passes_var() {
+    local joined_job
+    joined_job=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' <<< "$3")
+    grep -qE '^[[:space:]]*docker run .* -e '"$1"'( | .* )"\$IMAGE_TAG"[[:space:]]+'"$2"'[[:space:]]*$' <<< "$joined_job"
+}
 # unit-tests-asan: a leg per sanitizer, which the mode gets as SANITIZE.
 job=$(job_text unit-tests-asan)
 check "${wf#"$ROOT"/}: unit-tests-asan has the legs address and undefined" \
     grep -qx ' *sanitize: \[address, undefined\]' <<< "$job"
 check "${wf#"$ROOT"/}: unit-tests-asan passes the leg's SANITIZE" \
     grep -qx ' *SANITIZE: \${{ matrix.sanitize }}' <<< "$job"
+check "${wf#"$ROOT"/}: unit-tests-asan passes SANITIZE to the container" passes_var SANITIZE unit-tests-asan "$job"
 # functional-tests-asan: shard K of the legs' number, as FTEST_SHARD.
 job=$(job_text functional-tests-asan)
 check "${wf#"$ROOT"/}: functional-tests-asan has a leg per shard" grep -qx ' *shard: \[1, 2\]' <<< "$job"
 check "${wf#"$ROOT"/}: functional-tests-asan passes the leg's FTEST_SHARD" \
     grep -qx ' *FTEST_SHARD: \${{ matrix.shard }}/\${{ strategy.job-total }}' <<< "$job"
+check "${wf#"$ROOT"/}: functional-tests-asan passes FTEST_SHARD to the container" \
+    passes_var FTEST_SHARD functional-tests-asan "$job"
 # coverage-functional-<k>: shard k of 2, each with its own artifact; the
 # report needs and merges both.
 for k in 1 2; do
     job=$(job_text "coverage-functional-$k")
     check "${wf#"$ROOT"/}: coverage-functional-$k runs shard $k/2" grep -qx " *FTEST_SHARD: $k/2" <<< "$job"
+    check "${wf#"$ROOT"/}: coverage-functional-$k passes FTEST_SHARD to the container" \
+        passes_var FTEST_SHARD cov-functional "$job"
     check "${wf#"$ROOT"/}: coverage-functional-$k names its artifact per shard and attempt" \
         grep -qx " *COVERAGE_ARTIFACT: coverage-functional-$k-\\\${{ github.run_attempt }}" <<< "$job"
 done
