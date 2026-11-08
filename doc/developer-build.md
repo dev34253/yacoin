@@ -69,12 +69,14 @@ with this checkout mounted:
 ./dev.sh container unit-tests-asan           # all unit test suites under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
 ./dev.sh container fuzz-corpus               # the fuzz binary (clang), every input of the fuzz corpus once (doc/fuzzing.md)
+./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `cov-unit` and `cov-functional`; `windows` and
+`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`
+and `cov-functional`; `windows` and
 `macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
@@ -92,7 +94,7 @@ Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of t
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
 - `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (the parallel scripts of
-  `functional-tests` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count), `BUILDVERSION`,
+  `functional-tests`, `functional-tests-asan` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count), `BUILDVERSION`,
   `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own
   defaults for its host builds.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
@@ -257,8 +259,9 @@ suppressed fails its suite: AddressSanitizer and UBSan stop the process at
 the first report, LeakSanitizer reports at exit and ends the process with a
 failure status.
 
-`test/sanitizer_suppressions/lsan` holds the LeakSanitizer suppressions. Each
-entry names a library or one of its functions, never a test or a suite, with a
+`test/sanitizer_suppressions/lsan` holds the LeakSanitizer suppressions of the
+unit and the functional test runs. Each entry names a library or one of its
+functions, or one function of the node, never a test or a suite, with a
 one-line reason above it; a leak in a test is fixed in the test.
 
 `test/sanitizer_suppressions/asan-excluded-cases` lists the unit test cases
@@ -276,6 +279,34 @@ like the other jobs on every pull request commit and every push to `master`;
 `./dev.sh container unit-tests-asan` runs it locally, with ccache off
 (`CCACHE_DISABLE=1`), as CI does. Its logs are in
 `build/docker-ubuntu.22.04/unit-tests-asan/unit-test-logs/`.
+
+The functional tests run under the same sanitizers in the
+`functional-tests-asan` job; `./dev.sh container functional-tests-asan` runs
+it locally, with ccache off. The mode builds `yacoind` and `yacoin-cli` with
+the low-difficulty parameters, the same compiler flags and both sanitizer
+runtimes linked in (`-static-libasan -static-libubsan`), and runs every
+functional test script except those listed in
+`test/sanitizer_suppressions/asan-excluded-scripts` (below), the extended ones
+too, `FTEST_JOBS` at a time, with
+the runtime options above plus `print_suppressions=0` and `handle_segv=0` (a
+segmentation fault ends the process with the signal, as in the other
+functional runs). The runner's
+`--sanitizer-logs <dir>` option sets the sanitizers' `log_path` for each
+script, so every process a script starts (nodes, `yacoin-cli`, processes the
+script runs directly) writes its reports to
+`<dir>/<script's test directory>.<executable>.<pid>` instead of its stderr. A
+script with a report fails, whatever its own outcome, and the runner prints
+the report with it; the mode prints every report file at the end and fails if
+there is one. The files are in
+`build/docker-ubuntu.22.04/functional-tests-asan/sanitizer-logs/`, the data of
+failed scripts in the mode's `test/tmp/`.
+
+`test/sanitizer_suppressions/asan-excluded-scripts` lists the functional test
+scripts the mode leaves out: one script name (with `.py`) per line, with the
+reason in a comment above it (`#` starts a comment). The runner's
+`--exclude-file <list>` leaves them out; the other functional test runs
+(`functional-tests`, `coverage-functional`) run them as usual. A listed name
+that is not a test script of the runner fails the run.
 
 ### ThreadSanitizer
 

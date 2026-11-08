@@ -16,6 +16,7 @@ import argparse
 from collections import deque
 import configparser
 import datetime
+import glob
 import os
 import time
 import shutil
@@ -199,6 +200,11 @@ EXTENDED_SCRIPTS = [
 # Place EXTENDED_SCRIPTS first since it has the 3 longest running tests
 ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS
 
+# The options of the sanitizer runtimes (AddressSanitizer with LeakSanitizer,
+# UBSan). With log_path=<prefix> a process writes its reports to
+# <prefix>.<exe>.<pid> (log_exe_name=1) instead of its stderr.
+SANITIZER_OPTIONS_VARS = ("ASAN_OPTIONS", "LSAN_OPTIONS", "UBSAN_OPTIONS")
+
 NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but are not test scripts.
     "combine_logs.py",
@@ -227,6 +233,8 @@ def main():
     parser.add_argument('--tmpdirprefix', '-t', default=tempfile.gettempdir(), help="Root directory for datadirs")
     parser.add_argument('--failfast', action='store_true', help='stop execution after the first test failure')
     parser.add_argument('--filter', help='filter scripts to run by regular expression')
+    parser.add_argument('--exclude-file', metavar='FILE', help='leave out the scripts listed in FILE: one script name (with .py) per line, "#" starts a comment, blank lines are ignored. A listed name that is not a test script of this runner fails the run')
+    parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty')
 
     args, unknown_args = parser.parse_known_args()
     if not args.ansi:
@@ -305,6 +313,14 @@ def main():
             if not exclude_list:
                 print("{}WARNING!{} Test '{}' not found in current test list.".format(BOLD[1], BOLD[0], exclude_test))
 
+    # Remove the scripts listed in the exclude file.
+    if args.exclude_file:
+        excluded = read_exclude_file(args.exclude_file)
+        left_out = [test for test in test_list if test.split()[0] in excluded]
+        test_list = [test for test in test_list if test not in left_out]
+        if left_out:
+            logging.info("Left out (listed in %s): %s" % (args.exclude_file, ", ".join(left_out)))
+
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
 
@@ -337,10 +353,61 @@ def main():
         failfast=args.failfast,
         runs_ci=args.ci,
         use_term_control=args.ansi,
+        sanitizer_logs=args.sanitizer_logs,
     )
 
-def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=False, args=None, combined_logs_len=0, failfast=False, runs_ci, use_term_control):
+def read_exclude_file(path):
+    """Return the script names listed in the file at path: one per line, "#"
+    starts a comment, blank lines are ignored. Each must be the file name of a
+    test script of ALL_SCRIPTS; otherwise, or if the file cannot be read, the
+    run stops with an error, so an entry cannot outlive its script unnoticed."""
+    def error(message):
+        print("%sERROR!%s %s" % (BOLD[1], BOLD[0], message))
+        sys.exit(1)
+    try:
+        with open(path, encoding="utf8") as f:
+            lines = f.read().splitlines()
+    except OSError as e:
+        error("Cannot read the list of scripts to leave out: %s" % e)
+    known = {test.split()[0] for test in ALL_SCRIPTS}
+    names = []
+    for number, line in enumerate(lines, 1):
+        name = line.split("#", 1)[0].strip()
+        if not name:
+            continue
+        if name not in known:
+            error("%s:%d: '%s' is not a test script of test_runner.py" % (path, number, name))
+        names.append(name)
+    return names
+
+def sanitizer_env(environ, log_prefix):
+    """Return a copy of environ in which the sanitizer runtimes write their
+    reports to <log_prefix>.<exe>.<pid>. The options are added after those
+    already set, so they win over a log_path there."""
+    env = dict(environ)
+    for var in SANITIZER_OPTIONS_VARS:
+        options = [env[var]] if env.get(var) else []
+        env[var] = ":".join(options + ["log_path=" + log_prefix, "log_exe_name=1"])
+    return env
+
+def read_sanitizer_reports(paths):
+    """Return the text of the sanitizer report files, each with its name."""
+    text = ""
+    for path in paths:
+        with open(path, encoding="utf8", errors="replace") as f:
+            text += "Sanitizer report {}:\n{}\n".format(path, f.read())
+    return text
+
+def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=False, args=None, combined_logs_len=0, failfast=False, runs_ci, use_term_control, sanitizer_logs=None):
     args = args or []
+
+    if sanitizer_logs:
+        # Test directory names repeat from run to run, so an old report would
+        # be taken for one of this run.
+        os.makedirs(sanitizer_logs, exist_ok=True)
+        if os.listdir(sanitizer_logs):
+            print("%sERROR!%s The sanitizer log directory %s is not empty." % (BOLD[1], BOLD[0], sanitizer_logs))
+            sys.exit(1)
 
     # Warn if bitcoind is already running
     # pidof might fail or return an empty string if bitcoind is not running
@@ -368,10 +435,13 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
 
     if len(test_list) > 1 and jobs > 1:
         # Populate cache
+        cache_env = sanitizer_env(os.environ, os.path.join(sanitizer_logs, "create_cache")) if sanitizer_logs else None
         try:
-            subprocess.check_output([sys.executable, tests_dir + 'create_cache.py'] + flags + ["--tmpdir=%s/cache" % tmpdir])
+            subprocess.check_output([sys.executable, tests_dir + 'create_cache.py'] + flags + ["--tmpdir=%s/cache" % tmpdir], env=cache_env)
         except subprocess.CalledProcessError as e:
             sys.stdout.buffer.write(e.output)
+            if sanitizer_logs:
+                print(read_sanitizer_reports(sorted(glob.glob(os.path.join(glob.escape(sanitizer_logs), "*")))))
             raise
 
     #Run Tests
@@ -383,6 +453,7 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
         flags=flags,
         timeout_duration=40 * 60 if runs_ci else float('inf'),  # in seconds
         use_term_control=use_term_control,
+        sanitizer_logs=sanitizer_logs,
     )
     start_time = time.time()
     test_results = []
@@ -419,6 +490,15 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
 
     print_results(test_results, max_len_name, (int(time.time() - start_time)))
 
+    # Reports no script was failed for: from the cache script, or from a
+    # process that reported after its script had ended.
+    stray_reports = []
+    if sanitizer_logs:
+        stray_reports = sorted(set(glob.glob(os.path.join(glob.escape(sanitizer_logs), "*"))) - job_queue.reported)
+        if stray_reports:
+            print("%sSanitizer reports of no test script:%s\n" % (BOLD[1], BOLD[0]))
+            print(read_sanitizer_reports(stray_reports))
+
     if coverage:
         coverage_passed = coverage.report_rpc_coverage()
 
@@ -431,7 +511,7 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
     if not os.listdir(tmpdir):
         os.rmdir(tmpdir)
 
-    all_passed = all(map(lambda test_result: test_result.was_successful, test_results)) and coverage_passed
+    all_passed = all(map(lambda test_result: test_result.was_successful, test_results)) and coverage_passed and not stray_reports
 
     # This will be a no-op unless failfast is True in which case there may be dangling
     # processes which need to be killed.
@@ -466,7 +546,7 @@ class TestHandler:
     Trigger the test scripts passed in via the list.
     """
 
-    def __init__(self, *, num_tests_parallel, tests_dir, tmpdir, test_list, flags, timeout_duration, use_term_control):
+    def __init__(self, *, num_tests_parallel, tests_dir, tmpdir, test_list, flags, timeout_duration, use_term_control, sanitizer_logs=None):
         assert num_tests_parallel >= 1
         self.num_jobs = num_tests_parallel
         self.tests_dir = tests_dir
@@ -477,6 +557,9 @@ class TestHandler:
         self.num_running = 0
         self.jobs = []
         self.use_term_control = use_term_control
+        self.sanitizer_logs = sanitizer_logs
+        # The sanitizer report files already shown with their scripts.
+        self.reported = set()
 
     def get_next(self):
         while self.num_running < self.num_jobs and self.test_list:
@@ -490,12 +573,17 @@ class TestHandler:
             test_argv = test.split()
             testdir = "{}/{}_{}".format(self.tmpdir, re.sub(".py$", "", test_argv[0]), portseed)
             tmpdir_arg = ["--tmpdir={}".format(testdir)]
+            env = None
+            if self.sanitizer_logs:
+                # Named like the test directory, which is unique in a run.
+                env = sanitizer_env(os.environ, os.path.join(self.sanitizer_logs, os.path.basename(testdir)))
             self.jobs.append((test,
                               time.time(),
                               subprocess.Popen([sys.executable, self.tests_dir + test_argv[0]] + test_argv[1:] + self.flags + portseed_arg + tmpdir_arg,
                                                universal_newlines=True,
                                                stdout=log_stdout,
-                                               stderr=log_stderr),
+                                               stderr=log_stderr,
+                                               env=env),
                               testdir,
                               log_stdout,
                               log_stderr))
@@ -526,6 +614,13 @@ class TestHandler:
                         status = "Skipped"
                     else:
                         status = "Failed"
+                    if self.sanitizer_logs:
+                        reports = sorted(glob.glob(os.path.join(glob.escape(self.sanitizer_logs), glob.escape(os.path.basename(testdir)) + ".*")))
+                        if reports:
+                            # Whatever the script's own outcome.
+                            status = "Failed"
+                            stderr += read_sanitizer_reports(reports)
+                            self.reported.update(reports)
                     self.num_running -= 1
                     self.jobs.remove(job)
                     if self.use_term_control:

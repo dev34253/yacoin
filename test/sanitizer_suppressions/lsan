@@ -1,7 +1,18 @@
-# LeakSanitizer suppressions of the unit tests, used by "./dev.sh asan" and
-# the unit-tests-asan mode of the CI images (LSAN_OPTIONS=suppressions=...).
-# Each entry names a library or one of its functions, never a test, with the
-# reason in the comment above it.
+# LeakSanitizer suppressions of the sanitizer runs: the unit tests ("./dev.sh
+# asan" and the unit-tests-asan mode of the CI images) and the functional
+# tests (the functional-tests-asan mode), through
+# LSAN_OPTIONS=suppressions=... Each entry names a library or one of its
+# functions, or one function of the node, never a test, with the reason in the
+# comment above it.
 
 # Berkeley DB, the wallet database library: memory from its allocator.
 leak:__os_malloc
+
+# Wallet loading at start-up (CWallet::CreateWalletFromFile).
+leak:CWallet::CreateWalletFromFile
+
+# The HTTP server's reply events (HTTPRequest::WriteReply).
+leak:HTTPRequest::WriteReply
+
+# libevent: the event of an HTTP reply (event_new, called by HTTPRequest::WriteReply).
+leak:event_new
