@@ -23,7 +23,8 @@
 #           seccomp option for unit-tests-tsan only and CCACHE_DISABLE=1 for
 #           the sanitizer modes (unit-tests-asan, unit-tests-tsan,
 #           fuzz-corpus, functional-tests-asan) only and passing SANITIZE
-#           and FTEST_SHARD on when set (stub docker), asan's
+#           and FTEST_SHARD on when set (stub docker), cov running every
+#           functional test script whatever FTEST_SHARD says, asan's
 #           sanitizer options (the suppression file, the caller's own options
 #           kept) and its list of test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
@@ -303,6 +304,15 @@ step_devsh() {
         [[ " $got " == *" -e $v "* ]] && pass "devsh: container passes $v when it is set: $got" ||
             fail "devsh: container does not pass $v: $got"
     done
+    # cov runs every functional test script, also with an FTEST_SHARD in the
+    # environment (the stub make records the arguments; configured build
+    # directories, so cov only runs make).
+    mkdir -p "$a/build/cov-unit" "$a/build/cov-func"; : > "$a/build/cov-unit/Makefile"; : > "$a/build/cov-func/Makefile"
+    rm -f "$log"
+    PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" FTEST_SHARD=1/2 "$a/dev.sh" cov > "$work/devsh/a.log" 2>&1 || true
+    got=$(grep -m1 ' cov-functional$' "$log" || echo "no make cov-functional")
+    [[ " $got " == *" FTEST_SHARD= "* ]] && pass "devsh: cov runs make cov-functional with FTEST_SHARD empty: ${got#start }" ||
+        fail "devsh: cov with FTEST_SHARD=1/2 in the environment runs: $got"
     # asan runs the suites with the tree's LeakSanitizer suppressions and its
     # default options, and keeps the caller's own (a configured build
     # directory, the stub make, and a runner that records its environment).
@@ -740,7 +750,7 @@ step_smoke() {
                 docker run --rm -v "$stub:/src" -e FTEST_JOBS=0 "$tag" "$mode"
             grep -q 'error: FTEST_JOBS' "$work/out.txt" || fail "smoke: $image: FTEST_JOBS=0 gave no 'error: FTEST_JOBS' message"
             local shard
-            for shard in 0/2 3/2 1/0 2 a/b; do
+            for shard in 0/2 3/2 1/0 2 a/b 01/2; do
                 make_runner_stub "$stub" "$tag" 0
                 expect_status 1 "smoke: $image: $mode rejects FTEST_SHARD=$shard" \
                     docker run --rm -v "$stub:/src" -e FTEST_SHARD="$shard" "$tag" "$mode"

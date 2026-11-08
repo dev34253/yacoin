@@ -100,7 +100,9 @@ and `cov-functional`; `windows` and
   `FTEST_SHARD` (the same modes: `K/N` runs only shard K of N of the scripts, as the sharded CI jobs do), `SANITIZE` (`unit-tests-asan`:
   `address` or `undefined` builds with that sanitizer only, as one CI leg; unset, both), `BUILDVERSION`,
   `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own
-  defaults for its host builds.
+  defaults for its host builds. Set `FTEST_SHARD` as a prefix of the one command, e.g.
+  `FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan`, not exported: `make cov-functional` reads it from the environment
+  too. `./dev.sh cov` always runs every script.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
   `--src <dir>` for another tree.
 - CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:
@@ -320,7 +322,7 @@ locally.
 scripts the mode leaves out: one script name (with `.py`) per line, with the
 reason in a comment above it (`#` starts a comment). The runner's
 `--exclude-file <list>` leaves them out; the other functional test runs
-(`functional-tests`, `coverage-functional`) run them as usual. A listed name
+(`functional-tests`, `coverage-functional-1` and `-2`) run them as usual. A listed name
 that is not a test script of the runner fails the run.
 
 ### ThreadSanitizer
@@ -418,7 +420,7 @@ cov` uses two coverage builds (`--enable-lcov`, `-O0 -g`):
 | Build | Runs | Make target |
 |---|---|---|
 | `build/cov-unit` | `test_bitcoin` (all unit tests) | `make cov-unit` |
-| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); `FTEST_SHARD=K/N` runs only shard K of N of them | `make cov-functional` |
+| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); `make cov-functional FTEST_SHARD=K/N` runs only shard K of N of them (`./dev.sh cov` runs all) | `make cov-functional` |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests

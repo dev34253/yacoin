@@ -337,7 +337,9 @@ cmd_cov() {
         "$BUILD_ROOT/cov-func/functional_test_functions.json"
     make -C "$BUILD_ROOT/cov-unit" -j"$JOBS" COV_JOBS="$JOBS" cov-unit || status=1
     # FTEST_JOBS, if set, replaces the Makefile's number of parallel scripts.
-    make -C "$BUILD_ROOT/cov-func" -j"$JOBS" COV_JOBS="$JOBS" ${FTEST_JOBS:+FTEST_JOBS="$FTEST_JOBS"} cov-functional || status=1
+    # Every script runs: an FTEST_SHARD in the environment does not reach make.
+    make -C "$BUILD_ROOT/cov-func" -j"$JOBS" COV_JOBS="$JOBS" ${FTEST_JOBS:+FTEST_JOBS="$FTEST_JOBS"} FTEST_SHARD= \
+        cov-functional || status=1
     # Use the lcov and genhtml settings configure and Makefile.am chose, so the
     # merged report matches the per-build reports. Read after make, which may
     # have regenerated the Makefile.
