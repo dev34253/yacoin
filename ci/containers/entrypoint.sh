@@ -17,12 +17,15 @@
 #                     then print the CPU model and run every benchmark once in
 #                     its short mode (bench_yacoin -time=0.01)
 #   unit-tests-asan   unit-tests under AddressSanitizer, LeakSanitizer and
-#                     UBSan (the flags of dev.sh's asan variant), with the
-#                     LeakSanitizer suppressions of
-#                     test/sanitizer_suppressions/lsan; any report fails
-#                     its suite. The test cases listed in
+#                     UBSan (the sanitizer flags of dev.sh's asan variant,
+#                     with -g1 instead of -g), with the LeakSanitizer
+#                     suppressions of test/sanitizer_suppressions/lsan; any
+#                     report fails its suite. SANITIZE=address builds with
+#                     AddressSanitizer and LeakSanitizer only,
+#                     SANITIZE=undefined with UBSan only; unset, with both.
+#                     The test cases listed in
 #                     test/sanitizer_suppressions/asan-excluded-cases are
-#                     left out. Ubuntu 22.04 image only
+#                     left out, with each choice. Ubuntu 22.04 image only
 #   unit-tests-tsan   unit-tests under ThreadSanitizer, with the suppressions
 #                     of test/sanitizer_suppressions/tsan; any report fails
 #                     its suite. The suites run with address randomisation
@@ -37,11 +40,14 @@
 #                     /src/build/docker-<image>/fuzz-corpus/fuzz-corpus-logs);
 #                     any report fails the mode. Ubuntu 22.04 image only
 #   functional-tests  low-difficulty build, then all functional test scripts,
-#                     the extended ones too, FTEST_JOBS in parallel
+#                     the extended ones too, FTEST_JOBS in parallel; with
+#                     FTEST_SHARD=K/N only shard K of N of them
+#                     (test_runner.py --shard)
 #   functional-tests-asan
 #                     functional-tests under AddressSanitizer, LeakSanitizer
 #                     and UBSan (the flags and runtime options of
-#                     unit-tests-asan); every process a script starts writes
+#                     unit-tests-asan with both sanitizers; FTEST_SHARD as in
+#                     functional-tests); every process a script starts writes
 #                     its reports to <builddir>/sanitizer-logs/<script's test
 #                     directory>.<executable>.<pid>. A script with a report
 #                     fails, and any report fails the mode, whatever the
@@ -52,7 +58,8 @@
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
 #                     needs lcov 2.6 or newer (Ubuntu 22.04 image only)
 #   cov-functional    low-difficulty coverage build and "make cov-functional"
-#                     (functional test scripts FTEST_JOBS in parallel); needs
+#                     (functional test scripts FTEST_JOBS in parallel; with
+#                     FTEST_SHARD=K/N only shard K of N of them); needs
 #                     lcov 2.6 or newer
 #
 # The test modes build out of tree in /src/build/docker-<image>/<mode>, which
@@ -65,7 +72,9 @@
 # cov-functional: functional test scripts in parallel, default 4: the CI
 # runners' vCPUs and the number the run times were measured with; a fixed
 # default, so a local run schedules the scripts as CI does whatever its CPU
-# count). SRC_DIR and CACHE_DIR override /src and /cache.
+# count), FTEST_SHARD (the same modes: K/N runs shard K of N of the scripts;
+# unset: all), SANITIZE (unit-tests-asan: address or undefined; unset: both).
+# SRC_DIR and CACHE_DIR override /src and /cache.
 set -euo pipefail
 
 MODE="${1:-build}"
@@ -106,6 +115,10 @@ case "$MODE" in
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
+if [[ -n "${FTEST_SHARD:-}" ]]; then
+    [[ "$FTEST_SHARD" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] <= BASH_REMATCH[2] )) ||
+        die "FTEST_SHARD must be K/N with 1 <= K <= N, not '$FTEST_SHARD'"
+fi
 
 cd "$SRC"
 echo "== yacoin-build ($IMAGE): $MODE in $SRC with $JOBS jobs =="
@@ -135,6 +148,8 @@ if [[ "$MODE" == unit-tests-asan ]]; then
     [[ "$IMAGE" == ubuntu.22.04 ]] || die "unit-tests-asan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
     [[ -f "$lsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/lsan"
     [[ -f "$asan_excluded_cases" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/asan-excluded-cases"
+    [[ "${SANITIZE:-}" =~ ^(|address|undefined)$ ]] ||
+        die "SANITIZE must be address, undefined or unset (both), not '$SANITIZE'"
 fi
 # test_runner.py fails after the build when it can't read its list of scripts
 # to leave out; the mode checks for it first.
@@ -150,6 +165,19 @@ if [[ "$MODE" == functional-tests-asan ]]; then
         grep -q -- "$option" <<< "$runner_src" ||
             die "this YaCoin tree's test/functional/test_runner.py has no $option option"
     done
+fi
+# Without them the runner would pass --shard on to every script, and make
+# would run every script in each shard.
+if [[ -n "${FTEST_SHARD:-}" ]]; then
+    case "$MODE" in
+        functional-tests|functional-tests-asan)
+            runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
+            grep -q -- --shard <<< "$runner_src" ||
+                die "this YaCoin tree's test/functional/test_runner.py has no --shard option (FTEST_SHARD)" ;;
+        cov-functional)
+            grep -q FTEST_SHARD Makefile.am ||
+                die "this YaCoin tree's cov-functional target takes no FTEST_SHARD" ;;
+    esac
 fi
 # ThreadSanitizer fails every run when its suppression file can't be read.
 tsan_suppressions="$SRC/test/sanitizer_suppressions/tsan"
@@ -283,10 +311,17 @@ else
     case "$MODE" in
         unit-tests) flags+=(--enable-bench "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         unit-tests-asan|functional-tests-asan)
-            # As dev.sh's asan variant: secp256k1's x86_64 field assembly
-            # needs more registers than are left under ASan, so it is built
-            # in plain C.
-            san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
+            # The sanitizer flags of dev.sh's asan variant. secp256k1's
+            # x86_64 field assembly needs more registers than are left under
+            # ASan, so it is built in plain C, with either sanitizer. -g1
+            # keeps symbolized stack traces with file and line; the generated
+            # code is unchanged (objects compared after objcopy
+            # --strip-debug).
+            case "$MODE:${SANITIZE:-}" in
+                unit-tests-asan:address) san="-fsanitize=address -fno-omit-frame-pointer" ;;
+                unit-tests-asan:undefined) san="-fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" ;;
+                *) san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" ;;
+            esac
             ldflags="$san"
             if [[ "$MODE" == functional-tests-asan ]]; then
                 # The per-script report files (see below) need every kind of
@@ -297,7 +332,7 @@ else
                 ldflags+=" -static-libasan -static-libubsan"
                 flags+=(--enable-low-difficulty-for-development)
             fi
-            flags+=(--with-asm=no "CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=$ldflags") ;;
+            flags+=(--with-asm=no "CXXFLAGS=-O1 -g1 $san" "CFLAGS=-O1 -g1 $san" "LDFLAGS=$ldflags") ;;
         unit-tests-tsan)
             san="-fsanitize=thread -fno-omit-frame-pointer"
             flags+=("CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=-fsanitize=thread") ;;
@@ -393,6 +428,7 @@ else
                 sanitizer_logs="$builddir/sanitizer-logs"
                 runner_opts=(--sanitizer-logs="$sanitizer_logs" --exclude-file="$asan_excluded_scripts")
             fi
+            [[ -z "${FTEST_SHARD:-}" ]] || runner_opts+=(--shard="$FTEST_SHARD")
             status=0
             "$builddir/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --extended --tmpdirprefix="$TMPDIR" \
                 ${runner_opts[@]+"${runner_opts[@]}"} || status=$?
@@ -416,7 +452,8 @@ else
             echo "== Coverage report: $builddir/test_bitcoin.coverage/index.html =="
             ;;
         cov-functional)
-            make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" FTEST_JOBS="${FTEST_JOBS:-4}" cov-functional
+            make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" FTEST_JOBS="${FTEST_JOBS:-4}" FTEST_SHARD="${FTEST_SHARD:-}" \
+                cov-functional
             echo "== Coverage report: $builddir/functional_test.coverage/index.html =="
             ;;
     esac

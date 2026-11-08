@@ -22,7 +22,8 @@
 #           container passing the mode to run.sh, and run.sh adding the
 #           seccomp option for unit-tests-tsan only and CCACHE_DISABLE=1 for
 #           the sanitizer modes (unit-tests-asan, unit-tests-tsan,
-#           fuzz-corpus, functional-tests-asan) only (stub docker), asan's
+#           fuzz-corpus, functional-tests-asan) only and passing SANITIZE
+#           and FTEST_SHARD on when set (stub docker), asan's
 #           sanitizer options (the suppression file, the caller's own options
 #           kept) and its list of test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
@@ -32,12 +33,16 @@
 #           (build, build-low-difficulty), the sanitizer modes
 #           (unit-tests-asan, unit-tests-tsan, functional-tests-asan) and the
 #           coverage modes (cov-unit, cov-functional; 22.04 image) configure
-#           with their flags, build-low-difficulty, unit-tests and the unit
+#           with their flags (unit-tests-asan also with SANITIZE=address and
+#           undefined, and rejects other values; -g1 in unit-tests-asan and
+#           functional-tests-asan), build-low-difficulty, unit-tests and the unit
 #           sanitizer modes run the unit test suites of their build with JOBS
 #           (the sanitizer modes with their runtime options and nothing else
 #           does, unit-tests-tsan with address randomisation off) and fail when
 #           one fails or the build made no test_bitcoin, unit-tests-asan
-#           leaves the test cases of its list out (the other modes do not),
+#           leaves the test cases of its list out (the other modes do not;
+#           with SANITIZE=address and undefined the same suites, list and
+#           options),
 #           unit-tests then runs bench_yacoin -time=0.01 (the others do not)
 #           and fails when it fails or the build made no bench_yacoin,
 #           the sanitizer modes stop on a tree without their suppression
@@ -52,7 +57,10 @@
 #           runtime options, fails when the replay fails or the build made no
 #           fuzz binary and stops on a tree without a corpus, the functional
 #           modes build yacoind and yacoin-cli only and run the test runner
-#           with --extended and FTEST_JOBS and fail when it fails, and
+#           with --extended and FTEST_JOBS (with FTEST_SHARD also --shard;
+#           a malformed FTEST_SHARD or a runner without --shard stops them
+#           before the build; cov-functional passes FTEST_SHARD to make and
+#           stops on a target without it) and fail when it fails, and
 #           functional-tests-asan runs it with the sanitizers' options, a
 #           directory for their reports and its list of scripts left out and
 #           fails on a report there even when every script passed
@@ -280,6 +288,21 @@ step_devsh() {
             fail "devsh: container $mode runs: $got"
         fi
     done
+    # run.sh passes SANITIZE and FTEST_SHARD on to the container when set.
+    local v
+    for v in SANITIZE FTEST_SHARD; do
+        rm -f "$dlog"
+        PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" env -u SANITIZE -u FTEST_SHARD "$a/dev.sh" container \
+            --no-image-build --no-cache unit-tests-asan > "$work/devsh/a.log" 2>&1 || fail "devsh: container without $v"
+        got=$(grep -m1 -- '--cidfile' "$dlog" 2>/dev/null || echo "no docker run")
+        [[ " $got " != *" -e $v "* ]] || fail "devsh: container passes $v although it is not set: $got"
+        rm -f "$dlog"
+        PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" env "$v=1/2" "$a/dev.sh" container \
+            --no-image-build --no-cache unit-tests-asan > "$work/devsh/a.log" 2>&1 || fail "devsh: container with $v"
+        got=$(grep -m1 -- '--cidfile' "$dlog" 2>/dev/null || echo "no docker run")
+        [[ " $got " == *" -e $v "* ]] && pass "devsh: container passes $v when it is set: $got" ||
+            fail "devsh: container does not pass $v: $got"
+    done
     # asan runs the suites with the tree's LeakSanitizer suppressions and its
     # default options, and keeps the caller's own (a configured build
     # directory, the stub make, and a runner that records its environment).
@@ -433,28 +456,46 @@ step_smoke() {
             done
         fi
         if [[ "$image" == ubuntu.22.04 ]]; then
-            # unit-tests-asan configures out of tree like dev.sh's asan
-            # variant: the sanitizer flags, secp256k1 without assembly,
-            # mainnet consensus.
+            # unit-tests-asan configures out of tree with the sanitizer
+            # flags of dev.sh's asan variant and -g1, secp256k1 without
+            # assembly, mainnet consensus; SANITIZE=address or undefined
+            # builds with that sanitizer only (unset: both).
             local san="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined"
-            make_configure_stub "$stub" "$tag"
-            docker run --rm -v "$stub:/src" "$tag" unit-tests-asan > "$work/out.txt" 2>&1 || true
-            args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
-            if [[ " $args " == *" --with-asm=no "* && " $args " == *" CXXFLAGS=-O1 -g $san "* &&
-                  " $args " == *" CFLAGS=-O1 -g $san "* && " $args " == *" LDFLAGS=$san "* &&
-                  " $args " == *" --without-gui --disable-man --enable-ccache "* &&
-                  " $args " != *" --enable-low-difficulty-for-development "* ]]; then
-                pass "smoke: $image: unit-tests-asan configures with: $args"
-            else
-                tail -n 5 "$work/out.txt"; fail "smoke: $image: unit-tests-asan configure arguments: $args"
-            fi
-            # functional-tests-asan: the same flags on the low-difficulty
+            local leg legsan
+            for leg in "" address undefined; do
+                case $leg in
+                    address) legsan="-fsanitize=address -fno-omit-frame-pointer" ;;
+                    undefined) legsan="-fsanitize=undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" ;;
+                    *) legsan="$san" ;;
+                esac
+                make_configure_stub "$stub" "$tag"
+                docker run --rm -v "$stub:/src" ${leg:+-e SANITIZE="$leg"} "$tag" unit-tests-asan > "$work/out.txt" 2>&1 || true
+                args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+                if [[ " $args " == *" --with-asm=no "* && " $args " == *" CXXFLAGS=-O1 -g1 $legsan "* &&
+                      " $args " == *" CFLAGS=-O1 -g1 $legsan "* && " $args " == *" LDFLAGS=$legsan "* &&
+                      " $args " == *" --without-gui --disable-man --enable-ccache "* &&
+                      " $args " != *" --enable-low-difficulty-for-development "* ]]; then
+                    pass "smoke: $image: unit-tests-asan (SANITIZE=${leg:-unset}) configures with: $args"
+                else
+                    tail -n 5 "$work/out.txt"; fail "smoke: $image: unit-tests-asan (SANITIZE=${leg:-unset}) configure arguments: $args"
+                fi
+            done
+            # Any other value stops the mode before the build.
+            for leg in thread address,undefined; do
+                make_configure_stub "$stub" "$tag"
+                expect_status 1 "smoke: $image: unit-tests-asan rejects SANITIZE=$leg" \
+                    docker run --rm -v "$stub:/src" -e SANITIZE="$leg" "$tag" unit-tests-asan
+                grep -q 'error: SANITIZE' "$work/out.txt" || fail "smoke: $image: SANITIZE=$leg gave no 'error: SANITIZE' message"
+                [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-asan configured with SANITIZE=$leg"
+            done
+            # functional-tests-asan: the flags of unit-tests-asan (both
+            # sanitizers; SANITIZE does not apply) on the low-difficulty
             # build, with both sanitizer runtimes linked into the binaries.
             make_configure_stub "$stub" "$tag"
-            docker run --rm -v "$stub:/src" "$tag" functional-tests-asan > "$work/out.txt" 2>&1 || true
+            docker run --rm -v "$stub:/src" -e SANITIZE=address "$tag" functional-tests-asan > "$work/out.txt" 2>&1 || true
             args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
-            if [[ " $args " == *" --with-asm=no "* && " $args " == *" CXXFLAGS=-O1 -g $san "* &&
-                  " $args " == *" CFLAGS=-O1 -g $san "* && " $args " == *" LDFLAGS=$san -static-libasan -static-libubsan "* &&
+            if [[ " $args " == *" --with-asm=no "* && " $args " == *" CXXFLAGS=-O1 -g1 $san "* &&
+                  " $args " == *" CFLAGS=-O1 -g1 $san "* && " $args " == *" LDFLAGS=$san -static-libasan -static-libubsan "* &&
                   " $args " == *" --without-gui --disable-man --enable-ccache "* &&
                   " $args " == *" --enable-low-difficulty-for-development "* ]]; then
                 pass "smoke: $image: functional-tests-asan configures with: $args"
@@ -555,6 +596,27 @@ step_smoke() {
                 fail "smoke: $image: $mode without test_bitcoin gave no 'error: ' message"
             [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: $mode ran run-unit-suites.sh without test_bitcoin"
         done
+        # Each sanitizer of unit-tests-asan alone runs the same suites with
+        # the same list of test cases left out and the same runtime options.
+        if [[ "$image" == ubuntu.22.04 ]]; then
+            want_args="--exclude-cases /src/test/sanitizer_suppressions/asan-excluded-cases"
+            want_args+=" /src/build/docker-$image/unit-tests-asan/src/test/test_bitcoin /src/build/docker-$image/unit-tests-asan/unit-test-logs 3"
+            want_env="ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=suppressions=/src/test/sanitizer_suppressions/lsan"
+            want_env+=" UBSAN_OPTIONS=print_stacktrace=1 TSAN_OPTIONS="
+            for leg in address undefined; do
+                make_tests_stub "$stub" "$tag" 0
+                docker run --rm -v "$stub:/src" -e JOBS=3 -e SANITIZE="$leg" "$tag" unit-tests-asan > "$work/out.txt" 2>&1 &&
+                    status=0 || status=$?
+                args=$(cat "$stub/suites-args" 2>/dev/null || echo "run-unit-suites.sh did not run")
+                env_got=$(cat "$stub/suites-env" 2>/dev/null || echo "run-unit-suites.sh did not run")
+                if [[ $status == 0 && "$args" == "$want_args" && "$env_got" == "$want_env" ]]; then
+                    pass "smoke: $image: unit-tests-asan (SANITIZE=$leg) runs: run-unit-suites.sh $args, with: $env_got"
+                else
+                    tail -n 5 "$work/out.txt"
+                    fail "smoke: $image: unit-tests-asan (SANITIZE=$leg, exit status $status) runs: run-unit-suites.sh $args, with: $env_got"
+                fi
+            done
+        fi
         # Without the suppression file every suite would fail on reading it;
         # the mode stops before the build instead.
         if [[ "$image" == ubuntu.22.04 ]]; then
@@ -637,7 +699,7 @@ step_smoke() {
                 [[ " $args " != *" --sanitizer-logs=$logs "* ]] || has_opts=$(( has_opts + 1 ))
                 [[ " $args " != *" --exclude-file=$excluded "* ]] || has_opts=$(( has_opts + 2 ))
                 if [[ $status == 0 && " $args " == *" -j $want "* && " $args " == *" --extended "* &&
-                      $goals == "yacoind yacoin-cli " && $want_opts == "$has_opts" ]]; then
+                      " $args " != *" --shard"* && $goals == "yacoind yacoin-cli " && $want_opts == "$has_opts" ]]; then
                     pass "smoke: $image: $mode (FTEST_JOBS=${ftest_jobs:-unset}) builds $goals and runs: test_runner.py $args"
                 else
                     tail -n 5 "$work/out.txt"
@@ -654,6 +716,21 @@ step_smoke() {
             env_got=$(cat "$stub/runner-env" 2>/dev/null || echo "test_runner.py did not run")
             [[ "$env_got" == "$want_env" ]] && pass "smoke: $image: $mode runs the scripts with: $env_got" ||
                 fail "smoke: $image: $mode runs the scripts with: $env_got (want $want_env)"
+            # FTEST_SHARD=K/N runs shard K of N of the scripts.
+            make_runner_stub "$stub" "$tag" 0
+            docker run --rm -v "$stub:/src" -e FTEST_SHARD=2/3 "$tag" "$mode" > "$work/out.txt" 2>&1 && status=0 || status=$?
+            args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
+            [[ $status == 0 && " $args " == *" --shard=2/3 "* && " $args " == *" --extended "* ]] &&
+                pass "smoke: $image: $mode (FTEST_SHARD=2/3) runs: test_runner.py $args" ||
+                { tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode (FTEST_SHARD=2/3, exit status $status) runs: test_runner.py $args"; }
+            # A runner without the option would pass it on to every script.
+            make_runner_stub "$stub" "$tag" 0
+            printf '#!/bin/sh\n# --sanitizer-logs --exclude-file\nexit 0\n' > "$stub/test/functional/test_runner.py"
+            expect_status 1 "smoke: $image: $mode with FTEST_SHARD stops on a runner without --shard" \
+                docker run --rm -v "$stub:/src" -e FTEST_SHARD=1/2 "$tag" "$mode"
+            grep -q -- 'error: .*--shard' "$work/out.txt" ||
+                fail "smoke: $image: $mode with a runner without --shard gave no 'error: ' message naming it"
+            [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: $mode built with a runner without --shard"
             # Exit status 3 is the runner's own; the entrypoint's errors exit 1.
             make_runner_stub "$stub" "$tag" 3
             expect_status 3 "smoke: $image: $mode fails when a script fails" \
@@ -662,6 +739,15 @@ step_smoke() {
             expect_status 1 "smoke: $image: $mode rejects FTEST_JOBS=0" \
                 docker run --rm -v "$stub:/src" -e FTEST_JOBS=0 "$tag" "$mode"
             grep -q 'error: FTEST_JOBS' "$work/out.txt" || fail "smoke: $image: FTEST_JOBS=0 gave no 'error: FTEST_JOBS' message"
+            local shard
+            for shard in 0/2 3/2 1/0 2 a/b; do
+                make_runner_stub "$stub" "$tag" 0
+                expect_status 1 "smoke: $image: $mode rejects FTEST_SHARD=$shard" \
+                    docker run --rm -v "$stub:/src" -e FTEST_SHARD="$shard" "$tag" "$mode"
+                grep -q 'error: FTEST_SHARD' "$work/out.txt" ||
+                    fail "smoke: $image: FTEST_SHARD=$shard gave no 'error: FTEST_SHARD' message"
+                [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: $mode built with FTEST_SHARD=$shard"
+            done
         done
         if [[ "$image" == ubuntu.22.04 ]]; then
             # A sanitizer report fails functional-tests-asan although every
@@ -704,6 +790,26 @@ step_smoke() {
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
             fi
         done
+        # cov-functional passes FTEST_SHARD (empty when unset) and
+        # FTEST_JOBS to "make cov-functional"; with FTEST_SHARD set it stops
+        # before the build on a tree whose target does not take it.
+        local shard got
+        for shard in "" 2/3; do
+            make_cov_stub "$stub" "$tag"
+            docker run --rm -v "$stub:/src" ${shard:+-e FTEST_SHARD="$shard"} "$tag" cov-functional \
+                > "$work/out.txt" 2>&1 && status=0 || status=$?
+            got=$(cat "$stub/make-vars" 2>/dev/null || echo "make cov-functional did not run")
+            [[ $status == 0 && "$got" == "FTEST_SHARD=$shard FTEST_JOBS=4" ]] &&
+                pass "smoke: $image: cov-functional (FTEST_SHARD=${shard:-unset}) runs make cov-functional with: $got" ||
+                { tail -n 5 "$work/out.txt"; fail "smoke: $image: cov-functional (FTEST_SHARD=${shard:-unset}, exit status $status) runs make with: $got"; }
+        done
+        make_cov_stub "$stub" "$tag"
+        printf 'cov-functional:\n' > "$stub/Makefile.am"
+        expect_status 1 "smoke: $image: cov-functional with FTEST_SHARD stops on a target without it" \
+            docker run --rm -v "$stub:/src" -e FTEST_SHARD=1/2 "$tag" cov-functional
+        grep -q 'error: .*FTEST_SHARD' "$work/out.txt" ||
+            fail "smoke: $image: cov-functional with a target without FTEST_SHARD gave no 'error: ' message naming it"
+        [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: cov-functional configured with a target without FTEST_SHARD"
         # The out-of-tree configure left root-owned build directories.
         docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${stub##*/}"
     done
@@ -881,7 +987,7 @@ make_runner_stub() {
         'printf "yacoind yacoin-cli:\n\t@echo \$@ >> /src/make-goals\n" > src/Makefile' > "$d/configure"
     mkdir -p "$d/test/functional"
     # shellcheck disable=SC2016 # expanded by the stub
-    printf '%s\n' '#!/bin/sh' '# Takes --sanitizer-logs and --exclude-file.' 'echo "$@" > /src/runner-args' \
+    printf '%s\n' '#!/bin/sh' '# Takes --sanitizer-logs, --exclude-file and --shard.' 'echo "$@" > /src/runner-args' \
         'echo "ASAN_OPTIONS=${ASAN_OPTIONS:-} LSAN_OPTIONS=${LSAN_OPTIONS:-} UBSAN_OPTIONS=${UBSAN_OPTIONS:-} TSAN_OPTIONS=${TSAN_OPTIONS:-}" > /src/runner-env' \
         "report='${4:-}'" \
         'for a in "$@"; do case "$a" in --sanitizer-logs=*) dir="${a#*=}" ;; --tmpdirprefix=*) tmp="${a#*=}" ;; esac; done' \
@@ -889,6 +995,21 @@ make_runner_stub() {
         'if [ -n "$report" ]; then mkdir -p "$dir" && echo "$report" > "$dir/a_script_1.yacoind.42"; fi' \
         "exit $3" > "$d/test/functional/test_runner.py"
     chmod +x "$d/configure" "$d/test/functional/test_runner.py"
+}
+
+# A stub source tree for cov-functional: depends, autogen.sh and configure are
+# no-ops, Makefile.am has the target with FTEST_SHARD, and the configured
+# build's "make cov-functional" records FTEST_SHARD and FTEST_JOBS in
+# /src/make-vars.
+# make_cov_stub <dir> <tag>
+make_cov_stub() {
+    local d="$1" tag="$2"
+    make_configure_stub "$d" "$tag"
+    printf 'FTEST_SHARD ?=\ncov-functional:\n' > "$d/Makefile.am"
+    # shellcheck disable=SC2016 # expanded by the stub and make
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' \
+        'printf "cov-functional:\n\t@echo FTEST_SHARD=\$(FTEST_SHARD) FTEST_JOBS=\$(FTEST_JOBS) > /src/make-vars\n" > Makefile' \
+        > "$d/configure"
 }
 
 # A stub source tree: depends is a no-op and autogen.sh, the step after it and
