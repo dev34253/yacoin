@@ -371,9 +371,9 @@ def main():
     )
 
 def parse_shard(value):
-    """Return (K, N) for a --shard value "K/N" with 1 <= K <= N; otherwise
-    the run stops with an error."""
-    match = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
+    """Return (K, N) for a --shard value "K/N" with 1 <= K <= N (decimal,
+    no leading zeros); otherwise the run stops with an error."""
+    match = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", value)
     if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
         print("%sERROR!%s --shard needs K/N with 1 <= K <= N, not '%s'" % (BOLD[1], BOLD[0], value))
         sys.exit(1)

@@ -427,7 +427,7 @@ class FunctionalRunnerShardTests(unittest.TestCase):
         self.assert_partition(shards, self.EXTENDED + self.BASE + ["rpc_new.py"])
 
     def test_an_invalid_value_fails_before_any_script_runs(self):
-        for value in ("0/2", "3/2", "1/0", "2", "a/b", "-1/2", "1/2/3", "", " 1/2", "1.0/2"):
+        for value in ("0/2", "3/2", "1/0", "2", "a/b", "-1/2", "1/2/3", "", " 1/2", "1.0/2", "01/2", "1/02"):
             status, out, ran = self.main("--shard=%s" % value, "--extended")
             self.assertEqual(status, 1, value)
             self.assertIn("ERROR! --shard", out)
