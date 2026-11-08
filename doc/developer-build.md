@@ -69,7 +69,7 @@ with this checkout mounted:
 ./dev.sh container unit-tests-asan           # all unit test suites under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
 ./dev.sh container fuzz-corpus               # the fuzz binary (clang), every input of the fuzz corpus once (doc/fuzzing.md)
-./dev.sh container functional-tests-asan     # all functional tests under ASan/LSan/UBSan (see AddressSanitizer below)
+./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
@@ -285,7 +285,9 @@ The functional tests run under the same sanitizers in the
 it locally, with ccache off. The mode builds `yacoind` and `yacoin-cli` with
 the low-difficulty parameters, the same compiler flags and both sanitizer
 runtimes linked in (`-static-libasan -static-libubsan`), and runs every
-functional test script, the extended ones too, `FTEST_JOBS` at a time, with
+functional test script except those listed in
+`test/sanitizer_suppressions/asan-excluded-scripts` (below), the extended ones
+too, `FTEST_JOBS` at a time, with
 the runtime options above plus `print_suppressions=0` and `handle_segv=0` (a
 segmentation fault ends the process with the signal, as in the other
 functional runs). The runner's

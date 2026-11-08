@@ -44,7 +44,7 @@ host, build in the CI images.
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ./dev.sh container unit-tests-asan           # all unit test suites under ASan, LSan and UBSan, as CI's unit-tests-asan job
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer, as CI's unit-tests-tsan job
-./dev.sh container functional-tests-asan     # all functional tests under ASan, LSan and UBSan, as CI's functional-tests-asan job
+./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan, LSan and UBSan, as CI's functional-tests-asan job
 ```
 
 The build modes (`build`, `build-low-difficulty`, `windows`, `macos`) configure the source tree in place
