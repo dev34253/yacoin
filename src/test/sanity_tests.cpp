@@ -17,4 +17,20 @@ BOOST_AUTO_TEST_CASE(basic_sanity)
   BOOST_CHECK_MESSAGE(ECC_InitSanityCheck() == true, "openssl ECC test");
 }
 
+// A planted leak and a planted UBSan error (scratch branch only).
+static int* volatile planted_pointer;
+
+BOOST_AUTO_TEST_CASE(planted_leak)
+{
+  planted_pointer = new int[4];
+  planted_pointer = nullptr;
+}
+
+BOOST_AUTO_TEST_CASE(planted_ubsan_error)
+{
+  volatile int amount = 40;
+  volatile int value = 1 << amount;
+  (void)value;
+}
+
 BOOST_AUTO_TEST_SUITE_END()

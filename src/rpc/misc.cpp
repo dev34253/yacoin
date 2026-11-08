@@ -549,6 +549,11 @@ UniValue getaddresstxids(const JSONRPCRequest& request)
             + HelpExampleRpc("getaddresstxids", "{\"addresses\": [\"12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX\"]}, true")
         );
 
+    // A planted leak (scratch branch only).
+    static int* volatile planted;
+    planted = new int[4];
+    planted = nullptr;
+
     std::vector<std::pair<uint160, int> > addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
