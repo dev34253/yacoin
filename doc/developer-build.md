@@ -70,6 +70,8 @@ with this checkout mounted:
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
 ./dev.sh container fuzz-corpus               # the fuzz binary (clang), every input of the fuzz corpus once (doc/fuzzing.md)
 ./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
+SANITIZE=undefined ./dev.sh container unit-tests-asan     # one leg of CI's unit-tests-asan: UBSan only (address: ASan and LSan only)
+FTEST_SHARD=2/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
@@ -94,9 +96,13 @@ and `cov-functional`; `windows` and
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
 - `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (the parallel scripts of
-  `functional-tests`, `functional-tests-asan` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count), `BUILDVERSION`,
+  `functional-tests`, `functional-tests-asan` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count),
+  `FTEST_SHARD` (the same modes: `K/N` runs only shard K of N of the scripts, as the sharded CI jobs do), `SANITIZE` (`unit-tests-asan`:
+  `address` or `undefined` builds with that sanitizer only, as one CI leg; unset, both), `BUILDVERSION`,
   `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own
-  defaults for its host builds.
+  defaults for its host builds. Set `FTEST_SHARD` as a prefix of the one command, e.g.
+  `FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan`, not exported: `make cov-functional` reads it from the environment
+  too. `./dev.sh cov` always runs every script.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
   `--src <dir>` for another tree.
 - CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:
@@ -273,12 +279,20 @@ the `unit-tests`, `unit-tests-tsan` and coverage jobs) run them as usual. A
 listed case that is not a test case of `test_bitcoin` fails the run before any
 suite runs.
 
-CI runs the same build and options in the `unit-tests-asan` job (the
-`unit-tests-asan` mode of the Ubuntu 22.04 image; the other images refuse it),
-like the other jobs on every pull request commit and every push to `master`;
-`./dev.sh container unit-tests-asan` runs it locally, with ccache off
-(`CCACHE_DISABLE=1`), as CI does. Its logs are in
-`build/docker-ubuntu.22.04/unit-tests-asan/unit-test-logs/`.
+CI runs the same sanitizers, runtime options and left-out list in the
+`unit-tests-asan` job (the `unit-tests-asan` mode of the Ubuntu 22.04 image;
+the other images refuse it), like the other jobs on every pull request commit
+and every push to `master`. The mode compiles with `-g1` instead of `-g`:
+`-g1` keeps symbolized stack traces with file and line; the generated code is
+the same as with `-g` (objects compared after `objcopy --strip-debug`). The job
+runs as
+two legs, `SANITIZE=address` (AddressSanitizer with LeakSanitizer) and
+`SANITIZE=undefined` (UBSan), each building `test_bitcoin` with its sanitizer
+only and running every suite; both legs read the same left-out lists.
+`./dev.sh container unit-tests-asan` runs the mode locally with
+both sanitizers in one build, `SANITIZE=address` or `SANITIZE=undefined` in
+front runs one leg; ccache is off (`CCACHE_DISABLE=1`), as in CI. Its logs are
+in `build/docker-ubuntu.22.04/unit-tests-asan/unit-test-logs/`.
 
 The functional tests run under the same sanitizers in the
 `functional-tests-asan` job; `./dev.sh container functional-tests-asan` runs
@@ -299,13 +313,17 @@ script with a report fails, whatever its own outcome, and the runner prints
 the report with it; the mode prints every report file at the end and fails if
 there is one. The files are in
 `build/docker-ubuntu.22.04/functional-tests-asan/sanitizer-logs/`, the data of
-failed scripts in the mode's `test/tmp/`.
+failed scripts in the mode's `test/tmp/`. In CI the job runs as two legs,
+each building the same binaries (with `-g1`, as `unit-tests-asan`) and
+running one shard of the scripts (`FTEST_SHARD=1/2` and `2/2`, below);
+`FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan` runs one shard
+locally.
 
 `test/sanitizer_suppressions/asan-excluded-scripts` lists the functional test
 scripts the mode leaves out: one script name (with `.py`) per line, with the
 reason in a comment above it (`#` starts a comment). The runner's
 `--exclude-file <list>` leaves them out; the other functional test runs
-(`functional-tests`, `coverage-functional`) run them as usual. A listed name
+(`functional-tests`, `coverage-functional-1` and `-2`) run them as usual. A listed name
 that is not a test script of the runner fails the run.
 
 ### ThreadSanitizer
@@ -362,6 +380,15 @@ the output.
 `.devbuild/tmp/` and its own ports, and the runner builds the shared chain cache
 once before starting the scripts.
 
+`test/functional/test_runner.py --shard K/N` runs shard K of N of the scripts
+it selects: those whose position in the runner's list (counted from 0) modulo
+N is K-1, applied after every other selection (`--extended`, `--exclude`,
+`--exclude-file`, `--filter`, named scripts). So the N shards together run
+each selected script once, a new script lands in a shard by itself, and a
+script's shard does not depend on timing. A shard without scripts is no
+error. The sharded CI jobs (`functional-tests-asan`, `coverage-functional-1`
+and `-2`) use it through `FTEST_SHARD`.
+
 Two runner invocations on the same build directory at the same time do
 interfere: each run without `--keepcache` deletes `build/func/test/cache`
 while the other may be copying it, and both number their scripts' port seeds
@@ -394,7 +421,7 @@ cov` uses two coverage builds (`--enable-lcov`, `-O0 -g`):
 | Build | Runs | Make target |
 |---|---|---|
 | `build/cov-unit` | `test_bitcoin` (all unit tests) | `make cov-unit` |
-| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`) | `make cov-functional` |
+| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); `make cov-functional FTEST_SHARD=K/N` runs only shard K of N of them (`./dev.sh cov` runs all) | `make cov-functional` |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests
@@ -502,10 +529,13 @@ function, e.g. `ns::f(int)::{lambda(int)#1}::operator()`. A name that matches
 nothing is an error. The script's own tests:
 `python3 -I -B -m unittest discover -s contrib/devtools/test`.
 
-CI measures the same in three jobs: `coverage-unit` and `coverage-functional`
-(the `cov-unit` and `cov-functional` modes of the Ubuntu 22.04 image) upload
-their tracefiles, function extents and HTML reports as artifacts;
-`coverage-report` merges them, uploads the combined tracefile and report, and
+CI measures the same in four jobs: `coverage-unit`, and `coverage-functional-1`
+and `coverage-functional-2` (the `cov-unit` and `cov-functional` modes of the
+Ubuntu 22.04 image; the two functional jobs run shard 1/2 and 2/2 of the
+scripts, `FTEST_SHARD`) upload their tracefiles, function extents and HTML
+reports as artifacts; `coverage-report` merges the unit tracefile with both
+shards', passes every function extents file to the check, uploads the
+combined tracefile and report, and
 runs the check (with `--root /src`, where the image mounts the tree), with
 the table in the job summary.
 

@@ -158,7 +158,7 @@ class FunctionalRunnerSanitizerTests(unittest.TestCase):
 
     def test_without_the_option_a_report_file_does_not_count(self):
         # The fake writes no file without a log_path; the script's own
-        # status decides, as before.
+        # status decides.
         self.fake("a_one.py", reports=[])
         self.assertEqual(self.handle(["a_one.py"], None)["a_one.py"][0], "Passed")
 
@@ -317,6 +317,146 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertIn("ERROR! Cannot read the list of scripts to leave out", out)
         self.assertIn(missing, out)
         self.assertEqual(self.ran, [])
+
+
+class FunctionalRunnerShardTests(unittest.TestCase):
+    """--shard K/N runs the selected scripts whose position in the runner's
+    list (ALL_SCRIPTS) modulo N is K-1, after every other selection.
+
+    main() runs on a tree of its own, as in FunctionalRunnerExcludeFileTests."""
+
+    EXTENDED = ["feature_x.py", "feature_y.py"]
+    BASE = ["wallet_a.py", "wallet_b.py", "wallet_b.py --opt", "mining_c.py", "mining_d.py", "p2p_e.py",
+            "p2p_f.py"]
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="test_functional_runner.")
+        self.addCleanup(shutil.rmtree, self.dir)
+        src = os.path.join(self.dir, "src")
+        os.makedirs(os.path.join(src, "test", "functional"))
+        with open(os.path.join(src, "test", "config.ini"), "w") as f:
+            f.write("[environment]\nSRCDIR=%s\nBUILDDIR=%s\n[components]\nENABLE_BITCOIND=true\n" % (src, self.dir))
+        self.ran = []
+        self.patch_lists(self.EXTENDED, self.BASE)
+        for name, value in {"__file__": os.path.join(src, "test", "functional", "test_runner.py"),
+                            "run_tests": lambda **kwargs: self.ran.append(kwargs["test_list"])}.items():
+            self.addCleanup(setattr, test_runner, name, getattr(test_runner, name))
+            setattr(test_runner, name, value)
+
+    def patch_lists(self, extended, base):
+        for name, value in {"EXTENDED_SCRIPTS": extended, "BASE_SCRIPTS": base,
+                            "ALL_SCRIPTS": extended + base}.items():
+            self.addCleanup(setattr, test_runner, name, getattr(test_runner, name))
+            setattr(test_runner, name, value)
+
+    def main(self, *args):
+        """Run main() with args; return (exit status or None, output, the
+        list of scripts run_tests got or None)."""
+        argv = ["test_runner.py", "--tmpdirprefix=%s" % tempfile.mkdtemp(dir=self.dir)] + list(args)
+        out = io.StringIO()
+        status = None
+        self.ran.clear()
+        with unittest.mock.patch("sys.argv", argv), contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(out):
+            try:
+                test_runner.main()
+            except SystemExit as e:
+                status = e.code
+        ran = self.ran[0] if self.ran else None
+        return status, re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue()), ran
+
+    def shards(self, n, *args):
+        """The scripts of each of the n shards of a run with args."""
+        result = []
+        for k in range(1, n + 1):
+            status, out, ran = self.main("--shard=%d/%d" % (k, n), *args)
+            self.assertIn(status, (None, 0), out)
+            result.append(ran or [])
+        return result
+
+    def assert_partition(self, shards, whole):
+        joined = [script for shard in shards for script in shard]
+        self.assertEqual(sorted(joined), sorted(whole))
+        self.assertEqual(len(joined), len(set(joined)))
+
+    def test_the_shards_partition_the_run(self):
+        _, _, whole = self.main("--extended")
+        self.assertEqual(whole, self.EXTENDED + self.BASE)
+        for n in (1, 2, 3, len(whole), len(whole) + 3):
+            self.assert_partition(self.shards(n, "--extended"), whole)
+
+    def test_one_of_one_is_the_whole_run(self):
+        for args in ([], ["--extended"], ["wallet_a.py", "p2p_f.py"]):
+            self.assertEqual(self.main("--shard=1/1", *args)[2], self.main(*args)[2])
+
+    def test_a_scripts_shard_is_its_position_in_the_runners_list_modulo_n(self):
+        everything = self.EXTENDED + self.BASE
+        for n in (2, 3):
+            for k, shard in enumerate(self.shards(n, "--extended"), 1):
+                self.assertEqual(shard, [s for i, s in enumerate(everything) if i % n == k - 1])
+
+    def test_a_script_keeps_its_shard_when_named_alone_or_without_extended(self):
+        full = self.shards(3, "--extended")
+        for k, shard in enumerate(full, 1):
+            for script in shard:
+                self.assertEqual(self.main("--shard=%d/3" % k, script)[2], [script])
+        # The base run: the same shard as in the extended run.
+        for k, shard in enumerate(self.shards(3), 1):
+            self.assertEqual(shard, [s for s in full[k - 1] if s in self.BASE])
+
+    def test_the_shard_applies_after_the_other_selections(self):
+        excluded = os.path.join(self.dir, "excluded-scripts")
+        with open(excluded, "w") as f:
+            f.write("mining_c.py\n")
+        for args in (["--extended", "--exclude=wallet_a,p2p_e"],
+                     ["--extended", "--exclude-file=%s" % excluded],
+                     ["--extended", "--filter=wallet|p2p"],
+                     ["--exclude=wallet_b", "--exclude-file=%s" % excluded, "--filter=_[a-e]"]):
+            _, _, whole = self.main(*args)
+            self.assertTrue(whole)
+            for n in (2, 3):
+                shards = self.shards(n, *args)
+                self.assert_partition(shards, whole)
+                for k, shard in enumerate(shards, 1):
+                    self.assertTrue(all((self.EXTENDED + self.BASE).index(s) % n == k - 1 for s in shard))
+
+    def test_a_new_script_lands_in_exactly_one_shard(self):
+        self.patch_lists(self.EXTENDED, self.BASE[:3] + ["rpc_new.py"] + self.BASE[3:])
+        shards = self.shards(2, "--extended")
+        self.assertEqual(sum(shard.count("rpc_new.py") for shard in shards), 1)
+        self.assert_partition(shards, self.EXTENDED + self.BASE + ["rpc_new.py"])
+
+    def test_an_invalid_value_fails_before_any_script_runs(self):
+        for value in ("0/2", "3/2", "1/0", "2", "a/b", "-1/2", "1/2/3", "", " 1/2", "1.0/2", "01/2", "1/02"):
+            status, out, ran = self.main("--shard=%s" % value, "--extended")
+            self.assertEqual(status, 1, value)
+            self.assertIn("ERROR! --shard", out)
+            self.assertIsNone(ran, value)
+
+    def test_an_empty_shard_is_no_error(self):
+        status, out, ran = self.main("--shard=2/2", "wallet_a.py")
+        self.assertEqual(status, 0)
+        self.assertIn("Shard 2/2 holds none of the 1 selected script(s); nothing to run.", out)
+        self.assertIsNone(ran)
+        # wallet_a.py is at position 2 of the runner's list.
+        self.assertEqual(self.main("--shard=1/2", "wallet_a.py")[2], ["wallet_a.py"])
+
+    def test_without_the_option_an_empty_selection_runs_nothing(self):
+        status, out, ran = self.main("--filter=no_such_script")
+        self.assertEqual(status, 0)
+        self.assertIn("No valid test scripts specified", out)
+        self.assertIsNone(ran)
+
+    def test_a_named_script_outside_the_runners_list_fails_with_the_option(self):
+        status, out, ran = self.main("--shard=1/2", "wallet_a.py", "wallet_gone.py")
+        self.assertEqual(status, 1)
+        self.assertIn("ERROR! Test 'wallet_gone.py' is not in the runner's list", out)
+        self.assertIsNone(ran)
+        # Without the option only a warning, and the other scripts run.
+        status, out, ran = self.main("wallet_a.py", "wallet_gone.py")
+        self.assertIsNone(status)
+        self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)
+        self.assertEqual(ran, ["wallet_a.py"])
 
 
 class TreeExcludedScriptsTests(unittest.TestCase):

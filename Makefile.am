@@ -214,9 +214,13 @@ COV_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 # p2p_invalid_messages' 2 s ping checks during its junk-message flood fail.
 FTEST_JOBS ?= 4
 FTEST_SERIAL ?= p2p_invalid_messages.py
+# FTEST_SHARD=K/N runs shard K of N of the scripts (test_runner.py --shard),
+# in both runner calls; unset: all scripts.
+FTEST_SHARD ?=
 cov_comma := ,
 cov_space := $(subst ,, )
 FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
+FTEST_SHARD_OPT = $(if $(strip $(FTEST_SHARD)),--shard=$(strip $(FTEST_SHARD)))
 COV_TOOLS = $(abs_top_srcdir)/contrib/devtools
 COV_CAPTURE = $(COV_TOOLS)/coverage-capture.sh --geninfo "$(GENINFO) $(LCOV_OPTS)" \
   --dir $(abs_builddir)/src --jobs "$(COV_JOBS)"
@@ -274,10 +278,10 @@ cov-functional:
 	nice -n 10 $(COV_CAPTURE) --initial --out functional_baseline.info > functional_baseline.log 2>&1 & pid=$$!; \
 	  trap 'kill $$pid 2>/dev/null' INT TERM HUP; \
 	  status=0; \
-	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_EXCLUDE) --tmpdirprefix=$(abs_builddir)/test/tmp \
+	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_EXCLUDE) $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp \
 	    > functional_test.log 2>&1 || status=1; \
 	  if test -n "$(strip $(FTEST_SERIAL))"; then \
-	    test/functional/test_runner.py -j 1 --keepcache --tmpdirprefix=$(abs_builddir)/test/tmp $(FTEST_SERIAL) \
+	    test/functional/test_runner.py -j 1 --keepcache $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp $(FTEST_SERIAL) \
 	      >> functional_test.log 2>&1 || status=1; \
 	  fi; \
 	  echo $$status > functional_test.status; \

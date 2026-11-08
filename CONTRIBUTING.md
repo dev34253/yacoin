@@ -21,10 +21,13 @@ These rules apply to every contributor, human or coding agent.
   [`doc/developer-build.md`](doc/developer-build.md)).
 - Before opening a pull request, build and run the unit and functional tests: `./dev.sh all`, or the container modes
   `./dev.sh container unit-tests` and `./dev.sh container functional-tests` (see [`doc/developer-build.md`](doc/developer-build.md)). CI must
-  pass; it also runs the unit tests under AddressSanitizer, LeakSanitizer and UBSan (the `unit-tests-asan` job) and under
-  ThreadSanitizer (the `unit-tests-tsan` job), and the functional tests under AddressSanitizer, LeakSanitizer and UBSan (the
-  `functional-tests-asan` job). `./dev.sh asan` or `./dev.sh container unit-tests-asan`, `./dev.sh container unit-tests-tsan`
-  and `./dev.sh container functional-tests-asan` run them the same way locally.
+  pass; it also runs the unit tests under AddressSanitizer with LeakSanitizer and under UBSan (the two legs of the
+  `unit-tests-asan` job) and under ThreadSanitizer (the `unit-tests-tsan` job), and the functional tests under
+  AddressSanitizer, LeakSanitizer and UBSan (the `functional-tests-asan` job, two shards). `./dev.sh asan` or
+  `./dev.sh container unit-tests-asan`, `./dev.sh container unit-tests-tsan` and `./dev.sh container functional-tests-asan`
+  run them locally. `SANITIZE=address ./dev.sh container unit-tests-asan` (or `undefined`) runs one leg of
+  `unit-tests-asan`, `FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan` (or `2/2`) one shard of
+  `functional-tests-asan`, as CI does.
 
 ## Rules
 

@@ -234,6 +234,7 @@ def main():
     parser.add_argument('--failfast', action='store_true', help='stop execution after the first test failure')
     parser.add_argument('--filter', help='filter scripts to run by regular expression')
     parser.add_argument('--exclude-file', metavar='FILE', help='leave out the scripts listed in FILE: one script name (with .py) per line, "#" starts a comment, blank lines are ignored. A listed name that is not a test script of this runner fails the run')
+    parser.add_argument('--shard', metavar='K/N', help='run shard K of N (1 <= K <= N): the selected scripts whose position in the list of all scripts of this runner, counted from 0, modulo N is K-1. Applied after every other selection, so the N shards together run what the run without --shard runs, each script once. A shard without scripts is no error. A named script that is not in the list fails the run')
     parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty')
 
     args, unknown_args = parser.parse_known_args()
@@ -243,6 +244,7 @@ def main():
         GREEN = ("", "")
         RED = ("", "")
         GREY = ("", "")
+    shard = parse_shard(args.shard) if args.shard is not None else None
 
     # args to be passed on always start with two dashes; tests are the remaining unknown args
     tests = [arg for arg in unknown_args if arg[:2] != "--"]
@@ -293,6 +295,10 @@ def main():
             script = script + ".py" if ".py" not in script else script
             if script in ALL_SCRIPTS:
                 test_list.append(script)
+            elif shard:
+                # Its shard would be unknown.
+                print("{}ERROR!{} Test '{}' is not in the runner's list; --shard needs every named script there.".format(BOLD[1], BOLD[0], script))
+                sys.exit(1)
             else:
                 print("{}WARNING!{} Test '{}' not found in full test list.".format(BOLD[1], BOLD[0], test))
     elif args.extended:
@@ -323,6 +329,14 @@ def main():
 
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
+
+    if shard:
+        selected = len(test_list)
+        test_list = select_shard(test_list, *shard)
+        logging.info("Shard %d/%d: %d of the %d selected script(s)" % (shard + (len(test_list), selected)))
+        if not test_list:
+            print("Shard %d/%d holds none of the %d selected script(s); nothing to run." % (shard + (selected,)))
+            sys.exit(0)
 
     if not test_list:
         print("No valid test scripts specified. Check that your test is in one "
@@ -355,6 +369,21 @@ def main():
         use_term_control=args.ansi,
         sanitizer_logs=args.sanitizer_logs,
     )
+
+def parse_shard(value):
+    """Return (K, N) for a --shard value "K/N" with 1 <= K <= N (decimal,
+    no leading zeros); otherwise the run stops with an error."""
+    match = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", value)
+    if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
+        print("%sERROR!%s --shard needs K/N with 1 <= K <= N, not '%s'" % (BOLD[1], BOLD[0], value))
+        sys.exit(1)
+    return int(match.group(1)), int(match.group(2))
+
+def select_shard(test_list, k, n):
+    """Return the scripts of test_list in shard k of n: those whose index in
+    ALL_SCRIPTS modulo n is k - 1, in the order of test_list."""
+    position = {script: i for i, script in enumerate(ALL_SCRIPTS)}
+    return [test for test in test_list if position[test] % n == k - 1]
 
 def read_exclude_file(path):
     """Return the script names listed in the file at path: one per line, "#"

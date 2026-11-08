@@ -17,9 +17,12 @@
 #     filter off (the mode needs it, see entrypoint.sh), and they do;
 #   - the sanitizer jobs run their modes (unit-tests-asan, unit-tests-tsan,
 #     fuzz-corpus, functional-tests-asan), with ccache off;
-#   - the fuzz-corpus and functional-tests-asan jobs restore the
-#     functional-tests job's cache and save none, and the workflow has 14
-#     jobs.
+#   - the fuzz-corpus, functional-tests-asan, unit-tests-asan and
+#     coverage-functional-<n> jobs restore the functional-tests job's cache
+#     and save none, and the workflow has 15 jobs;
+#   - unit-tests-asan runs one leg per sanitizer (SANITIZE),
+#     functional-tests-asan and the coverage-functional-<n> jobs one shard
+#     each (FTEST_SHARD), and coverage-report merges every shard.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -207,19 +210,59 @@ for mode in unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan; d
     check "${wf#"$ROOT"/}: a docker run of the $mode mode" \
         grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+'"$mode"'[[:space:]]*$' <<< "$joined"
 done
-# The fuzz-corpus and functional-tests-asan jobs (each from its name to the
-# next job) restore the functional-tests job's cache, for the depends
+# The text of a job of the workflow, from its name to the next job.
+job_text() { awk -v name="  $1:" '$0 == name { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:$/ { exit } on' "$wf"; }
+# These jobs restore the functional-tests job's cache, for the depends
 # packages, and save none.
-for name in fuzz-corpus functional-tests-asan; do
-    job=$(awk -v name="  $name:" '$0 == name { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:$/ { exit } on' "$wf")
+for name in fuzz-corpus functional-tests-asan unit-tests-asan coverage-functional-1 coverage-functional-2; do
+    job=$(job_text "$name")
     check "${wf#"$ROOT"/}: the $name job runs the ubuntu.22.04 image" grep -qx ' *IMAGE: ubuntu.22.04' <<< "$job"
     check "${wf#"$ROOT"/}: the $name job restores the functional-tests cache" \
         grep -q 'CACHE_KEY=functional-tests-\$IMAGE-' <<< "$job"
     check "${wf#"$ROOT"/}: the $name job saves no cache" bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$job"
 done
+# passes_var <var> <mode> <job text>: the job's docker run of <mode>, joined
+# across its continuation lines, passes <var> to the container (-e <var>).
+passes_var() {
+    local joined_job
+    joined_job=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' <<< "$3")
+    grep -qE '^[[:space:]]*docker run .* -e '"$1"'( | .* )"\$IMAGE_TAG"[[:space:]]+'"$2"'[[:space:]]*$' <<< "$joined_job"
+}
+# unit-tests-asan: a leg per sanitizer, which the mode gets as SANITIZE.
+job=$(job_text unit-tests-asan)
+check "${wf#"$ROOT"/}: unit-tests-asan has the legs address and undefined" \
+    grep -qx ' *sanitize: \[address, undefined\]' <<< "$job"
+check "${wf#"$ROOT"/}: unit-tests-asan passes the leg's SANITIZE" \
+    grep -qx ' *SANITIZE: \${{ matrix.sanitize }}' <<< "$job"
+check "${wf#"$ROOT"/}: unit-tests-asan passes SANITIZE to the container" passes_var SANITIZE unit-tests-asan "$job"
+# functional-tests-asan: shard K of the legs' number, as FTEST_SHARD.
+job=$(job_text functional-tests-asan)
+check "${wf#"$ROOT"/}: functional-tests-asan has a leg per shard" grep -qx ' *shard: \[1, 2\]' <<< "$job"
+check "${wf#"$ROOT"/}: functional-tests-asan passes the leg's FTEST_SHARD" \
+    grep -qx ' *FTEST_SHARD: \${{ matrix.shard }}/\${{ strategy.job-total }}' <<< "$job"
+check "${wf#"$ROOT"/}: functional-tests-asan passes FTEST_SHARD to the container" \
+    passes_var FTEST_SHARD functional-tests-asan "$job"
+# coverage-functional-<k>: shard k of 2, each with its own artifact; the
+# report needs and merges both.
+for k in 1 2; do
+    job=$(job_text "coverage-functional-$k")
+    check "${wf#"$ROOT"/}: coverage-functional-$k runs shard $k/2" grep -qx " *FTEST_SHARD: $k/2" <<< "$job"
+    check "${wf#"$ROOT"/}: coverage-functional-$k passes FTEST_SHARD to the container" \
+        passes_var FTEST_SHARD cov-functional "$job"
+    check "${wf#"$ROOT"/}: coverage-functional-$k names its artifact per shard and attempt" \
+        grep -qx " *COVERAGE_ARTIFACT: coverage-functional-$k-\\\${{ github.run_attempt }}" <<< "$job"
+done
+job=$(job_text coverage-report)
+check "${wf#"$ROOT"/}: coverage-report needs the unit job and both shards" \
+    grep -qx ' *needs: \[coverage-unit, coverage-functional-1, coverage-functional-2\]' <<< "$job"
+for k in 1 2; do
+    check "${wf#"$ROOT"/}: coverage-report merges shard $k" grep -q "coverage/functional-$k/functional_test_coverage.info" <<< "$job"
+    check "${wf#"$ROOT"/}: coverage-report checks the functions of shard $k" \
+        grep -q "coverage/functional-$k/functional_test_functions.json" <<< "$job"
+done
 # A job added or removed is a deliberate change of this number.
 jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^[^ ]/ { exit } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
-check "${wf#"$ROOT"/}: 14 jobs ($jobs)" test "$jobs" = 14
+check "${wf#"$ROOT"/}: 15 jobs ($jobs)" test "$jobs" = 15
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do
