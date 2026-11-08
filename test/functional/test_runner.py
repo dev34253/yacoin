@@ -105,6 +105,7 @@ BASE_SCRIPTS = [
     'feature_config_args.py',  # 8
     'mempool_accept.py',  # 6
     'feature_reindex.py',  # 10
+    'feature_replay_validation.py',
     'feature_signals.py',  # 10
     'feature_abortnode.py',  # 8
     'feature_verifydb.py',  # 6
@@ -192,7 +193,7 @@ BASE_SCRIPTS = [
 
 EXTENDED_SCRIPTS = [
     'p2p_block_download_timeout.py',  # 122: waits for a 120 s block download timeout
-    'mining_getblocktemplate_longpoll_slow.py',  # 125: two one-minute longpoll waits
+    'mining_getblocktemplate_longpoll_slow.py',  # 135: a longpoll wait past the one-minute check and one that ends at it
     'feature_dbcrash.py',  # 100-170
 ]
 

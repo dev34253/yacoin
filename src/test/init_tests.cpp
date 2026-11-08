@@ -58,6 +58,8 @@ struct InitTestingSetup : public BasicTestingSetup {
     SavedGlobal<bool> debug{fDebug};
     SavedGlobal<bool> checkBlockIndex{fCheckBlockIndex};
     SavedGlobal<bool> checkpointsEnabled{fCheckpointsEnabled};
+    SavedGlobal<bool> replayValidation{fReplayValidation};
+    SavedGlobal<bool> replayValidationReject{fReplayValidationReject};
     SavedGlobal<int> scriptCheckThreads{nScriptCheckThreads};
     SavedGlobal<int> hashCalcThreads{nHashCalcThreads};
     SavedGlobal<int> connectTimeout{nConnectTimeout};
@@ -398,6 +400,12 @@ Debugging/Testing options:
 
   -printpriority
        Log transaction fee per kB when mining blocks (default: false)
+
+  -replayvalidation=<mode>
+       Validation for replays of the block history: run every check the node
+       implements on each block connected and log each failure. <mode>
+       is 0 (off), report (log only) or reject (also reject a block with
+       a failure) (default: 0)
 
   -shrinkdebugfile
        Shrink debug.log file on client startup (default: 1 when no -debug)
@@ -792,6 +800,52 @@ BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_checkblockindex)
     SetArgs({"-checkblockindex=1"});
     BOOST_CHECK(AppInitParameterInteraction());
     BOOST_CHECK(fCheckBlockIndex);
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_replayvalidation)
+{
+    struct Case {
+        std::vector<std::string> args;
+        bool fOn;
+        bool fReject;
+    };
+    const std::vector<Case> cases{
+        {{}, false, false},
+        {{"-replayvalidation=0"}, false, false},
+        {{"-noreplayvalidation"}, false, false},
+        {{"-replayvalidation=report"}, true, false},
+        {{"-replayvalidation=reject"}, true, true},
+        {{"-replayvalidation=report", "-replayvalidation=0"}, false, false},
+    };
+    for (const Case& c : cases) {
+        std::vector<const char*> argv{"yacoind"};
+        for (const std::string& arg : c.args) argv.push_back(arg.c_str());
+        gArgs.ParseParameters(argv.size(), argv.data());
+        // Both globals are set by every call, whatever they were before.
+        fReplayValidation = !c.fOn;
+        fReplayValidationReject = !c.fReject;
+        const std::string strCase = c.args.empty() ? "(unset)" : c.args.back();
+        BOOST_CHECK_MESSAGE(AppInitParameterInteraction(), strCase);
+        BOOST_CHECK_MESSAGE(fReplayValidation == c.fOn, strCase);
+        BOOST_CHECK_MESSAGE(fReplayValidationReject == c.fReject, strCase);
+    }
+    BOOST_CHECK_EQUAL(Lines(errors), "");
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_replayvalidation_invalid)
+{
+    // A bare -replayvalidation gives the empty value.
+    for (const std::string& value : {std::string(""), std::string("1"), std::string("yes"), std::string("Report"), std::string("rejected")}) {
+        errors.clear();
+        const std::string arg = value.empty() ? "-replayvalidation" : "-replayvalidation=" + value;
+        SetArgs({arg});
+        fReplayValidation = true;
+        fReplayValidationReject = true;
+        BOOST_CHECK_MESSAGE(!AppInitParameterInteraction(), arg);
+        BOOST_CHECK_EQUAL(Lines(errors), strprintf("Invalid -replayvalidation value '%s' (0, report or reject)\n", value));
+        BOOST_CHECK_MESSAGE(!fReplayValidation, arg);
+        BOOST_CHECK_MESSAGE(!fReplayValidationReject, arg);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_par)

@@ -11,7 +11,11 @@
 #include "net.h"
 #include "netbase.h"
 #include "chainparams.h"
+#include "ui_interface.h"
 #include "util.h"
+
+#include <memory>
+#include <vector>
 
 class CAddrManSerializationMock : public CAddrMan
 {
@@ -60,6 +64,41 @@ public:
         s << info;
     }
 };
+
+/** Puts nodes without sockets, with the given starting heights, into the list of a new
+ * connection manager and runs its socket handler loop until it reports the number of
+ * connections; returns nMedianStartingHeight as the loop left it and restores the global. */
+static int MedianStartingHeightOf(const std::vector<int>& heights)
+{
+    const int nSaved = nMedianStartingHeight;
+    // A value no case expects, so the result comes from the loop
+    nMedianStartingHeight = -1000;
+
+    CClientUIInterface ui;
+    CConnman connman(0x1337, 0x1337);
+    CConnman::Options options;
+    options.uiInterface = &ui;
+    connman.Init(options);
+
+    std::vector<std::unique_ptr<CNode> > nodes;
+    for (size_t i = 0; i < heights.size(); i++) {
+        const bool fInbound = i >= (size_t)MAX_OUTBOUND_CONNECTIONS;
+        nodes.emplace_back(new CNode(i, NODE_NETWORK, 0, INVALID_SOCKET, CAddress(), 0, 0, CAddress(), "", fInbound));
+        nodes.back()->nStartingHeight = heights[i];
+        CConnmanTest::AddNode(connman, *nodes.back());
+    }
+
+    int nConnections = 0;
+    const bool fNotified = CConnmanTest::RunSocketHandlerUntilNotified(connman, ui, nConnections);
+    // The loop has stopped; the nodes leave the list before the connection manager is destroyed
+    CConnmanTest::ClearNodes(connman);
+    BOOST_CHECK(fNotified);
+    BOOST_CHECK_EQUAL(nConnections, (int)heights.size());
+
+    const int nMedian = nMedianStartingHeight;
+    nMedianStartingHeight = nSaved;
+    return nMedian;
+}
 
 CDataStream AddrmanToStream(CAddrManSerializationMock& _addrman)
 {
@@ -183,6 +222,46 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test)
     std::unique_ptr<CNode> pnode2(new CNode(id++, NODE_NETWORK, height, hSocket, addr, 1, 1, CAddress(), pszDest, fInboundIn));
     BOOST_CHECK(pnode2->fInbound == true);
     BOOST_CHECK(pnode2->fFeeler == false);
+}
+
+// Each case runs the socket handler loop over nodes without sockets and checks the median starting
+// height it computed
+
+BOOST_AUTO_TEST_CASE(socket_handler_median_starting_height_one_node)
+{
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf({5}), 5);
+}
+
+BOOST_AUTO_TEST_CASE(socket_handler_median_starting_height_odd_count_unsorted)
+{
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf({30, 10, 20}), 20);
+}
+
+BOOST_AUTO_TEST_CASE(socket_handler_median_starting_height_even_count_takes_upper_middle)
+{
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf({10, 40, 20, 30}), 30);
+}
+
+BOOST_AUTO_TEST_CASE(socket_handler_median_starting_height_counts_unreported_heights)
+{
+    // A node that has not reported its height has nStartingHeight -1
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf({-1, -1, 7}), -1);
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf({-1, 7, 9}), 7);
+}
+
+BOOST_AUTO_TEST_CASE(socket_handler_median_starting_height_duplicates)
+{
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf({5, 9, 5}), 5);
+}
+
+BOOST_AUTO_TEST_CASE(socket_handler_median_starting_height_full_connection_set)
+{
+    // DEFAULT_MAX_PEER_CONNECTIONS nodes, the first MAX_OUTBOUND_CONNECTIONS outbound, with
+    // heights 124 down to 0
+    std::vector<int> heights;
+    for (int nHeight = (int)DEFAULT_MAX_PEER_CONNECTIONS - 1; nHeight >= 0; nHeight--)
+        heights.push_back(nHeight);
+    BOOST_CHECK_EQUAL(MedianStartingHeightOf(heights), 62);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -81,6 +81,8 @@ bool fTxIndex = true;
 bool fRequireStandard = true;
 bool fCheckBlockIndex = false;
 bool fCheckpointsEnabled = DEFAULT_CHECKPOINTS_ENABLED;
+bool fReplayValidation = false;
+bool fReplayValidationReject = false;
 bool fBlockHashIndex = true;
 
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
@@ -1690,6 +1692,33 @@ static int64_t nTimeIndex = 0;
 static int64_t nTimeCallbacks = 0;
 static int64_t nTimeTotal = 0;
 
+/** Logs one failure of the -replayvalidation checks */
+static void ReplayValidationReport(int nHeight, const CBlock& block, const std::string& strCheck,
+                                   const std::string& strTx, const std::string& strInput, const std::string& strError)
+{
+    LogPrintf("replayvalidation: failure height=%d block=%s check=%s tx=%s input=%s error=%s\n",
+              nHeight, block.GetHash().ToString(), strCheck, strTx, strInput, strError);
+}
+
+/** The script check of -replayvalidation: runs the script of every input of tx with the given
+ *  flags and logs each failing input; returns the number of failures. The checks store nothing
+ *  in the signature or script caches. */
+static unsigned int ReplayValidationScripts(const CTransaction& tx, const CCoinsViewCache& view, unsigned int flags,
+                                            int nHeight, const CBlock& block)
+{
+    unsigned int nFailures = 0;
+    for (unsigned int i = 0; i < tx.vin.size(); i++) {
+        const Coin& coin = view.AccessCoin(tx.vin[i].prevout);
+        CScriptCheck check(coin.out.scriptPubKey, tx, i, flags, false);
+        if (!check()) {
+            ReplayValidationReport(nHeight, block, "script", tx.GetHash().ToString(), std::to_string(i),
+                                   ScriptErrorString(check.GetScriptError()));
+            nFailures++;
+        }
+    }
+    return nFailures;
+}
+
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
  *  can fail if those validity checks fail (among other reasons). */
@@ -1702,6 +1731,9 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
     assert((pindex->phashBlock == nullptr) ||
            (*pindex->phashBlock == block.GetHash()));
     int64_t nTimeStart = GetTimeMicros();
+    // Validation for replays of the block history (-replayvalidation)
+    const bool fReplay = fReplayValidation;
+    unsigned int nReplayFailures = 0;
 
     // Check it again in case a previous version let a bad block in, but skip BlockSig checking
     if (!CheckBlock(block, state, chainparams.GetConsensus(), !fJustCheck, !fJustCheck, false)) // Force the check of token duplicates when connecting the block
@@ -1718,6 +1750,13 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
         if (!fJustCheck)
             view.SetBestBlock(pindex->GetBlockHash());
         return true;
+    }
+
+    if (fReplay) {
+        if (!CheckReplayBlockSignature(block)) {
+            ReplayValidationReport(pindex->nHeight, block, "block-signature", "-", "-", "-");
+            nReplayFailures++;
+        }
     }
 
     // TODO: Improve checkpoints logic
@@ -1914,6 +1953,8 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
 
         if (!tx.IsCoinBase())
         {
+            if (fReplay)
+                nReplayFailures += ReplayValidationScripts(tx, view, flags, pindex->nHeight, block);
             std::vector<CScriptCheck> vChecks;
             bool fCacheResults = fJustCheck; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
             if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, nScriptCheckThreads ? &vChecks : nullptr))
@@ -2034,6 +2075,13 @@ static bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockInd
 
     int64_t nTime4 = GetTimeMicros(); nTimeVerify += nTime4 - nTime2;
     LogPrint(BCLog::BENCH, "    - Verify %u txins: %.2fms (%.3fms/txin) [%.2fs]\n", nInputs - 1, 0.001 * (nTime4 - nTime2), nInputs <= 1 ? 0 : 0.001 * (nTime4 - nTime2) / (nInputs-1), nTimeVerify * 0.000001);
+
+    if (fReplay) {
+        if (fReplayValidationReject && nReplayFailures > 0)
+            return state.Invalid(error("%s: %u replay validation failures in block %s", __func__, nReplayFailures,
+                                       block.GetHash().ToString()),
+                                 REJECT_INVALID, "replay-validation-failed");
+    }
 
     if (fJustCheck)
         return true;
@@ -4929,6 +4977,14 @@ bool CheckBlockSignature(const CBlock& block)
         }
     }
     return false;
+}
+
+bool CheckReplayBlockSignature(const CBlock& block)
+{
+    if (block.IsProofOfWork())
+        return true;
+    // A proof-of-stake block is signed with the key of its coinstake
+    return block.vtx.size() > 1 && block.vtx[1].IsCoinStake() && CheckBlockSignature(block);
 }
 
 class CMainCleanup

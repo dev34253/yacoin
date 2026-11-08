@@ -195,6 +195,11 @@ extern bool fTxIndex;
 extern bool fRequireStandard;
 extern bool fCheckBlockIndex;
 extern bool fCheckpointsEnabled;
+/** Validation for replays of the block history (-replayvalidation): while a block is connected,
+ *  run every check the node implements on it and log each failure */
+extern bool fReplayValidation;
+/** With fReplayValidation, a block with a failure of those checks is invalid */
+extern bool fReplayValidationReject;
 extern bool fBlockHashIndex;
 /** A fee rate smaller than this is considered zero fee (for relaying, mining and transaction creation) */
 extern CFeeRate minRelayTxFee;
@@ -461,5 +466,8 @@ bool GetAddressUnspent(uint160 addressHash, int type,
 // ppcoin:
 bool GetCoinAge(const CTransaction& tx, const CCoinsViewCache &view, uint64_t& nCoinAge); // ppcoin: get transaction coin age
 bool CheckBlockSignature(const CBlock& block);
+/** The block signature check of -replayvalidation: true for a proof-of-work block; a
+ *  proof-of-stake block is signed with the key of its coinstake */
+bool CheckReplayBlockSignature(const CBlock& block);
 
 #endif // YACOIN_VALIDATION_H

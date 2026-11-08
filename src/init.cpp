@@ -413,6 +413,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-printtoconsole", _("Send trace/debug info to console instead of debug.log file"));
     strUsage += HelpMessageOpt("-printtodebugger", _("Send trace/debug info to debug.log file"));
     strUsage += HelpMessageOpt("-printpriority", _("Log transaction fee per kB when mining blocks (default: false)"));
+    strUsage += HelpMessageOpt("-replayvalidation=<mode>", _("Validation for replays of the block history: run every check the node implements on each block connected and log each failure. <mode> is 0 (off), report (log only) or reject (also reject a block with a failure) (default: 0)"));
     strUsage += HelpMessageOpt("-shrinkdebugfile", _("Shrink debug.log file on client startup (default: 1 when no -debug)"));
 
     strUsage += HelpMessageGroup(_("RPC server options:"));
@@ -748,6 +749,17 @@ bool AppInitParameterInteraction()
 
     fCheckBlockIndex = gArgs.GetBoolArg("-checkblockindex", chainparams.DefaultConsistencyChecks());
     fCheckpointsEnabled = gArgs.GetBoolArg("-checkpoints", DEFAULT_CHECKPOINTS_ENABLED);
+
+    const std::string strReplayValidation = gArgs.GetArg("-replayvalidation", "0");
+    fReplayValidation = false;
+    fReplayValidationReject = false;
+    if (strReplayValidation == "report" || strReplayValidation == "reject") {
+        fReplayValidation = true;
+        fReplayValidationReject = (strReplayValidation == "reject");
+        LogPrintf("replayvalidation: mode %s\n", strReplayValidation);
+    } else if (strReplayValidation != "0") {
+        return InitError(strprintf(_("Invalid -replayvalidation value '%s' (0, report or reject)"), strReplayValidation));
+    }
 
     // TODO: Improve checkpoints logic
 //    hashAssumeValid = uint256S(gArgs.GetArg("-assumevalid", chainparams.GetConsensus().defaultAssumeValid.GetHex()));

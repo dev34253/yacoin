@@ -5,8 +5,9 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the getblocktemplate longpoll waits that take a minute.
 
-- A mempool change without a new block ends a longpoll after a minute
-  (real time; mocktime doesn't shorten it).
+- A longpoll keeps waiting past the one-minute check without a mempool
+  change, and a mempool change without a new block then ends it at the
+  next check (real time; mocktime doesn't shorten it).
 - A client that closed its connection doesn't keep the HTTP worker: with
   -rpcthreads=1 the node answers the next call once the longpoll wakes up
   and notices, a minute after the call (not at the next block).
@@ -33,16 +34,23 @@ class GetBlockTemplateLPSlowTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.mine_with_mocktime(node, 10)
 
-        self.log.info("A mempool change ends a longpoll after a minute")
+        self.log.info("A longpoll keeps waiting past the one-minute check without a mempool change")
         tip = node.getbestblockhash()
-        thread = LongpollThread(node, {'longpollid': node.getblocktemplate()['longpollid']}, timeout=120)
+        thread = LongpollThread(node, {'longpollid': node.getblocktemplate()['longpollid']}, timeout=150)
         with node.assert_debug_log(["ThreadRPCServer method=getblocktemplate"], timeout=10):
             thread.start()
         start = time.time()
+        # the first check is a minute after the call, the next ones 10 s apart
+        time.sleep(65)
+        assert thread.is_alive()
+        assert_equal(thread.result, None)
+        assert_equal(thread.error, None)
+
+        self.log.info("A mempool change then ends it at the next check")
         node.sendtoaddress(self.nodes[1].getnewaddress(), 1)
-        thread.join(90)
+        thread.join(30)
         assert not thread.is_alive()
-        assert_greater_than(time.time() - start, 50)
+        assert_greater_than(time.time() - start, 60)
         assert_equal(thread.error, None)
         assert_equal(thread.result['previousblockhash'], tip)
         # Confirm the transaction: a mempool change would also end the next
