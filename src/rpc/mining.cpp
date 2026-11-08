@@ -573,6 +573,13 @@ static UniValue BIP22ValidationResult(const CValidationState& state)
     return "valid?";
 }
 
+// The tip is read under cs_main.
+static uint256 ActiveTipHash()
+{
+    LOCK(cs_main);
+    return chainActive.Tip()->GetBlockHash();
+}
+
 UniValue getblocktemplate(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() > 1)
@@ -752,7 +759,7 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
             checktxtime = boost::get_system_time() + boost::posix_time::minutes(1);
 
             boost::unique_lock<boost::mutex> lock(csBestBlock);
-            while (chainActive.Tip()->GetBlockHash() == hashWatchedChain && IsRPCRunning())
+            while (ActiveTipHash() == hashWatchedChain && IsRPCRunning())
             {
                 // A miner that hung up is not worth an HTTP worker. Nothing else
                 // in the server would notice, and on a chain that is not moving
