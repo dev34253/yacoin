@@ -1176,7 +1176,7 @@ void CConnman::ThreadSocketHandler()
 
         // Update median starting height of all connected peers
         {
-            // Disconnect unused nodes
+            LOCK(cs_vNodes);
             std::vector<CNode*> vNodesCopy = vNodes;
 
             if (vNodesCopy.size() > 0)

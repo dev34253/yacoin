@@ -25,8 +25,14 @@
 #include "util.h"
 
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <thread>
+
+#include <boost/signals2/connection.hpp>
 
 void CConnmanTest::AddNode(CNode& node)
 {
@@ -44,6 +50,53 @@ void CConnmanTest::ClearNodes()
 {
     LOCK(g_connman->cs_vNodes);
     g_connman->vNodes.clear();
+}
+
+void CConnmanTest::AddNode(CConnman& connman, CNode& node)
+{
+    LOCK(connman.cs_vNodes);
+    connman.vNodes.push_back(&node);
+}
+
+void CConnmanTest::ClearNodes(CConnman& connman)
+{
+    LOCK(connman.cs_vNodes);
+    connman.vNodes.clear();
+}
+
+bool CConnmanTest::RunSocketHandlerUntilNotified(CConnman& connman, CClientUIInterface& ui, int& nConnections)
+{
+    std::mutex mutex;
+    std::condition_variable cond;
+    bool fNotified = false;
+    int nNotified = 0;
+    boost::signals2::scoped_connection connection = ui.NotifyNumConnectionsChanged.connect([&](int n) {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!fNotified) {
+                fNotified = true;
+                nNotified = n;
+            }
+        }
+        cond.notify_all();
+    });
+
+    connman.interruptNet.reset();
+    std::thread thread(&CConnman::ThreadSocketHandler, &connman);
+    bool fResult;
+    {
+        // A system_clock deadline, as in WaitForHTTPTest (http_test_util.h)
+        std::unique_lock<std::mutex> lock(mutex);
+        fResult = cond.wait_until(lock, std::chrono::system_clock::now() + std::chrono::seconds(SOCKET_HANDLER_TEST_TIMEOUT_S),
+                                  [&fNotified] { return fNotified; });
+    }
+    connman.interruptNet();
+    thread.join();
+    connection.disconnect();
+
+    std::lock_guard<std::mutex> lock(mutex);
+    nConnections = nNotified;
+    return fResult;
 }
 
 namespace {
