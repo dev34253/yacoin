@@ -284,11 +284,12 @@ CI runs the same sanitizers, runtime options and left-out list in the
 the other images refuse it), like the other jobs on every pull request commit
 and every push to `master`. The mode compiles with `-g1` instead of `-g`:
 `-g1` keeps symbolized stack traces with file and line; the generated code is
-unchanged (objects compared after `objcopy --strip-debug`). The job runs as
+the same as with `-g` (objects compared after `objcopy --strip-debug`). The job
+runs as
 two legs, `SANITIZE=address` (AddressSanitizer with LeakSanitizer) and
 `SANITIZE=undefined` (UBSan), each building `test_bitcoin` with its sanitizer
-only and running every suite; both legs read the same left-out lists, which
-are unchanged. `./dev.sh container unit-tests-asan` runs the mode locally with
+only and running every suite; both legs read the same left-out lists.
+`./dev.sh container unit-tests-asan` runs the mode locally with
 both sanitizers in one build, `SANITIZE=address` or `SANITIZE=undefined` in
 front runs one leg; ccache is off (`CCACHE_DISABLE=1`), as in CI. Its logs are
 in `build/docker-ubuntu.22.04/unit-tests-asan/unit-test-logs/`.

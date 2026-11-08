@@ -2,7 +2,7 @@
 
 The target runs test/functional/test_runner.py twice: the scripts in
 parallel, then those of FTEST_SERIAL alone. FTEST_SHARD=K/N passes
---shard=K/N to both calls; without it the calls are unchanged.
+--shard=K/N to both calls; without it neither call has --shard.
 
 The coverage part of Makefile.am (between "if USE_LCOV" and its "endif")
 is copied into a makefile of its own and printed with "make -n", so no
@@ -46,7 +46,7 @@ class CovFunctionalRunnerCallsTests(unittest.TestCase):
                              check=True, capture_output=True, text=True).stdout.replace("\\\n", " ")
         return [" ".join(call.split()) for call in re.findall(r"(test/functional/test_runner\.py -j [^>]*)>", out)]
 
-    def test_without_a_shard_the_calls_are_unchanged(self):
+    def test_without_a_shard_neither_call_has_the_option(self):
         self.assertEqual(self.runner_calls(), [
             "test/functional/test_runner.py -j 4 --exclude=p2p_invalid_messages.py --tmpdirprefix=/b/test/tmp",
             "test/functional/test_runner.py -j 1 --keepcache --tmpdirprefix=/b/test/tmp p2p_invalid_messages.py",

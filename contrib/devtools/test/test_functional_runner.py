@@ -158,7 +158,7 @@ class FunctionalRunnerSanitizerTests(unittest.TestCase):
 
     def test_without_the_option_a_report_file_does_not_count(self):
         # The fake writes no file without a log_path; the script's own
-        # status decides, as before.
+        # status decides.
         self.fake("a_one.py", reports=[])
         self.assertEqual(self.handle(["a_one.py"], None)["a_one.py"][0], "Passed")
 
@@ -441,7 +441,7 @@ class FunctionalRunnerShardTests(unittest.TestCase):
         # wallet_a.py is at position 2 of the runner's list.
         self.assertEqual(self.main("--shard=1/2", "wallet_a.py")[2], ["wallet_a.py"])
 
-    def test_without_the_option_an_empty_selection_runs_nothing_as_before(self):
+    def test_without_the_option_an_empty_selection_runs_nothing(self):
         status, out, ran = self.main("--filter=no_such_script")
         self.assertEqual(status, 0)
         self.assertIn("No valid test scripts specified", out)
@@ -452,7 +452,7 @@ class FunctionalRunnerShardTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("ERROR! Test 'wallet_gone.py' is not in the runner's list", out)
         self.assertIsNone(ran)
-        # Without the option only a warning, as before.
+        # Without the option only a warning, and the other scripts run.
         status, out, ran = self.main("wallet_a.py", "wallet_gone.py")
         self.assertIsNone(status)
         self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)

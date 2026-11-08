@@ -315,7 +315,7 @@ else
             # x86_64 field assembly needs more registers than are left under
             # ASan, so it is built in plain C, with either sanitizer. -g1
             # keeps symbolized stack traces with file and line; the generated
-            # code is unchanged (objects compared after objcopy
+            # code is the same as with -g (objects compared after objcopy
             # --strip-debug).
             case "$MODE:${SANITIZE:-}" in
                 unit-tests-asan:address) san="-fsanitize=address -fno-omit-frame-pointer" ;;
