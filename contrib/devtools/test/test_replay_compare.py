@@ -197,6 +197,19 @@ class CompareTest(unittest.TestCase):
                 self.assertEqual(out, "")
                 self.assertIn("line 2", err)
 
+    def test_report_path_must_be_a_directory_or_report_json(self):
+        a = self.write(make_rows(10))
+        other = os.path.join(a, "heights.tsv.gz")
+        with self.assertRaisesRegex(report.ReportError, "not a report directory or report.json: .*heights.tsv.gz"):
+            report.load(other)
+        code, out, err = self.cli(a, other)
+        self.assertEqual(code, 2)
+        self.assertIn(other, err)
+        self.assertEqual(report.load(os.path.join(a, "report.json")).rows, report.load(a).rows)
+        code, out, err = self.cli("report.json", a)
+        self.assertEqual(code, 2)
+        self.assertIn("report.json", err)
+
     def test_missing_report_is_an_error(self):
         a = self.write(make_rows(10))
         code, out, err = self.cli(a, os.path.join(self.tmp, "nothing"))

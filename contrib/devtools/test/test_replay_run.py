@@ -373,6 +373,41 @@ class RunTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("not between 1 and 65535", err)
 
+    def test_node_arguments_set_by_the_script_are_refused(self):
+        for arg in ("-printtoconsole=1", "--datadir=/elsewhere", "-nolisten", "-reindex", "-stopatheight=5",
+                    "-conf=x.conf", "-noserver=0", "-dbcache=100"):
+            with self.subTest(arg=arg):
+                code, _, err = self.run_cli("normal", extra=[arg])
+                self.assertEqual(code, 2)
+                self.assertIn("node argument %s: -" % arg, err)
+                self.assertIn("is set by the script", err)
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+        for arg in ("-par=2", "-nodebug", "-debug=net", "-portable", "-listenx", "x-datadir", "-rpcthreads=2"):
+            with self.subTest(arg=arg):
+                self.assertIsNone(runner.own_option(arg))
+
+    def test_node_that_cannot_be_started(self):
+        bad = os.path.join(self.tmp, "not-a-program")
+        with open(bad, "wb") as f:
+            f.write(b"\x00\x01\x02 neither ELF nor a script\n")
+        os.chmod(bad, stat.S_IRWXU)
+        out = os.path.join(self.tmp, "out")
+        p = subprocess.run([sys.executable, "-I", tu.REPLAY_SCRIPT, "run", "--port", str(self.ports[0]),
+                            "--rpcport", str(self.ports[1]), bad, self.source, out],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertNotIn("Traceback", p.stderr)
+        rep = self.report()
+        self.assertEqual(rep["status"], "incomplete")
+        self.assertEqual(len(rep["incomplete_reasons"]), 1)
+        self.assertTrue(rep["incomplete_reasons"][0].startswith("cannot start the node: "), rep["incomplete_reasons"])
+        self.assertIn("incomplete: cannot start the node: ", p.stdout)
+        self.assertIsNone(rep["exit_status"])
+        self.assertIsNone(rep["digest"])
+        self.assertEqual(rep["command"][0], bad)
+        self.assertTrue(os.path.exists(os.path.join(out, "heights.tsv.gz")))
+        self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+
     def test_port_in_use(self):
         with socket.socket() as s:
             s.bind(("0.0.0.0", self.ports[0]))

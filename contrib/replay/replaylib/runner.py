@@ -35,6 +35,13 @@ ISOLATION_ARGS = [
 
 CONF_TEXT = "# Written by contrib/replay/replay.py; the options are on the command line.\n"
 
+# Options the script sets itself; refused in the node arguments after --.
+OWN_OPTIONS = (
+    "datadir", "conf", "daemon", "reindex", "replayvalidation", "connect", "listen", "dnsseed",
+    "discover", "upnp", "listenonion", "server", "disablewallet", "printtoconsole", "port", "rpcport",
+    "dbcache", "stopatheight",
+)
+
 
 class RunRefused(Exception):
     """A precondition of the run does not hold; nothing was started."""
@@ -107,7 +114,20 @@ def node_command(binary, datadir, conf, port, rpcport, dbcache=None, stop_at_hei
     return cmd + list(extra)
 
 
-def check(binary, source, out, port, rpcport):
+def own_option(arg):
+    """The option of OWN_OPTIONS that the node argument arg sets, or None."""
+    if not arg.startswith("-"):
+        return None
+    name = arg.lstrip("-").split("=", 1)[0]
+    if name.startswith("no") and name[2:] in OWN_OPTIONS:
+        name = name[2:]
+    return name if name in OWN_OPTIONS else None
+
+
+def check(binary, source, out, port, rpcport, extra=()):
+    for arg in extra:
+        if own_option(arg):
+            raise RunRefused("node argument %s: -%s is set by the script" % (arg, own_option(arg)))
     if not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
         raise RunRefused("not an executable file: %s" % binary)
     if not os.path.isdir(source):
@@ -164,7 +184,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     binary = os.path.abspath(binary)
     source = os.path.abspath(source)
     out = os.path.abspath(out)
-    check(binary, source, out, port, rpcport)
+    check(binary, source, out, port, rpcport, extra)
 
     rep = {"format": REPORT_FORMAT, "kind": "run", "start_time": utc_now(), "source": source,
            "binary": {"path": binary, "sha256": file_sha256(binary)}}
@@ -203,6 +223,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     old_handlers = {sig: signal.signal(sig, interrupt) for sig in STOP_SIGNALS
                     if signal.getsignal(sig) is not signal.SIG_IGN}
     proc = None
+    start_error = None
     reaped = []
     try:
         try:
@@ -216,9 +237,12 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
                         cmd, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, cwd=out,
                         start_new_session=True,
                         preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, old_mask))
+                except OSError as e:
+                    start_error = e
                 finally:
                     signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
-            status, rusage = _wait(proc.pid, follower, marks, start, stop_sent, reaped, log)
+            if start_error is None:
+                status, rusage = _wait(proc.pid, follower, marks, start, stop_sent, reaped, log)
         except BaseException as e:
             if proc is None:
                 raise
@@ -239,6 +263,9 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     finally:
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)
+    if start_error is not None:
+        log("cannot start the node: %s" % start_error)
+        return _start_failed(out, rep, phases, start_error)
     node_seconds = time.monotonic() - start
     follower.finish()
     exit_status = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
@@ -288,6 +315,20 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     reasons = rep["incomplete_reasons"]
     rep["status"] = "incomplete" if reasons else "complete"
     report.write(out, rep, d.rows if d else [], marked)
+    return rep
+
+
+def _start_failed(out, rep, phases, error):
+    """The report of a run whose node could not be started."""
+    rep.update({
+        "end_time": utc_now(), "exit_status": None, "exit_signal": None, "wall_seconds": None,
+        "user_seconds": None, "system_seconds": None, "cpu_seconds": None, "peak_rss_kib": None,
+        "reindex_finished": False, "done_loading": False, "phases": phases, "digest_error": None,
+        "failures": 0, "failure_blocks": 0, "failures_off_main_chain": 0,
+        "incomplete_reasons": ["cannot start the node: %s" % error], "status": "incomplete",
+    })
+    fill_digest(rep, None)
+    report.write(out, rep, [], [])
     return rep
 
 

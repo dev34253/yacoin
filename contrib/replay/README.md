@@ -17,7 +17,8 @@ contrib/replay/replay.py run [--stop-at-height N] [--dbcache MB] [--port P] [--r
 ```
 
 1. Checks that `YACOIND` is executable, that `SOURCE_BLOCKS` holds `blk00000.dat`, that `OUT` does not exist and is not
-   inside `SOURCE_BLOCKS`, and that both ports are free; otherwise it exits with status 2 and creates nothing.
+   inside `SOURCE_BLOCKS`, that both ports are free and that no `NODE_ARGS` sets an option the script sets (below);
+   otherwise it exits with status 2 and creates nothing.
 2. Creates `OUT/datadir/blocks/` and copies `blk00000.dat`, `blk00001.dat`, … from `SOURCE_BLOCKS` into it, in number
    order up to the first missing number. Nothing else is taken from the source (no `rev` files, no index), and nothing
    in `SOURCE_BLOCKS` is written.
@@ -31,7 +32,9 @@ contrib/replay/replay.py run [--stop-at-height N] [--dbcache MB] [--port P] [--r
 
    The replay node makes no network connections and uses its own ports (defaults 17788 and 17789; `--port`,
    `--rpcport`). Every other setting is the node's default; `NODE_ARGS` after `--` are passed on unchanged, for example
-   `-- -par=2`.
+   `-- -par=2`. These options are set by the script; refused after `--` (also in their `-no` form): `-datadir`,
+   `-conf`, `-daemon`, `-reindex`, `-replayvalidation`, `-connect`, `-listen`, `-dnsseed`, `-discover`, `-upnp`,
+   `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`, `-port`, `-rpcport`, `-dbcache`, `-stopatheight`.
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
    exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1.
 5. Computes the digest of `OUT/datadir` (as `digest` does), reads the failure lines of `-replayvalidation` from
@@ -39,11 +42,13 @@ contrib/replay/replay.py run [--stop-at-height N] [--dbcache MB] [--port P] [--r
 
 The run is **complete** when the node exited with status 0 (with `--stop-at-height N`: 0 or 1, and the tip is at height
 N), `debug.log` has `Reindexing finished` and the digest could be computed; otherwise it is **incomplete**, with the
-reasons in the report. The exit status is 0 for a complete run and 1 for an incomplete one.
+reasons in the report (also when the node cannot be started: "cannot start the node: …"). The exit status is 0 for a
+complete run and 1 for an incomplete one.
 
 If the script gets SIGINT, SIGTERM or SIGHUP while the node runs, it sends the node SIGTERM, waits for it to exit and
 exits with status 128 plus the signal number, without a report. A signal the script was started with ignored (for
-example SIGHUP under `nohup`) stays ignored.
+example SIGHUP under `nohup`) stays ignored. If the script is killed with SIGKILL, the node goes on running; stop it
+by hand, for example with `pkill -TERM -f -- "-datadir=OUT/datadir"`.
 
 The node's output is in `OUT/node-stdout.log` and `OUT/node-stderr.log`, its log in `OUT/datadir/debug.log`.
 
@@ -55,8 +60,9 @@ contrib/replay/replay.py digest DATADIR OUT
 
 Writes the report files of the state in `DATADIR` into `OUT` (which must not exist), without the fields of a run. The
 node of `DATADIR` must be stopped; the command refuses a data directory whose lock a running node holds, and a
-chainstate that was not closed cleanly. Nothing in `DATADIR` is changed. Exit status 0, or 1 when the digest cannot be
-computed.
+chainstate that was not closed cleanly. Nothing in `DATADIR` is changed. Exit status 0; 1 when the digest cannot be
+computed (including a data directory whose lock a running node holds); 2 when the command is refused (`DATADIR` is
+not a directory, `OUT` exists).
 
 The digest has these sections, each a record count and a SHA-256:
 
@@ -77,7 +83,8 @@ The overall digest is the SHA-256 over the sections' counts and digests. The dat
 contrib/replay/replay.py compare [--expected-failures FILE] REPORT_A REPORT_B
 ```
 
-`REPORT_A` and `REPORT_B` are output directories of `run` or `digest` (or their `report.json`). Prints `identical` and
+`REPORT_A` and `REPORT_B` are output directories of `run` or `digest` (or their `report.json`); any other path is an
+error (exit status 2). Prints `identical` and
 exits with status 0 when both reports are complete, their tips, every section and every height row agree, and neither
 has a failure other than the expected failures (below). Otherwise it exits with status 1 and prints:
 

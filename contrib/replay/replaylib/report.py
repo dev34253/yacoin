@@ -44,7 +44,12 @@ def write(out, rep, rows, marked_failures):
 
 def load(path):
     """The report in directory path (or of the report.json at path)."""
-    out = path if os.path.isdir(path) else os.path.dirname(path)
+    if os.path.isdir(path):
+        out = path
+    elif os.path.basename(path) == "report.json":
+        out = os.path.dirname(path) or "."
+    else:
+        raise ReportError("not a report directory or report.json: %s" % path)
     json_path = os.path.join(out, "report.json")
     try:
         with open(json_path) as f:
