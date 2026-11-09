@@ -40,12 +40,21 @@ contrib/replay/replay.py run [--stop-at-height N] [--dbcache MB] [--port P] [--r
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
    exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1.
 5. Computes the digest of `OUT/datadir` (as `digest` does), reads the failure lines of `-replayvalidation` from
-   `debug.log` and writes the report files into `OUT`.
+   `debug.log`, makes the block-file check (below) on `OUT/datadir/blocks/blk*.dat` and writes the report files into
+   `OUT`.
 
 The run is **complete** when the node exited with status 0 (with `--stop-at-height N`: 0 or 1, and the tip is at height
-N), `debug.log` has `Reindexing finished` and the digest could be computed; otherwise it is **incomplete**, with the
-reasons in the report (also when the node cannot be started: "cannot start the node: …"). The exit status is 0 for a
-complete run and 1 for an incomplete one.
+N), `debug.log` has `Reindexing finished`, the digest could be computed and the block-file check passes; otherwise it
+is **incomplete**, with the reasons in the report (also when the node cannot be started: "cannot start the node: …").
+The exit status is 0 for a complete run and 1 for an incomplete one.
+
+The **block-file check** reads the block files the node was given and checks that every block of the block files is in
+the block index with its data, and that no stored block lies above the tip (not with `--stop-at-height`, where the
+blocks above N are stored but not connected). A record starts with the 4-byte marker that begins `blk00000.dat`,
+followed by its size (80 to 1000000 bytes) and the block; anything else is skipped byte by byte. A block is matched
+with the block index by its header fields (version, previous block, merkle root, time, bits, nonce). The reasons of an
+incomplete run are "N blocks of the block files are not in the block index", "stored blocks above the tip, up to
+height X" and, when the block index holds stored blocks, "no block records found in the block files".
 
 If the script gets SIGINT, SIGTERM or SIGHUP while the node runs, it sends the node SIGTERM, waits for it to exit and
 exits with status 128 plus the signal number, without a report. A signal the script was started with ignored (for
@@ -117,10 +126,11 @@ line is an error (exit status 2).
 | `command` | run: the node's full command line |
 | `binary` | run: `path` and `sha256` of `YACOIND` |
 | `source`, `block_files` | run: `SOURCE_BLOCKS`; `count` and `bytes` of the copied block files |
+| `block_file_check` | run: `blocks` (distinct blocks in the block files), `not_in_index` (of these, the blocks the block index does not hold with their data), `stored_above_tip` (the highest height of a stored block above the tip, or null); null when the check was not made |
 | `stop_at_height` | run: `--stop-at-height`, or null |
 | `exit_status`, `exit_signal` | run: the node's exit status, or the signal that ended it |
 | `wall_seconds`, `cpu_seconds`, `user_seconds`, `system_seconds`, `peak_rss_kib` | run: the node process from start to exit (CPU time and peak resident memory from `wait4`) |
-| `phases` | run: `copy_seconds`, `reindex_finished_seconds` and `done_loading_seconds` (from the node's start), `node_seconds`, `digest_seconds` |
+| `phases` | run: `copy_seconds`, `reindex_finished_seconds` and `done_loading_seconds` (from the node's start), `node_seconds`, `digest_seconds`, `block_file_check_seconds` |
 | `reindex_finished`, `done_loading` | run: whether `debug.log` has these lines |
 | `failures`, `failure_blocks`, `failures_off_main_chain` | run: failure lines of `-replayvalidation`, the number of distinct blocks among them, and of failures whose block is not on the main chain at its height |
 
@@ -162,7 +172,7 @@ and start it. `run` reads only the `blk*.dat` files of the source.
 
 Disk: `OUT` holds a copy of the block files plus the databases the node rebuilds (`blocks/index`, `chainstate`,
 `tokens`), the `rev` files and `debug.log`. The digest reads the block index, chainstate and token databases into
-memory.
+memory, the block-file check the block index.
 
 Time and memory: one full replay of the main chain took about 65 hours of wall time and about 65 hours of CPU time,
 with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes and

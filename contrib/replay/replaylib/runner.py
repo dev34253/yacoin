@@ -1,7 +1,7 @@
 """The replay run: copies the block files of a source directory into a new
 data directory, imports them with yacoind -reindex -replayvalidation=report
-on a node without network connections, stops the node, computes the digest
-and writes the report."""
+on a node without network connections, stops the node, computes the digest,
+checks the block files against the block index and writes the report."""
 
 import datetime
 import errno
@@ -13,8 +13,8 @@ import socket
 import subprocess
 import time
 
+from . import blockfiles, logscan, report
 from . import digest as digest_mod
-from . import logscan, report
 
 REPORT_FORMAT = 1
 DEFAULT_PORT = 17788
@@ -92,15 +92,7 @@ def port_in_use(port):
     return False
 
 
-def block_files(source):
-    """The paths of blk00000.dat, blk00001.dat, ... in source, up to the
-    first missing number."""
-    out = []
-    while True:
-        path = os.path.join(source, "blk%05d.dat" % len(out))
-        if not os.path.isfile(path):
-            return out
-        out.append(path)
+block_files = blockfiles.block_files
 
 
 def node_command(binary, datadir, conf, port, rpcport, dbcache=None, stop_at_height=None, extra=()):
@@ -311,8 +303,15 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     rep["failures_off_main_chain"] = sum(1 for _, main in marked if not main)
     fill_digest(rep, d)
 
-    rep["incomplete_reasons"] = incomplete_reasons(exit_status, exit_signal, follower.scanner, d, stop_at_height)
-    reasons = rep["incomplete_reasons"]
+    reasons = incomplete_reasons(exit_status, exit_signal, follower.scanner, d, stop_at_height)
+    rep["block_file_check"] = None
+    if d is not None:
+        t2 = time.monotonic()
+        result = blockfiles.check(block_files(blocks), datadir, d.tip_height, stop_at_height)
+        phases["block_file_check_seconds"] = round(time.monotonic() - t2, 3)
+        rep["block_file_check"] = result.fields
+        reasons += result.reasons
+    rep["incomplete_reasons"] = reasons
     rep["status"] = "incomplete" if reasons else "complete"
     report.write(out, rep, d.rows if d else [], marked)
     return rep
@@ -324,7 +323,7 @@ def _start_failed(out, rep, phases, error):
         "end_time": utc_now(), "exit_status": None, "exit_signal": None, "wall_seconds": None,
         "user_seconds": None, "system_seconds": None, "cpu_seconds": None, "peak_rss_kib": None,
         "reindex_finished": False, "done_loading": False, "phases": phases, "digest_error": None,
-        "failures": 0, "failure_blocks": 0, "failures_off_main_chain": 0,
+        "failures": 0, "failure_blocks": 0, "failures_off_main_chain": 0, "block_file_check": None,
         "incomplete_reasons": ["cannot start the node: %s" % error], "status": "incomplete",
     })
     fill_digest(rep, None)
@@ -333,7 +332,7 @@ def _start_failed(out, rep, phases, error):
 
 
 def incomplete_reasons(exit_status, exit_signal, scanner, d, stop_at_height):
-    """Why a run is incomplete; empty for a complete run. A node stopped by
+    """Why a run is incomplete, apart from the block-file check; empty for a complete run. A node stopped by
     -stopatheight during the import exits with status 1 after "Done
     loading"; with stop_at_height that status counts as a clean exit when
     the tip is at stop_at_height."""

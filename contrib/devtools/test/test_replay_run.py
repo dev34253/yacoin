@@ -16,6 +16,8 @@ The fake node is a Python script. Its behaviour comes from FAKE_MODE:
              exits 0
   gate       as normal, but waits after the reindex line until
              <datadir>/go exists
+  extra      as normal, with a block in its block files that is not in
+             its block index
 
 Without SIGTERM it exits with status 3 after 20 s. It records its
 arguments in <datadir>/args.json, its process id in
@@ -85,7 +87,11 @@ if mode == "slow":
     open(os.path.join(datadir, "exited"), "w").close()
     sys.exit(0)
 os.rename(os.path.join(datadir, "blocks"), os.path.join(datadir, "blocks.copied"))
-tu.make_datadir(datadir, heights=3)
+tu.make_datadir(datadir, heights=3, blk=True)
+if mode == "extra":
+    with open(os.path.join(datadir, "blocks", "blk00000.dat"), "ab") as f:
+        f.write(tu.block_record({"version": 7, "hash_prev": tu.fake_hash(3), "merkle": tu.fake_hash(4, salt=7),
+                                 "time": 1700000300, "bits": 0x1e0fffff, "nonce": 0x4c39}))
 log("Done loading")
 if mode == "stop":
     sys.exit(1)
@@ -169,6 +175,7 @@ class RunTest(unittest.TestCase):
             self.assertGreaterEqual(rep[key], 0, key)
         self.assertGreater(rep["peak_rss_kib"], 0)
         self.assertEqual(rep["binary"]["sha256"], runner.file_sha256(self.bin))
+        self.assertEqual(rep["block_file_check"], {"blocks": 4, "not_in_index": 0, "stored_above_tip": None})
         sigblk = os.path.join(datadir, "sigblk")
         if os.path.exists(sigblk):
             with open(sigblk) as f:
@@ -177,6 +184,14 @@ class RunTest(unittest.TestCase):
                 self.assertFalse(mask & (1 << (sig - 1)), "%s blocked in the node" % sig.name)
         self.assertEqual(sorted(os.listdir(self.source)), ["blk00000.dat", "blk00001.dat", "blk00003.dat",
                                                            "rev00000.dat"])
+
+    def test_block_not_in_the_index_is_incomplete(self):
+        code, stdout, _ = self.run_cli("extra")
+        self.assertEqual(code, 1)
+        rep = self.report()
+        self.assertEqual(rep["incomplete_reasons"], ["1 blocks of the block files are not in the block index"])
+        self.assertEqual(rep["block_file_check"], {"blocks": 5, "not_in_index": 1, "stored_above_tip": None})
+        self.assertIn("incomplete: 1 blocks of the block files are not in the block index", stdout)
 
     def test_stop_at_height_exit_status_1(self):
         code, stdout, _ = self.run_cli("stop", "--stop-at-height", "3")
