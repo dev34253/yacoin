@@ -66,7 +66,22 @@ def _read(path, lo=None, hi=None, as_dict=False):
 def _chainstate(datadir):
     """The de-obfuscated coin records and the best block of the chainstate."""
     records = _read(os.path.join(datadir, "chainstate"))
-    values = dict(records)
+    key, best = _key_and_best(dict(records))
+    coins = [(k, xor(v, key)) for k, v in records if k[:1] == b"C"]
+    return coins, best
+
+
+def best_block(datadir):
+    """The best block of the chainstate, read without the coin records."""
+    path = os.path.join(datadir, "chainstate")
+    values = dict(_read(path, None, b"C"))
+    values.update(_read(path, b"H", b"I"))
+    return _key_and_best(values)[1]
+
+
+def _key_and_best(values):
+    """The obfuscation key and the de-obfuscated best block of the
+    chainstate records values."""
     key = b""
     if OBFUSCATE_KEY_KEY in values:
         r = Reader(values[OBFUSCATE_KEY_KEY])
@@ -83,8 +98,7 @@ def _chainstate(datadir):
     best = xor(best, key)
     if len(best) != 32 or best == b"\0" * 32:
         raise DigestError("chainstate: bad best-block record")
-    coins = [(k, xor(v, key)) for k, v in records if k[:1] == b"C"]
-    return coins, best
+    return key, best
 
 
 def read_coins(datadir):

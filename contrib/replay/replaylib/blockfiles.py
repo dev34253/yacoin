@@ -59,7 +59,8 @@ def _record_key(data, pos, size):
 
 
 def _records(path, marker):
-    """The header keys of the records of one block file."""
+    """(offset, length, header key) of the records of one block file;
+    offset and length cover the whole record (marker, size and block)."""
     with open(path, "rb") as f:
         size = os.fstat(f.fileno()).st_size
         if size == 0:
@@ -78,7 +79,7 @@ def _records(path, marker):
                 if key is None:
                     pos = start + 1
                     continue
-                yield key
+                yield start, end - start, key
                 pos = end
 
 
@@ -103,15 +104,23 @@ def record_marker(paths):
     return marker if len(marker) == 4 else None
 
 
-def scan(paths):
-    """The header keys of the blocks in the block files paths (the first is
-    blk00000.dat), in file order; a block stored twice is yielded twice."""
+def records(paths):
+    """(path, offset, length, header key) of the records in the block files
+    paths (the first is blk00000.dat), in file order; offset and length
+    cover the whole record."""
     marker = record_marker(paths)
     if marker is None:
         return
     for path in paths:
-        for key in _records(path, marker):
-            yield key
+        for offset, length, key in _records(path, marker):
+            yield path, offset, length, key
+
+
+def scan(paths):
+    """The header keys of the blocks in the block files paths (the first is
+    blk00000.dat), in file order; a block stored twice is yielded twice."""
+    for _path, _offset, _length, key in records(paths):
+        yield key
 
 
 def stored_blocks(datadir):

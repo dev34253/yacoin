@@ -7,6 +7,7 @@
 """
 
 import collections
+import datetime
 import gzip
 import json
 import os
@@ -22,6 +23,10 @@ Loaded = collections.namedtuple("Loaded", "path report rows failures")
 
 class ReportError(Exception):
     pass
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def write(out, rep, rows, marked_failures):
@@ -70,13 +75,20 @@ def load(path):
     failures = []
     failures_path = os.path.join(out, "failures.tsv")
     if os.path.exists(failures_path):
-        try:
-            with open(failures_path) as f:
-                if f.readline() != FAILURES_HEADER:
-                    raise ReportError("%s: unknown header" % failures_path)
-                for line in f:
-                    h, block, check, tx, inp, _main, error = line.rstrip("\n").split("\t", 6)
-                    failures.append(Failure(int(h), block, check, tx, inp, error))
-        except (OSError, ValueError) as e:
-            raise ReportError("cannot read %s: %s" % (failures_path, e))
+        failures = read_failures(failures_path)
     return Loaded(out, rep, rows, failures)
+
+
+def read_failures(path):
+    """The failures (logscan.Failure) of a failures.tsv file."""
+    failures = []
+    try:
+        with open(path) as f:
+            if f.readline() != FAILURES_HEADER:
+                raise ReportError("%s: unknown header" % path)
+            for line in f:
+                h, block, check, tx, inp, _main, error = line.rstrip("\n").split("\t", 6)
+                failures.append(Failure(int(h), block, check, tx, inp, error))
+    except (OSError, ValueError) as e:
+        raise ReportError("cannot read %s: %s" % (path, e))
+    return failures

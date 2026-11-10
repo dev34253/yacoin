@@ -3,6 +3,7 @@ writer of LevelDB 1.20 files (write-ahead logs, tables, MANIFEST, CURRENT)
 for small databases built by the tests."""
 
 import os
+import stat
 import struct
 import sys
 
@@ -285,7 +286,7 @@ def index_records(datadir):
 
 def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                  head_blocks=False, block_fields=None, undo=None, side_blocks=0, rev_padding=b"",
-                 blk=False, tip=None):
+                 blk=False, tip=None, salt=0):
     """A data directory with blocks/index (a chain of heights + 1 'b'
     records and side_blocks records off the chain), blocks/rev00000.dat with
     one undo record per height above 0, chainstate (obfuscated with key,
@@ -294,9 +295,10 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     block_fields(height) adds fields to a record; undo(height) gives its
     undo content; rev_padding comes before the first undo record. With blk,
     blocks/blk00000.dat holds a record (marker MARKER) for every block with
-    data. Returns the block hashes in height order."""
+    data. salt gives the blocks above genesis other hashes. Returns the
+    block hashes in height order."""
     os.makedirs(os.path.join(path, "blocks"))
-    hashes = [fake_hash(h) for h in range(heights + 1)]
+    hashes = [fake_hash(h, salt if h else 0) for h in range(heights + 1)]
     rev = bytearray(rev_padding)
     records = []
     blk_bytes = bytearray()
@@ -318,7 +320,7 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
         if f.get("status", BLOCK_HAVE_DATA) & BLOCK_HAVE_DATA:
             blk_bytes += block_record(f)
     for s in range(side_blocks):
-        side = fake_hash(1, salt=s + 1)
+        side = fake_hash(1, salt=500 + s)
         f = {"height": 1, "hash_prev": hashes[0], "block_hash": side, "status": BLOCK_HAVE_DATA,
              "merkle": fake_hash(1, salt=2000 + s), "time": 1700000090, "bits": 0x1e0fffff, "nonce": 0x2345 + s}
         records.append((b"b" + side, block_index_bytes(f)))
@@ -346,3 +348,57 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     tok.finish()
     return hashes
 
+
+def make_run(out, heights=3, fields=None, failures=(), **kwargs):
+    """The output directory of a complete full run: OUT/datadir (as
+    make_datadir with blk, plus debug.log, yacoin.conf, .lock and
+    peers.dat) and the report files of its digest, with the failures
+    (logscan.Failure) given; fields replace fields of the report. Returns
+    the report."""
+    from replaylib import digest, logscan, report, runner
+    datadir = os.path.join(out, "datadir")
+    make_datadir(datadir, heights=heights, blk=True, **kwargs)
+    for name, data in (("debug.log", b"2026-11-08 10:00:00 Done loading\n"), ("yacoin.conf", b"# conf\n"),
+                       (".lock", b""), ("peers.dat", b"\x01\x02")):
+        with open(os.path.join(datadir, name), "wb") as f:
+            f.write(data)
+    d = digest.compute(datadir)
+    rep = {"format": runner.REPORT_FORMAT, "kind": "run", "mode": "full", "snapshot": None, "status": "complete",
+           "incomplete_reasons": [], "datadir": datadir, "source": "/source/blocks",
+           "command": ["/bin/yacoind", "-datadir=" + datadir, "-reindex"],
+           "binary": {"path": "/bin/yacoind", "sha256": "ab" * 32}, "stop_at_height": None,
+           "start_time": "2026-11-08T10:00:00Z", "end_time": "2026-11-08T10:01:00Z"}
+    runner.fill_digest(rep, d)
+    marked = logscan.mark_main_chain(list(failures), d.rows)
+    rep["failures"], rep["failure_blocks"] = logscan.counts(list(failures))
+    rep["failures_off_main_chain"] = sum(1 for _, main in marked if not main)
+    rep.update(fields or {})
+    report.write(out, rep, d.rows, marked)
+    return rep
+
+
+def tree_state(path):
+    """Per path under path (directories included): type, size, mode, mtime
+    and the SHA-256 of a file's content."""
+    import hashlib
+    out = {}
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            full = os.path.join(root, name)
+            st = os.lstat(full)
+            entry = (stat.S_IFMT(st.st_mode), st.st_size if name in files else 0, stat.S_IMODE(st.st_mode),
+                     st.st_mtime_ns)
+            if name in files:
+                with open(full, "rb") as f:
+                    entry += (hashlib.sha256(f.read()).hexdigest(),)
+            out[os.path.relpath(full, path)] = entry
+    return out
+
+
+def make_writable(path):
+    """Gives the owner write permission on path and everything under it."""
+    for root, dirs, files in os.walk(path):
+        os.chmod(root, os.stat(root).st_mode | stat.S_IWUSR)
+        for name in files:
+            full = os.path.join(root, name)
+            os.chmod(full, os.stat(full).st_mode | stat.S_IWUSR)
