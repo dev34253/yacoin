@@ -31,6 +31,7 @@ enum ActivationRule
     ACTIVATION_HELIOPOLIS,
     ACTIVATION_CLTV,
     ACTIVATION_CSV,
+    // NOTE: Also add new rules to the names of -testactivationheight in chainparams.cpp
     MAX_ACTIVATION_RULES
 };
 
