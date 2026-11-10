@@ -91,9 +91,14 @@ BOOST_AUTO_TEST_CASE(main_consensus)
     const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::MAIN);
     const Consensus::Params& consensus = params->GetConsensus();
 
-    BOOST_CHECK_EQUAL(consensus.BIP65Height, 1890000);
-    BOOST_CHECK_EQUAL(consensus.BIP68Height, 1890000);
-    BOOST_CHECK_EQUAL(consensus.HeliopolisHardforkHeight, 1890000);
+    // The activation heights are the same in the low-difficulty build.
+    BOOST_CHECK_EQUAL(Consensus::MAX_ACTIVATION_RULES, 3);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 1890000);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 1890000);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 1890000);
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], 1890000);
+    }
     BOOST_CHECK_EQUAL(consensus.nPowTargetSpacing, 60);
     BOOST_CHECK_EQUAL(consensus.nPowTargetTimespan, 21000 * 60);
     BOOST_CHECK_EQUAL(consensus.DifficultyAdjustmentInterval(), 21000);
@@ -183,9 +188,12 @@ BOOST_AUTO_TEST_CASE(regtest_parameters)
     BOOST_CHECK_EQUAL(consensus.initialHashTarget.GetCompact(), 0x207fffffU);
     BOOST_CHECK_EQUAL(consensus.initialMoneySupply, 100000000000000LL);
 
-    BOOST_CHECK_EQUAL(consensus.BIP65Height, 0);
-    BOOST_CHECK_EQUAL(consensus.BIP68Height, 0);
-    BOOST_CHECK_EQUAL(consensus.HeliopolisHardforkHeight, 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 0);
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], 0);
+    }
     BOOST_CHECK_EQUAL(consensus.nPowTargetSpacing, 60);
     BOOST_CHECK_EQUAL(consensus.nPowTargetTimespan, 10);
     BOOST_CHECK(consensus.fPowAllowMinDifficultyBlocks);
@@ -251,7 +259,9 @@ BOOST_AUTO_TEST_CASE(select_params)
 
     SelectParams(CBaseChainParams::REGTEST);
     BOOST_CHECK_EQUAL(Params().NetworkIDString(), "regtest");
-    BOOST_CHECK_EQUAL(Params().GetConsensus().HeliopolisHardforkHeight, 0);
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        BOOST_CHECK_EQUAL(Params().GetConsensus().ActivationHeight(Consensus::ActivationRule(i)), 0);
+    }
     BOOST_CHECK_EQUAL(BaseParams().DataDir(), "regtest");
     BOOST_CHECK_EQUAL(BaseParams().RPCPort(), 17687);
 

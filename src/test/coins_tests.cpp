@@ -552,7 +552,7 @@ static const std::pair<int, int> REAL_HEIGHT_TIMES[] = {
 
 BOOST_AUTO_TEST_CASE(coin_serialization_real_times)
 {
-    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    const int nFork = Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS);
     for (const auto& ht : REAL_HEIGHT_TIMES) {
         for (bool fCoinBase : {false, true}) {
             for (bool fCoinStake : {false, true}) {
@@ -581,7 +581,7 @@ BOOST_AUTO_TEST_CASE(coin_serialization_real_times)
 
 BOOST_AUTO_TEST_CASE(undo_serialization_real_times)
 {
-    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    const int nFork = Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS);
     for (const auto& ht : REAL_HEIGHT_TIMES) {
         for (bool fCoinBase : {false, true}) {
             for (bool fCoinStake : {false, true}) {
@@ -637,7 +637,7 @@ BOOST_AUTO_TEST_CASE(block_undo_serialization_real_times)
 {
     // Reading a transaction's undo data checks its input count against the block size at
     // its first input's height: every transaction's first input is from before the hardfork
-    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    const int nFork = Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS);
     ConsensusGlobalsGuard globals;
     globals.Set(nFork, nEpochInterval);
     CBlockUndo blockundo;
@@ -688,7 +688,7 @@ BOOST_AUTO_TEST_CASE(legacy_undo_serialization)
 /* The coins database keeps each coin's time, and the coinstake flag below the hardfork only */
 BOOST_FIXTURE_TEST_CASE(coins_db_real_times, TestingSetup)
 {
-    const int nFork = Params().GetConsensus().HeliopolisHardforkHeight;
+    const int nFork = Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS);
     CCoinsViewDB db(1 << 20, true);
     std::map<COutPoint, Coin> expected;
     CCoinsMap map;
@@ -815,7 +815,7 @@ BOOST_AUTO_TEST_CASE(coins_view_defaults_and_backed)
 BOOST_AUTO_TEST_CASE(access_by_txid)
 {
     ConsensusGlobalsGuard globals;
-    globals.Set(Params().GetConsensus().HeliopolisHardforkHeight, nEpochInterval);
+    globals.Set(Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), nEpochInterval);
     CCoinsView empty;
     CCoinsViewCache base(&empty);
     const uint256 txid = uint256S("0c02");
@@ -844,7 +844,7 @@ BOOST_AUTO_TEST_CASE(apply_tx_in_undo)
     // DisconnectResult values
     const int OK = 0, UNCLEAN = 1, FAILED = 2;
     ConsensusGlobalsGuard globals; // as in access_by_txid
-    globals.Set(Params().GetConsensus().HeliopolisHardforkHeight, nEpochInterval);
+    globals.Set(Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), nEpochInterval);
     CCoinsView empty;
     CCoinsViewCache view(&empty);
     const uint256 txid = uint256S("0c04");

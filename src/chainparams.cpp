@@ -83,9 +83,9 @@ public:
         consensus.initialHashTarget = CBigNum(~uint256(0) >> 8);
         consensus.initialMoneySupply = 1E14;
 #endif
-        consensus.BIP65Height = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.BIP68Height = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.HeliopolisHardforkHeight = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CLTV] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CSV] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_HELIOPOLIS] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nPowTargetTimespan = 21000 * 60;  // 21000 blocks * 60 seconds
         consensus.nPowTargetSpacing = 1 * 60; // 1 minutes
         consensus.fPowAllowMinDifficultyBlocks = false;
@@ -237,9 +237,9 @@ public:
         consensus.powLimit = CBigNum(uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
         consensus.initialHashTarget = CBigNum(uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
         consensus.initialMoneySupply = 1E14; // With this value, each block reward in the first interval is  3.802570 YAC
-        consensus.BIP65Height = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.BIP68Height = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.HeliopolisHardforkHeight = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CLTV] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CSV] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_HELIOPOLIS] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nPowTargetTimespan = 10;  // 10blocks
         consensus.nPowTargetSpacing = 1 * 60; // 1 minutes
         consensus.fPowAllowMinDifficultyBlocks = true;

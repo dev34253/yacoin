@@ -23,6 +23,18 @@ enum DeploymentPos
 };
 
 /**
+ * The consensus rules that activate at a block height: an index into
+ * Params::nActivationHeight.
+ */
+enum ActivationRule
+{
+    ACTIVATION_HELIOPOLIS,
+    ACTIVATION_CLTV,
+    ACTIVATION_CSV,
+    MAX_ACTIVATION_RULES
+};
+
+/**
  * Struct for each individual consensus rule change using BIP9.
  */
 struct BIP9Deployment {
@@ -43,13 +55,11 @@ struct Params {
 //    /** Block height and hash at which BIP34 becomes active */
 //    int BIP34Height;
 //    uint256 BIP34Hash;
-    /** Block height at which BIP65 becomes active (Start enforcing CHECKLOCKTIMEVERIFY) */
-    int BIP65Height;
-    /** Block height at which BIP68 becomes active (Start enforcing BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic) */
-    int BIP68Height;
 //    /** Block height at which BIP66 becomes active */
 //    int BIP66Height;
-    int HeliopolisHardforkHeight;
+    /** Block height at which each rule of ActivationRule activates */
+    int nActivationHeight[MAX_ACTIVATION_RULES];
+    int ActivationHeight(ActivationRule rule) const { return nActivationHeight[rule]; }
     /**
      * Minimum blocks including miner confirmation of the total of 2016 blocks in a retargeting period,
      * (nPowTargetTimespan / nPowTargetSpacing) which is also used for BIP9 deployments.
