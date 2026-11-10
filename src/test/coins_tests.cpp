@@ -669,6 +669,50 @@ BOOST_AUTO_TEST_CASE(block_undo_serialization_real_times)
                       "01" "01" "80c3ac64" "84bba6c621" "01" "00" "5000e480473de775e89c7425ab353b8795f1acdaf960");
 }
 
+/* A coin one block below the Heliopolis activation height, set to 10, has one byte more than
+ * the same coin at it; both read back to the coin written */
+BOOST_AUTO_TEST_CASE(coin_serialization_at_activation_height)
+{
+    SelectedParamsGuard restore(CBaseChainParams::REGTEST);
+    UpdateActivationHeight(Consensus::ACTIVATION_HELIOPOLIS, 10);
+    const unsigned int nTime = Params().GenesisBlock().nTime + 60;
+    size_t nSize[2];
+    for (int nHeight : {9, 10}) {
+        const Coin coin = RealCoin(nHeight, false, false, nTime);
+        CDataStream ss(SER_DISK, CLIENT_VERSION);
+        ss << coin;
+        nSize[nHeight - 9] = ss.size();
+        Coin read;
+        ss >> read;
+        BOOST_CHECK(ss.empty());
+        CheckSameCoin(read, coin);
+        BOOST_CHECK(!read.fCoinStake);
+    }
+    BOOST_CHECK_EQUAL(nSize[0], nSize[1] + 1);
+}
+
+/* The same for an input's undo record */
+BOOST_AUTO_TEST_CASE(undo_serialization_at_activation_height)
+{
+    SelectedParamsGuard restore(CBaseChainParams::REGTEST);
+    UpdateActivationHeight(Consensus::ACTIVATION_HELIOPOLIS, 10);
+    const unsigned int nTime = Params().GenesisBlock().nTime + 60;
+    size_t nSize[2];
+    for (int nHeight : {9, 10}) {
+        const Coin coin = RealCoin(nHeight, false, false, nTime);
+        CDataStream ss(SER_DISK, CLIENT_VERSION);
+        ss << TxInUndoSerializer(&coin);
+        nSize[nHeight - 9] = ss.size();
+        Coin read;
+        TxInUndoDeserializer reader(&read);
+        ss >> reader;
+        BOOST_CHECK(ss.empty());
+        CheckSameCoin(read, coin);
+        BOOST_CHECK(!read.fCoinStake);
+    }
+    BOOST_CHECK_EQUAL(nSize[0], nSize[1] + 1);
+}
+
 /* An input record with height 0 (old versions wrote these for all but the last spend of a
  * transaction's outputs): no version byte after the coinstake flag */
 BOOST_AUTO_TEST_CASE(legacy_undo_serialization)

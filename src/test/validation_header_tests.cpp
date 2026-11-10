@@ -6,8 +6,8 @@
 // ContextualCheckBlockHeader, AddToBlockIndex), and how received blocks are linked
 // (ReceivedBlockTransactions) and chosen as the new tip (FindMostWorkChain).
 //
-// The regtest headers here are version 7, apart from one version 6 header, and hash at
-// nFactorAtHardfork, which is 0 in the unit tests. Every header here is a proof-of-work header.
+// The regtest headers here are version 7 and hash at nFactorAtHardfork, which is 0 in the unit
+// tests; the version rule cases add version 6 headers. Every header here is a proof-of-work header.
 
 #include "chainparams.h"
 #include "consensus/validation.h"
@@ -554,6 +554,36 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
     result = AcceptHeaders({header});
     BOOST_CHECK_EQUAL(result.reason, "bad-version(0x00000006)");
     BOOST_CHECK_EQUAL(result.nCode, REJECT_OBSOLETE);
+}
+
+/* The version rule at the Heliopolis activation height, set to 2: a version 6 header is
+ * accepted one block below it and rejected at it, a version 7 header is accepted at it */
+BOOST_FIXTURE_TEST_CASE(header_version_at_activation_height, RegtestSetup)
+{
+    SelectedParamsGuard restore(CBaseChainParams::REGTEST);
+    UpdateActivationHeight(Consensus::ACTIVATION_HELIOPOLIS, 2);
+    const CBlockIndex* pindexGenesis = Tip();
+    BOOST_REQUIRE_EQUAL(pindexGenesis->nHeight, 0);
+    const ::int64_t nGenesisTime = pindexGenesis->GetBlockTime();
+
+    const CBlockHeader v6AtHeight1 = HeaderOn(pindexGenesis, nGenesisTime + 1, VERSION_of_block_for_yac_049);
+    HeaderResult result = AcceptHeaders({v6AtHeight1});
+    BOOST_CHECK_EQUAL(result.reason, "");
+    BOOST_REQUIRE(result.pindex != nullptr);
+    BOOST_CHECK_EQUAL(result.pindex->nHeight, 1);
+    const CBlockIndex* pindex1 = result.pindex;
+
+    const CBlockHeader v6AtHeight2 = HeaderOn(pindex1, nGenesisTime + 2, VERSION_of_block_for_yac_049);
+    result = AcceptHeaders({v6AtHeight2});
+    BOOST_CHECK_EQUAL(result.reason, "bad-version(0x00000006)");
+    BOOST_CHECK_EQUAL(result.nCode, REJECT_OBSOLETE);
+    BOOST_CHECK(Index(v6AtHeight2.GetHash()) == nullptr);
+
+    const CBlockHeader v7AtHeight2 = HeaderOn(pindex1, nGenesisTime + 2);
+    result = AcceptHeaders({v7AtHeight2});
+    BOOST_CHECK_EQUAL(result.reason, "");
+    BOOST_REQUIRE(result.pindex != nullptr);
+    BOOST_CHECK_EQUAL(result.pindex->nHeight, 2);
 }
 
 /* Below the fork height, a block that is received also gets its stake modifier: for the
