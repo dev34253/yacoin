@@ -30,11 +30,13 @@ contrib/replay/replay.py run [--stop-at-height N] [--dbcache MB] [--port P] [--r
            -printtoconsole=0 -port=P -rpcport=R [-dbcache=MB] [-stopatheight=N] NODE_ARGS...
    ```
 
-   The replay node makes no network connections and uses its own ports (defaults 17788 and 17789; `--port`,
-   `--rpcport`). Every other setting is the node's default; `NODE_ARGS` after `--` are passed on unchanged, for example
-   `-- -par=2`. These options are set by the script; refused after `--` (also in their `-no` form): `-datadir`,
-   `-conf`, `-daemon`, `-reindex`, `-replayvalidation`, `-connect`, `-listen`, `-dnsseed`, `-discover`, `-upnp`,
-   `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`, `-port`, `-rpcport`, `-dbcache`, `-stopatheight`.
+   Without `NODE_ARGS`, the replay node makes no network connections and uses its own ports (defaults 17788 and 17789;
+   `--port`, `--rpcport`). Every other setting is the node's default; `NODE_ARGS` after `--` are passed on unchanged,
+   for example `-- -par=2`. Options in `NODE_ARGS` can make the node connect to other nodes or read and write files
+   outside `OUT` (for example `-addnode`, `-seednode`, `-pid`). The options the script sets itself are refused after
+   `--` (also in their `-no` form): `-datadir`, `-conf`, `-daemon`, `-reindex`, `-replayvalidation`, `-connect`,
+   `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`,
+   `-port`, `-rpcport`, `-dbcache`, `-stopatheight`.
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
    exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1.
 5. Computes the digest of `OUT/datadir` (as `digest` does), reads the failure lines of `-replayvalidation` from
@@ -161,3 +163,7 @@ and start it. `run` reads only the `blk*.dat` files of the source.
 Disk: `OUT` holds a copy of the block files plus the databases the node rebuilds (`blocks/index`, `chainstate`,
 `tokens`), the `rev` files and `debug.log`. The digest reads the block index, chainstate and token databases into
 memory.
+
+Time and memory: one full replay of the main chain took about 65 hours of wall time and about 65 hours of CPU time,
+with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes and
+about 1.5 GB of memory.
