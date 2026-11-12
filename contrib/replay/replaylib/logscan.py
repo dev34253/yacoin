@@ -1,6 +1,8 @@
-"""The scan of a node's debug.log: the failure lines of -replayvalidation
-and the markers of the reindex ("Reindexing finished") and of the end of
-the start-up ("Done loading"). The log is read in chunks, never whole."""
+"""The scan of a node's debug.log: the failure lines of -replayvalidation,
+the markers of the reindex ("Reindexing finished") and of the end of the
+start-up ("Done loading"), and the files of -loadblock the node imported
+("Importing blocks file") or could not open. The log is read in chunks,
+never whole."""
 
 import codecs
 import collections
@@ -12,6 +14,8 @@ Failure = collections.namedtuple("Failure", "height block check tx input error")
 FAILURE_RE = re.compile(r"replayvalidation: failure height=(\d+) block=([0-9a-f]{64}) "
                         r"check=(\S+) tx=(\S+) input=(\S+) error=(.*)$")
 REINDEX_FINISHED = "Reindexing finished"
+IMPORTING_RE = re.compile(r"Importing blocks file (.*)\.\.\.$")
+NOT_OPENED_RE = re.compile(r"Warning: Could not open blocks file (.*)$")
 DONE_LOADING = "Done loading"
 CHUNK = 1 << 20
 
@@ -25,6 +29,8 @@ class LogScanner:
         self.failures = []
         self.reindex_finished = False
         self.done_loading = False
+        self.imported = []
+        self.not_opened = []
         self._partial = ""
 
     def feed(self, text):
@@ -49,6 +55,13 @@ class LogScanner:
             self.reindex_finished = True
         elif line.endswith(DONE_LOADING):
             self.done_loading = True
+        elif "blocks file " in line:
+            m = IMPORTING_RE.search(line)
+            if m:
+                self.imported.append(m.group(1))
+            m = NOT_OPENED_RE.search(line)
+            if m:
+                self.not_opened.append(m.group(1))
 
 
 class LogFollower:
