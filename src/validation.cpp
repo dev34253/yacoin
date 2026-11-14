@@ -362,7 +362,7 @@ bool CheckSequenceLocks(const CTransaction &tx, int flags, LockPoints* lp, bool 
 }
 
 // Returns the script flags which should be checked for a given block
-static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& chainparams);
+unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& chainparams);
 
 /* Make mempool consistent after a reorg, by re-adding or recursively erasing
  * disconnected block transactions from the mempool, and also removing any
@@ -1657,7 +1657,7 @@ void ThreadScriptCheck()
     LogPrintf("ThreadScriptCheck shutdown\n");
 }
 
-static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& consensusparams) {
+unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& consensusparams) {
     AssertLockHeld(cs_main);
 
     // BIP16 didn't become active until Apr 1 2012
@@ -1672,12 +1672,12 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
 //    }
 
     // Start enforcing CHECKLOCKTIMEVERIFY (BIP65) rule
-    if (pindex->nHeight >= consensusparams.BIP65Height) {
+    if (pindex->nHeight >= consensusparams.ActivationHeight(Consensus::ACTIVATION_CLTV)) {
         flags |= SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY;
     }
 
     // Start enforcing BIP68 (sequence locks) and BIP112 (CHECKSEQUENCEVERIFY) using versionbits logic.
-    if (pindex->nHeight >= consensusparams.BIP68Height) {
+    if (pindex->nHeight >= consensusparams.ActivationHeight(Consensus::ACTIVATION_CSV)) {
         flags |= SCRIPT_VERIFY_CHECKSEQUENCEVERIFY;
     }
 
@@ -3305,7 +3305,7 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
     // Reject outdated version blocks when 95% (75% on testnet) of the network has upgraded:
     // check for version 2, 3 and 4 upgrades
     const Consensus::Params& consensusParams = params.GetConsensus();
-    if (block.nVersion < VERSION_of_block_for_yac_05x_new && nHeight >= consensusParams.HeliopolisHardforkHeight)
+    if (block.nVersion < VERSION_of_block_for_yac_05x_new && nHeight >= consensusParams.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS))
       return state.Invalid(
           false, REJECT_OBSOLETE,
           strprintf("bad-version(0x%08x)", block.nVersion),

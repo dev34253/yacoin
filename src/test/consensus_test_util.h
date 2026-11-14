@@ -6,12 +6,14 @@
 #define YACOIN_TEST_CONSENSUS_TEST_UTIL_H
 
 #include "chain.h"
+#include "chainparams.h"
 #include "sync.h"
 #include "uint256.h"
 #include "util.h"
 #include "validation.h"
 
 #include <deque>
+#include <string>
 #include <vector>
 
 /**
@@ -42,6 +44,26 @@ struct ConsensusGlobalsGuard
         nDifficultyInterval = nDifficulty;
         nFactorAtHardfork = nFactor;
     }
+};
+
+/**
+ * Selects a chain for the test and, when the test ends, the chain selected
+ * before it again, whose parameters are then created again (activation
+ * heights included).
+ */
+class SelectedParamsGuard
+{
+public:
+    explicit SelectedParamsGuard(const std::string& chain) : m_previous(Params().NetworkIDString())
+    {
+        SelectParams(chain);
+    }
+    ~SelectedParamsGuard() { SelectParams(m_previous); }
+    SelectedParamsGuard(const SelectedParamsGuard&) = delete;
+    SelectedParamsGuard& operator=(const SelectedParamsGuard&) = delete;
+
+private:
+    const std::string m_previous;
 };
 
 /**

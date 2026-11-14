@@ -19,3 +19,5 @@ Unreleased
   block index when the node is later started without the option. `0` (the default)
   turns the mode off; any other value is an error at startup. The mode's checks store
   nothing in the signature or script caches.
+
+- `-testactivationheight=name@height` (regtest only): sets the activation height of a consensus rule for tests.

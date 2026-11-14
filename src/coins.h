@@ -83,7 +83,7 @@ public:
         // ppcoin transaction timestamp
         ::Serialize(s, VARINT(nTime));
         // Not support PoS block since Heliospolis hardfork
-        if (nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+        if (nHeight < Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS)) {
             // ppcoin flags
             unsigned int nFlag = fCoinStake? 1 : 0;
             ::Serialize(s, VARINT(nFlag));
@@ -100,7 +100,7 @@ public:
         // ppcoin transaction timestamp
         ::Unserialize(s, VARINT(nTime));
         // Not support PoS block since Heliospolis hardfork
-        if (nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+        if (nHeight < Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS)) {
             // ppcoin flags
             unsigned int nFlag = 0;
             ::Unserialize(s, VARINT(nFlag));

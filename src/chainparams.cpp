@@ -10,6 +10,7 @@
 #include "utilstrencodings.h"
 
 #include <assert.h>
+#include <limits>
 
 #include "chainparamsseeds.h"
 
@@ -59,6 +60,11 @@ void CChainParams::UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64
     consensus.vDeployments[d].nTimeout = nTimeout;
 }
 
+void CChainParams::UpdateActivationHeight(Consensus::ActivationRule rule, int nHeight)
+{
+    consensus.nActivationHeight[rule] = nHeight;
+}
+
 /**
  * Main network
  */
@@ -83,9 +89,9 @@ public:
         consensus.initialHashTarget = CBigNum(~uint256(0) >> 8);
         consensus.initialMoneySupply = 1E14;
 #endif
-        consensus.BIP65Height = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.BIP68Height = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.HeliopolisHardforkHeight = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CLTV] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CSV] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_HELIOPOLIS] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nPowTargetTimespan = 21000 * 60;  // 21000 blocks * 60 seconds
         consensus.nPowTargetSpacing = 1 * 60; // 1 minutes
         consensus.fPowAllowMinDifficultyBlocks = false;
@@ -237,9 +243,9 @@ public:
         consensus.powLimit = CBigNum(uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
         consensus.initialHashTarget = CBigNum(uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
         consensus.initialMoneySupply = 1E14; // With this value, each block reward in the first interval is  3.802570 YAC
-        consensus.BIP65Height = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.BIP68Height = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
-        consensus.HeliopolisHardforkHeight = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CLTV] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_CSV] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_HELIOPOLIS] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nPowTargetTimespan = 10;  // 10blocks
         consensus.nPowTargetSpacing = 1 * 60; // 1 minutes
         consensus.fPowAllowMinDifficultyBlocks = true;
@@ -338,4 +344,47 @@ void SelectParams(const std::string& network)
 void UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout)
 {
     globalChainParams->UpdateVersionBitsParameters(d, nStartTime, nTimeout);
+}
+
+void UpdateActivationHeight(Consensus::ActivationRule rule, int nHeight)
+{
+    globalChainParams->UpdateActivationHeight(rule, nHeight);
+}
+
+/** The names of -testactivationheight, in the order of Consensus::ActivationRule */
+static const char* const ACTIVATION_RULE_NAMES[] = {
+    "heliopolis",
+    "cltv",
+    "csv",
+};
+static_assert(ARRAYLEN(ACTIVATION_RULE_NAMES) == Consensus::MAX_ACTIVATION_RULES,
+              "every activation rule needs a name");
+
+std::string ActivationRuleName(Consensus::ActivationRule rule)
+{
+    return ACTIVATION_RULE_NAMES[rule];
+}
+
+bool ParseActivationHeight(const std::string& strArg, Consensus::ActivationRule& rule, int& nHeight, std::string& strError)
+{
+    const size_t nAt = strArg.find('@');
+    if (nAt == std::string::npos) {
+        strError = strprintf("Invalid format (%s) for -testactivationheight=name@height.", strArg);
+        return false;
+    }
+    const std::string strName = strArg.substr(0, nAt);
+    int32_t nParsed;
+    if (!ParseInt32(strArg.substr(nAt + 1), &nParsed) || nParsed < 0 || nParsed >= std::numeric_limits<int>::max()) {
+        strError = strprintf("Invalid height value (%s) for -testactivationheight=name@height.", strArg);
+        return false;
+    }
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        if (strName == ACTIVATION_RULE_NAMES[i]) {
+            rule = Consensus::ActivationRule(i);
+            nHeight = nParsed;
+            return true;
+        }
+    }
+    strError = strprintf("Invalid name (%s) for -testactivationheight=name@height.", strArg);
+    return false;
 }

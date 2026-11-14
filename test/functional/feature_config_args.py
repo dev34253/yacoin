@@ -8,7 +8,9 @@
   subdirectory, -testnet refused at start.
 - Init errors: invalid config file lines, -testnet with -regtest, -bind
   with -listen=0, removed options (-socks, -tor, -rpcssl), an invalid
-  -rpcallowip, -acceptnonstdtxn on main.
+  -rpcallowip, -acceptnonstdtxn on main, -testactivationheight on main
+  and with an unknown name on regtest.
+- -testactivationheight on regtest: the node starts.
 - Warnings for unknown -debug/-debugexclude categories and the removed
   -debugnet/-benchmark.
 - -pid, -rpcbind without -rpcallowip, -rpcworkqueue/-rpcthreads below 1,
@@ -70,6 +72,12 @@ class ConfArgsTest(BitcoinTestFramework):
         assert os.path.isfile(os.path.join(regtest_dir, 'debug.log'))
         assert os.path.isdir(os.path.join(regtest_dir, 'blocks'))
 
+        self.log.info("-testactivationheight on regtest, given twice")
+        self.start_node(0, ['-regtest=1', '-testactivationheight=cltv@10', '-testactivationheight=heliopolis@5'])
+        assert_equal(node.gettimechaininfo()['chain'], 'regtest')
+        assert_equal(node.getblockcount(), 0)
+        self.stop_node(0)
+
         self.log.info("-testnet alone: the chain parameters know no testnet")
         node.assert_start_raises_init_error(['-testnet=1'], "Error: CreateChainParams: Unknown chain test.",
                                             match=ErrorMatch.FULL_TEXT)
@@ -93,6 +101,9 @@ class ConfArgsTest(BitcoinTestFramework):
             (['-rpcallowip=300.0.0.1'], "Error: Invalid -rpcallowip subnet specification: 300.0.0.1. Valid are a single IP (e.g. 1.2.3.4), "
                                         "a network/netmask (e.g. 1.2.3.4/255.255.255.0) or a network/CIDR (e.g. 1.2.3.4/24).\n" + HTTP_START_ERROR),
             (['-acceptnonstdtxn=1'], "Error: acceptnonstdtxn is not currently supported for main chain"),
+            (['-testactivationheight=cltv@10'], "Error: -testactivationheight may only be used on regtest."),
+            (['-regtest=1', '-testactivationheight=nosuchrule@10'],
+             "Error: Invalid name (nosuchrule@10) for -testactivationheight=name@height."),
         ]:
             node.assert_start_raises_init_error(args, message, match=ErrorMatch.FULL_TEXT)
 

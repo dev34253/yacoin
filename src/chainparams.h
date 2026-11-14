@@ -79,6 +79,7 @@ public:
     const CCheckpointData& Checkpoints() const { return checkpointData; }
     const ChainTxData& TxData() const { return chainTxData; }
     void UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout);
+    void UpdateActivationHeight(Consensus::ActivationRule rule, int nHeight);
 protected:
     CChainParams() {}
 
@@ -122,5 +123,19 @@ void SelectParams(const std::string& chain);
  * Allows modifying the Version Bits regtest parameters.
  */
 void UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout);
+
+/**
+ * Sets the activation height of a rule in the selected parameters (-testactivationheight).
+ */
+void UpdateActivationHeight(Consensus::ActivationRule rule, int nHeight);
+
+/** The name of a rule in -testactivationheight */
+std::string ActivationRuleName(Consensus::ActivationRule rule);
+
+/**
+ * Parses one value of -testactivationheight=name@height.
+ * @returns true and the rule and height, or false and the error message.
+ */
+bool ParseActivationHeight(const std::string& strArg, Consensus::ActivationRule& rule, int& nHeight, std::string& strError);
 
 #endif // YACOIN_CHAINPARAMS_H
