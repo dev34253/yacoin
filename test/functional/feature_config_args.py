@@ -9,8 +9,12 @@
 - Init errors: invalid config file lines, -testnet with -regtest, -bind
   with -listen=0, removed options (-socks, -tor, -rpcssl), an invalid
   -rpcallowip, -acceptnonstdtxn on main, -testactivationheight on main
-  and with an unknown name on regtest.
-- -testactivationheight on regtest: the node starts.
+  and with an unknown name on regtest, -testnetNewLogicBlockNumber or
+  -tokenSupportBlockNumber with -testactivationheight for the same height.
+- -testactivationheight on regtest: the node starts, also with newlogic
+  and tokens and no other height option.
+- A regtest node without height options mines blocks and has them after a
+  restart.
 - Warnings for unknown -debug/-debugexclude categories and the removed
   -debugnet/-benchmark.
 - -pid, -rpcbind without -rpcallowip, -rpcworkqueue/-rpcthreads below 1,
@@ -21,6 +25,7 @@
 """
 
 import os
+from contextlib import contextmanager
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
@@ -46,6 +51,18 @@ class ConfArgsTest(BitcoinTestFramework):
         with open(path, 'w', encoding='utf8') as f:
             f.write('\n'.join(lines + list(extra)) + '\n')
         return path
+
+    @contextmanager
+    def without_height_options(self):
+        """Start the node without the framework's -testnetNewLogicBlockNumber
+        within the block."""
+        node = self.nodes[0]
+        args = node.args
+        node.args = [a for a in args if not a.startswith('-testnetNewLogicBlockNumber=')]
+        try:
+            yield
+        finally:
+            node.args = args
 
     def run_test(self):
         self.stop_node(0)
@@ -78,6 +95,29 @@ class ConfArgsTest(BitcoinTestFramework):
         assert_equal(node.getblockcount(), 0)
         self.stop_node(0)
 
+        self.log.info("-testactivationheight=newlogic and tokens on regtest, no other height option")
+        with self.without_height_options():
+            self.start_node(0, ['-regtest=1', '-testactivationheight=newlogic@5', '-testactivationheight=tokens@7'])
+            assert_equal(node.gettimechaininfo()['chain'], 'regtest')
+            assert_equal(node.getblockcount(), 0)
+            self.stop_node(0)
+
+        self.log.info("Regtest without height options: blocks are mined and kept after a restart")
+        with self.without_height_options():
+            self.start_node(0, ['-regtest=1'])
+            assert_equal(node.gettimechaininfo()['chain'], 'regtest')
+            hashes = node.generate(3)
+            assert_equal(len(hashes), 3)
+            assert_equal(node.getblockcount(), 3)
+            assert_equal(node.getbestblockhash(), hashes[-1])
+            self.stop_node(0)
+            self.start_node(0, ['-regtest=1'])
+            assert_equal(node.getblockcount(), 3)
+            assert_equal(node.getbestblockhash(), hashes[-1])
+            node.generate(1)
+            assert_equal(node.getblockcount(), 4)
+            self.stop_node(0)
+
         self.log.info("-testnet alone: the chain parameters know no testnet")
         node.assert_start_raises_init_error(['-testnet=1'], "Error: CreateChainParams: Unknown chain test.",
                                             match=ErrorMatch.FULL_TEXT)
@@ -104,6 +144,10 @@ class ConfArgsTest(BitcoinTestFramework):
             (['-testactivationheight=cltv@10'], "Error: -testactivationheight may only be used on regtest."),
             (['-regtest=1', '-testactivationheight=nosuchrule@10'],
              "Error: Invalid name (nosuchrule@10) for -testactivationheight=name@height."),
+            (['-regtest=1', '-testnetNewLogicBlockNumber=0', '-testactivationheight=newlogic@5'],
+             "Error: Cannot set -testnetNewLogicBlockNumber together with -testactivationheight=newlogic@height."),
+            (['-regtest=1', '-tokenSupportBlockNumber=10', '-testactivationheight=tokens@10'],
+             "Error: Cannot set -tokenSupportBlockNumber together with -testactivationheight=tokens@height."),
         ]:
             node.assert_start_raises_init_error(args, message, match=ErrorMatch.FULL_TEXT)
 
