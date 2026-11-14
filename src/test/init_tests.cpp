@@ -991,27 +991,27 @@ BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_testactivationheight_main)
     SetArgs({"-testactivationheight=cltv@10"});
     BOOST_CHECK(!AppInitParameterInteraction());
     BOOST_CHECK_EQUAL(Lines(errors), "-testactivationheight may only be used on regtest.\n");
-    BOOST_CHECK(ActivationHeights() == std::vector<int>({1890000, 1890000, 1890000}));
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({1890000, 1890000, 1890000, 1890000, 1911210}));
 }
 
 BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_testactivationheight_regtest)
 {
-    // HELIOPOLIS, CLTV, CSV
+    // HELIOPOLIS, CLTV, CSV, NEW_LOGIC, TOKENS
     SelectParams(CBaseChainParams::REGTEST);
     SetArgs({"-testactivationheight=cltv@10", "-testactivationheight=csv@20", "-testactivationheight=heliopolis@30"});
     BOOST_CHECK(AppInitParameterInteraction());
-    BOOST_CHECK(ActivationHeights() == std::vector<int>({30, 10, 20}));
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({30, 10, 20, 0, 0}));
 
     // The last value for a name wins.
     SelectParams(CBaseChainParams::REGTEST);
     SetArgs({"-testactivationheight=cltv@10", "-testactivationheight=cltv@12"});
     BOOST_CHECK(AppInitParameterInteraction());
-    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 12, 0}));
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 12, 0, 0, 0}));
 
     SelectParams(CBaseChainParams::REGTEST);
     SetArgs({});
     BOOST_CHECK(AppInitParameterInteraction());
-    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 0, 0}));
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 0, 0, 0, 0}));
     BOOST_CHECK_EQUAL(Lines(errors), "");
 }
 

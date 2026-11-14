@@ -110,12 +110,15 @@ BOOST_AUTO_TEST_CASE(main_consensus)
     const Consensus::Params& consensus = params->GetConsensus();
 
     // The activation heights are the same in the low-difficulty build.
-    BOOST_CHECK_EQUAL(Consensus::MAX_ACTIVATION_RULES, 3);
+    BOOST_CHECK_EQUAL(Consensus::MAX_ACTIVATION_RULES, 5);
     BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 1890000);
     BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 1890000);
     BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 1890000);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC), 1890000);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_TOKENS), 1911210);
+    const std::vector<int> expectedHeights{1890000, 1890000, 1890000, 1890000, 1911210};
     for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
-        BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], 1890000);
+        BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], expectedHeights[i]);
     }
     BOOST_CHECK_EQUAL(consensus.nPowTargetSpacing, 60);
     BOOST_CHECK_EQUAL(consensus.nPowTargetTimespan, 21000 * 60);
@@ -209,6 +212,8 @@ BOOST_AUTO_TEST_CASE(regtest_parameters)
     BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 0);
     BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 0);
     BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_TOKENS), 0);
     for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
         BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], 0);
     }
@@ -409,6 +414,8 @@ BOOST_AUTO_TEST_CASE(activation_rule_names)
     BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_HELIOPOLIS), "heliopolis");
     BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_CLTV), "cltv");
     BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_CSV), "csv");
+    BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_NEW_LOGIC), "newlogic");
+    BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_TOKENS), "tokens");
 
     // Every rule has a name of its own, which the parser maps back to the rule.
     std::set<std::string> names;
@@ -431,6 +438,8 @@ BOOST_AUTO_TEST_CASE(parse_activation_height_valid)
         std::make_tuple("heliopolis@0", Consensus::ACTIVATION_HELIOPOLIS, 0),
         std::make_tuple("cltv@10", Consensus::ACTIVATION_CLTV, 10),
         std::make_tuple("csv@2147483646", Consensus::ACTIVATION_CSV, 2147483646),
+        std::make_tuple("newlogic@5", Consensus::ACTIVATION_NEW_LOGIC, 5),
+        std::make_tuple("tokens@7", Consensus::ACTIVATION_TOKENS, 7),
     };
     for (const auto& c : cases) {
         const ParsedActivationHeight parsed = Parse(std::get<0>(c));
