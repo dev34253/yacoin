@@ -11,8 +11,8 @@ era, built with autotools, with YACoin's own consensus rules.
 
 ## The chain
 
-Since the Heliopolis hard fork at block 1890000 every block is a proof-of-work block ([`src/init.cpp`](src/init.cpp),
-[`src/chainparams.cpp`](src/chainparams.cpp)). Proof of stake is historical: the node still validates the older proof-of-stake blocks below
+Since the Heliopolis hard fork at block 1890000 every block is a proof-of-work block
+([`src/chainparams.cpp`](src/chainparams.cpp)). Proof of stake is historical: the node still validates the older proof-of-stake blocks below
 that height ([`src/kernel.cpp`](src/kernel.cpp)), and it has no staking code.
 
 | Item | Value | Defined in |
@@ -22,7 +22,7 @@ that height ([`src/kernel.cpp`](src/kernel.cpp)), and it has no staking code.
 | Block target | 60 seconds | [`src/chainparams.cpp`](src/chainparams.cpp) |
 | Block reward | about 2 % of the money supply a year: money supply before the epoch × 0.02 / 525960, the same for all 21000 blocks of an epoch | [`src/validation.cpp`](src/validation.cpp), [`src/validation.h`](src/validation.h), [`src/init.cpp`](src/init.cpp) |
 | Difficulty | retargets once per 21000-block epoch | [`src/pow.cpp`](src/pow.cpp) |
-| Tokens | token rules apply from block 1911211 | [`src/init.cpp`](src/init.cpp), [`src/validation.cpp`](src/validation.cpp), [`src/tokens/`](src/tokens/) |
+| Tokens | token rules apply from block 1911211 | [`src/chainparams.cpp`](src/chainparams.cpp), [`src/validation.cpp`](src/validation.cpp), [`src/tokens/`](src/tokens/) |
 | Networks | mainnet and regtest (`-regtest`); `-testnet` is not available | [`src/chainparams.cpp`](src/chainparams.cpp) |
 | Ports | P2P 7688; RPC 7687 on mainnet, 17687 on regtest | [`src/protocol.h`](src/protocol.h), [`src/chainparamsbase.cpp`](src/chainparamsbase.cpp) |
 | Version | 1.11.0 | [`configure.ac`](configure.ac) |

@@ -21,3 +21,10 @@ Unreleased
   nothing in the signature or script caches.
 
 - `-testactivationheight=name@height` (regtest only): sets the activation height of a consensus rule for tests.
+
+### Other changes
+
+- Regtest: the activation heights `newlogic` and `tokens` default to 0, and `-testactivationheight` accepts both
+  names. A regtest node started without height options mines and accepts blocks. On regtest, setting `newlogic`
+  both with `-testactivationheight` and with `-testnetNewLogicBlockNumber`, or `tokens` both with
+  `-testactivationheight` and with `-tokenSupportBlockNumber`, is an error at startup.
