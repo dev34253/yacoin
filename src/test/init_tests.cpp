@@ -411,8 +411,9 @@ Debugging/Testing options:
        Shrink debug.log file on client startup (default: 1 when no -debug)
 
   -testactivationheight=<name>@<height>
-       Set the activation height of the rule <name> (heliopolis, cltv, csv) to
-       <height>; regtest only. Can be specified multiple times
+       Set the activation height of the rule <name> (heliopolis, cltv, csv,
+       newlogic, tokens) to <height>; regtest only. Can be specified
+       multiple times
 
 RPC server options:
 
@@ -1035,6 +1036,124 @@ BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_testactivationheight_invalid
     SetArgs({"-testactivationheight=cltv@10", "-testactivationheight=csv@-1"});
     BOOST_CHECK(!AppInitParameterInteraction());
     BOOST_CHECK_EQUAL(Lines(errors), "Invalid height value (csv@-1) for -testactivationheight=name@height.\n");
+}
+
+// The fork and token heights: the entries of the selected chain's activation
+// table, or the values of -testnetNewLogicBlockNumber and -tokenSupportBlockNumber.
+
+/** Sets the fork and token heights to a value no case expects, so that a check shows what the call set */
+void ResetHeights()
+{
+    nMainnetNewLogicBlockNumber = -1;
+    nTokenSupportBlockNumber = -1;
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_heights_main)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    ResetHeights();
+    SetArgs({});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 1890000);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 1911210);
+    BOOST_CHECK_EQUAL(Lines(errors), "");
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_heights_main_override)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    for (const std::string arg : {"newlogic@10", "tokens@10"}) {
+        errors.clear();
+        ResetHeights();
+        SetArgs({"-testactivationheight=" + arg});
+        BOOST_CHECK_MESSAGE(!AppInitParameterInteraction(), arg);
+        BOOST_CHECK_EQUAL(Lines(errors), "-testactivationheight may only be used on regtest.\n");
+        BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, -1);
+        BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, -1);
+        BOOST_CHECK(ActivationHeights() == std::vector<int>({1890000, 1890000, 1890000, 1890000, 1911210}));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_heights_regtest)
+{
+    SelectParams(CBaseChainParams::REGTEST);
+    ResetHeights();
+    SetArgs({});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 0);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 0);
+
+    // One of the two options alone
+    ResetHeights();
+    SetArgs({"-testnetNewLogicBlockNumber=30"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 30);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 0);
+
+    ResetHeights();
+    SetArgs({"-tokenSupportBlockNumber=40"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 0);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 40);
+    BOOST_CHECK_EQUAL(Lines(errors), "");
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_heights_regtest_override)
+{
+    // HELIOPOLIS, CLTV, CSV, NEW_LOGIC, TOKENS
+    SelectParams(CBaseChainParams::REGTEST);
+    ResetHeights();
+    SetArgs({"-testactivationheight=newlogic@30", "-testactivationheight=tokens@40"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 30);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 40);
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 0, 0, 30, 40}));
+
+    // The last value for a name wins.
+    SelectParams(CBaseChainParams::REGTEST);
+    ResetHeights();
+    SetArgs({"-testactivationheight=newlogic@30", "-testactivationheight=tokens@40",
+             "-testactivationheight=newlogic@35", "-testactivationheight=tokens@45"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 35);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 45);
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 0, 0, 35, 45}));
+
+    // One of the two options and the override for the other height
+    SelectParams(CBaseChainParams::REGTEST);
+    ResetHeights();
+    SetArgs({"-testnetNewLogicBlockNumber=30", "-testactivationheight=tokens@40"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 30);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 40);
+
+    SelectParams(CBaseChainParams::REGTEST);
+    ResetHeights();
+    SetArgs({"-tokenSupportBlockNumber=40", "-testactivationheight=newlogic@30"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, 30);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, 40);
+    BOOST_CHECK_EQUAL(Lines(errors), "");
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_heights_regtest_both)
+{
+    // An option and the override for the same height
+    SelectParams(CBaseChainParams::REGTEST);
+    ResetHeights();
+    SetArgs({"-testnetNewLogicBlockNumber=30", "-testactivationheight=newlogic@30"});
+    BOOST_CHECK(!AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(Lines(errors), "Cannot set -testnetNewLogicBlockNumber together with -testactivationheight=newlogic@height.\n");
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, -1);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, -1);
+
+    SelectParams(CBaseChainParams::REGTEST);
+    errors.clear();
+    SetArgs({"-tokenSupportBlockNumber=40", "-testactivationheight=tokens@40"});
+    BOOST_CHECK(!AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(Lines(errors), "Cannot set -tokenSupportBlockNumber together with -testactivationheight=tokens@height.\n");
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, -1);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, -1);
 }
 
 #ifdef ENABLE_WALLET

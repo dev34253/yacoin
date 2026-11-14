@@ -18,12 +18,13 @@
 
 /**
  * Saves the consensus globals that init.cpp normally sets (the unit tests
- * never run init, so they start as fork height 0, epoch 21000, Nfactor 0)
- * and restores them when the test ends.
+ * never run init, so they start as fork height 0, token height 0, epoch
+ * 21000, Nfactor 0) and restores them when the test ends.
  */
 struct ConsensusGlobalsGuard
 {
     ::int32_t nFork = nMainnetNewLogicBlockNumber;
+    ::int32_t nTokens = nTokenSupportBlockNumber;
     ::uint32_t nEpoch = nEpochInterval;
     ::uint32_t nDifficulty = nDifficultyInterval;
     unsigned char nFactor = nFactorAtHardfork;
@@ -37,9 +38,18 @@ struct ConsensusGlobalsGuard
         nDifficultyInterval = nInterval;
     }
 
+    // The fork and token heights from the selected chain's activation table.
+    void SetFromActivationTable()
+    {
+        const Consensus::Params& consensus = Params().GetConsensus();
+        nMainnetNewLogicBlockNumber = consensus.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC);
+        nTokenSupportBlockNumber = consensus.ActivationHeight(Consensus::ACTIVATION_TOKENS);
+    }
+
     ~ConsensusGlobalsGuard()
     {
         nMainnetNewLogicBlockNumber = nFork;
+        nTokenSupportBlockNumber = nTokens;
         nEpochInterval = nEpoch;
         nDifficultyInterval = nDifficulty;
         nFactorAtHardfork = nFactor;
