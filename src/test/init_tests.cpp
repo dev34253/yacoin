@@ -410,6 +410,10 @@ Debugging/Testing options:
   -shrinkdebugfile
        Shrink debug.log file on client startup (default: 1 when no -debug)
 
+  -testactivationheight=<name>@<height>
+       Set the activation height of the rule <name> (heliopolis, cltv, csv) to
+       <height>; regtest only. Can be specified multiple times
+
 RPC server options:
 
   -server
@@ -969,6 +973,68 @@ BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_regtest_intervals)
     BOOST_CHECK_EQUAL(nDifficultyInterval, 10U);
     BOOST_CHECK_EQUAL((int)nFactorAtHardfork, 4);
     BOOST_CHECK_EQUAL(Lines(errors), "");
+}
+
+/** The activation heights of the selected chain, in the order of Consensus::ActivationRule */
+std::vector<int> ActivationHeights()
+{
+    std::vector<int> heights;
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        heights.push_back(Params().GetConsensus().ActivationHeight(Consensus::ActivationRule(i)));
+    }
+    return heights;
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_testactivationheight_main)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    SetArgs({"-testactivationheight=cltv@10"});
+    BOOST_CHECK(!AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(Lines(errors), "-testactivationheight may only be used on regtest.\n");
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({1890000, 1890000, 1890000}));
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_testactivationheight_regtest)
+{
+    // HELIOPOLIS, CLTV, CSV
+    SelectParams(CBaseChainParams::REGTEST);
+    SetArgs({"-testactivationheight=cltv@10", "-testactivationheight=csv@20", "-testactivationheight=heliopolis@30"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({30, 10, 20}));
+
+    // The last value for a name wins.
+    SelectParams(CBaseChainParams::REGTEST);
+    SetArgs({"-testactivationheight=cltv@10", "-testactivationheight=cltv@12"});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 12, 0}));
+
+    SelectParams(CBaseChainParams::REGTEST);
+    SetArgs({});
+    BOOST_CHECK(AppInitParameterInteraction());
+    BOOST_CHECK(ActivationHeights() == std::vector<int>({0, 0, 0}));
+    BOOST_CHECK_EQUAL(Lines(errors), "");
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_testactivationheight_invalid)
+{
+    SelectParams(CBaseChainParams::REGTEST);
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"nosuchrule@10", "Invalid name (nosuchrule@10) for -testactivationheight=name@height."},
+        {"cltv@abc", "Invalid height value (cltv@abc) for -testactivationheight=name@height."},
+        {"cltv10", "Invalid format (cltv10) for -testactivationheight=name@height."},
+    };
+    for (const auto& c : cases) {
+        errors.clear();
+        SetArgs({"-testactivationheight=" + c.first});
+        BOOST_CHECK_MESSAGE(!AppInitParameterInteraction(), c.first);
+        BOOST_CHECK_EQUAL(Lines(errors), c.second + "\n");
+    }
+
+    // A valid value before an invalid one: still an error.
+    errors.clear();
+    SetArgs({"-testactivationheight=cltv@10", "-testactivationheight=csv@-1"});
+    BOOST_CHECK(!AppInitParameterInteraction());
+    BOOST_CHECK_EQUAL(Lines(errors), "Invalid height value (csv@-1) for -testactivationheight=name@height.\n");
 }
 
 #ifdef ENABLE_WALLET

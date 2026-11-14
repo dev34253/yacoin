@@ -27,7 +27,7 @@ public:
     void Serialize(Stream &s) const {
         ::Serialize(s, VARINT(txout->nHeight * 2 + (txout->fCoinBase ? 1 : 0)));
         ::Serialize(s, VARINT(txout->nTime));
-        if (txout->nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+        if (txout->nHeight < Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS)) {
             // ppcoin flags
             unsigned int nFlag = txout->fCoinStake? 1 : 0;
             ::Serialize(s, VARINT(nFlag));
@@ -54,7 +54,7 @@ public:
         txout->nHeight = nCode / 2;
         txout->fCoinBase = nCode & 1;
         ::Unserialize(s, VARINT(txout->nTime));
-        if (txout->nHeight < Params().GetConsensus().HeliopolisHardforkHeight) {
+        if (txout->nHeight < Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS)) {
             // ppcoin flags
             unsigned int nFlag = 0;
             ::Unserialize(s, VARINT(nFlag));

@@ -415,6 +415,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-printpriority", _("Log transaction fee per kB when mining blocks (default: false)"));
     strUsage += HelpMessageOpt("-replayvalidation=<mode>", _("Validation for replays of the block history: run every check the node implements on each block connected and log each failure. <mode> is 0 (off), report (log only) or reject (also reject a block with a failure) (default: 0)"));
     strUsage += HelpMessageOpt("-shrinkdebugfile", _("Shrink debug.log file on client startup (default: 1 when no -debug)"));
+    strUsage += HelpMessageOpt("-testactivationheight=<name>@<height>", "Set the activation height of the rule <name> (heliopolis, cltv, csv) to <height>; regtest only. Can be specified multiple times");
 
     strUsage += HelpMessageGroup(_("RPC server options:"));
     strUsage += HelpMessageOpt("-server", _("Accept command line and JSON-RPC commands"));
@@ -696,6 +697,22 @@ bool AppInitParameterInteraction()
 
     if (nMaxConnections < nUserMaxConnections)
         InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), nUserMaxConnections, nMaxConnections));
+
+    // Activation heights of the consensus rules: regtest only
+    if (gArgs.IsArgSet("-testactivationheight")) {
+        if (chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
+            return InitError("-testactivationheight may only be used on regtest.");
+        }
+        for (const std::string& strArg : gArgs.GetArgs("-testactivationheight")) {
+            Consensus::ActivationRule rule;
+            int nHeight;
+            std::string strError;
+            if (!ParseActivationHeight(strArg, rule, nHeight, strError)) {
+                return InitError(strError);
+            }
+            UpdateActivationHeight(rule, nHeight);
+        }
+    }
 
     // ********************************************************* Step 3: parameter-to-internal-flags
     // Old logic

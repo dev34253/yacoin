@@ -408,6 +408,9 @@ bool CheckBlock(const CBlock& block, CValidationState& state, const Consensus::P
 /** Check a block is completely valid from start to finish (only works on top of our current best block, with cs_main held) */
 bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fCheckPOW = true, bool fCheckMerkleRoot = true);
 
+/** Returns the script flags which should be checked for a given block (cs_main held) */
+unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consensus::Params& chainparams);
+
 /** When there are blocks in the active chain with missing data, rewind the chainstate and remove them from the block index */
 //bool RewindBlockIndex(const CChainParams& params);
 

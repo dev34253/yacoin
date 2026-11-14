@@ -4,7 +4,8 @@
 
 // The chain parameters of mainnet and regtest (CreateChainParams), the base parameters of
 // every chain name (CreateBaseChainParams), how a chain is selected (SelectParams,
-// ChainNameFromCommandLine), the chain selection help text and the version bits overrides.
+// ChainNameFromCommandLine), the chain selection help text, the version bits overrides and
+// the activation height overrides (-testactivationheight).
 //
 // The low-difficulty build has its own mainnet proof-of-work limit, genesis block, initial
 // money supply and fixed seeds; those values have their own part for that build.
@@ -18,8 +19,10 @@
 #include "test/test_bitcoin.h"
 
 #include <initializer_list>
+#include <set>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -43,6 +46,21 @@ struct HasMessage {
 };
 
 std::vector<unsigned char> Bytes(std::initializer_list<unsigned char> bytes) { return bytes; }
+
+/** Outcome of ParseActivationHeight for one value */
+struct ParsedActivationHeight {
+    bool fValid;
+    Consensus::ActivationRule rule;
+    int nHeight;
+    std::string strError;
+};
+
+ParsedActivationHeight Parse(const std::string& strArg)
+{
+    ParsedActivationHeight parsed{false, Consensus::MAX_ACTIVATION_RULES, -1, "unset"};
+    parsed.fValid = ParseActivationHeight(strArg, parsed.rule, parsed.nHeight, parsed.strError);
+    return parsed;
+}
 
 const std::string LAST_MAIN_CHECKPOINT = "000009e3b1cc249ba64c3749430b96cf0f3c25acbb2bd3cb0b69e3b28288607b";
 const std::string GENESIS_MERKLE_ROOT = "678b76419ff06676a591d3fa9d57d7f7b26d8021b7cc69dde925f39d4cf2244f";
@@ -91,9 +109,14 @@ BOOST_AUTO_TEST_CASE(main_consensus)
     const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::MAIN);
     const Consensus::Params& consensus = params->GetConsensus();
 
-    BOOST_CHECK_EQUAL(consensus.BIP65Height, 1890000);
-    BOOST_CHECK_EQUAL(consensus.BIP68Height, 1890000);
-    BOOST_CHECK_EQUAL(consensus.HeliopolisHardforkHeight, 1890000);
+    // The activation heights are the same in the low-difficulty build.
+    BOOST_CHECK_EQUAL(Consensus::MAX_ACTIVATION_RULES, 3);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 1890000);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 1890000);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 1890000);
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], 1890000);
+    }
     BOOST_CHECK_EQUAL(consensus.nPowTargetSpacing, 60);
     BOOST_CHECK_EQUAL(consensus.nPowTargetTimespan, 21000 * 60);
     BOOST_CHECK_EQUAL(consensus.DifficultyAdjustmentInterval(), 21000);
@@ -183,9 +206,12 @@ BOOST_AUTO_TEST_CASE(regtest_parameters)
     BOOST_CHECK_EQUAL(consensus.initialHashTarget.GetCompact(), 0x207fffffU);
     BOOST_CHECK_EQUAL(consensus.initialMoneySupply, 100000000000000LL);
 
-    BOOST_CHECK_EQUAL(consensus.BIP65Height, 0);
-    BOOST_CHECK_EQUAL(consensus.BIP68Height, 0);
-    BOOST_CHECK_EQUAL(consensus.HeliopolisHardforkHeight, 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 0);
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        BOOST_CHECK_EQUAL(consensus.nActivationHeight[i], 0);
+    }
     BOOST_CHECK_EQUAL(consensus.nPowTargetSpacing, 60);
     BOOST_CHECK_EQUAL(consensus.nPowTargetTimespan, 10);
     BOOST_CHECK(consensus.fPowAllowMinDifficultyBlocks);
@@ -251,7 +277,9 @@ BOOST_AUTO_TEST_CASE(select_params)
 
     SelectParams(CBaseChainParams::REGTEST);
     BOOST_CHECK_EQUAL(Params().NetworkIDString(), "regtest");
-    BOOST_CHECK_EQUAL(Params().GetConsensus().HeliopolisHardforkHeight, 0);
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        BOOST_CHECK_EQUAL(Params().GetConsensus().ActivationHeight(Consensus::ActivationRule(i)), 0);
+    }
     BOOST_CHECK_EQUAL(BaseParams().DataDir(), "regtest");
     BOOST_CHECK_EQUAL(BaseParams().RPCPort(), 17687);
 
@@ -374,6 +402,94 @@ BOOST_AUTO_TEST_CASE(update_version_bits_parameters_selected)
     SelectParams(CBaseChainParams::MAIN);
     BOOST_CHECK_EQUAL(Params().GetConsensus().vDeployments[Consensus::DEPLOYMENT_CSV].nStartTime, 1462060800);
     BOOST_CHECK_EQUAL(Params().GetConsensus().vDeployments[Consensus::DEPLOYMENT_CSV].nTimeout, 1493596800);
+}
+
+BOOST_AUTO_TEST_CASE(activation_rule_names)
+{
+    BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_HELIOPOLIS), "heliopolis");
+    BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_CLTV), "cltv");
+    BOOST_CHECK_EQUAL(ActivationRuleName(Consensus::ACTIVATION_CSV), "csv");
+
+    // Every rule has a name of its own, which the parser maps back to the rule.
+    std::set<std::string> names;
+    for (int i = 0; i < Consensus::MAX_ACTIVATION_RULES; i++) {
+        const Consensus::ActivationRule rule = Consensus::ActivationRule(i);
+        const std::string name = ActivationRuleName(rule);
+        BOOST_CHECK(!name.empty());
+        names.insert(name);
+        const ParsedActivationHeight parsed = Parse(name + "@5");
+        BOOST_CHECK_MESSAGE(parsed.fValid, name);
+        BOOST_CHECK_EQUAL(parsed.rule, rule);
+        BOOST_CHECK_EQUAL(parsed.nHeight, 5);
+    }
+    BOOST_CHECK_EQUAL(names.size(), size_t(Consensus::MAX_ACTIVATION_RULES));
+}
+
+BOOST_AUTO_TEST_CASE(parse_activation_height_valid)
+{
+    const std::vector<std::tuple<std::string, Consensus::ActivationRule, int>> cases{
+        std::make_tuple("heliopolis@0", Consensus::ACTIVATION_HELIOPOLIS, 0),
+        std::make_tuple("cltv@10", Consensus::ACTIVATION_CLTV, 10),
+        std::make_tuple("csv@2147483646", Consensus::ACTIVATION_CSV, 2147483646),
+    };
+    for (const auto& c : cases) {
+        const ParsedActivationHeight parsed = Parse(std::get<0>(c));
+        BOOST_CHECK_MESSAGE(parsed.fValid, std::get<0>(c));
+        BOOST_CHECK_EQUAL(parsed.rule, std::get<1>(c));
+        BOOST_CHECK_EQUAL(parsed.nHeight, std::get<2>(c));
+        BOOST_CHECK_EQUAL(parsed.strError, "unset");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(parse_activation_height_invalid)
+{
+    // Names are case-sensitive.
+    for (const std::string arg : {"nosuchrule@10", "CLTV@10", "@10"}) {
+        const ParsedActivationHeight parsed = Parse(arg);
+        BOOST_CHECK_MESSAGE(!parsed.fValid, arg);
+        BOOST_CHECK_EQUAL(parsed.strError, "Invalid name (" + arg + ") for -testactivationheight=name@height.");
+    }
+    for (const std::string arg : {"cltv10", ""}) {
+        const ParsedActivationHeight parsed = Parse(arg);
+        BOOST_CHECK_MESSAGE(!parsed.fValid, arg);
+        BOOST_CHECK_EQUAL(parsed.strError, "Invalid format (" + arg + ") for -testactivationheight=name@height.");
+    }
+    // The height is checked before the name; INT_MAX itself is out of range.
+    for (const std::string arg : {"cltv@", "cltv@-1", "cltv@abc", "cltv@10x", "cltv@ 10", "cltv@2147483647",
+                                  "cltv@99999999999", "nosuchrule@abc", "cltv@10@11"}) {
+        const ParsedActivationHeight parsed = Parse(arg);
+        BOOST_CHECK_MESSAGE(!parsed.fValid, arg);
+        BOOST_CHECK_EQUAL(parsed.strError, "Invalid height value (" + arg + ") for -testactivationheight=name@height.");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(update_activation_height_member)
+{
+    std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::REGTEST);
+    params->UpdateActivationHeight(Consensus::ACTIVATION_CSV, 7);
+    BOOST_CHECK_EQUAL(params->GetConsensus().ActivationHeight(Consensus::ACTIVATION_CSV), 7);
+    BOOST_CHECK_EQUAL(params->GetConsensus().ActivationHeight(Consensus::ACTIVATION_CLTV), 0);
+    BOOST_CHECK_EQUAL(params->GetConsensus().ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 0);
+
+    // Other instances keep their values.
+    const std::unique_ptr<CChainParams> fresh = CreateChainParams(CBaseChainParams::REGTEST);
+    BOOST_CHECK_EQUAL(fresh->GetConsensus().ActivationHeight(Consensus::ACTIVATION_CSV), 0);
+}
+
+BOOST_AUTO_TEST_CASE(update_activation_height_selected)
+{
+    SelectMainOnExit restore;
+    SelectParams(CBaseChainParams::REGTEST);
+
+    UpdateActivationHeight(Consensus::ACTIVATION_CLTV, 10);
+    const Consensus::Params& consensus = Params().GetConsensus();
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CLTV), 10);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_CSV), 0);
+    BOOST_CHECK_EQUAL(consensus.ActivationHeight(Consensus::ACTIVATION_HELIOPOLIS), 0);
+
+    // Selecting the chain again creates its parameters again.
+    SelectParams(CBaseChainParams::REGTEST);
+    BOOST_CHECK_EQUAL(Params().GetConsensus().ActivationHeight(Consensus::ACTIVATION_CLTV), 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
