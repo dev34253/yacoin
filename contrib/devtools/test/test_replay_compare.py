@@ -46,7 +46,7 @@ class CompareTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp)
         self.n = 0
 
-    def write(self, rows, failures=(), sections=None, tip=None):
+    def write(self, rows, failures=(), sections=None, tip=None, fields=None):
         self.n += 1
         out = os.path.join(self.tmp, "r%d" % self.n)
         os.makedirs(out)
@@ -54,6 +54,7 @@ class CompareTest(unittest.TestCase):
         rep = {"kind": "run", "status": "complete",
                "tip": tip or {"height": last.height, "hash": last.hash},
                "sections": copy.deepcopy(sections or SECTIONS)}
+        rep.update(fields or {})
         report.write(out, rep, rows, logscan.mark_main_chain(list(failures), rows))
         return out
 
@@ -209,6 +210,38 @@ class CompareTest(unittest.TestCase):
         code, out, err = self.cli("report.json", a)
         self.assertEqual(code, 2)
         self.assertIn("report.json", err)
+
+    def test_snapshot_runs(self):
+        snap = {"mode": "snapshot", "snapshot": {"path": "/snapshots/s", "height": 100, "hash": h(100),
+                                                 "digest": "5a" * 32},
+                "block_file_check": {"blocks": 151, "not_in_index": 0, "stored_above_tip": None}}
+        full = {"mode": "full", "snapshot": None,
+                "block_file_check": {"blocks": 151, "not_in_index": 0, "stored_above_tip": None}}
+        a = self.write(make_rows(150), fields=snap)
+        b = self.write(make_rows(150), fields=snap)
+        self.assertEqual(self.compare(a, b), [])
+        self.assertEqual(self.cli(a, b), (0, "identical\n", ""))
+        # A changed money supply above the snapshot's height.
+        rows = make_rows(150)
+        rows[120] = rows[120]._replace(money_supply=1)
+        c = self.write(rows, fields=snap, sections=dict(SECTIONS, chain={"count": 0, "sha256": "ab" * 32}))
+        lines = self.compare(a, c)
+        self.assertEqual(lines[0], "first difference at height 120: moneysupply (A 1200, B 1)")
+        self.assertEqual(self.cli(a, c)[0], 1)
+        # A snapshot run and a full run of the same state.
+        self.assertEqual(self.compare(a, self.write(make_rows(150), fields=full)), [])
+        # A report written without the fields mode, snapshot and
+        # block_file_check.
+        old = self.write(make_rows(150), fields={"format": 1, "datadir": "/d"})
+        self.assertNotIn("mode", report.load(old).report)
+        self.assertEqual(self.compare(old, a), [])
+        self.assertEqual(self.cli(a, old), (0, "identical\n", ""))
+        # An incomplete snapshot run.
+        incomplete = dict(snap, status="incomplete",
+                          incomplete_reasons=["1 blocks of the block files are not in the block index"])
+        d = self.write(make_rows(150), fields=incomplete)
+        self.assertEqual(self.compare(a, d), ["status: A complete, B incomplete"])
+        self.assertEqual(self.cli(a, d), (1, "status: A complete, B incomplete\n", ""))
 
     def test_missing_report_is_an_error(self):
         a = self.write(make_rows(10))

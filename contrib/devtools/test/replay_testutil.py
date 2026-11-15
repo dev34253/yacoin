@@ -3,6 +3,7 @@ writer of LevelDB 1.20 files (write-ahead logs, tables, MANIFEST, CURRENT)
 for small databases built by the tests."""
 
 import os
+import stat
 import struct
 import sys
 
@@ -256,24 +257,56 @@ def sha256d(data):
     return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 
+# The record marker of the synthetic block files.
+MARKER = b"\xa1\xb2\xc3\xd4"
+
+
+def header_bytes(f):
+    """The block header of the fields f (names of
+    replaylib.chain.parse_block_index): 32-bit time below version 7,
+    64-bit time from version 7."""
+    version = f.get("version", 7)
+    out = struct.pack("<i", version) + f["hash_prev"] + f["merkle"]
+    out += struct.pack("<q" if version >= 7 else "<I", f["time"])
+    return out + struct.pack("<II", f["bits"], f["nonce"])
+
+
+def block_record(f, marker=MARKER, body=b"\x00" * 4):
+    """A block file record: marker, size, the header of f and body."""
+    content = header_bytes(f) + body
+    return marker + struct.pack("<I", len(content)) + content
+
+
+def index_records(datadir):
+    """The parsed 'b' records of datadir's block index, by block hash."""
+    from replaylib import chain
+    records = leveldb.read_db(os.path.join(datadir, "blocks", "index"), b"b", b"c")
+    return {k[1:]: chain.parse_block_index(v) for k, v in records}
+
+
 def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x04\x05\x06\x07\x08",
-                 head_blocks=False, block_fields=None, undo=None, side_blocks=0, rev_padding=b""):
+                 head_blocks=False, block_fields=None, undo=None, side_blocks=0, rev_padding=b"",
+                 blk=False, tip=None, salt=0):
     """A data directory with blocks/index (a chain of heights + 1 'b'
     records and side_blocks records off the chain), blocks/rev00000.dat with
     one undo record per height above 0, chainstate (obfuscated with key,
-    best block = the tip) and tokens. coins: (key, plain value) pairs;
-    tokens: (key, value) pairs; block_fields(height) adds fields to a
-    record; undo(height) gives its undo content; rev_padding comes before
-    the first undo record. Returns the block hashes
-    in height order."""
+    best block = the block at height tip, default the last) and tokens.
+    coins: (key, plain value) pairs; tokens: (key, value) pairs;
+    block_fields(height) adds fields to a record; undo(height) gives its
+    undo content; rev_padding comes before the first undo record. With blk,
+    blocks/blk00000.dat holds a record (marker MARKER) for every block with
+    data. salt gives the blocks above genesis other hashes. Returns the
+    block hashes in height order."""
     os.makedirs(os.path.join(path, "blocks"))
-    hashes = [fake_hash(h) for h in range(heights + 1)]
+    hashes = [fake_hash(h, salt if h else 0) for h in range(heights + 1)]
     rev = bytearray(rev_padding)
     records = []
+    blk_bytes = bytearray()
     for h, block_hash in enumerate(hashes):
         f = {"height": h, "hash_prev": hashes[h - 1] if h else b"\0" * 32, "block_hash": block_hash,
              "money_supply": 1000 * h, "mint": 1000 if h else 0, "time": 1700000000 + 60 * h,
-             "data_pos": 8 + 300 * h}
+             "data_pos": 8 + 300 * h, "merkle": fake_hash(h, salt=1000), "bits": 0x1e0fffff,
+             "nonce": 0x1234 + h}
         if h == 0:
             f["status"] = BLOCK_HAVE_DATA
         else:
@@ -284,10 +317,17 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
         if block_fields:
             f.update(block_fields(h))
         records.append((b"b" + block_hash, block_index_bytes(f)))
+        if f.get("status", BLOCK_HAVE_DATA) & BLOCK_HAVE_DATA:
+            blk_bytes += block_record(f)
     for s in range(side_blocks):
-        side = fake_hash(1, salt=s + 1)
-        records.append((b"b" + side, block_index_bytes(
-            {"height": 1, "hash_prev": hashes[0], "block_hash": side, "status": BLOCK_HAVE_DATA})))
+        side = fake_hash(1, salt=500 + s)
+        f = {"height": 1, "hash_prev": hashes[0], "block_hash": side, "status": BLOCK_HAVE_DATA,
+             "merkle": fake_hash(1, salt=2000 + s), "time": 1700000090, "bits": 0x1e0fffff, "nonce": 0x2345 + s}
+        records.append((b"b" + side, block_index_bytes(f)))
+        blk_bytes += block_record(f)
+    if blk:
+        with open(os.path.join(path, "blocks", "blk00000.dat"), "wb") as f:
+            f.write(bytes(blk_bytes))
     with open(os.path.join(path, "blocks", "rev00000.dat"), "wb") as f:
         f.write(bytes(rev))
     index = DBWriter(os.path.join(path, "blocks", "index"))
@@ -295,7 +335,8 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     index.add_log([(1000, [(b"t" + b"\x44" * 32, b"\0\x08\x01")])])
     index.finish()
     state = DBWriter(os.path.join(path, "chainstate"))
-    ops = [(OBFUSCATE_KEY_KEY, b"\x08" + key), (b"B", xor(hashes[-1], key))]
+    best = hashes[heights if tip is None else tip]
+    ops = [(OBFUSCATE_KEY_KEY, b"\x08" + key), (b"B", xor(best, key))]
     if head_blocks:
         ops.append((b"H", xor(b"\x02" + hashes[-1] + hashes[-2], key)))
     for k, v in (coins if coins is not None else [(b"C" + b"\x55" * 32 + b"\x00", b"\x03\x00\x05\x00")]):
@@ -306,3 +347,58 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     tok.add_log([(1, list(tokens) if tokens is not None else [])])
     tok.finish()
     return hashes
+
+
+def make_run(out, heights=3, fields=None, failures=(), **kwargs):
+    """The output directory of a complete full run: OUT/datadir (as
+    make_datadir with blk, plus debug.log, yacoin.conf, .lock and
+    peers.dat) and the report files of its digest, with the failures
+    (logscan.Failure) given; fields replace fields of the report. Returns
+    the report."""
+    from replaylib import digest, logscan, report, runner
+    datadir = os.path.join(out, "datadir")
+    make_datadir(datadir, heights=heights, blk=True, **kwargs)
+    for name, data in (("debug.log", b"2026-11-08 10:00:00 Done loading\n"), ("yacoin.conf", b"# conf\n"),
+                       (".lock", b""), ("peers.dat", b"\x01\x02")):
+        with open(os.path.join(datadir, name), "wb") as f:
+            f.write(data)
+    d = digest.compute(datadir)
+    rep = {"format": runner.REPORT_FORMAT, "kind": "run", "mode": "full", "snapshot": None, "status": "complete",
+           "incomplete_reasons": [], "datadir": datadir, "source": "/source/blocks",
+           "command": ["/bin/yacoind", "-datadir=" + datadir, "-reindex"],
+           "binary": {"path": "/bin/yacoind", "sha256": "ab" * 32}, "stop_at_height": None,
+           "start_time": "2026-11-08T10:00:00Z", "end_time": "2026-11-08T10:01:00Z"}
+    runner.fill_digest(rep, d)
+    marked = logscan.mark_main_chain(list(failures), d.rows)
+    rep["failures"], rep["failure_blocks"] = logscan.counts(list(failures))
+    rep["failures_off_main_chain"] = sum(1 for _, main in marked if not main)
+    rep.update(fields or {})
+    report.write(out, rep, d.rows, marked)
+    return rep
+
+
+def tree_state(path):
+    """Per path under path (directories included): type, size, mode, mtime
+    and the SHA-256 of a file's content."""
+    import hashlib
+    out = {}
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            full = os.path.join(root, name)
+            st = os.lstat(full)
+            entry = (stat.S_IFMT(st.st_mode), st.st_size if name in files else 0, stat.S_IMODE(st.st_mode),
+                     st.st_mtime_ns)
+            if name in files:
+                with open(full, "rb") as f:
+                    entry += (hashlib.sha256(f.read()).hexdigest(),)
+            out[os.path.relpath(full, path)] = entry
+    return out
+
+
+def make_writable(path):
+    """Gives the owner write permission on path and everything under it."""
+    for root, dirs, files in os.walk(path):
+        os.chmod(root, os.stat(root).st_mode | stat.S_IWUSR)
+        for name in files:
+            full = os.path.join(root, name)
+            os.chmod(full, os.stat(full).st_mode | stat.S_IWUSR)

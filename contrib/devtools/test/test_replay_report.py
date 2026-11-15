@@ -81,6 +81,16 @@ class LogScanTest(unittest.TestCase):
         s.feed("ing\n")
         self.assertTrue(s.done_loading)
 
+    def test_import_lines(self):
+        s = logscan.LogScanner()
+        s.feed("2026-11-08 10:00:00 Importing blocks file /out/import/blk00000.dat...\n"
+               "2026-11-08 10:00:01 Warning: Could not open blocks file /out/import/blk 1.dat\n"
+               "2026-11-08 10:00:02 Importing blocks file /out/import/blk00000.dat...\n"
+               "2026-11-08 10:00:03 Importing blocks file /out/import/blk00002.dat\n")
+        s.finish()
+        self.assertEqual(s.imported, ["/out/import/blk00000.dat", "/out/import/blk00000.dat"])
+        self.assertEqual(s.not_opened, ["/out/import/blk 1.dat"])
+
     def test_line_split_across_chunks(self):
         s = logscan.LogScanner()
         for i in range(0, len(LOG), 7):
