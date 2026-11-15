@@ -114,7 +114,8 @@ class P2PConnection(asyncio.Protocol):
         # The initial message to send after the connection was made:
         self.on_connection_send_msg = None
         self.recvbuf = b""
-        self.magic_bytes = MAGIC_BYTES[net]
+        # A test node's chain name main is MAGIC_BYTES' mainnet.
+        self.magic_bytes = MAGIC_BYTES['mainnet' if net == 'main' else net]
         logger.debug('Connecting to Bitcoin Node: %s:%d' % (self.dstaddr, self.dstport))
 
         loop = NetworkThread.network_event_loop

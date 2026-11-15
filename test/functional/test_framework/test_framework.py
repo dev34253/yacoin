@@ -49,6 +49,10 @@ TEST_EXIT_SKIPPED = 77
 
 TMPDIR_PREFIX = "bitcoin_func_test_"
 
+# The chains a script can choose with self.chain; create_cache.py builds the
+# block cache of each.
+CHAINS = ('main', 'regtest')
+
 
 class SkipTest(Exception):
     """This exception is raised to skip a test"""
@@ -95,7 +99,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
     def __init__(self):
         """Sets test framework defaults. Do not override this method. Instead, override the set_test_params() method"""
-        self.chain = 'regtest'
+        # The chain of the nodes, one of CHAINS. On regtest the nodes get the
+        # fork and token heights through -testactivationheight, on main the
+        # fork height through -testnetNewLogicBlockNumber.
+        self.chain = 'main'
         self.setup_clean_chain = False
         self.nodes = []
         self.network_thread = None
@@ -110,7 +117,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         # and expect their nodes to start on real time.
         self._mocktime_managed = False
         self.set_test_params()
-        self.parse_args()        
+        assert self.chain in CHAINS, "self.chain must be one of {}, not {!r}".format(CHAINS, self.chain)
+        self.parse_args()
 
     def main(self):
         """Main function. This should not be overridden by the subclass test scripts."""
@@ -657,17 +665,19 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
     def _initialize_chain(self):
         """Initialize a pre-mined blockchain for use by the test.
 
-        Create a cache of a 199-block-long chain
-        Afterward, create num_nodes copies from the cache."""
+        Create a cache of a 40-block-long chain of self.chain in
+        <cachedir>/<chain>/, unless it exists. Afterward, create num_nodes
+        copies from the cache."""
 
         CACHE_NODE_ID = 0  # Use node 0 to create the cache for all other nodes
-        cache_node_dir = get_datadir_path(self.options.cachedir, CACHE_NODE_ID)
+        cache_dir = os.path.join(self.options.cachedir, self.chain)
+        cache_node_dir = get_datadir_path(cache_dir, CACHE_NODE_ID)
         assert self.num_nodes <= MAX_NODES
 
         if not os.path.isdir(cache_node_dir):
             self.log.debug("Creating cache directory {}".format(cache_node_dir))
 
-            initialize_datadir(self.options.cachedir, CACHE_NODE_ID, self.chain, 20)
+            initialize_datadir(cache_dir, CACHE_NODE_ID, self.chain, 20)
             self.nodes.append(
                 TestNode(
                     CACHE_NODE_ID,

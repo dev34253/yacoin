@@ -30,8 +30,10 @@ from .authproxy import JSONRPCException
 from .mininode import P2PInterface
 from .util import (
     MAX_NODES,
+    REGTEST_TOKEN_HEIGHT,
     append_config,
     delete_cookie_file,
+    get_chain_dir,
     get_rpc_proxy,
     rpc_url,
     wait_until,
@@ -102,6 +104,7 @@ class TestNode():
         self.stdout_dir = os.path.join(self.datadir, "stdout")
         self.stderr_dir = os.path.join(self.datadir, "stderr")
         self.chain = chain
+        self.debug_log_path = os.path.join(get_chain_dir(self.datadir, chain), 'debug.log')
         self.rpchost = rpchost
         self.rpc_timeout = timewait
         self.binary = bitcoind
@@ -125,8 +128,14 @@ class TestNode():
             "-debugexclude=libevent",
             "-debugexclude=leveldb",
             "-uacomment=testnode%d" % i,
-            "-testnetNewLogicBlockNumber="+str(block_fork_1_0)
         ]
+        if chain == 'regtest':
+            self.args += [
+                "-testactivationheight=newlogic@%d" % block_fork_1_0,
+                "-testactivationheight=tokens@%d" % REGTEST_TOKEN_HEIGHT,
+            ]
+        else:
+            self.args.append("-testnetNewLogicBlockNumber=%d" % block_fork_1_0)
         if use_valgrind:
             default_suppressions_file = os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),
@@ -441,8 +450,7 @@ class TestNode():
         if unexpected_msgs is None:
             unexpected_msgs = []
         time_end = time.time() + timeout
-        # debug_log = os.path.join(self.datadir, self.chain, 'debug.log')
-        debug_log = os.path.join(self.datadir, 'debug.log')
+        debug_log = self.debug_log_path
         with open(debug_log, encoding='utf-8') as dl:
             dl.seek(0, 2)
             prev_size = dl.tell()

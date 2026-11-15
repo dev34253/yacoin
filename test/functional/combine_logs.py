@@ -79,23 +79,28 @@ def read_logs(tmp_dir):
     Delegates to generator function get_log_events() to provide individual log events
     for each of the input log files."""
 
-    # Find out what the folder is called that holds the debug.log file
-    glob = pathlib.Path(tmp_dir).glob('node0/**/debug.log')
-    path = next(glob, None)
-    if path:
-        assert next(glob, None) is None #  more than one debug.log, should never happen
-        chain = re.search(r'node0/(.+?)/debug\.log$', path.as_posix()).group(1)  # extract the chain name
-    else:
-        chain = 'regtest'  # fallback to regtest (should only happen when none exists)
-
     files = [("test", "%s/test_framework.log" % tmp_dir)]
     for i in itertools.count():
-        logfile = "{}/node{}/{}/debug.log".format(tmp_dir, i, chain)
-        if not os.path.isfile(logfile):
+        node_dir = "{}/node{}".format(tmp_dir, i)
+        if not os.path.isdir(node_dir):
             break
-        files.append(("node%d" % i, logfile))
+        logfile = node_log_file(node_dir)
+        if logfile:
+            files.append(("node%d" % i, logfile))
 
     return heapq.merge(*[get_log_events(source, f) for source, f in files])
+
+
+def node_log_file(node_dir):
+    """The debug.log of the node with data directory node_dir: in the
+    directory itself on main, in its chain's subdirectory (e.g. regtest/) on
+    the other chains. None if there is none."""
+    main_log = os.path.join(node_dir, "debug.log")
+    if os.path.isfile(main_log):
+        return main_log
+    chain_logs = sorted(pathlib.Path(node_dir).glob("*/debug.log"))
+    assert len(chain_logs) <= 1, chain_logs  # one chain per data directory
+    return str(chain_logs[0]) if chain_logs else None
 
 
 def print_node_warnings(tmp_dir, colors):
