@@ -95,7 +95,7 @@ class EpochTest(BitcoinTestFramework):
                 self.known_failure("C-S11 (VUi4Bd6T)",
                                    lambda: assert_equal(mininginfo['blockvalue'], subsidy),
                                    "not(%d == %d)" % (reward, subsidy))
-            assert_approx(mininginfo['difficulty'], difficulty, vspan=1E-12)
+            assert_approx(mininginfo['difficulty'], difficulty, vspan=1E-15)
         assert_equal(int(node.getinfo()['moneysupply'] * COIN), moneysupply_at_end)
         self.sync_all()
 

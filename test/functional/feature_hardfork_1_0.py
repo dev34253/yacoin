@@ -70,7 +70,7 @@ class HardforkTest(BitcoinTestFramework):
         self.block_fork_1_0 = FORK
         # The blocks below the fork are version 6, so regtest's heliopolis
         # height moves to the fork height as well.
-        self.extra_args = [["-testactivationheight=heliopolis@%d" % FORK]] * self.num_nodes
+        self.extra_args = [["-testactivationheight=heliopolis@%d" % FORK] for _ in range(self.num_nodes)]
 
     def setup_network(self):
         # Node 2 starts unconnected with an empty chain.

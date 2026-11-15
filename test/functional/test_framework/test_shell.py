@@ -3,7 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import CHAINS, BitcoinTestFramework
 
 class TestShell:
     """Wrapper Class for BitcoinTestFramework.
@@ -39,6 +39,7 @@ class TestShell:
                     setattr(self.options, key, value)
                 else:
                     raise KeyError(key + " not a valid parameter key!")
+            assert self.chain in CHAINS, "chain must be one of {}, not {!r}".format(CHAINS, self.chain)
 
             super().setup()
             self.running = True
