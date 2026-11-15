@@ -28,6 +28,11 @@ logger = logging.getLogger("TestFramework.utils")
 # hash from block version 7 on (scrypt_jane.py hashes with the same value).
 NFACTOR_AT_HARDFORK = 4
 
+# The token activation height a regtest test node gets: mainnet's token
+# activation height (the main table's entry). A script's own
+# -testactivationheight=tokens@<height> comes after it and wins.
+REGTEST_TOKEN_HEIGHT = 1911210
+
 # Assert functions
 ##################
 
@@ -372,16 +377,11 @@ def initialize_datadir(dirname, n, chain, epochinterval=10):
     datadir = get_datadir_path(dirname, n)
     if not os.path.isdir(datadir):
         os.makedirs(datadir)
-    # Translate chain name to config name
-    if chain == 'testnet3':
-        chain_name_conf_arg = 'testnet'
-        chain_name_conf_section = 'test'
-    else:
-        chain_name_conf_arg = chain
-        chain_name_conf_section = chain
     with open(os.path.join(datadir, "yacoin.conf"), 'w', encoding='utf8') as f:
-        # f.write("{}=1\n".format(chain_name_conf_arg))
-        # f.write("[{}]\n".format(chain_name_conf_section))
+        # The node's config file has no sections: every line applies to the
+        # chain chosen here, main without a line.
+        if chain != 'main':
+            f.write("{}=1\n".format(chain))
         f.write("rpcuser=yacoinuser\n")
         f.write("rpcpassword=yacoinpwd\n")
         f.write("port=" + str(p2p_port(n)) + "\n")
@@ -411,6 +411,11 @@ def initialize_datadir(dirname, n, chain, epochinterval=10):
 def get_datadir_path(dirname, n):
     return os.path.join(dirname, "node" + str(n))
 
+def get_chain_dir(datadir, chain):
+    """The directory of a node's chain files (debug.log, .cookie, blocks/):
+    the data directory itself on main, its <chain> subdirectory otherwise."""
+    return datadir if chain == 'main' else os.path.join(datadir, chain)
+
 def append_config(datadir, options):
     with open(os.path.join(datadir, "yacoin.conf"), 'a', encoding='utf8') as f:
         for option in options:
@@ -429,7 +434,7 @@ def get_auth_cookie(datadir, chain):
                     assert password is None  # Ensure that there is only one rpcpassword line
                     password = line.split("=")[1].strip("\n")
     try:
-        with open(os.path.join(datadir, chain, ".cookie"), 'r', encoding="ascii") as f:
+        with open(os.path.join(get_chain_dir(datadir, chain), ".cookie"), 'r', encoding="ascii") as f:
             userpass = f.read()
             split_userpass = userpass.split(':')
             user = split_userpass[0]
@@ -442,9 +447,10 @@ def get_auth_cookie(datadir, chain):
 
 # If a cookie file exists in the given datadir, delete it.
 def delete_cookie_file(datadir, chain):
-    if os.path.isfile(os.path.join(datadir, chain, ".cookie")):
+    cookie_file = os.path.join(get_chain_dir(datadir, chain), ".cookie")
+    if os.path.isfile(cookie_file):
         logger.debug("Deleting leftover cookie file")
-        os.remove(os.path.join(datadir, chain, ".cookie"))
+        os.remove(cookie_file)
 
 def rpcauth_value(user, password, salt=None):
     """Return the value of an -rpcauth option for user and password:

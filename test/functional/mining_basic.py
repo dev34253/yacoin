@@ -29,13 +29,19 @@ from test_framework.util import (
 
 BUG_CARD = "IvbXjqbT"
 
+# The difficulty of the blocks here, which follows regtest's powLimit
+DIFFICULTY = Decimal('6.073751268770957E-10')
+
 
 class MiningTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.chain = 'regtest'
         self.num_nodes = 3
         # node2: a later fork height, for getsubsidy before the fork. It has
-        # another consensus, so it stays unconnected.
-        self.extra_args = [[], [], ['-testnetNewLogicBlockNumber=1000']]
+        # another consensus, so it stays unconnected. Its blocks below the
+        # fork are version 6, so regtest's heliopolis height moves to the fork
+        # height as well.
+        self.extra_args = [[], [], ['-testactivationheight=newlogic@1000', '-testactivationheight=heliopolis@1000']]
         self.setup_clean_chain = True
         self.supports_cli = False
         self.mocktime=TIME_GENESIS_BLOCK
@@ -77,8 +83,7 @@ class MiningTest(BitcoinTestFramework):
             assert_equal(mining_info['blocks'], (20+i+1))
             assert_equal(mining_info['currentblocksize'], 1000)
             assert_equal(mining_info['N'], 32)
-            # the low difficulty is only valid because of the low difficulty flag
-            assert_equal(mining_info['difficulty'], Decimal('7.774596252921252E-08'))
+            assert_equal(mining_info['difficulty'], DIFFICULTY)
             # low nfactor is set for testing
             assert_equal(mining_info['Nfactor'], 4)
             # powreward is based on 100,000,000 initial money supply for testing
@@ -96,7 +101,7 @@ class MiningTest(BitcoinTestFramework):
         for i in range(3):
             self.mine_blocks(0, 1)
             mining_info = self.nodes[0].getmininginfo()
-            assert_equal(mining_info['difficulty'], Decimal('7.774596252921252E-08'))
+            assert_equal(mining_info['difficulty'], DIFFICULTY)
         assert_equal(mining_info['blocks'], 29)
         assert_approx(mining_info['powreward'], 3.8025705377)
 
@@ -105,7 +110,7 @@ class MiningTest(BitcoinTestFramework):
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 30)
-        assert_equal(mining_info['difficulty'], Decimal('7.774596252921252E-08'))
+        assert_equal(mining_info['difficulty'], DIFFICULTY)
         assert_approx(mining_info['powreward'], 3.8025705377)
         assert_approx(float(balance), 95.064278)
 
@@ -114,7 +119,7 @@ class MiningTest(BitcoinTestFramework):
         mining_info = self.nodes[0].getmininginfo()
         balance=self.nodes[0].getbalance()
         assert_equal(mining_info['blocks'], 35)
-        assert_equal(mining_info['difficulty'], Decimal('7.774596252921252E-08'))
+        assert_equal(mining_info['difficulty'], DIFFICULTY)
         assert_approx(balance, 114.077144)
 
         self.test_getsubsidy()
@@ -144,9 +149,10 @@ class MiningTest(BitcoinTestFramework):
         subsidy = node.getsubsidy()
         coinbase = node.getrawtransaction(node.getblock(node.generate(1)[0])['tx'][0], 1)
         assert_equal(coinbase['vout'][0]['value'] * COIN, subsidy)
-        assert_equal(node.getsubsidy('00ffff' + '00' * 29), 56120000)
-        assert_equal(node.getsubsidy('00000fff' + '00' * 28), 14030000)
-        assert_equal(node.getsubsidy('0000000fff' + '00' * 27), 5560000)
+        # 100 YAC / (powLimit / target) ** (1/6), with regtest's powLimit
+        assert_equal(node.getsubsidy('00ffff' + '00' * 29), 44540000)
+        assert_equal(node.getsubsidy('00000fff' + '00' * 28), 11140000)
+        assert_equal(node.getsubsidy('0000000fff' + '00' * 27), 4420000)
         # capped at MAX_MINT_PROOF_OF_WORK (100 YAC)
         assert_equal(node.getsubsidy('ff' * 32), 100 * COIN)
 
@@ -166,7 +172,7 @@ class MiningTest(BitcoinTestFramework):
         # built (here the one generate used)
         assert_equal(info['currentblocktx'], 2)
         assert_greater_than(info['currentblocksize'], 1000)
-        assert_equal((info['chain'], info['errors']), ('main', ''))
+        assert_equal((info['chain'], info['errors']), ('regtest', ''))
         assert_equal((info['Epoch Interval'], info['Difficulty Interval']), (10, 10))
         assert_greater_than(info['netmhashps'], 0)
         assert_equal(info['blockvalue'], int(info['powreward'] * COIN))

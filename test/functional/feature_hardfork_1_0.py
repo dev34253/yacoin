@@ -3,7 +3,8 @@
 # Copyright (c) 2026 The Yacoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Test the 1.0 hard fork, here at block 30 (-testnetNewLogicBlockNumber).
+"""Test the 1.0 hard fork, here at block 30 on regtest
+(-testactivationheight=newlogic@30).
 
 - Before the fork: version 6 blocks, version 1 coinbases, coinbases mature
   after 500 blocks (also for the fork block itself), the old subsidy, the
@@ -50,14 +51,26 @@ FORK = 30
 # the switch to -nFactorAtHardfork (4) at the fork is visible.
 START_TIME = 1368516000
 PREMATURE = "16: bad-txns-premature-spend-of-coinbase/coinstake"
+# Seconds between the blocks below the fork: less than the target spacing
+# (60 s), so their target falls below regtest's powLimit.
+PRE_FORK_SPACING = 30
+# Regtest's powLimit, compact
+POW_LIMIT_BITS = '207fffff'
+# Block 29's nBits, and the old subsidy of that target
+BITS_29 = '207fa84b'
+OLD_SUBSIDY_29 = 99950000
 
 
 class HardforkTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.chain = 'regtest'
         self.num_nodes = 3
         self.setup_clean_chain = True
         self.supports_cli = False
         self.block_fork_1_0 = FORK
+        # The blocks below the fork are version 6, so regtest's heliopolis
+        # height moves to the fork height as well.
+        self.extra_args = [["-testactivationheight=heliopolis@%d" % FORK] for _ in range(self.num_nodes)]
 
     def setup_network(self):
         # Node 2 starts unconnected with an empty chain.
@@ -88,11 +101,11 @@ class HardforkTest(BitcoinTestFramework):
         like getsubsidy; today it is the tip's (the old subsidy)."""
         self.known_failure("C-S11 (VUi4Bd6T)",
                            lambda: assert_equal(node.getmininginfo()['blockvalue'], reward),
-                           "not(56120000 == %d)" % reward)
+                           "not(%d == %d)" % (OLD_SUBSIDY_29, reward))
 
-    def mine(self, node, n, sync=None):
+    def mine(self, node, n, sync=None, spacing=60):
         """Mine with mocktime and sync nodes 0 and 1 (node 2 is unconnected until the end)."""
-        return self.mine_with_mocktime(node, n, sync=self.nodes[:2] if sync is None else sync)
+        return self.mine_with_mocktime(node, n, sync=self.nodes[:2] if sync is None else sync, spacing=spacing)
 
     def run_test(self):
         n0, n1, n2 = self.nodes
@@ -101,7 +114,7 @@ class HardforkTest(BitcoinTestFramework):
         self.set_mocktime(START_TIME)
 
         self.log.info("Before the fork: version 6 blocks with version 1 coinbases")
-        self.mine(n0, FORK - 2)
+        self.mine(n0, FORK - 2, spacing=PRE_FORK_SPACING)
         assert_equal(n0.getblock(n0.getblockhash(FORK - 2))['version'], 6)
         for height in (14, 15):
             assert_equal(n0.getblock(n0.getblockhash(height), 2)['tx'][0]['version'], 1)
@@ -117,7 +130,7 @@ class HardforkTest(BitcoinTestFramework):
         assert_equal(wallet_tx['details'][0]['category'], 'immature')
         spend1 = self.coinbase_spend(1)
         assert_raises_rpc_error(-26, PREMATURE, n0.sendrawtransaction, spend1.serialize().hex())
-        self.mine(n0, 1)
+        self.mine(n0, 1, spacing=PRE_FORK_SPACING)
         # The fork block is still checked with the old rule.
         assert_raises_rpc_error(-26, PREMATURE, n0.sendrawtransaction, spend1.serialize().hex())
         supply29 = self.money_supply(n0, FORK - 1)
@@ -150,8 +163,8 @@ class HardforkTest(BitcoinTestFramework):
         hash30 = n0.getbestblockhash()
         block30 = n0.getblock(hash30, 2)
         assert_equal(block30['version'], 7)
-        assert_equal(block30['bits'], '201fffff')
-        assert_equal(n0.getblockheader(hash29)['bits'], '2000ffff')
+        assert_equal(block30['bits'], POW_LIMIT_BITS)
+        assert_equal(n0.getblockheader(hash29)['bits'], BITS_29)
         assert_equal(block30['tx'][0]['version'], 2)
         assert_equal(int(block30['mint'] * COIN), reward)
         assert_equal(n0.getmininginfo()['blockvalue'], reward)
@@ -223,7 +236,7 @@ class HardforkTest(BitcoinTestFramework):
 
         self.log.info("-reindex on node 1 keeps the chain; it no longer marks the old branch invalid")
         tip_b = branch_b[-1].hash
-        self.restart_node(1, extra_args=["-reindex"])
+        self.restart_node(1, extra_args=self.extra_args[1] + ["-reindex"])
         wait_until(lambda: n1.getbestblockhash() == tip_b, timeout=60)
         assert_equal(int(n1.getinfo()['moneysupply'] * COIN), expected_supply)
         assert {'height': 33, 'hash': hash33, 'branchlen': 4, 'status': 'valid-fork'} in n1.getchaintips()

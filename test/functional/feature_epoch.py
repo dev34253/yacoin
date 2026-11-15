@@ -5,15 +5,15 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the epoch block reward.
 
-Mine 39 blocks with epochinterval=10 and check, after every block, that the
-coinbase pays the reward computed from the money supply at the end of the
-previous epoch, the block value (getmininginfo, which should equal
-getsubsidy, the next block's reward), the difficulty, the money supply after
-each epoch, the size and sigops limits getblocktemplate gives for the next
-block (from that block's reward), and that the block's nBits only change on
-the first block of an epoch (and on block 1). Then a transaction fee is burned:
-the coinbase doesn't claim it and the money supply grows by the reward minus
-the fee.
+Mine 39 blocks on regtest, 30 s apart, with epochinterval=10 and check, after
+every block, that the coinbase pays the reward computed from the money supply
+at the end of the previous epoch, the block value (getmininginfo, which should
+equal getsubsidy, the next block's reward), the difficulty, the money supply
+after each epoch, the size and sigops limits getblocktemplate gives for the
+next block (from that block's reward), and that the block's nBits only change
+on the first block of an epoch (and on block 1). Then a transaction fee is
+burned: the coinbase doesn't claim it and the money supply grows by the reward
+minus the fee.
 """
 
 from test_framework.blocktools import TIME_GENESIS_BLOCK, epoch_reward, get_template
@@ -32,9 +32,14 @@ from test_framework.yac_tx import key_from_wif, p2pkh_script, sign_p2pkh_input
 MIN_TX_FEE = 10000
 MAX_GENESIS_BLOCK_SIZE = 1000000
 
+# Seconds between the blocks: less than the target spacing (60 s), so the
+# target falls at each epoch start from the first blocks' regtest powLimit.
+SPACING = 30
+
 
 class EpochTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.chain = 'regtest'
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.supports_cli = False
@@ -71,7 +76,7 @@ class EpochTest(BitcoinTestFramework):
     def mine_blocks(self, n, blockvalue, moneysupply_at_end, difficulty):
         node = self.nodes[0]
         for _ in range(n):
-            block_hash = self.mine_with_mocktime(node, 1, spacing=120, sync=False)[0]
+            block_hash = self.mine_with_mocktime(node, 1, spacing=SPACING, sync=False)[0]
             height = node.getblockcount()
             self.check_limits_and_bits(block_hash, height)
             reward = self.expected_reward(height)
@@ -90,18 +95,18 @@ class EpochTest(BitcoinTestFramework):
                 self.known_failure("C-S11 (VUi4Bd6T)",
                                    lambda: assert_equal(mininginfo['blockvalue'], subsidy),
                                    "not(%d == %d)" % (reward, subsidy))
-            assert_approx(mininginfo['difficulty'], difficulty, vspan=1E-12)
+            assert_approx(mininginfo['difficulty'], difficulty, vspan=1E-15)
         assert_equal(int(node.getinfo()['moneysupply'] * COIN), moneysupply_at_end)
         self.sync_all()
 
     def run_test(self):
         # The first block is mined at the genesis time (the difficulty values
         # below depend on the block times).
-        self.set_mocktime(TIME_GENESIS_BLOCK - 120)
-        self.mine_blocks(9, 3802570, 100000034223130, 5.96046448E-8)
-        self.mine_blocks(10, 3802571, 100000072248840, 3.80457032E-8)
-        self.mine_blocks(10, 3802573, 100000110274570, 1.98682149E-8)
-        self.mine_blocks(10, 3802574, 100000148300310, 1.98682149E-8)
+        self.set_mocktime(TIME_GENESIS_BLOCK - SPACING)
+        self.mine_blocks(9, 3802570, 100000034223130, 4.656542373906925E-10)
+        self.mine_blocks(10, 3802571, 100000072248840, 1.269966335943766E-9)
+        self.mine_blocks(10, 3802573, 100000110274570, 2.539932671887531E-9)
+        self.mine_blocks(10, 3802574, 100000148300310, 5.079868646871696E-9)
 
         self.log.info("A transaction fee is burned: the coinbase pays the reward only")
         node = self.nodes[0]
@@ -115,7 +120,7 @@ class EpochTest(BitcoinTestFramework):
         assert_equal(node.sendrawtransaction(tx.serialize().hex()), tx.hash)
         subsidy = node.getsubsidy()
         supply_39 = self.money_supply(39)
-        block_hash = self.mine_with_mocktime(node, 1, spacing=120)[0]
+        block_hash = self.mine_with_mocktime(node, 1, spacing=SPACING)[0]
         block = node.getblock(block_hash)
         assert_equal(block['tx'], [block['tx'][0], tx.hash])
         assert_equal(self.coinbase_value(block_hash), subsidy)

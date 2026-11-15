@@ -81,10 +81,11 @@ from test_framework.util import (
 
 class FrameworkBlocksTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.chain = 'regtest'
         self.num_nodes = 2
         self.setup_clean_chain = True
         # Tokens for the token script checks.
-        self.extra_args = [["-tokenSupportBlockNumber=5"], []]
+        self.extra_args = [["-testactivationheight=tokens@5"], []]
 
     def setup_network(self):
         # Node 1 is a donor that only connects when a check needs it.

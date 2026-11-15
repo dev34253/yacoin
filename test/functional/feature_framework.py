@@ -4,7 +4,15 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Self-checks of the YACoin parts of the test framework.
 
-Later tests rely on these helpers, so check them against a real node:
+Later tests rely on these helpers, so check them against a real node, here on
+regtest:
+- the chain choice: regtest=1 in yacoin.conf (main gets no chain line), the
+  nodes report chain regtest and keep their files in <datadir>/regtest.
+- the fork and token heights through -testactivationheight, with a script's
+  own tokens@<height> after the framework's.
+- the RPC cookie and debug.log in the chain's directory: cookie
+  authentication, assert_debug_log and combine_logs.py (also on a main
+  layout).
 - node exit codes and the signal helpers (TestNode.wait_until_stopped,
   send_signal, wait_for_exit).
 - stop_node goes on when the reply to stop is lost and the node exits, and
@@ -31,8 +39,10 @@ import http.client
 import logging
 import os
 import re
+import shutil
 import signal
 import socket
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -41,11 +51,15 @@ from test_framework.authproxy import JSONRPCException
 from test_framework.messages import COIN, CBlock, CTransaction, FromHex, TX_VERSION
 from test_framework.mininode import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.test_node import FailedToStartError
+from test_framework.test_node import FailedToStartError, TestNode
 from test_framework.util import (
+    REGTEST_TOKEN_HEIGHT,
     assert_equal,
     assert_raises,
+    assert_raises_rpc_error,
     connect_nodes,
+    get_auth_cookie,
+    initialize_datadir,
     non_loopback_ipv4,
     p2p_port,
     peers,
@@ -145,8 +159,33 @@ class CaptureWarnings(logging.Handler):
         logging.getLogger("TestFramework.authproxy").removeHandler(self)
 
 
+class CaptureDebug(logging.Handler):
+    """Collects the messages of the framework's util logger, debug level
+    included."""
+
+    def __init__(self):
+        super().__init__(logging.DEBUG)
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+    def __enter__(self):
+        logging.getLogger("TestFramework.utils").addHandler(self)
+        return self
+
+    def __exit__(self, *exc):
+        logging.getLogger("TestFramework.utils").removeHandler(self)
+
+
+def read_lines(path):
+    with open(path, encoding='utf8') as f:
+        return f.read().splitlines()
+
+
 class FrameworkTest(BitcoinTestFramework):
     def set_test_params(self):
+        self.chain = 'regtest'
         self.num_nodes = 2
         self.setup_clean_chain = True
 
@@ -159,6 +198,10 @@ class FrameworkTest(BitcoinTestFramework):
 
     def run_test(self):
         self.test_mocktime_at_start()
+        self.test_regtest_chain()
+        self.test_activation_heights()
+        self.test_cookie()
+        self.test_debug_log()
         self.test_exit_codes()
         self.test_lost_stop_reply()
         self.test_connect_nodes()
@@ -170,6 +213,8 @@ class FrameworkTest(BitcoinTestFramework):
         self.test_known_failure()
         self.test_rpc_resend()
         self.test_start_nodes_failure()
+        self.test_combine_logs()
+        self.test_token_height_override()
 
     def test_mocktime_at_start(self):
         self.log.info("Nodes added after set_mocktime start on the test's clock")
@@ -177,6 +222,110 @@ class FrameworkTest(BitcoinTestFramework):
             assert "-mocktime=%d" % self.start_mocktime in node.process.args
         block = self.nodes[0].getblockheader(self.nodes[0].generate(1)[0])
         assert_equal(block['time'], self.start_mocktime)
+
+    def test_regtest_chain(self):
+        self.log.info("The nodes run regtest: regtest=1 in yacoin.conf, the chain's files in <datadir>/regtest")
+        for node in self.nodes:
+            lines = read_lines(os.path.join(node.datadir, 'yacoin.conf'))
+            assert_equal(lines[0], 'regtest=1')
+            assert not [line for line in lines if line.startswith('[')], lines
+            assert_equal(node.gettimechaininfo()['chain'], 'regtest')
+            assert os.path.isfile(os.path.join(node.datadir, 'regtest', 'debug.log'))
+            assert os.path.isdir(os.path.join(node.datadir, 'regtest', 'blocks'))
+            assert not os.path.exists(os.path.join(node.datadir, 'blocks'))
+
+        self.log.info("initialize_datadir writes regtest=1 for regtest and no chain line for main")
+        main_conf = read_lines(os.path.join(initialize_datadir(os.path.join(self.options.tmpdir, 'conf_main'), 0, 'main'), 'yacoin.conf'))
+        regtest_conf = read_lines(os.path.join(initialize_datadir(os.path.join(self.options.tmpdir, 'conf_regtest'), 0, 'regtest'), 'yacoin.conf'))
+        assert_equal(regtest_conf, ['regtest=1'] + main_conf)
+
+    def test_activation_heights(self):
+        self.log.info("Regtest nodes get the fork and token heights through -testactivationheight")
+        for node in self.nodes:
+            args = node.process.args
+            assert "-testactivationheight=newlogic@%d" % self.block_fork_1_0 in args, args
+            assert "-testactivationheight=tokens@%d" % REGTEST_TOKEN_HEIGHT in args, args
+            assert not [arg for arg in args if arg.startswith(("-testnetNewLogicBlockNumber", "-tokenSupportBlockNumber"))], args
+
+        self.log.info("A main node gets the fork height through -testnetNewLogicBlockNumber")
+        main_node = self.main_test_node()
+        assert "-testnetNewLogicBlockNumber=%d" % self.block_fork_1_0 in main_node.args, main_node.args
+        assert not [arg for arg in main_node.args if arg.startswith("-testactivationheight")], main_node.args
+
+    def main_test_node(self):
+        """A TestNode on main in a data directory of its own; not started."""
+        return TestNode(0, os.path.join(self.options.tmpdir, 'main_node'), chain='main', rpchost=None,
+                        timewait=self.rpc_timeout, bitcoind=self.options.bitcoind,
+                        bitcoin_cli=self.options.bitcoincli, coverage_dir=None, cwd=self.options.tmpdir,
+                        block_fork_1_0=self.block_fork_1_0)
+
+    def test_cookie(self):
+        node = self.nodes[1]
+        conf = os.path.join(node.datadir, 'yacoin.conf')
+        cookie = os.path.join(node.datadir, 'regtest', '.cookie')
+        self.log.info("A regtest node without the rpcuser and rpcpassword lines is reached through <datadir>/regtest/.cookie")
+        height = node.getblockcount()
+        self.stop_node(1)
+        lines = read_lines(conf)
+        credentials = [line for line in lines if line.startswith(('rpcuser=', 'rpcpassword='))]
+        assert_equal(len(credentials), 2)
+        with open(conf, 'w', encoding='utf8') as f:
+            f.write("".join(line + "\n" for line in lines if line not in credentials))
+
+        self.log.info("A leftover cookie file is deleted before the start")
+        with open(cookie, 'w', encoding='ascii') as f:
+            f.write("leftover:cookie")
+        with CaptureDebug() as log:
+            node.start()
+        assert_equal(log.messages, ["Deleting leftover cookie file"])
+        node.wait_for_rpc_connection()
+        assert_equal(node.getblockcount(), height)
+        with open(cookie, encoding='ascii') as f:
+            assert_equal(":".join(get_auth_cookie(node.datadir, 'regtest')), f.read())
+        assert_equal(raw_rpc(node, {"method": "getblockcount"})[0], 200)
+        self.stop_node(1)
+        with open(conf, 'w', encoding='utf8') as f:
+            f.write("".join(line + "\n" for line in lines))
+        self.start_node(1)
+
+        self.log.info("get_auth_cookie reads <datadir>/.cookie on main")
+        main_dir = os.path.join(self.options.tmpdir, 'cookie_main')
+        os.makedirs(main_dir)
+        with open(os.path.join(main_dir, '.cookie'), 'w', encoding='ascii') as f:
+            f.write("testuser:testpass")
+        assert_equal(get_auth_cookie(main_dir, 'main'), ('testuser', 'testpass'))
+
+        self.log.info("Without credentials in yacoin.conf or a cookie, get_auth_cookie raises")
+        empty_dir = os.path.join(self.options.tmpdir, 'no_credentials')
+        os.makedirs(empty_dir)
+        # The main cookie is not regtest's.
+        for datadir, chain in ((empty_dir, 'main'), (empty_dir, 'regtest'), (main_dir, 'regtest')):
+            try:
+                get_auth_cookie(datadir, chain)
+            except ValueError as e:
+                assert_equal(str(e), "No RPC credentials")
+            else:
+                raise AssertionError("get_auth_cookie found credentials in %s for %s" % (datadir, chain))
+
+    def test_debug_log(self):
+        node = self.nodes[1]
+        self.log.info("debug_log_path is the chain's debug.log")
+        assert_equal(node.debug_log_path, os.path.join(node.datadir, 'regtest', 'debug.log'))
+        main_node = self.main_test_node()
+        assert_equal(main_node.debug_log_path, os.path.join(main_node.datadir, 'debug.log'))
+
+        self.log.info("assert_debug_log finds a line the node writes to regtest's debug.log")
+        with node.assert_debug_log(["Done loading"]):
+            self.restart_node(1)
+
+        self.log.info("assert_debug_log fails for a line the node does not write")
+        try:
+            with node.assert_debug_log(["no such line in the log"], timeout=0.2):
+                node.getblockcount()
+        except AssertionError as e:
+            assert "does not partially match log" in str(e), str(e)
+        else:
+            raise AssertionError("assert_debug_log passed for a line the node did not write")
 
     def test_exit_codes(self):
         node = self.nodes[1]
@@ -547,6 +696,45 @@ class FrameworkTest(BitcoinTestFramework):
         assert not good.running
         self.start_node(1)
         assert good.getblockcount() > 0
+
+    def combine_logs(self, testdir):
+        """combine_logs.py's output for testdir and the sources it names."""
+        script = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'combine_logs.py')
+        output = subprocess.run([sys.executable, script, testdir], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                universal_newlines=True, check=True).stdout
+        # " <source> ..." starts each log event.
+        events = [re.match(r" (test|node\d+) ", line) for line in output.splitlines()]
+        return output, {event.group(1) for event in events if event}
+
+    def test_combine_logs(self):
+        self.log.info("combine_logs.py combines the test log and the nodes' regtest debug.log")
+        output, sources = self.combine_logs(self.options.tmpdir)
+        assert_equal(sources, {"test", "node0", "node1"})
+        assert "Done loading" in output
+
+        self.log.info("combine_logs.py reads a main layout's node0/debug.log")
+        main_dir = os.path.join(self.options.tmpdir, 'logs_main')
+        os.makedirs(os.path.join(main_dir, 'node0'))
+        shutil.copy(os.path.join(self.options.tmpdir, 'test_framework.log'), main_dir)
+        shutil.copy(self.nodes[0].debug_log_path, os.path.join(main_dir, 'node0', 'debug.log'))
+        output, sources = self.combine_logs(main_dir)
+        assert_equal(sources, {"test", "node0"})
+        assert "Done loading" in output
+
+    def test_token_height_override(self):
+        node = self.nodes[1]
+        token_height = node.getblockcount() + 1
+        self.log.info("A script's own -testactivationheight=tokens@%d comes after the framework's", token_height)
+        self.restart_node(1, extra_args=["-testactivationheight=tokens@%d" % token_height])
+        token_args = [arg for arg in node.process.args if arg.startswith("-testactivationheight=tokens@")]
+        assert_equal(token_args, ["-testactivationheight=tokens@%d" % REGTEST_TOKEN_HEIGHT,
+                                  "-testactivationheight=tokens@%d" % token_height])
+
+        self.log.info("The token RPCs refuse below that height and work at it")
+        assert_raises_rpc_error(-1, "THIS COMMAND IS NOT YET ACTIVE", node.listtokens)
+        self.mine_with_mocktime(node, 1, sync=False)
+        assert_equal(node.getblockcount(), token_height)
+        assert_equal(node.listtokens("*", True), {})
 
 
 if __name__ == '__main__':

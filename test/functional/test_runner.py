@@ -119,6 +119,7 @@ BASE_SCRIPTS = [
     'mempool_persist.py',
     'feature_framework.py',
     'feature_framework_blocks.py',
+    'feature_framework_cache.py',
     'p2p_invalid_tx.py',
     'p2p_leak.py',
     'wallet_dump.py',
