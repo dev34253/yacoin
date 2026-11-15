@@ -433,7 +433,7 @@ BOOST_AUTO_TEST_CASE(lock_values_by_chain)
     CheckLockValues(nMainLock, nMainDuration);
     {
         SelectedParamsGuard regtest(CBaseChainParams::REGTEST);
-        CheckLockValues(nMainLock, nMainDuration);
+        CheckLockValues(10 * COIN, 10);
     }
     CheckLockValues(nMainLock, nMainDuration);
 }

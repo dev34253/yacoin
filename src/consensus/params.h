@@ -7,6 +7,7 @@
 #ifndef YACOIN_CONSENSUS_PARAMS_H
 #define YACOIN_CONSENSUS_PARAMS_H
 
+#include "amount.h"
 #include "uint256.h"
 #include "bignum.h"
 #include <map>
@@ -85,6 +86,10 @@ struct Params {
     int64_t nStakeMinAge;
     int64_t nStakeMaxAge;
     int64_t nModifierInterval;
+
+    /** Token fee lock: the amount and its lock duration in blocks */
+    CAmount nTokenFeeLockAmount;
+    uint32_t nTokenFeeLockDuration;
 };
 } // namespace Consensus
 

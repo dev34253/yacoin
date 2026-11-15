@@ -10,10 +10,6 @@
 //
 // Transactions spend coins added to the coins cache under random outpoints, so they are unique in
 // the whole test binary.
-//
-// Initial download: the mainnet build never leaves it in the unit tests (its checkpoint estimate
-// is above any test chain), the low-difficulty build leaves it with the first tip. Behaviour that
-// depends on it is checked per build.
 
 #include "amount.h"
 #include "bloom.h"
@@ -738,7 +734,7 @@ BOOST_AUTO_TEST_CASE(queued_addresses_sent_in_messages_of_at_most_1000)
 // Transactions
 //
 
-/** An inv of an unknown transaction is requested only after initial download; an inv of a
+/** An inv of an unknown transaction is requested; an inv of a
  * transaction in the mempool, or of an inventory type the node does not know, is not requested */
 BOOST_AUTO_TEST_CASE(inv_of_transactions)
 {
@@ -751,12 +747,7 @@ BOOST_AUTO_TEST_CASE(inv_of_transactions)
                                                  CInv(MSG_FILTERED_BLOCK, GetRandHash())});
     peer.RunSendMessages();
     const std::vector<CInv> requested = Inventory(peer.TakeReceived(), NetMsgType::GETDATA);
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    // In initial download (always on this build in the unit tests)
-    BOOST_CHECK(requested.empty());
-#else
     BOOST_CHECK(TxHashes(requested) == std::set<uint256>{unknown});
-#endif
     BOOST_CHECK_EQUAL(peer.Stats().nMisbehavior, 0);
 }
 

@@ -83,21 +83,4 @@ UniValue RPCParams(const Args&... args)
     return params;
 }
 
-/** One peer in g_connman's node list while it lives */
-class ScopedPeer
-{
-public:
-    ScopedPeer()
-        : m_node(1000, NODE_NETWORK, 0, INVALID_SOCKET, CAddress(CService(CNetAddr(), 0), NODE_NONE), 0, 0, CAddress(), "", false)
-    {
-        CConnmanTest::AddNode(m_node);
-    }
-    ~ScopedPeer() { CConnmanTest::ClearNodes(); }
-    ScopedPeer(const ScopedPeer&) = delete;
-    ScopedPeer& operator=(const ScopedPeer&) = delete;
-
-private:
-    CNode m_node;
-};
-
 #endif // YACOIN_TEST_RPC_TEST_UTIL_H

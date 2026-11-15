@@ -208,20 +208,23 @@ BOOST_AUTO_TEST_CASE(regtest_data)
     const uint256 genesis = Params().GetConsensus().hashGenesisBlock;
     BOOST_CHECK_EQUAL(Params().GenesisBlock().nTime, GENESIS_TIME);
 
-    BOOST_CHECK_EQUAL(Checkpoints::GetTotalBlocksEstimate(), MAIN_LAST_HEIGHT);
-    BOOST_CHECK_EQUAL(Checkpoints::GetLastCheckpointTime(), MAIN_LAST_TIME);
-    BOOST_CHECK(!Checkpoints::CheckHardened(0, genesis));
-    BOOST_CHECK(Checkpoints::CheckHardened(0, mainGenesis));
+    BOOST_CHECK_EQUAL(Checkpoints::GetTotalBlocksEstimate(), 0);
+    BOOST_CHECK_EQUAL(Checkpoints::GetLastCheckpointTime(), GENESIS_TIME);
+    BOOST_CHECK(Checkpoints::CheckHardened(0, genesis));
+    BOOST_CHECK(!Checkpoints::CheckHardened(0, mainGenesis));
     BOOST_CHECK(Checkpoints::CheckHardened(1, blockOne));
 
     IndexMap regtestIndex;
     regtestIndex.Add(genesis, 0);
     regtestIndex.Add(blockOne, 1);
-    BOOST_CHECK(Checkpoints::GetLastCheckpoint(regtestIndex.Map()) == nullptr);
+    BOOST_CHECK(Checkpoints::GetLastCheckpoint(regtestIndex.Map()) == regtestIndex.At(genesis));
 
     IndexMap mainIndex;
     mainIndex.Add(mainGenesis, 0);
-    BOOST_CHECK(Checkpoints::GetLastCheckpoint(mainIndex.Map()) == mainIndex.At(mainGenesis));
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    mainIndex.Add(uint256S(MAIN_CHECKPOINTS[1].second), 15000);
+#endif
+    BOOST_CHECK(Checkpoints::GetLastCheckpoint(mainIndex.Map()) == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(chain_switch)
@@ -232,8 +235,8 @@ BOOST_AUTO_TEST_CASE(chain_switch)
     for (int round = 0; round < 2; round++) {
         {
             SelectedParamsGuard regtest(CBaseChainParams::REGTEST);
-            BOOST_CHECK_EQUAL(Checkpoints::GetTotalBlocksEstimate(), MAIN_LAST_HEIGHT);
-            BOOST_CHECK(!Checkpoints::CheckHardened(0, regtestGenesis));
+            BOOST_CHECK_EQUAL(Checkpoints::GetTotalBlocksEstimate(), 0);
+            BOOST_CHECK(Checkpoints::CheckHardened(0, regtestGenesis));
         }
         BOOST_CHECK_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
         BOOST_CHECK_EQUAL(Checkpoints::GetTotalBlocksEstimate(), MAIN_LAST_HEIGHT);

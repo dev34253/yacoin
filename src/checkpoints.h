@@ -28,6 +28,7 @@ class CBlockIndex;
 
 /** Block-chain checkpoints are compiled-in sanity checks.
  * They are updated every release or three.
+ * The functions read the checkpoints of the selected chain (Params().Checkpoints()).
  */
 namespace Checkpoints
 {
