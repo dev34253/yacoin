@@ -92,6 +92,8 @@ public:
         consensus.nActivationHeight[Consensus::ACTIVATION_CLTV] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nActivationHeight[Consensus::ACTIVATION_CSV] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nActivationHeight[Consensus::ACTIVATION_HELIOPOLIS] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_NEW_LOGIC] = 1890000; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_TOKENS] = 1911210; // 000009e3b1cc249ba64c3749430b96cf0f3c25acbb2bd3cb0b69e3b28288607b
         consensus.nPowTargetTimespan = 21000 * 60;  // 21000 blocks * 60 seconds
         consensus.nPowTargetSpacing = 1 * 60; // 1 minutes
         consensus.fPowAllowMinDifficultyBlocks = false;
@@ -246,6 +248,8 @@ public:
         consensus.nActivationHeight[Consensus::ACTIVATION_CLTV] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nActivationHeight[Consensus::ACTIVATION_CSV] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
         consensus.nActivationHeight[Consensus::ACTIVATION_HELIOPOLIS] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_NEW_LOGIC] = 0; // 0000030f8402abf3d0e2efeb72274da8a4b4389ef8267d2c2a14fe58f2e088d0
+        consensus.nActivationHeight[Consensus::ACTIVATION_TOKENS] = 0; // 000009e3b1cc249ba64c3749430b96cf0f3c25acbb2bd3cb0b69e3b28288607b
         consensus.nPowTargetTimespan = 10;  // 10blocks
         consensus.nPowTargetSpacing = 1 * 60; // 1 minutes
         consensus.fPowAllowMinDifficultyBlocks = true;
@@ -356,6 +360,8 @@ static const char* const ACTIVATION_RULE_NAMES[] = {
     "heliopolis",
     "cltv",
     "csv",
+    "newlogic",
+    "tokens",
 };
 static_assert(ARRAYLEN(ACTIVATION_RULE_NAMES) == Consensus::MAX_ACTIVATION_RULES,
               "every activation rule needs a name");

@@ -69,9 +69,7 @@
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 static const bool DEFAULT_DISABLE_SAFEMODE = false;
 static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
-static const ::uint32_t mainnetNewLogicBlockNumber = 1890000;
 static const ::uint32_t testnetNewLogicBlockNumber = 0;
-static const ::uint32_t tokenSupportBlockNumber = 1911210;
 
 using namespace boost;
 
@@ -415,7 +413,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-printpriority", _("Log transaction fee per kB when mining blocks (default: false)"));
     strUsage += HelpMessageOpt("-replayvalidation=<mode>", _("Validation for replays of the block history: run every check the node implements on each block connected and log each failure. <mode> is 0 (off), report (log only) or reject (also reject a block with a failure) (default: 0)"));
     strUsage += HelpMessageOpt("-shrinkdebugfile", _("Shrink debug.log file on client startup (default: 1 when no -debug)"));
-    strUsage += HelpMessageOpt("-testactivationheight=<name>@<height>", "Set the activation height of the rule <name> (heliopolis, cltv, csv) to <height>; regtest only. Can be specified multiple times");
+    strUsage += HelpMessageOpt("-testactivationheight=<name>@<height>", "Set the activation height of the rule <name> (heliopolis, cltv, csv, newlogic, tokens) to <height>; regtest only. Can be specified multiple times");
 
     strUsage += HelpMessageGroup(_("RPC server options:"));
     strUsage += HelpMessageOpt("-server", _("Accept command line and JSON-RPC commands"));
@@ -699,6 +697,7 @@ bool AppInitParameterInteraction()
         InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), nUserMaxConnections, nMaxConnections));
 
     // Activation heights of the consensus rules: regtest only
+    bool fActivationHeightSet[Consensus::MAX_ACTIVATION_RULES] = {};
     if (gArgs.IsArgSet("-testactivationheight")) {
         if (chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
             return InitError("-testactivationheight may only be used on regtest.");
@@ -711,8 +710,19 @@ bool AppInitParameterInteraction()
                 return InitError(strError);
             }
             UpdateActivationHeight(rule, nHeight);
+            fActivationHeightSet[rule] = true;
         }
     }
+    if (gArgs.IsArgSet("-testnetNewLogicBlockNumber") && fActivationHeightSet[Consensus::ACTIVATION_NEW_LOGIC]) {
+        return InitError("Cannot set -testnetNewLogicBlockNumber together with -testactivationheight=newlogic@height.");
+    }
+    if (gArgs.IsArgSet("-tokenSupportBlockNumber") && fActivationHeightSet[Consensus::ACTIVATION_TOKENS]) {
+        return InitError("Cannot set -tokenSupportBlockNumber together with -testactivationheight=tokens@height.");
+    }
+    const Consensus::Params& consensusParams = chainparams.GetConsensus();
+    nMainnetNewLogicBlockNumber = gArgs.GetArg("-testnetNewLogicBlockNumber", consensusParams.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC));
+    nTokenSupportBlockNumber = gArgs.GetArg("-tokenSupportBlockNumber", consensusParams.ActivationHeight(Consensus::ACTIVATION_TOKENS));
+    LogPrintf("Param nMainnetNewLogicBlockNumber = %d\n",nMainnetNewLogicBlockNumber);
 
     // ********************************************************* Step 3: parameter-to-internal-flags
     // Old logic
@@ -1169,10 +1179,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     bool fReindexFast = gArgs.GetBoolArg("-reindex-fast", false);
     fReindex = fReindexFast ? fReindexFast : gArgs.GetBoolArg("-reindex", false);
     LogPrintf("Param fReindex = %d, fReindexFast = %d\n", fReindex, fReindexFast);
-
-    nMainnetNewLogicBlockNumber = gArgs.GetArg("-testnetNewLogicBlockNumber", mainnetNewLogicBlockNumber);
-    nTokenSupportBlockNumber = gArgs.GetArg("-tokenSupportBlockNumber", tokenSupportBlockNumber);
-    LogPrintf("Param nMainnetNewLogicBlockNumber = %d\n",nMainnetNewLogicBlockNumber);
 
     // cache size calculations
     int64_t nTotalCache = (gArgs.GetArg("-dbcache", nDefaultDbCache) << 20);
