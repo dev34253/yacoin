@@ -17,8 +17,9 @@ Task: `<id>`
 
 - Product code changed (compiled into `yacoind`, `yacoin-cli`, `yacoin-qt`): yes / no
 - Consensus-critical: no / neutral / rule change
-  <!-- neutral: the argument why no block changes validity, or the replay result over mainnet; rule change: the activation -->
-- Verifier report (consensus-critical only): <!-- link or "n/a" -->
+  <!-- neutral: the argument why no block changes validity; rule change: the activation -->
+- Replay (consensus-critical only): <!-- mode (full / full in two parts / snapshot), replayed commit, result (identical, or first
+  differing height and check), `replay` status; or "n/a" -->
 - `known_failure` markers removed: <!-- list or "none" -->
 - New or upgraded dependency: no / yes (upstream signature or hash checked)
 - Removes a user-visible feature, option or RPC: no / yes (decision record and release note linked)
