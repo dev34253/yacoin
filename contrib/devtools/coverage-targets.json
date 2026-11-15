@@ -22,6 +22,7 @@
     {"group": "guarded", "file": "src/tokens/tokens.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/tokens/tokendb.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/validation.cpp", "target": "tier-1", "met": true},
+    {"group": "guarded", "file": "src/checkpoints.cpp", "target": "tier-1", "met": true},
     {"group": "guarded", "file": "src/wallet/crypter.cpp", "target": "tier-2", "met": true},
     {"group": "guarded", "file": "src/wallet/walletdb.cpp", "target": "tier-2", "met": true},
     {"group": "guarded", "file": "src/wallet/wallet.cpp", "target": "tier-2", "met": true},
