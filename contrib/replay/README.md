@@ -250,8 +250,9 @@ other consensus-critical changes a snapshot replay suffices.
 A snapshot replay accepts and connects the main-chain blocks above H with the candidate build. The state up to H
 (block index, chainstate, token database and undo data) is the snapshot's, made by the build that made the snapshot.
 
-H is the tip of the chain minus a number of blocks, chosen for a snapshot replay to fit the time available. A snapshot
-is made from a run up to H, with the stopped node the block files come from as the chain:
+H is the tip of the chain minus a number of blocks, chosen for a snapshot replay to fit the time available (see the time
+per block under [Resources](#resources)). A snapshot is made from a run up to H, with the stopped node the block files
+come from as the chain:
 
 ```
 contrib/replay/replay.py run --up-to-height H --chain /data/node-datadir /path/to/build/yacoind /data/blocks-copy \
@@ -296,6 +297,10 @@ Disk: `OUT` holds a copy of the block files plus the databases the node rebuilds
 `OUT` holds a copy of the snapshot plus the block files in `OUT/import/`. The digest reads the block index, chainstate
 and token databases into memory, the block-file check the block index, and `--chain` the block index of the chain.
 
-Time and memory: one full replay of the main chain took about 65 hours of wall time and about 65 hours of CPU time,
-with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes and
-about 1.5 GB of memory.
+Time and memory: one full run (without `--up-to-height`) took about 65 hours of wall time and about 65 hours of CPU
+time, with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes
+and about 1.5 GB of memory.
+
+A snapshot replay took about 1.2 seconds of wall time per block above H, plus about 4 minutes for reading the chain,
+copying the snapshot, the digest and the block-file check, with a peak memory of about 1.8 GB for the node and about
+2.4 GB for the script; the snapshot took about 1.8 GB on disk. These times and sizes are from one machine.
