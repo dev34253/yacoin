@@ -34,7 +34,9 @@ These rules apply to every contributor, human or coding agent.
 - Consensus-critical code is `src/consensus/`, `src/validation.cpp`, `src/pow.*`, `src/kernel.*`, `src/script/`, `src/primitives/`,
   `src/chainparams*`, `src/scrypt*`, `src/bignum.h`, `src/arith_uint256.*`, the token validation code, and the serialisation of blocks,
   transactions and coins. A change to it is never mixed with refactoring or formatting. The pull request says whether the change is neutral
-  (no block changes validity) or a rule change, and it needs the owner's approval.
+  (no block changes validity) or a rule change. It carries a replay result
+  ([`contrib/replay/README.md`](contrib/replay/README.md#replay-of-a-pull-request)) and merges only with a green `replay` status on its
+  reviewed head commit; a rule change also needs the owner's approval.
 - A new or upgraded dependency has its upstream signature or hash checked. Each `depends/` recipe pins the SHA-256 hash of its source, which
   every download is checked against; [`ci/depends-sources.sh`](ci/depends-sources.sh) checks that every source can still be downloaded over
   https and that the mirror's copy matches that hash.

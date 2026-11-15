@@ -242,10 +242,12 @@ Both reports describe the state at their tip; when the node is ahead of the bloc
 
 ## Snapshot replay
 
-A full replay is needed for a change to proof of work, hashing or block loading, and before each release. For a change
-to block loading and before each release, that is a full run without `--up-to-height`, which gives the node the block
-files as they are; for a change to proof of work or hashing, the full replay in two parts (below) suffices. For the
-other consensus-critical changes a snapshot replay suffices.
+A full replay is needed for a change to proof of work, hashing, block loading or the serialisation of coins or undo
+data, and before each release. For a change to block loading or to the serialisation of coins or undo data, and before
+each release, that is a full run without `--up-to-height`, which gives the node the block files as they are: undo data
+is read when the chain reorganises, and only that run has the reorganisations of the block files. For a change to proof
+of work or hashing, the full replay in two parts (below) suffices. For the other consensus-critical changes a snapshot
+replay suffices. When in doubt, the full run without `--up-to-height`.
 
 A snapshot replay accepts and connects the main-chain blocks above H with the candidate build. The state up to H
 (block index, chainstate, token database and undo data) is the snapshot's, made by the build that made the snapshot.
@@ -262,9 +264,9 @@ contrib/replay/replay.py snapshot /data/replay-to-h /data/snapshot
 
 A full replay in two parts: `run --up-to-height H` with build B, `snapshot`, then `run --snapshot` with the same build
 B. Every main-chain block is accepted and connected by B, so the report of the snapshot run serves as B's full replay
-of the main chain, and the snapshot is refreshed with it. For a change to block loading, and before a release, run a
-full replay without `--up-to-height`: it gives the node the block files as they are. `snapshot` also takes a full run
-without `--up-to-height`, at its tip.
+of the main chain, and its run up to H gives a new snapshot. For a change to block loading or to the serialisation of
+coins or undo data, and before a release, run a full replay without `--up-to-height`: it gives the node the block files
+as they are. `snapshot` also takes a full run without `--up-to-height`, at its tip.
 
 The `snapshot` command checks the copy against the run's report (tip and digest) and its block files against its
 block index; every snapshot run checks each file against the manifest while copying it. A snapshot is stored
@@ -283,6 +285,17 @@ contrib/replay/replay.py compare /data/snap-a /data/snap-b
 
 A snapshot run's report compares with a full run's or a digest's as any two reports do. A snapshot run's failures
 include those of the run the snapshot was made from, in its report and its `failures.tsv`.
+
+## Replay of a pull request
+
+A consensus-critical pull request gets a replay of its head commit in the mode that [Snapshot replay](#snapshot-replay)
+names for its change. The head's report is compared with the state of the node the block files come from and with a
+replay of `master` in the same mode. The result is posted in the pull request as a comment, with the mode (full replay,
+full replay in two parts or snapshot replay), the replayed commit and the result: `identical`, or the first differing
+height and the check; and as the commit status `replay` on the head commit. A pull request merges only with that status
+green on its reviewed head commit. A later commit keeps the result only when it changes no file compiled into `yacoind`
+and nothing of its build (for example `configure.ac`, the makefiles, `build-aux/`, `depends/`); the same holds for its
+merge with `master`.
 
 ## Block files
 
