@@ -64,7 +64,11 @@
 #           stops on a target without it) and fail when it fails, and
 #           functional-tests-asan runs it with the sanitizers' options, a
 #           directory for their reports and its list of scripts left out and
-#           fails on a report there even when every script passed
+#           fails on a report there even when every script passed;
+#           functional-tests-regtest configures without the low-difficulty
+#           parameters, runs it with --chain=regtest and its list of scripts
+#           left out, and stops before the build on a tree without its list
+#           or with a runner without --chain or --exclude-file
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -271,7 +275,7 @@ step_devsh() {
     printf '%s\n' '#!/bin/bash' '[[ "${1:-}" != run ]] || echo "$*" >> "$STUB_DOCKER"' > "$bin/docker"
     chmod +x "$bin/docker"
     local dlog="$work/devsh/docker.log" mode
-    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests; do
+    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests functional-tests-regtest; do
         rm -f "$dlog"
         PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" "$a/dev.sh" container --no-image-build --no-cache "$mode" \
             > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
@@ -399,9 +403,10 @@ step_smoke() {
         grep -q 'unit-tests-tsan' "$work/out.txt" || fail "smoke: $image: the mode list does not name unit-tests-tsan"
         grep -q 'fuzz-corpus' "$work/out.txt" || fail "smoke: $image: the mode list does not name fuzz-corpus"
         grep -q 'functional-tests-asan' "$work/out.txt" || fail "smoke: $image: the mode list does not name functional-tests-asan"
+        grep -q 'functional-tests-regtest' "$work/out.txt" || fail "smoke: $image: the mode list does not name functional-tests-regtest"
         # The modes that run tests must stop early, with a clear message, on
         # a tree without the scripts and targets they need.
-        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan build-low-difficulty cov-unit cov-functional; do
+        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan functional-tests-regtest build-low-difficulty cov-unit cov-functional; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -448,6 +453,40 @@ step_smoke() {
         grep -q 'error: the build made no src/test/test_bitcoin' "$work/out.txt" ||
             fail "smoke: $image: a build without test_bitcoin gave no 'error: ' message"
         [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: run-unit-suites.sh ran without test_bitcoin"
+        # functional-tests-regtest configures out of tree with the flags of
+        # functional-tests, without the low-difficulty parameters.
+        make_configure_stub "$stub" "$tag"
+        docker run --rm -v "$stub:/src" "$tag" functional-tests-regtest > "$work/out.txt" 2>&1 || true
+        args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+        if [[ " $args " == *" CXXFLAGS=-O1 -g "* && " $args " == *" CFLAGS=-O1 -g "* &&
+              " $args " == *" --without-gui --disable-man --enable-ccache "* &&
+              " $args " != *" --enable-low-difficulty-for-development "* && " $args " != *-fsanitize* ]]; then
+            pass "smoke: $image: functional-tests-regtest configures with: $args"
+        else
+            tail -n 5 "$work/out.txt"; fail "smoke: $image: functional-tests-regtest configure arguments: $args"
+        fi
+        # Without its list the runner would fail after the build, and a
+        # runner without the options would pass them on to every script; the
+        # mode stops before the build.
+        make_runner_stub "$stub" "$tag" 0
+        rm "$stub/test/functional/regtest-excluded-scripts"
+        expect_status 1 "smoke: $image: functional-tests-regtest stops on a tree without its list of scripts left out" \
+            docker run --rm -v "$stub:/src" "$tag" functional-tests-regtest
+        grep -q 'error: .*test/functional/regtest-excluded-scripts' "$work/out.txt" ||
+            fail "smoke: $image: functional-tests-regtest without its list gave no 'error: ' message"
+        [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: functional-tests-regtest built without its list"
+        local option other
+        for option in --chain --exclude-file; do
+            other=--exclude-file
+            [[ $option != --exclude-file ]] || other=--chain
+            make_runner_stub "$stub" "$tag" 0
+            printf '#!/bin/sh\n# %s\nexit 0\n' "$other" > "$stub/test/functional/test_runner.py"
+            expect_status 1 "smoke: $image: functional-tests-regtest stops on a runner without $option" \
+                docker run --rm -v "$stub:/src" "$tag" functional-tests-regtest
+            grep -q -- "error: .*$option" "$work/out.txt" ||
+                fail "smoke: $image: functional-tests-regtest with a runner without $option gave no 'error: ' message naming it"
+            [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: functional-tests-regtest built with a runner without $option"
+        done
         # The sanitizer modes run in the 22.04 image only; the others refuse
         # them before the build.
         local unconfined=(--security-opt seccomp=unconfined) opts=()
@@ -662,7 +701,6 @@ step_smoke() {
             # A runner without the options for the sanitizer reports and the
             # list would pass them on to every script; the mode stops before
             # the build.
-            local option other
             for option in --sanitizer-logs --exclude-file; do
                 other=--exclude-file
                 [[ $option != --exclude-file ]] || other=--sanitizer-logs
@@ -689,9 +727,11 @@ step_smoke() {
         # time, and fail when the runner fails. functional-tests-asan (22.04
         # image) runs them with the sanitizers' runtime options, a directory
         # for their reports and its list of scripts left out, and only it
-        # does.
-        local want ftest_jobs status func_modes=(functional-tests) goals logs want_opts has_opts
+        # does; functional-tests-regtest runs the scripts on regtest but
+        # those of its list, and only it does.
+        local want ftest_jobs status func_modes=(functional-tests functional-tests-regtest) goals logs want_opts has_opts
         local excluded="/src/test/sanitizer_suppressions/asan-excluded-scripts"
+        local regtest_excluded="/src/test/functional/regtest-excluded-scripts"
         [[ "$image" != ubuntu.22.04 ]] || func_modes+=(functional-tests-asan)
         for mode in "${func_modes[@]}"; do
             logs="/src/build/docker-$image/$mode/sanitizer-logs"
@@ -702,12 +742,16 @@ step_smoke() {
                     > "$work/out.txt" 2>&1 && status=0 || status=$?
                 args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
                 goals=$(tr '\n' ' ' < "$stub/make-goals" 2>/dev/null || echo "make did not run")
-                # Both options (1 + 2) for functional-tests-asan, none for
+                # Its two options (1 + 2) for functional-tests-asan, its two
+                # (4 + 8) for functional-tests-regtest, none for
                 # functional-tests.
                 want_opts=0 has_opts=0
                 [[ $mode != functional-tests-asan ]] || want_opts=3
+                [[ $mode != functional-tests-regtest ]] || want_opts=12
                 [[ " $args " != *" --sanitizer-logs=$logs "* ]] || has_opts=$(( has_opts + 1 ))
                 [[ " $args " != *" --exclude-file=$excluded "* ]] || has_opts=$(( has_opts + 2 ))
+                [[ " $args " != *" --chain=regtest "* ]] || has_opts=$(( has_opts + 4 ))
+                [[ " $args " != *" --exclude-file=$regtest_excluded "* ]] || has_opts=$(( has_opts + 8 ))
                 if [[ $status == 0 && " $args " == *" -j $want "* && " $args " == *" --extended "* &&
                       " $args " != *" --shard"* && $goals == "yacoind yacoin-cli " && $want_opts == "$has_opts" ]]; then
                     pass "smoke: $image: $mode (FTEST_JOBS=${ftest_jobs:-unset}) builds $goals and runs: test_runner.py $args"
@@ -735,7 +779,7 @@ step_smoke() {
                 { tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode (FTEST_SHARD=2/3, exit status $status) runs: test_runner.py $args"; }
             # A runner without the option would pass it on to every script.
             make_runner_stub "$stub" "$tag" 0
-            printf '#!/bin/sh\n# --sanitizer-logs --exclude-file\nexit 0\n' > "$stub/test/functional/test_runner.py"
+            printf '#!/bin/sh\n# --sanitizer-logs --exclude-file --chain\nexit 0\n' > "$stub/test/functional/test_runner.py"
             expect_status 1 "smoke: $image: $mode with FTEST_SHARD stops on a runner without --shard" \
                 docker run --rm -v "$stub:/src" -e FTEST_SHARD=1/2 "$tag" "$mode"
             grep -q -- 'error: .*--shard' "$work/out.txt" ||
@@ -894,19 +938,21 @@ make_configure_stub() {
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'exit 1' > "$d/configure"
     # The early checks of the unit test modes need the unit test runner, the
     # sanitizer modes their suppression files, unit-tests-asan its list of
-    # test cases left out and functional-tests-asan its list of scripts left
+    # test cases left out, functional-tests-asan its list of scripts left
     # out and a functional test runner with the options for the sanitizer
-    # reports and the list.
+    # reports and the list, functional-tests-regtest its list and a runner
+    # with --chain and --exclude-file.
     mkdir -p "$d/contrib/devtools" "$d/test/sanitizer_suppressions" "$d/test/functional"
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-unit-suites.sh"
     # fuzz-corpus: its replay script and corpus.
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-fuzz-corpus.py"
     mkdir -p "$d/test/fuzz/corpus"
-    printf '#!/bin/sh\n# --sanitizer-logs --exclude-file\nexit 1\n' > "$d/test/functional/test_runner.py"
+    printf '#!/bin/sh\n# --sanitizer-logs --exclude-file --chain\nexit 1\n' > "$d/test/functional/test_runner.py"
     : > "$d/test/sanitizer_suppressions/lsan"
     : > "$d/test/sanitizer_suppressions/tsan"
     : > "$d/test/sanitizer_suppressions/asan-excluded-cases"
     : > "$d/test/sanitizer_suppressions/asan-excluded-scripts"
+    : > "$d/test/functional/regtest-excluded-scripts"
     chmod +x "$d/autogen.sh" "$d/configure" "$d/contrib/devtools/run-unit-suites.sh" "$d/contrib/devtools/run-fuzz-corpus.py"
 }
 
@@ -997,7 +1043,7 @@ make_runner_stub() {
         'printf "yacoind yacoin-cli:\n\t@echo \$@ >> /src/make-goals\n" > src/Makefile' > "$d/configure"
     mkdir -p "$d/test/functional"
     # shellcheck disable=SC2016 # expanded by the stub
-    printf '%s\n' '#!/bin/sh' '# Takes --sanitizer-logs, --exclude-file and --shard.' 'echo "$@" > /src/runner-args' \
+    printf '%s\n' '#!/bin/sh' '# Takes --sanitizer-logs, --exclude-file, --chain and --shard.' 'echo "$@" > /src/runner-args' \
         'echo "ASAN_OPTIONS=${ASAN_OPTIONS:-} LSAN_OPTIONS=${LSAN_OPTIONS:-} UBSAN_OPTIONS=${UBSAN_OPTIONS:-} TSAN_OPTIONS=${TSAN_OPTIONS:-}" > /src/runner-env' \
         "report='${4:-}'" \
         'for a in "$@"; do case "$a" in --sanitizer-logs=*) dir="${a#*=}" ;; --tmpdirprefix=*) tmp="${a#*=}" ;; esac; done' \

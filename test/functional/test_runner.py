@@ -208,6 +208,9 @@ ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS
 # <prefix>.<exe>.<pid> (log_exe_name=1) instead of its stderr.
 SANITIZER_OPTIONS_VARS = ("ASAN_OPTIONS", "LSAN_OPTIONS", "UBSAN_OPTIONS")
 
+# The chains of test_framework.CHAINS, for --chain
+RUNNER_CHAINS = ('main', 'regtest')
+
 NON_SCRIPTS = [
     # These are python files that live in the functional tests directory, but are not test scripts.
     "combine_logs.py",
@@ -238,6 +241,7 @@ def main():
     parser.add_argument('--filter', help='filter scripts to run by regular expression')
     parser.add_argument('--exclude-file', metavar='FILE', help='leave out the scripts listed in FILE: one script name (with .py) per line, "#" starts a comment, blank lines are ignored. A listed name that is not a test script of this runner fails the run')
     parser.add_argument('--shard', metavar='K/N', help='run shard K of N (1 <= K <= N): the selected scripts whose position in the list of all scripts of this runner, counted from 0, modulo N is K-1. Applied after every other selection, so the N shards together run what the run without --shard runs, each script once. A shard without scripts is no error. A named script that is not in the list fails the run')
+    parser.add_argument('--chain', choices=RUNNER_CHAINS, help='run only the selected scripts whose nodes run on CHAIN: those that set self.chain = \'CHAIN\' (a script without that line runs on main). Applied before --shard; a selection without such a script fails the run, and so does a script whose line names another chain than main or regtest. The block cache is built for CHAIN only')
     parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty')
 
     args, unknown_args = parser.parse_known_args()
@@ -333,6 +337,13 @@ def main():
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
 
+    if args.chain:
+        tests_dir = os.path.join(config["environment"]["SRCDIR"], "test", "functional")
+        test_list = [test for test in test_list if script_chain(tests_dir, test.split()[0]) == args.chain]
+        if not test_list:
+            print("%sERROR!%s No selected script runs on %s." % (BOLD[1], BOLD[0], args.chain))
+            sys.exit(1)
+
     if shard:
         selected = len(test_list)
         test_list = select_shard(test_list, *shard)
@@ -371,6 +382,7 @@ def main():
         runs_ci=args.ci,
         use_term_control=args.ansi,
         sanitizer_logs=args.sanitizer_logs,
+        chain=args.chain,
     )
 
 def parse_shard(value):
@@ -387,6 +399,25 @@ def select_shard(test_list, k, n):
     ALL_SCRIPTS modulo n is k - 1, in the order of test_list."""
     position = {script: i for i, script in enumerate(ALL_SCRIPTS)}
     return [test for test in test_list if position[test] % n == k - 1]
+
+def script_chain(tests_dir, script):
+    """Return the chain the nodes of the test script run on: the value of its
+    self.chain = '<chain>' line, or main if it has none. A script that cannot
+    be read, or whose line names a chain not in RUNNER_CHAINS, stops the run
+    with an error."""
+    try:
+        with open(os.path.join(tests_dir, script), encoding="utf8") as f:
+            source = f.read()
+    except OSError as e:
+        print("%sERROR!%s Cannot read the test script %s: %s" % (BOLD[1], BOLD[0], script, e))
+        sys.exit(1)
+    match = re.search(r"""^\s*self\.chain\s*=\s*['"](\w+)['"]""", source, re.MULTILINE)
+    chain = match.group(1) if match else 'main'
+    if chain not in RUNNER_CHAINS:
+        print("%sERROR!%s The test script %s runs on chain '%s', which is not one of %s." %
+              (BOLD[1], BOLD[0], script, chain, ", ".join(RUNNER_CHAINS)))
+        sys.exit(1)
+    return chain
 
 def read_exclude_file(path):
     """Return the script names listed in the file at path: one per line, "#"
@@ -430,7 +461,7 @@ def read_sanitizer_reports(paths):
             text += "Sanitizer report {}:\n{}\n".format(path, f.read())
     return text
 
-def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=False, args=None, combined_logs_len=0, failfast=False, runs_ci, use_term_control, sanitizer_logs=None):
+def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=False, args=None, combined_logs_len=0, failfast=False, runs_ci, use_term_control, sanitizer_logs=None, chain=None):
     args = args or []
 
     if sanitizer_logs:
@@ -469,7 +500,8 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
         # Populate cache
         cache_env = sanitizer_env(os.environ, os.path.join(sanitizer_logs, "create_cache")) if sanitizer_logs else None
         try:
-            subprocess.check_output([sys.executable, tests_dir + 'create_cache.py'] + flags + ["--tmpdir=%s/cache" % tmpdir], env=cache_env)
+            cache_chain = ["--cachechain=%s" % chain] if chain else []
+            subprocess.check_output([sys.executable, tests_dir + 'create_cache.py'] + flags + cache_chain + ["--tmpdir=%s/cache" % tmpdir], env=cache_env)
         except subprocess.CalledProcessError as e:
             sys.stdout.buffer.write(e.output)
             if sanitizer_logs:
