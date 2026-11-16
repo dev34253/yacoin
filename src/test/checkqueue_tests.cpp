@@ -20,9 +20,14 @@
 #include <memory>
 #include "random.h"
 
-// BasicTestingSetup not sufficient because nScriptCheckThreads is not set
-// otherwise.
-BOOST_FIXTURE_TEST_SUITE(checkqueue_tests, TestingSetup)
+// Most cases start nScriptCheckThreads worker threads on their queue; this suite uses three.
+struct CheckQueueSetup : public TestingSetup {
+    const int nSavedThreads = nScriptCheckThreads;
+    CheckQueueSetup() { nScriptCheckThreads = 3; }
+    ~CheckQueueSetup() { nScriptCheckThreads = nSavedThreads; }
+};
+
+BOOST_FIXTURE_TEST_SUITE(checkqueue_tests, CheckQueueSetup)
 
 static const int QUEUE_BATCH_SIZE = 128;
 
