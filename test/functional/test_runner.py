@@ -130,6 +130,7 @@ BASE_SCRIPTS = [
     'p2p_eviction.py',  # 5
     'feature_maxuploadtarget.py',  # 5
     'p2p_timedata.py',  # 3
+    'feature_activation_heights.py',  # 3
     'wallet_reorgsrestore.py',  # 4
     # vv 3 s or less vv
     'wallet_resendwallettransactions.py',
