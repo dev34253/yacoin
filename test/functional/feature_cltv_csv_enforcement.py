@@ -18,7 +18,8 @@ createcsvaddress), built and signed in Python, against the mempool:
 
 The opcodes are not enforced in blocks on the suite's chain parameters
 (BIP65/BIP68 heights); BIP68 sequence locks in blocks are in
-feature_block.py.
+feature_block.py. Enforcement in blocks at the CLTV and CSV heights is in
+feature_activation_heights.py.
 """
 
 from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut
