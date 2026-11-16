@@ -108,7 +108,8 @@ uint256 RegtestGenesisHash()
 /** The hash of a header at height 1 on regtest's genesis block */
 uint256 RegtestBlockOneHash()
 {
-    const CBlock& genesis = CreateChainParams(CBaseChainParams::REGTEST)->GenesisBlock();
+    const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::REGTEST);
+    const CBlock& genesis = params->GenesisBlock();
     CBlockHeader header;
     header.nVersion = 1;
     header.hashPrevBlock = genesis.GetHash();
