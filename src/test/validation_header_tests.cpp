@@ -200,8 +200,9 @@ struct PreForkGenesisSetup : public ForkAboveGenesis, public TestingSetup {
     PreForkGenesisSetup() : ForkAboveGenesis(), TestingSetup(CBaseChainParams::MAIN) {}
 };
 
-/** A version 7 header on top of pindexPrev with the target it requires, mined */
-CBlockHeader HeaderOn(const CBlockIndex* pindexPrev, ::int64_t nTime, int nVersion = VERSION_of_block_for_yac_05x_new)
+/** A version 7 header on top of pindexPrev with the target it requires, mined from nFirstNonce on */
+CBlockHeader HeaderOn(const CBlockIndex* pindexPrev, ::int64_t nTime, int nVersion = VERSION_of_block_for_yac_05x_new,
+                      unsigned int nFirstNonce = 1)
 {
     CBlockHeader header;
     header.nVersion = nVersion;
@@ -209,7 +210,7 @@ CBlockHeader HeaderOn(const CBlockIndex* pindexPrev, ::int64_t nTime, int nVersi
     header.hashMerkleRoot = uint256S("0x5e5e");
     header.nTime = nTime;
     header.nBits = GetNextTargetRequired(pindexPrev, false);
-    header.nNonce = 1;
+    header.nNonce = nFirstNonce;
     Mine(header);
     return header;
 }
@@ -515,25 +516,29 @@ BOOST_FIXTURE_TEST_CASE(header_context_on_synthetic_parents, RegtestSetup)
     CBlockHeader header;
     HeaderResult result;
 
-    // On the mainnet build height 15000 has a checkpoint (its checkpoints apply on every network);
-    // the low-difficulty build's only checkpoint is its genesis block
-    CBlockIndex* pindexCheckpointPrev = chain.Add(nullptr, nNow - 600, nBitsLimit);
-    pindexCheckpointPrev->nHeight = 14999;
-    chain.Register(pindexCheckpointPrev);
 #ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    header = HeaderOn(pindexCheckpointPrev, nNow - 300);
-    result = AcceptHeaders({header});
-    BOOST_CHECK_EQUAL(result.reason, "bad-fork-prior-to-checkpoint");
-    BOOST_CHECK_EQUAL(result.nScore, 100);
-    BOOST_CHECK_EQUAL(result.nCode, REJECT_CHECKPOINT);
-#endif
     {
+        // Mainnet has a checkpoint at height 15000 (regtest uses its own checkpoint data; the
+        // low-difficulty build's only mainnet checkpoint is its genesis block)
+        SelectedParamsGuard main(CBaseChainParams::MAIN);
+        const ::int64_t nTime = 1700000000;
+        CBlockIndex* pindexCheckpointPrev = chain.Add(nullptr, nTime, Params().GetConsensus().powLimit.GetCompact());
+        pindexCheckpointPrev->nHeight = 14999;
+        chain.Register(pindexCheckpointPrev, uint256S("0x5e5e14999"));
+        // A header at its parent's median time past; mining starts at the nonce that meets the target
+        header = HeaderOn(pindexCheckpointPrev, nTime, VERSION_of_block_for_yac_05x_new, 1316274);
+        BOOST_REQUIRE_EQUAL(header.nNonce, 1316274U);
+        result = AcceptHeaders({header});
+        BOOST_CHECK_EQUAL(result.reason, "bad-fork-prior-to-checkpoint");
+        BOOST_CHECK_EQUAL(result.nScore, 100);
+        BOOST_CHECK_EQUAL(result.nCode, REJECT_CHECKPOINT);
+
         // Without checkpoints the header gets to the next check (here: its time)
         CheckpointsGuard guard;
         fCheckpointsEnabled = false;
-        header = HeaderOn(pindexCheckpointPrev, nNow - 600);
         BOOST_CHECK_EQUAL(AcceptHeaders({header}).reason, "time-too-old");
     }
+#endif
 
     // A parent far ahead of its median time past: a header after the median time past but
     // more than MAX_FUTURE_BLOCK_TIME before its parent is too old

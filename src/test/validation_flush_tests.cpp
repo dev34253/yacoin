@@ -5,10 +5,6 @@
 // Writing the chain state to disk (FlushStateToDisk: when the coin cache is
 // flushed, the best-chain notification, write failures), the initial block
 // download state, FindForkInGlobalIndex and GuessVerificationProgress.
-//
-// IsInitialBlockDownload stays false for the rest of the process once it has
-// returned false, so on the mainnet build no case here calls it with a tip at
-// or above Checkpoints::GetTotalBlocksEstimate() that is recent.
 
 #include "chainparams.h"
 #include "checkpoints.h"
@@ -187,32 +183,9 @@ BOOST_AUTO_TEST_CASE(guess_verification_progress)
 
 BOOST_AUTO_TEST_CASE(initial_block_download_state)
 {
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    {
-        LOCK(cs_main);
-        CBlockIndex* realTip = chainActive.Tip();
-        BOOST_REQUIRE_LT(realTip->nHeight, Checkpoints::GetTotalBlocksEstimate());
-
-        chainActive.SetTip(nullptr);
-        BOOST_CHECK(IsInitialBlockDownload()); // no tip
-        chainActive.SetTip(realTip);
-        BOOST_CHECK(IsInitialBlockDownload()); // below the estimate
-
-        // At the estimate, but older than nMaxTipAge
-        CBlockIndex old;
-        old.nHeight = Checkpoints::GetTotalBlocksEstimate();
-        old.nTime = GetTime() - nMaxTipAge - 60 * 60;
-        chainActive.SetTip(&old);
-        BOOST_CHECK(IsInitialBlockDownload());
-        chainActive.SetTip(realTip);
-        BOOST_CHECK(chainActive.Tip() == realTip);
-    }
-    BOOST_CHECK(IsInitialBlockDownload()); // still in initial download
-#else
-    // The build's only checkpoint is genesis and the tip's age is not checked
+    // Regtest uses its own checkpoint data
     BOOST_CHECK_EQUAL(Checkpoints::GetTotalBlocksEstimate(), 0);
     BOOST_CHECK(!IsInitialBlockDownload());
-#endif
 }
 
 BOOST_AUTO_TEST_CASE(flush_if_needed_cache_critical)
@@ -232,9 +205,6 @@ BOOST_AUTO_TEST_CASE(flush_if_needed_cache_critical)
     BOOST_CHECK_GT(listener.nCacheAtConnect, 0U);
     BOOST_CHECK(listener.dbBestAtConnect != hash);
     BOOST_CHECK_GT(CacheEntries(), 0U);
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    BOOST_CHECK(IsInitialBlockDownload()); // still in initial download
-#endif
 }
 
 BOOST_AUTO_TEST_CASE(flush_periodic_cache_large)
@@ -259,9 +229,6 @@ BOOST_AUTO_TEST_CASE(flush_periodic_cache_large)
     SubmitRefused();
     BOOST_CHECK_EQUAL(CacheEntries(), 0U);
     BOOST_CHECK(pcoinsdbview->GetBestBlock() == tip);
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    BOOST_CHECK(IsInitialBlockDownload()); // still in initial download
-#endif
 }
 
 BOOST_AUTO_TEST_CASE(flush_signals_best_chain)

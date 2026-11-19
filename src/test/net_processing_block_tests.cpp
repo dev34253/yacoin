@@ -9,10 +9,6 @@
 //
 // Every block and header here is a real proof-of-work block of the regtest chain, built on the
 // node's chain and mined; the peers send them as a peer does.
-//
-// Initial download: the mainnet build never leaves it in the unit tests (its checkpoint estimate
-// is above any test chain), the low-difficulty build leaves it with the first tip. Behaviour that
-// depends on it is checked per build.
 
 #include "chain.h"
 #include "chainparams.h"
@@ -399,19 +395,14 @@ BOOST_AUTO_TEST_CASE(getheaders_served_to_whitelisted_peer)
     BOOST_CHECK_EQUAL(peer.Stats().nMisbehavior, 0);
 }
 
-/** getheaders from a peer that is not whitelisted is answered only after initial download */
+/** getheaders from a peer that is not whitelisted is answered with the active chain's headers */
 BOOST_AUTO_TEST_CASE(getheaders_from_peer_not_whitelisted)
 {
     P2PTestPeer peer(*peerLogic);
     peer.Send(NetMsgType::GETHEADERS, Locator(Active(0)), uint256());
     const std::vector<P2PTestMessage> received = peer.TakeReceived();
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    // In initial download (always on this build in the unit tests)
-    BOOST_CHECK_EQUAL(Joined(Commands(received)), "");
-#else
     BOOST_REQUIRE_EQUAL(Joined(Commands(received)), "headers");
     CHECK_HASHES(HeaderHashes(received[0]), ActiveHashes(*this, 1, Height()));
-#endif
 }
 
 /** A new tip is announced with headers to a peer that sent sendheaders and has the parent */
@@ -598,9 +589,8 @@ BOOST_AUTO_TEST_CASE(inv_of_known_blocks)
     BOOST_CHECK_EQUAL(peer.Stats().nMisbehavior, 0);
 }
 
-/** An inv of an unknown block is remembered: once the header is known, the block is the peer's
- * best known block and the node asks the peer for it. Whether the inv itself is answered with
- * getheaders depends on initial download. */
+/** An inv of an unknown block is answered with getheaders and remembered: once the header is
+ * known, the block is the peer's best known block and the node asks the peer for it. */
 BOOST_AUTO_TEST_CASE(inv_of_unknown_block)
 {
     P2PTestPeer peer(*peerLogic);
@@ -609,15 +599,10 @@ BOOST_AUTO_TEST_CASE(inv_of_unknown_block)
     peer.Send(NetMsgType::INV, BlockInv(blocks[0].GetHash()));
     BOOST_CHECK_EQUAL(peer.Stats().nSyncHeight, -1);
     const std::vector<P2PTestMessage> received = peer.TakeReceived();
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    // In initial download (always on this build in the unit tests)
-    BOOST_CHECK_EQUAL(Joined(Commands(received)), "");
-#else
     BOOST_REQUIRE_EQUAL(Joined(Commands(received)), "getheaders");
     const std::pair<CBlockLocator, uint256> request = LocatorAndStop(received[0]);
     BOOST_CHECK(request.first.vHave == Locator(BestHeader()).vHave);
     BOOST_CHECK(request.second == blocks[0].GetHash());
-#endif
 
     AcceptHeaders(blocks);
     peer.RunSendMessages();
@@ -909,10 +894,9 @@ BOOST_AUTO_TEST_CASE(headers_peer_asked_for_blocks_when_only_connection)
     CHECK_HASHES(BlockHashes(Inventory(peer.TakeReceived(), NetMsgType::GETDATA)), Hashes(blocks));
 }
 
-/** In initial download, a peer with nothing to download while the best header is more than the
- * trigger above the tip is sent getblocks, from the best header's grandparent up to the best
- * header, and not again at once; after initial download it is not */
-BOOST_AUTO_TEST_CASE(getblocks_sent_when_headers_lead_the_tip)
+/** A peer with nothing to download while the best header is more than the trigger above the tip
+ * is not sent getblocks */
+BOOST_AUTO_TEST_CASE(no_getblocks_when_headers_lead_the_tip)
 {
     P2PTestValue<unsigned int> trigger(HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS, 2);
     const std::vector<CBlock> blocks = BuildOnTip(4);
@@ -923,18 +907,7 @@ BOOST_AUTO_TEST_CASE(getblocks_sent_when_headers_lead_the_tip)
     P2PTestPeer peer(*peerLogic);
     peer.RunSendMessages();
     const std::vector<P2PTestMessage> requests = WithCommand(peer.TakeReceived(), NetMsgType::GETBLOCKS);
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    // In initial download (always on this build in the unit tests)
-    BOOST_REQUIRE_EQUAL(requests.size(), 1U);
-    const std::pair<CBlockLocator, uint256> request = LocatorAndStop(requests[0]);
-    BOOST_CHECK(request.first.vHave == Locator(pindexBestHeader->pprev->pprev).vHave);
-    BOOST_CHECK(request.second == pindexBestHeader->GetBlockHash());
-
-    peer.RunSendMessages();
-    BOOST_CHECK(WithCommand(peer.TakeReceived(), NetMsgType::GETBLOCKS).empty());
-#else
     BOOST_CHECK(requests.empty());
-#endif
 }
 
 /** When the download window cannot move because a peer holds the block it starts with, that peer

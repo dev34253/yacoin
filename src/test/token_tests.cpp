@@ -13,10 +13,34 @@
 #include "utilstrencodings.h"
 #include "wallet/wallet.h" // CTokenOutputEntry
 
+#include "test/consensus_test_util.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
 #include <boost/test/unit_test.hpp>
+
+namespace {
+
+/** Every token type locks nLock for nDuration blocks, but owner and vote tokens and an unknown type */
+void CheckLockValues(CAmount nLock, uint32_t nDuration)
+{
+    for (ETokenType type : {ETokenType::YATOKEN, ETokenType::SUB, ETokenType::UNIQUE, ETokenType::REISSUE}) {
+        BOOST_CHECK_EQUAL(GetLockAmount(type), nLock);
+        BOOST_CHECK_EQUAL(GetLockAmount((int)type), nLock);
+        BOOST_CHECK_EQUAL(GetLockDuration(type), nDuration);
+        BOOST_CHECK_EQUAL(GetLockDuration((int)type), nDuration);
+    }
+    for (ETokenType type : {ETokenType::OWNER, ETokenType::VOTE, ETokenType::INVALID}) {
+        BOOST_CHECK_EQUAL(GetLockAmount(type), 0);
+        BOOST_CHECK_EQUAL(GetLockAmount((int)type), 0);
+        BOOST_CHECK_EQUAL(GetLockDuration(type), 0U);
+        BOOST_CHECK_EQUAL(GetLockDuration((int)type), 0U);
+    }
+    BOOST_CHECK_EQUAL(GetLockAmount(99), 0);
+    BOOST_CHECK_EQUAL(GetLockDuration(99), 0U);
+}
+
+} // namespace
 
 BOOST_FIXTURE_TEST_SUITE(token_tests, BasicTestingSetup)
 
@@ -395,6 +419,23 @@ BOOST_AUTO_TEST_CASE(lock_amount_and_duration)
     BOOST_CHECK(!CheckIssueLockTx(lock, ETokenType::REISSUE));
     // A plain payment of the lock amount isn't a lock
     BOOST_CHECK(!CheckIssueLockTx(CTxOut(lock.nValue, TestTokenScriptBase()), ETokenType::YATOKEN));
+}
+
+BOOST_AUTO_TEST_CASE(lock_values_by_chain)
+{
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    const CAmount nMainLock = 2100 * COIN;
+    const uint32_t nMainDuration = 21000;
+#else
+    const CAmount nMainLock = 10 * COIN;
+    const uint32_t nMainDuration = 10;
+#endif
+    CheckLockValues(nMainLock, nMainDuration);
+    {
+        SelectedParamsGuard regtest(CBaseChainParams::REGTEST);
+        CheckLockValues(10 * COIN, 10);
+    }
+    CheckLockValues(nMainLock, nMainDuration);
 }
 
 BOOST_AUTO_TEST_CASE(lock_duration_and_count_must_match)

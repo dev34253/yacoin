@@ -19,7 +19,9 @@
 #     fuzz-corpus, functional-tests-asan), with ccache off;
 #   - the fuzz-corpus, functional-tests-asan, unit-tests-asan and
 #     coverage-functional-<n> jobs restore the functional-tests job's cache
-#     and save none, and the workflow has 15 jobs;
+#     and save none, the functional-tests-regtest job runs its mode in the
+#     ubuntu.16.04 image and restores the unit-tests job's cache and saves
+#     none, and the workflow has 16 jobs;
 #   - unit-tests-asan runs one leg per sanitizer (SANITIZE),
 #     functional-tests-asan and the coverage-functional-<n> jobs one shard
 #     each (FTEST_SHARD), and coverage-report merges every shard.
@@ -221,6 +223,17 @@ for name in fuzz-corpus functional-tests-asan unit-tests-asan coverage-functiona
         grep -q 'CACHE_KEY=functional-tests-\$IMAGE-' <<< "$job"
     check "${wf#"$ROOT"/}: the $name job saves no cache" bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$job"
 done
+# functional-tests-regtest runs its mode with the unit-tests job's image and
+# cache, restored only.
+job=$(job_text functional-tests-regtest)
+check "${wf#"$ROOT"/}: the functional-tests-regtest job runs the ubuntu.16.04 image" grep -qx ' *IMAGE: ubuntu.16.04' <<< "$job"
+check "${wf#"$ROOT"/}: the functional-tests-regtest job restores the unit-tests cache" \
+    grep -q 'CACHE_KEY=unit-tests-\$IMAGE-' <<< "$job"
+check "${wf#"$ROOT"/}: the functional-tests-regtest job saves no cache" \
+    bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$job"
+check "${wf#"$ROOT"/}: the functional-tests-regtest job runs its mode" \
+    grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+functional-tests-regtest[[:space:]]*$' \
+    <<< "$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' <<< "$job")"
 # passes_var <var> <mode> <job text>: the job's docker run of <mode>, joined
 # across its continuation lines, passes <var> to the container (-e <var>).
 passes_var() {
@@ -262,7 +275,7 @@ for k in 1 2; do
 done
 # A job added or removed is a deliberate change of this number.
 jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^[^ ]/ { exit } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
-check "${wf#"$ROOT"/}: 15 jobs ($jobs)" test "$jobs" = 15
+check "${wf#"$ROOT"/}: 16 jobs ($jobs)" test "$jobs" = 16
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do

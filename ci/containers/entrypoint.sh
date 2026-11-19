@@ -55,6 +55,13 @@
 #                     The scripts listed in
 #                     test/sanitizer_suppressions/asan-excluded-scripts are
 #                     left out. Ubuntu 22.04 image only
+#   functional-tests-regtest
+#                     functional-tests on the mainnet build (no
+#                     --enable-low-difficulty-for-development) for the
+#                     scripts that run on regtest (test_runner.py
+#                     --chain=regtest; FTEST_SHARD as in functional-tests),
+#                     but those listed in
+#                     test/functional/regtest-excluded-scripts
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
 #                     needs lcov 2.6 or newer (Ubuntu 22.04 image only)
 #   cov-functional    low-difficulty coverage build and "make cov-functional"
@@ -69,7 +76,7 @@
 #
 # Environment: JOBS (default: number of CPUs), BUILDVERSION (passed through
 # to the version string), FTEST_JOBS (functional-tests, functional-tests-asan,
-# cov-functional: functional test scripts in parallel, default 4: the CI
+# functional-tests-regtest, cov-functional: functional test scripts in parallel, default 4: the CI
 # runners' vCPUs and the number the run times were measured with; a fixed
 # default, so a local run schedules the scripts as CI does whatever its CPU
 # count), FTEST_SHARD (the same modes: K/N runs shard K of N of the scripts;
@@ -110,8 +117,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|functional-tests-regtest|cov-unit|cov-functional) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, functional-tests-regtest, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -166,11 +173,22 @@ if [[ "$MODE" == functional-tests-asan ]]; then
             die "this YaCoin tree's test/functional/test_runner.py has no $option option"
     done
 fi
+regtest_excluded_scripts="$SRC/test/functional/regtest-excluded-scripts"
+if [[ "$MODE" == functional-tests-regtest ]]; then
+    [[ -f "$regtest_excluded_scripts" ]] || die "this YaCoin tree has no test/functional/regtest-excluded-scripts"
+    # Without the options the runner would pass them on to every script,
+    # which would all fail on them after the build.
+    runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
+    for option in --chain --exclude-file; do
+        grep -q -- "$option" <<< "$runner_src" ||
+            die "this YaCoin tree's test/functional/test_runner.py has no $option option"
+    done
+fi
 # Without them the runner would pass --shard on to every script, and make
 # would run every script in each shard.
 if [[ -n "${FTEST_SHARD:-}" ]]; then
     case "$MODE" in
-        functional-tests|functional-tests-asan)
+        functional-tests|functional-tests-asan|functional-tests-regtest)
             runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
             grep -q -- --shard <<< "$runner_src" ||
                 die "this YaCoin tree's test/functional/test_runner.py has no --shard option (FTEST_SHARD)" ;;
@@ -352,6 +370,7 @@ else
                 > "$builddir/config.site"
             export CONFIG_SITE="$builddir/config.site" ;;
         functional-tests) flags+=(--enable-low-difficulty-for-development "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
+        functional-tests-regtest) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         cov-unit) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
         cov-functional) flags+=(--enable-lcov --enable-low-difficulty-for-development "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
     esac
@@ -404,7 +423,7 @@ else
             contrib/devtools/run-fuzz-corpus.py --jobs "$JOBS" "$builddir/src/test/fuzz/fuzz" "$fuzz_corpus" \
                 "$builddir/fuzz-corpus-logs"
             ;;
-        functional-tests|functional-tests-asan)
+        functional-tests|functional-tests-asan|functional-tests-regtest)
             # The functional tests only run yacoind and yacoin-cli.
             make -C "$builddir/src" -j"$JOBS" yacoind yacoin-cli
             # The runner reads ../config.ini relative to its own path.
@@ -427,6 +446,11 @@ else
                 export UBSAN_OPTIONS=print_stacktrace=1
                 sanitizer_logs="$builddir/sanitizer-logs"
                 runner_opts=(--sanitizer-logs="$sanitizer_logs" --exclude-file="$asan_excluded_scripts")
+            elif [[ "$MODE" == functional-tests-regtest ]]; then
+                # The scripts that run on regtest, but the listed ones; a
+                # listed name that is not a script of the runner fails the
+                # run.
+                runner_opts=(--chain=regtest --exclude-file="$regtest_excluded_scripts")
             fi
             [[ -z "${FTEST_SHARD:-}" ]] || runner_opts+=(--shard="$FTEST_SHARD")
             status=0

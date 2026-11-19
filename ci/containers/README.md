@@ -74,6 +74,7 @@ optional mode as its argument:
 | `fuzz-corpus` | Builds the libFuzzer binary `src/test/fuzz/fuzz` with clang 14 (`--enable-fuzz --with-asm=no`, mainnet consensus) under AddressSanitizer, LeakSanitizer and UBSan (the sanitizer flags of `unit-tests-asan`, and `-no-pie`: clang 14's AddressSanitizer runtime fails at random at start in a position-independent executable on current kernels), then runs every input of `/src/test/fuzz/corpus/<target>/` once through its target (`contrib/devtools/run-fuzz-corpus.py`, logs in `/src/build/docker-<image>/fuzz-corpus/fuzz-corpus-logs`) with `ASAN_OPTIONS=detect_leaks=1` and `UBSAN_OPTIONS=print_stacktrace=1`; any report fails the mode. It never fuzzes; see `doc/fuzzing.md`. Ubuntu 22.04 image only; the others refuse it |
 | `functional-tests` | Low-difficulty build, then all functional test scripts, the extended ones too, `FTEST_JOBS` (default 4) in parallel (`test_runner.py -j "$FTEST_JOBS" --extended`). With `FTEST_SHARD=K/N` only shard K of N of the scripts (`test_runner.py --shard K/N`: the scripts whose position in the runner's list, counted from 0, modulo N is K-1) |
 | `functional-tests-asan` | `functional-tests` under AddressSanitizer, LeakSanitizer and UBSan (`FTEST_SHARD` as there): the low-difficulty build with the flags of `unit-tests-asan` (both sanitizers; `SANITIZE` does not apply), and both sanitizer runtimes linked into `yacoind` and `yacoin-cli` (`-static-libasan -static-libubsan`; as two shared libraries, UBSan's reports would ignore `log_path`). The scripts run with the runtime options of `unit-tests-asan` plus `print_suppressions=0` and `handle_segv=0` (a segmentation fault ends the process with the signal, as in `functional-tests`), and the runner's `--sanitizer-logs`: every process a script starts writes its reports to `/src/build/docker-<image>/functional-tests-asan/sanitizer-logs/<script's test directory>.<executable>.<pid>` instead of its stderr. A script with a report fails and the runner prints the report with it, whatever the script's own outcome (also for a process whose stderr or exit status the script expects to differ, or that it kills); after the runner the mode prints every report file and fails if there is one. The scripts listed in `/src/test/sanitizer_suppressions/asan-excluded-scripts` are left out (`test_runner.py --exclude-file`). Ubuntu 22.04 image only; the others refuse it |
+| `functional-tests-regtest` | `functional-tests` on the mainnet build (the flags of `functional-tests` without `--enable-low-difficulty-for-development`) for the scripts that run on regtest (`test_runner.py --chain=regtest`: the scripts with a `self.chain = 'regtest'` line; `FTEST_SHARD` as in `functional-tests`), but those listed in `/src/test/functional/regtest-excluded-scripts` (`test_runner.py --exclude-file`) |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.6 or newer, so it only works in the Ubuntu 22.04 image |
 | `cov-functional` | Low-difficulty coverage build and `make cov-functional`: the functional test scripts `FTEST_JOBS` (default 4) in parallel, then `p2p_invalid_messages.py` alone. With `FTEST_SHARD=K/N` (passed to make) both runs take only shard K of N of the scripts. Needs lcov 2.6 or newer (Ubuntu 22.04 image only) |
 
@@ -197,10 +198,15 @@ sanitizer report files, kept 14 days). `test-image-tag.sh` also checks that the 
 `functional-tests-asan`) run their modes with ccache off, the legs and shards above, that `functional-tests-asan` restores the
 `functional-tests` cache and saves none, and that only the `unit-tests-tsan` container runs without the seccomp filter.
 
+The `functional-tests-regtest` job runs the mode of the same name of the Ubuntu 16.04 image: the scripts that run on regtest, on the
+mainnet build, but those listed in `test/functional/regtest-excluded-scripts`. It restores the `unit-tests` cache for its depends
+packages (the same image, packages and prefix) and saves none, and uploads the logs of its failed scripts when it fails (`functional-test-logs-regtest`, kept 14
+days); `test-image-tag.sh` checks the image and the cache.
+
 The `fuzz-corpus` job runs the mode of the same name of the Ubuntu 22.04 image: every input of the fuzz corpus once through its target
 under AddressSanitizer, LeakSanitizer and UBSan. It replays the committed corpus only and never fuzzes, and uploads its logs when it
 fails (`fuzz-corpus-logs`, kept 14 days). `test-image-tag.sh` checks that it runs with ccache off, restores the `functional-tests` cache
-and saves none, and that the workflow has 15 jobs.
+and saves none, and that the workflow has 16 jobs.
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache, one per job kind and image
 (`release-<image>-…`, `low-difficulty-<image>-…`, `unit-tests-<image>-…`, `functional-tests-<image>-…`, keyed by the depends

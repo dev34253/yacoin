@@ -12,7 +12,9 @@
 #include "primitives/block.h"
 #include "protocol.h"
 
+#include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
 struct CDNSSeedData {
@@ -26,7 +28,8 @@ struct SeedSpec6 {
     uint16_t port;
 };
 
-typedef std::map<int, uint256> MapCheckpoints;
+/** Checkpoints: block height to block hash and block time */
+typedef std::map<int, std::pair<uint256, unsigned int> > MapCheckpoints;
 
 struct CCheckpointData {
     MapCheckpoints mapCheckpoints;

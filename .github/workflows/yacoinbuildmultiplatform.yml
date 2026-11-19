@@ -233,6 +233,65 @@ jobs:
             build/docker-*/functional-tests-asan/test/tmp/test_runner_*/**/std*/*
             build/docker-*/functional-tests-asan/config.log
           retention-days: 14
+  functional-tests-regtest:
+    # Mainnet consensus build of yacoind and yacoin-cli (the flags of
+    # functional-tests without the low-difficulty parameters), then the
+    # functional test scripts that run on regtest, the extended ones too, 4
+    # at a time, but those listed in test/functional/regtest-excluded-scripts
+    # (functional-tests-regtest mode of the yacoin-build image:
+    # test_runner.py --chain=regtest). The functional-tests job runs every
+    # script on the low-difficulty build. Cache: the unit-tests job's,
+    # restored only, for its depends packages (the same image, packages and
+    # prefix).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: ubuntu.16.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: image
+        id: image
+        uses: ./.github/actions/yacoin-build-image
+        with:
+          image: ${{ env.IMAGE }}
+      - name: cache dir and key
+        run: |
+          echo "REGTEST_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
+          echo "CACHE_KEY=unit-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.REGTEST_CACHE }}
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}-
+            unit-tests-${{ env.IMAGE }}-
+      - name: build and run the functional tests on regtest
+        # Below the job timeout, so a hang fails this step and the logs are
+        # still uploaded.
+        timeout-minutes: 25
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          mkdir -p "$REGTEST_CACHE"
+          docker run --rm --init --name functional-tests-regtest -v "$GITHUB_WORKSPACE":/src -v "$REGTEST_CACHE":/cache \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=2G \
+            "$IMAGE_TAG" functional-tests-regtest
+      - name: stop the container and make the logs readable
+        if: always()
+        run: |
+          # A step timeout may kill docker run without stopping the container.
+          docker rm -f functional-tests-regtest 2>/dev/null || true
+          # The nodes write their datadirs with umask 077 as root.
+          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: functional-test-logs-regtest
+          path: |
+            build/docker-*/functional-tests-regtest/test/tmp/test_runner_*/**/*.log
+            build/docker-*/functional-tests-regtest/test/tmp/test_runner_*/**/std*/*
+            build/docker-*/functional-tests-regtest/config.log
+          retention-days: 14
   unit-tests:
     # Mainnet consensus build of test_bitcoin and bench_yacoin, every unit
     # test suite in parallel, then every benchmark once in a short mode

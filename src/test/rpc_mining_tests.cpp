@@ -6,11 +6,6 @@
 // setgenerate (without starting a miner thread), gethashespersec, getmininginfo, getsubsidy,
 // generatetoaddress and generateBlocks, submitblock, and getblocktemplate's proposal mode and
 // the checks of its template mode.
-//
-// On the mainnet build the unit tests stay in initial block download (the checkpoint estimate
-// is above the regtest chain), so the template mode is reached up to its initial-download
-// check; on the low-difficulty build that check passes, and the cases that would go further
-// are left out there.
 
 #include "base58.h"
 #include "chainparams.h"
@@ -506,7 +501,7 @@ BOOST_AUTO_TEST_CASE(getblocktemplate_proposals)
     BOOST_CHECK(TipHash() == oldTip.GetHash());
 }
 
-/* The template mode needs the connection manager, a peer and the end of initial download */
+/* The template mode needs the connection manager and a peer */
 BOOST_AUTO_TEST_CASE(getblocktemplate_template_checks)
 {
     {
@@ -531,15 +526,6 @@ BOOST_AUTO_TEST_CASE(getblocktemplate_template_checks)
     UniValue noMode(UniValue::VOBJ);
     noMode.pushKV("capabilities", UniValue(UniValue::VARR));
     CheckRPCError("getblocktemplate", RPCParams(noMode), RPC_CLIENT_NOT_CONNECTED, "Yacoin is not connected!");
-
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    ScopedPeer peer;
-    BOOST_REQUIRE_EQUAL(g_connman->GetNodeCount(CConnman::CONNECTIONS_ALL), 1U);
-    CheckRPCError("getblocktemplate", UniValue(UniValue::VARR), RPC_CLIENT_IN_INITIAL_DOWNLOAD,
-                  "Yacoin is downloading blocks...");
-    CheckRPCError("getblocktemplate", RPCParams(request), RPC_CLIENT_IN_INITIAL_DOWNLOAD,
-                  "Yacoin is downloading blocks...");
-#endif
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -50,15 +50,6 @@
 std::map<uint256, std::string> mapReissuedTx;
 std::map<std::string, uint256> mapReissuedTokens;
 
-// Fee lock amount and Fee lock duration
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-static const uint32_t feeLockDuration = 21000; // 21000 blocks
-static const CAmount feeLockAmount = 2100 * COIN; // 2100 YAC
-#else
-static const uint32_t feeLockDuration = 10; // 10 blocks
-static const CAmount feeLockAmount = 10 * COIN; // 10 YAC
-#endif
-
 // excluding owner tag ('!')
 static const auto MAX_NAME_LENGTH = 31;
 static const auto MAX_CHANNEL_NAME_LENGTH = 12;
@@ -2293,22 +2284,22 @@ bool CheckReissueLockTx(const CTxOut& txOut)
 
 CAmount GetIssueTokenLockAmount()
 {
-    return feeLockAmount;
+    return Params().GetConsensus().nTokenFeeLockAmount;
 }
 
 CAmount GetReissueTokenLockAmount()
 {
-    return feeLockAmount;
+    return Params().GetConsensus().nTokenFeeLockAmount;
 }
 
 CAmount GetIssueSubTokenLockAmount()
 {
-    return feeLockAmount;
+    return Params().GetConsensus().nTokenFeeLockAmount;
 }
 
 CAmount GetIssueUniqueTokenLockAmount()
 {
-    return feeLockAmount;
+    return Params().GetConsensus().nTokenFeeLockAmount;
 }
 
 CAmount GetLockAmount(const int nType)
@@ -2345,17 +2336,17 @@ uint32_t GetLockDuration(const ETokenType type)
 {
     switch (type) {
         case ETokenType::YATOKEN:
-            return feeLockDuration;
+            return Params().GetConsensus().nTokenFeeLockDuration;
         case ETokenType::SUB:
-            return feeLockDuration;
+            return Params().GetConsensus().nTokenFeeLockDuration;
         case ETokenType::OWNER:
             return 0;
         case ETokenType::UNIQUE:
-            return feeLockDuration;
+            return Params().GetConsensus().nTokenFeeLockDuration;
         case ETokenType::VOTE:
             return 0;
         case ETokenType::REISSUE:
-            return feeLockDuration;
+            return Params().GetConsensus().nTokenFeeLockDuration;
         default:
             return 0;
     }
@@ -2615,7 +2606,7 @@ bool CreateTokenTransaction(CWallet* pwallet, CCoinControl& coinControl, const s
     // Currently, the lock address is same as the change address
     CAmount lockAmount = GetLockAmount(tokenType) * tokens.size();
     const CKeyID& keyID = boost::get<CKeyID>(coinControl.destChange);
-    CScript feeLockScriptPubKey = GetScriptForCsvP2PKH(feeLockDuration, keyID);
+    CScript feeLockScriptPubKey = GetScriptForCsvP2PKH(Params().GetConsensus().nTokenFeeLockDuration, keyID);
 
     CAmount curBalance = pwallet->GetBalance();
 
@@ -2770,7 +2761,7 @@ bool CreateReissueTokenTransaction(CWallet* pwallet, CCoinControl& coinControl, 
     // Assign the correct lock amount and the correct lock address depending on the type of token issuance that is happening
     // Currently, the lock address is same as the change address
     const CKeyID& keyID = boost::get<CKeyID>(coinControl.destChange);
-    CScript feeLockScriptPubKey = GetScriptForCsvP2PKH(feeLockDuration, keyID);
+    CScript feeLockScriptPubKey = GetScriptForCsvP2PKH(Params().GetConsensus().nTokenFeeLockDuration, keyID);
     CRecipient recipient = {feeLockScriptPubKey, lockAmount, fSubtractFeeFromAmount};
     vecSend.push_back(recipient);
 

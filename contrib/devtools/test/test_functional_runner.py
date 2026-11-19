@@ -12,6 +12,10 @@ environment and write report files as a sanitizer runtime would.
 With --exclude-file FILE, the runner leaves out the scripts listed in FILE;
 a listed name that is not one of its scripts fails the run.
 
+With --chain CHAIN, the runner selects the scripts that set
+self.chain = 'CHAIN' (main: those without such a line), and builds the block
+cache of CHAIN only.
+
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
 
@@ -22,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 import unittest.mock
@@ -459,19 +464,207 @@ class FunctionalRunnerShardTests(unittest.TestCase):
         self.assertEqual(ran, ["wallet_a.py"])
 
 
+class FunctionalRunnerChainTests(unittest.TestCase):
+    """--chain CHAIN selects the scripts whose self.chain line names CHAIN
+    (main: the scripts without one), before --shard, and run_tests builds the
+    block cache of CHAIN only.
+
+    main() runs on a tree of its own, as in FunctionalRunnerExcludeFileTests,
+    with script files whose text the runner reads."""
+
+    SOURCES = {
+        "feature_r.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.chain = 'regtest'\n",
+        "wallet_m.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.num_nodes = 1\n",
+        "mining_r.py": 'class T:\n    def set_test_params(self):\n        self.chain = "regtest"\n',
+        "mempool_v.py": "class T:\n    def run_test(self):\n        chain = []\n        self.chain = chain\n",
+        "p2p_s.py": "class T:\n    def run_test(self):\n        # self.chain = 'regtest' would select it\n        pass\n",
+    }
+    EXTENDED = ["feature_r.py"]
+    BASE = ["wallet_m.py", "mining_r.py", "mining_r.py --opt", "mempool_v.py", "p2p_s.py"]
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="test_functional_runner.")
+        self.addCleanup(shutil.rmtree, self.dir)
+        src = os.path.join(self.dir, "src")
+        self.tests_dir = os.path.join(src, "test", "functional")
+        os.makedirs(self.tests_dir)
+        for name, text in self.SOURCES.items():
+            with open(os.path.join(self.tests_dir, name), "w") as f:
+                f.write(text)
+        with open(os.path.join(src, "test", "config.ini"), "w") as f:
+            f.write("[environment]\nSRCDIR=%s\nBUILDDIR=%s\n[components]\nENABLE_BITCOIND=true\n" % (src, self.dir))
+        self.ran = []
+        patches = {"__file__": os.path.join(self.tests_dir, "test_runner.py"),
+                   "EXTENDED_SCRIPTS": self.EXTENDED, "BASE_SCRIPTS": self.BASE,
+                   "ALL_SCRIPTS": self.EXTENDED + self.BASE,
+                   "run_tests": lambda **kwargs: self.ran.append(kwargs)}
+        for name, value in patches.items():
+            self.addCleanup(setattr, test_runner, name, getattr(test_runner, name))
+            setattr(test_runner, name, value)
+
+    def main(self, *args):
+        """Run main() with args; return (exit status or None, output, the
+        arguments run_tests got or None)."""
+        argv = ["test_runner.py", "--tmpdirprefix=%s" % tempfile.mkdtemp(dir=self.dir)] + list(args)
+        out = io.StringIO()
+        status = None
+        self.ran.clear()
+        with unittest.mock.patch("sys.argv", argv), contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(out):
+            try:
+                test_runner.main()
+            except SystemExit as e:
+                status = e.code
+        return status, re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue()), self.ran[0] if self.ran else None
+
+    def test_the_chain_comes_from_the_scripts_line(self):
+        chains = {name: test_runner.script_chain(self.tests_dir, name) for name in self.SOURCES}
+        self.assertEqual(chains, {"feature_r.py": "regtest", "wallet_m.py": "main", "mining_r.py": "regtest",
+                                  "mempool_v.py": "main", "p2p_s.py": "main"})
+
+    def test_regtest_selects_the_scripts_that_set_it(self):
+        status, out, ran = self.main("--extended", "--chain=regtest")
+        self.assertIsNone(status, out)
+        # Also the run of the script with an argument.
+        self.assertEqual(ran["test_list"], ["feature_r.py", "mining_r.py", "mining_r.py --opt"])
+        self.assertEqual(ran["chain"], "regtest")
+
+    def test_main_selects_the_other_scripts(self):
+        status, out, ran = self.main("--chain", "main")
+        self.assertIsNone(status, out)
+        self.assertEqual(ran["test_list"], ["wallet_m.py", "mempool_v.py", "p2p_s.py"])
+        self.assertEqual(ran["chain"], "main")
+
+    def test_without_the_option_every_script_is_selected(self):
+        status, out, ran = self.main("--extended")
+        self.assertIsNone(status, out)
+        self.assertEqual(ran["test_list"], self.EXTENDED + self.BASE)
+        self.assertIsNone(ran["chain"])
+
+    def test_the_chain_applies_with_the_other_selections_and_before_the_shard(self):
+        excluded = os.path.join(self.dir, "excluded-scripts")
+        with open(excluded, "w") as f:
+            f.write("feature_r.py\n")
+        status, out, ran = self.main("--extended", "--chain=regtest", "--exclude-file=%s" % excluded)
+        self.assertIsNone(status, out)
+        self.assertEqual(ran["test_list"], ["mining_r.py", "mining_r.py --opt"])
+        # Positions in the runner's list: feature_r.py 0, mining_r.py 2, mining_r.py --opt 3.
+        self.assertEqual(self.main("--extended", "--chain=regtest", "--shard=1/2")[2]["test_list"],
+                         ["feature_r.py", "mining_r.py"])
+        self.assertEqual(self.main("--extended", "--chain=regtest", "--shard=2/2")[2]["test_list"],
+                         ["mining_r.py --opt"])
+        self.assertEqual(self.main("--chain=regtest", "wallet_m.py", "mining_r.py")[2]["test_list"], ["mining_r.py"])
+
+    def test_an_unknown_chain_fails_before_any_script_runs(self):
+        status, out, ran = self.main("--extended", "--chain=nosuchchain")
+        self.assertEqual(status, 2)
+        self.assertIn("--chain", out)
+        self.assertIsNone(ran)
+
+    def test_a_selection_without_a_script_on_the_chain_fails_the_run(self):
+        for args in (["--chain=regtest", "wallet_m.py", "p2p_s.py"], ["--chain=main", "feature_r.py"],
+                     ["--chain=regtest", "--filter=wallet"]):
+            status, out, ran = self.main(*args)
+            self.assertEqual(status, 1, args)
+            self.assertIn("ERROR! No selected script runs on", out)
+            self.assertIsNone(ran)
+
+    def test_a_script_on_an_unknown_chain_fails_the_run(self):
+        with open(os.path.join(self.tests_dir, "p2p_s.py"), "w") as f:
+            f.write("class T:\n    def set_test_params(self):\n        self.chain = 'testnet3'\n")
+        for chain in ("regtest", "main"):
+            status, out, ran = self.main("--chain=%s" % chain)
+            self.assertEqual(status, 1)
+            self.assertIn("ERROR! The test script p2p_s.py runs on chain 'testnet3', which is not one of main, regtest.",
+                          out)
+            self.assertIsNone(ran)
+        # Without the option the runner does not read the scripts.
+        self.assertIsNone(self.main()[0])
+
+    def test_the_runners_chains_are_the_frameworks(self):
+        functional = os.path.join(HERE, "..", "..", "..", "test", "functional")
+        with unittest.mock.patch("sys.path", [functional] + sys.path):
+            from test_framework.test_framework import CHAINS
+        self.assertEqual(tuple(test_runner.RUNNER_CHAINS), tuple(CHAINS))
+
+    def test_a_script_that_cannot_be_read_fails_the_run(self):
+        os.remove(os.path.join(self.tests_dir, "p2p_s.py"))
+        status, out, ran = self.main("--chain=regtest")
+        self.assertEqual(status, 1)
+        self.assertIn("ERROR! Cannot read the test script p2p_s.py", out)
+        self.assertIsNone(ran)
+        # Without the option the runner does not read the scripts.
+        self.assertIsNone(self.main()[0])
+
+
+class FunctionalRunnerCacheChainTests(unittest.TestCase):
+    """run_tests builds the block cache with create_cache.py before running
+    several scripts in parallel; with a chain, the cache of that chain only.
+    create_cache.py and the scripts here are fakes that record their
+    arguments."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="test_functional_runner.")
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.tests_dir = os.path.join(self.dir, "src", "test", "functional")
+        os.makedirs(self.tests_dir)
+        self.tmpdir = os.path.join(self.dir, "tmp")
+        os.makedirs(self.tmpdir)
+        self.cache_args = os.path.join(self.dir, "cache-args")
+        with open(os.path.join(self.tests_dir, "create_cache.py"), "w") as f:
+            f.write("import json, sys\nwith open(%r, 'w') as f:\n    json.dump(sys.argv[1:], f)\n" % self.cache_args)
+        for name in ("a_script.py", "b_script.py"):
+            with open(os.path.join(self.tests_dir, name), "w") as f:
+                f.write("import sys\nsys.exit(0)\n")
+
+    def run_tests(self, chain):
+        """Return the arguments create_cache.py got, or None if it did not run."""
+        if os.path.exists(self.cache_args):
+            os.remove(self.cache_args)
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as e:
+            test_runner.run_tests(test_list=["a_script.py", "b_script.py"], src_dir=os.path.join(self.dir, "src"),
+                                  build_dir=self.dir, tmpdir=self.tmpdir, jobs=2, runs_ci=False,
+                                  use_term_control=False, chain=chain)
+        self.assertEqual(e.exception.code, 0)
+        if not os.path.exists(self.cache_args):
+            return None
+        with open(self.cache_args) as f:
+            return json.load(f)
+
+    def test_the_cache_of_the_chain_only(self):
+        args = self.run_tests("regtest")
+        self.assertIn("--cachechain=regtest", args)
+        self.assertEqual(sum(a.startswith("--cachechain") for a in args), 1)
+
+    def test_without_a_chain_the_cache_of_every_chain(self):
+        args = self.run_tests(None)
+        self.assertIsNotNone(args)
+        self.assertFalse(any(a.startswith("--cachechain") for a in args))
+
+
 class TreeExcludedScriptsTests(unittest.TestCase):
-    def test_the_trees_list_names_scripts_of_the_runner(self):
-        # The list the functional-tests-asan mode of the CI images passes;
-        # checked here as well, so a stale entry fails before a build.
-        path = os.path.join(HERE, "..", "..", "..", "test", "sanitizer_suppressions", "asan-excluded-scripts")
+    def check_list(self, *path):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             try:
-                names = test_runner.read_exclude_file(path)
+                names = test_runner.read_exclude_file(os.path.join(HERE, "..", "..", "..", *path))
             except SystemExit:
                 self.fail(out.getvalue())
         known = {test.split()[0] for test in test_runner.ALL_SCRIPTS}
         self.assertTrue(set(names) <= known)
+        return names
+
+    def test_the_trees_list_names_scripts_of_the_runner(self):
+        # The list the functional-tests-asan mode of the CI images passes;
+        # checked here as well, so a stale entry fails before a build.
+        self.check_list("test", "sanitizer_suppressions", "asan-excluded-scripts")
+
+    def test_the_trees_regtest_list_names_regtest_scripts(self):
+        # The list the functional-tests-regtest mode passes with
+        # --chain=regtest: each entry is a script on regtest.
+        tests_dir = os.path.join(HERE, "..", "..", "..", "test", "functional")
+        for name in self.check_list("test", "functional", "regtest-excluded-scripts"):
+            self.assertEqual(test_runner.script_chain(tests_dir, name), "regtest", name)
 
 
 if __name__ == "__main__":

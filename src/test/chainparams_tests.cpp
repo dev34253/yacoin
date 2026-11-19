@@ -144,10 +144,14 @@ BOOST_AUTO_TEST_CASE(main_consensus)
     BOOST_CHECK_EQUAL(consensus.powLimit.GetCompact(), 0x1e0fffffU);
     BOOST_CHECK_EQUAL(consensus.initialHashTarget.GetCompact(), 0x1e0fffffU);
     BOOST_CHECK_EQUAL(consensus.initialMoneySupply, 0);
+    BOOST_CHECK_EQUAL(consensus.nTokenFeeLockAmount, 2100 * COIN);
+    BOOST_CHECK_EQUAL(consensus.nTokenFeeLockDuration, 21000U);
 #else
     BOOST_CHECK_EQUAL(consensus.powLimit.GetCompact(), 0x201fffffU);
     BOOST_CHECK_EQUAL(consensus.initialHashTarget.GetCompact(), 0x2000ffffU);
     BOOST_CHECK_EQUAL(consensus.initialMoneySupply, 100000000000000LL);
+    BOOST_CHECK_EQUAL(consensus.nTokenFeeLockAmount, 10 * COIN);
+    BOOST_CHECK_EQUAL(consensus.nTokenFeeLockDuration, 10U);
 #endif
 }
 
@@ -180,12 +184,21 @@ BOOST_AUTO_TEST_CASE(main_checkpoints_and_tx_data)
     const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::MAIN);
 
     const MapCheckpoints& checkpoints = params->Checkpoints().mapCheckpoints;
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
     BOOST_REQUIRE_EQUAL(checkpoints.size(), 51U);
+#else
+    BOOST_REQUIRE_EQUAL(checkpoints.size(), 1U);
+#endif
     BOOST_CHECK_EQUAL(checkpoints.begin()->first, 0);
-    BOOST_CHECK(checkpoints.begin()->second == params->GetConsensus().hashGenesisBlock);
+    BOOST_CHECK(checkpoints.begin()->second.first == params->GetConsensus().hashGenesisBlock);
+    BOOST_CHECK_EQUAL(checkpoints.begin()->second.second, 1367991220U);
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
     BOOST_CHECK_EQUAL(checkpoints.rbegin()->first, 1911210);
-    BOOST_CHECK_EQUAL(checkpoints.rbegin()->second.GetHex(), LAST_MAIN_CHECKPOINT);
-    BOOST_CHECK_EQUAL(checkpoints.at(15000).GetHex(), "00000082cab82d04354692fac3b83d19cbe3c3ab4b73610d0e73397545eb012e");
+    BOOST_CHECK_EQUAL(checkpoints.rbegin()->second.first.GetHex(), LAST_MAIN_CHECKPOINT);
+    BOOST_CHECK_EQUAL(checkpoints.rbegin()->second.second, 1682210698U);
+    BOOST_CHECK_EQUAL(checkpoints.at(15000).first.GetHex(), "00000082cab82d04354692fac3b83d19cbe3c3ab4b73610d0e73397545eb012e");
+    BOOST_CHECK_EQUAL(checkpoints.at(15000).second, 1368024582U);
+#endif
 
     const ChainTxData& txData = params->TxData();
     BOOST_CHECK_EQUAL(txData.nTime, 1749704574);
@@ -229,10 +242,14 @@ BOOST_AUTO_TEST_CASE(regtest_parameters)
     BOOST_CHECK(params->RequireStandard());
     BOOST_CHECK(!params->MineBlocksOnDemand());
 
+    BOOST_CHECK_EQUAL(consensus.nTokenFeeLockAmount, 10 * COIN);
+    BOOST_CHECK_EQUAL(consensus.nTokenFeeLockDuration, 10U);
+
     const MapCheckpoints& checkpoints = params->Checkpoints().mapCheckpoints;
     BOOST_REQUIRE_EQUAL(checkpoints.size(), 1U);
     BOOST_CHECK_EQUAL(checkpoints.begin()->first, 0);
-    BOOST_CHECK(checkpoints.begin()->second == consensus.hashGenesisBlock);
+    BOOST_CHECK(checkpoints.begin()->second.first == consensus.hashGenesisBlock);
+    BOOST_CHECK_EQUAL(checkpoints.begin()->second.second, 1367991220U);
 
     const ChainTxData& txData = params->TxData();
     BOOST_CHECK_EQUAL(txData.nTime, 0);

@@ -2,12 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// The mining code that needs a wallet: getwork up to and including its connection and
-// initial-download checks, and CheckWork, which takes a solved block to the chain.
-//
-// On the mainnet build the unit tests stay in initial block download, so getwork answers
-// with that error once a peer is present; on the low-difficulty build that check passes and
-// the case is left out there.
+// The mining code that needs a wallet: getwork up to and including its connection check, and
+// CheckWork, which takes a solved block to the chain.
 
 #include "chainparams.h"
 #include "miner.h"
@@ -82,7 +78,7 @@ BOOST_AUTO_TEST_CASE(getwork_without_wallet)
     BOOST_CHECK(CallRPCHandler("getwork", UniValue(UniValue::VARR), true).isNull());
 }
 
-/* With a wallet: help, the connection check, and the initial-download check */
+/* With a wallet: help and the connection check */
 BOOST_AUTO_TEST_CASE(getwork_checks)
 {
     VpWalletsGuard oneWallet({wallet.get()});
@@ -93,12 +89,6 @@ BOOST_AUTO_TEST_CASE(getwork_checks)
     CheckRPCError("getwork", UniValue(UniValue::VARR), RPC_CLIENT_NOT_CONNECTED, "Yacoin is not connected!");
     // Submitted data is not looked at before the checks
     CheckRPCError("getwork", RPCParams("00"), RPC_CLIENT_NOT_CONNECTED, "Yacoin is not connected!");
-
-#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
-    ScopedPeer peer;
-    CheckRPCError("getwork", UniValue(UniValue::VARR), RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Yacoin is downloading blocks...");
-    CheckRPCError("getwork", RPCParams("00"), RPC_CLIENT_IN_INITIAL_DOWNLOAD, "Yacoin is downloading blocks...");
-#endif
 }
 
 /* A solved block on the tip is processed and becomes the new tip */

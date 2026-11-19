@@ -72,12 +72,13 @@ with this checkout mounted:
 ./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
 SANITIZE=undefined ./dev.sh container unit-tests-asan     # one leg of CI's unit-tests-asan: UBSan only (address: ASan and LSan only)
 FTEST_SHARD=2/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan
+./dev.sh container ubuntu.16.04 functional-tests-regtest  # mainnet build, the functional tests that run on regtest (see Functional tests below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`
+`unit-tests`, `functional-tests`, `functional-tests-regtest`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`
 and `cov-functional`; `windows` and
 `macos` only build.
 
@@ -96,7 +97,7 @@ and `cov-functional`; `windows` and
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
 - `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (the parallel scripts of
-  `functional-tests`, `functional-tests-asan` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count),
+  `functional-tests`, `functional-tests-asan`, `functional-tests-regtest` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count),
   `FTEST_SHARD` (the same modes: `K/N` runs only shard K of N of the scripts, as the sharded CI jobs do), `SANITIZE` (`unit-tests-asan`:
   `address` or `undefined` builds with that sanitizer only, as one CI leg; unset, both), `BUILDVERSION`,
   `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own
@@ -125,8 +126,10 @@ The unit tests run on the mainnet build (`./dev.sh unit`) and must pass on the
 low-difficulty build as well: CI runs them on both (the `unit-tests` job and
 the `build-ubuntu-1604-low-difficulty` job). A test that uses mainnet-only
 data, such as checkpoints or the genesis block, needs its own part for that
-build. The functional tests need the low-difficulty build. To run the unit
-tests on it locally:
+build. The functional tests need the low-difficulty build; those that run on
+regtest also run on the mainnet build, except those listed in
+`test/functional/regtest-excluded-scripts` (see [Functional tests](#functional-tests)).
+To run the unit tests on the low-difficulty build locally:
 
 ```sh
 ./dev.sh build func test/test_bitcoin
@@ -388,6 +391,21 @@ each selected script once, a new script lands in a shard by itself, and a
 script's shard does not depend on timing. A shard without scripts is no
 error. The sharded CI jobs (`functional-tests-asan`, `coverage-functional-1`
 and `-2`) use it through `FTEST_SHARD`.
+
+`test_runner.py --chain <chain>` runs only the selected scripts whose nodes
+run on that chain: those with a `self.chain = '<chain>'` line (a script
+without one runs on `main`), applied before `--shard`; the block cache is then
+built for that chain only (`create_cache.py --cachechain`). A selection without
+such a script, or a script whose line names another chain than `main` or
+`regtest`, fails the run. The scripts on
+regtest also run on the mainnet build: `./dev.sh container ubuntu.16.04
+functional-tests-regtest` builds `yacoind` and `yacoin-cli` without the
+low-difficulty parameters (otherwise as `functional-tests`) and runs
+`test_runner.py --chain=regtest --extended`, but the scripts listed in
+`test/functional/regtest-excluded-scripts` (one script name per line, with
+the reason in a comment above it; `--exclude-file`), as the CI job
+`functional-tests-regtest` does. Such a script also runs directly against a
+`dev` build: `test/functional/<script> --configfile=build/dev/test/config.ini`.
 
 Two runner invocations on the same build directory at the same time do
 interfere: each run without `--keepcache` deletes `build/func/test/cache`
