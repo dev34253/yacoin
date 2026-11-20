@@ -8,8 +8,7 @@ Check the block count, block size, N, N-factor, difficulty and PoW reward
 fields, and the wallet balance growing with mature coinbases. Then:
 - getsubsidy() is the next coinbase value; after the fork its argument is
   ignored, and it isn't checked (known failure R-26); argument errors.
-- Before the fork (a node with a later fork height) the reward follows the
-  target given.
+  mining_subsidy_before_fork.py checks getsubsidy before the fork.
 - getmininginfo's mempool and last-template fields and the rest of its
   keys, which its help doesn't document (known failure R-22).
 """
@@ -35,13 +34,7 @@ DIFFICULTY = Decimal('6.073751268770957E-10')
 
 class MiningTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.chain = 'regtest'
-        self.num_nodes = 3
-        # node2: a later fork height, for getsubsidy before the fork. It has
-        # another consensus, so it stays unconnected. Its blocks below the
-        # fork are version 6, so regtest's heliopolis height moves to the fork
-        # height as well.
-        self.extra_args = [[], [], ['-testactivationheight=newlogic@1000', '-testactivationheight=heliopolis@1000']]
+        self.num_nodes = 2
         self.setup_clean_chain = True
         self.supports_cli = False
         self.mocktime=TIME_GENESIS_BLOCK
@@ -60,7 +53,7 @@ class MiningTest(BitcoinTestFramework):
         self.setmocktimeforallnodes(self.mocktime)
         self.mocktime=self.mocktime+timeBetweenBlocks+timeBetweenBlocks*numberOfBlocks      
         self.nodes[nodeId].generate(numberOfBlocks)
-        self.sync_all(self.nodes[:2])
+        self.sync_all()
 
     def mine_blocks(self, nodeId, numberOfBlocks):
         timeBetweenBlocks = 60
@@ -68,7 +61,7 @@ class MiningTest(BitcoinTestFramework):
             self.setmocktimeforallnodes(self.mocktime)
             self.mocktime=self.mocktime+timeBetweenBlocks      
             self.nodes[nodeId].generate(1)
-        self.sync_all(self.nodes[:2])
+        self.sync_all()
 
     def run_test(self):
         # mine a few blocks and check that the balance is available after block 6
@@ -123,7 +116,6 @@ class MiningTest(BitcoinTestFramework):
         assert_approx(balance, 114.077144)
 
         self.test_getsubsidy()
-        self.test_getsubsidy_before_fork()
         self.test_getmininginfo_fields()
 
     def test_getsubsidy(self):
@@ -141,20 +133,6 @@ class MiningTest(BitcoinTestFramework):
                            expected="No exception raised")
         assert_raises_rpc_error(-1, "JSON value is not a string as expected", node.getsubsidy, 1)
         assert_raises_rpc_error(-1, "getsubsidy [ntarget]", node.getsubsidy, '00', '00')
-
-    def test_getsubsidy_before_fork(self):
-        self.log.info("Before the fork the reward follows the target")
-        node = self.nodes[2]
-        node.generate(3)
-        subsidy = node.getsubsidy()
-        coinbase = node.getrawtransaction(node.getblock(node.generate(1)[0])['tx'][0], 1)
-        assert_equal(coinbase['vout'][0]['value'] * COIN, subsidy)
-        # 100 YAC / (powLimit / target) ** (1/6), with regtest's powLimit
-        assert_equal(node.getsubsidy('00ffff' + '00' * 29), 44540000)
-        assert_equal(node.getsubsidy('00000fff' + '00' * 28), 11140000)
-        assert_equal(node.getsubsidy('0000000fff' + '00' * 27), 4420000)
-        # capped at MAX_MINT_PROOF_OF_WORK (100 YAC)
-        assert_equal(node.getsubsidy('ff' * 32), 100 * COIN)
 
     def test_getmininginfo_fields(self):
         self.log.info("getmininginfo: mempool, last template and the other fields")

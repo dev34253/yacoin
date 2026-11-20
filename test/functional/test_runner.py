@@ -164,6 +164,7 @@ BASE_SCRIPTS = [
     'feature_basic_transfer.py',
     'feature_token_overflow.py',
     'mining_basic.py',
+    'mining_subsidy_before_fork.py',
     'rpc_setban.py',
     'mining_getblocktemplate_longpoll.py',
     'mining_submitblock.py',
