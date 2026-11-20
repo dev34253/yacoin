@@ -44,7 +44,7 @@ class WalletTokensTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # Fork at 1, like the other token scripts.
         self.block_fork_1_0 = 1
-        self.extra_args = [["-tokenindex=1", "-tokenSupportBlockNumber=10"]] * 3
+        self.extra_args = [["-tokenindex=1", "-testactivationheight=tokens@10"]] * 3
 
     def reconnect(self):
         connect_nodes(self.nodes[1], 0)
@@ -89,7 +89,7 @@ class WalletTokensTest(BitcoinTestFramework):
         expected = {"WTK": "75.00", "WTK#U1": "1", "WTK/SUB": "2", "WTK2": "3"}
         assert_equal(n1.listmytokens(), expected)
         self.stop_node(1)
-        shutil.copyfile(backup, os.path.join(n1.datadir, "wallet.dat"))
+        shutil.copyfile(backup, n1.chain_path('wallet.dat'))
         # The wallet rescans from the backup's best block at startup, without
         # -rescan. Addresses created after the backup lose their labels.
         self.start_node(1)
@@ -143,7 +143,7 @@ class WalletTokensTest(BitcoinTestFramework):
         # Drop the saved mempool and turn wallet broadcast off, so the
         # transfer is neither reloaded nor resubmitted at startup.
         self.stop_node(1)
-        os.remove(os.path.join(n1.datadir, "mempool.dat"))
+        os.remove(n1.chain_path('mempool.dat'))
         self.start_node(1, self.extra_args[1] + ["-walletbroadcast=0"])
         assert txid not in n1.getrawmempool()
         # abandontransaction doesn't need the passphrase.

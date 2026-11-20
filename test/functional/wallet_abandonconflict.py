@@ -56,7 +56,7 @@ class AbandonConflictTest(BitcoinTestFramework):
     def restart_node1(self, extra_args=None):
         """Restart node 1 without its saved mempool."""
         self.stop_node(1)
-        mempool = os.path.join(self.nodes[1].datadir, 'mempool.dat')
+        mempool = self.nodes[1].chain_path('mempool.dat')
         if os.path.exists(mempool):
             os.remove(mempool)
         self.start_node(1, extra_args)

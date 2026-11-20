@@ -95,7 +95,7 @@ class ReorgsRestoreTest(BitcoinTestFramework):
         # Node0 wallet file is loaded on node1, whose chain never had node0's blocks
         self.stop_node(1)
         n0.backupwallet(os.path.join(n0.datadir, 'wallet.bak'))
-        shutil.copyfile(os.path.join(n0.datadir, 'wallet.bak'), os.path.join(n1.datadir, 'wallet.dat'))
+        shutil.copyfile(os.path.join(n0.datadir, 'wallet.bak'), n1.chain_path('wallet.dat'))
         self.start_node(1)
         tx_after_reorg = n1.gettransaction(txid)
         # Check that normal confirmed tx is confirmed again but with different blockhash

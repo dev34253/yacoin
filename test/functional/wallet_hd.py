@@ -101,9 +101,9 @@ class WalletHDTest(BitcoinTestFramework):
         self.stop_node(1)
         # we need to delete the complete chain directory
         # otherwise node1 would auto-recover all funds in flag the keypool keys as used
-        shutil.rmtree(os.path.join(self.nodes[1].datadir, "blocks"))
-        shutil.rmtree(os.path.join(self.nodes[1].datadir, "chainstate"))
-        shutil.copyfile(os.path.join(self.nodes[1].datadir, "hd.bak"), os.path.join(self.nodes[1].datadir, "wallet.dat"))
+        shutil.rmtree(self.nodes[1].chain_path('blocks'))
+        shutil.rmtree(self.nodes[1].chain_path('chainstate'))
+        shutil.copyfile(os.path.join(self.nodes[1].datadir, "hd.bak"), self.nodes[1].chain_path('wallet.dat'))
         self.start_node(1)
 
         # Assert that derivation is deterministic
@@ -153,7 +153,7 @@ class WalletHDTest(BitcoinTestFramework):
         self.sync_blocks()
 
         self.stop_node(1)
-        shutil.copyfile(backup, os.path.join(node1.datadir, "wallet.dat"))
+        shutil.copyfile(backup, node1.chain_path('wallet.dat'))
         self.start_node(1, args)
         connect_nodes(self.nodes[0], 1)
         self.sync_blocks()
