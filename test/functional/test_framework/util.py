@@ -33,6 +33,13 @@ NFACTOR_AT_HARDFORK = 4
 # -testactivationheight=tokens@<height> comes after it and wins.
 REGTEST_TOKEN_HEIGHT = 1911210
 
+# The -maxtipage of a regtest test node (yacoin.conf): regtest test nodes
+# leave initial download whatever the age of their tip.
+REGTEST_MAX_TIP_AGE = 2000000000
+
+# The line of yacoin.conf that turns off automatic outbound connections.
+CONNECT_LINE = "connect=0"
+
 # Assert functions
 ##################
 
@@ -395,6 +402,13 @@ def initialize_datadir(dirname, n, chain, epochinterval=10):
         # f.write("keypool=1\n")
         # f.write("discover=0\n")
         f.write("dnsseed=0\n")
+        # Test nodes connect only to the nodes of their test: no automatic
+        # outbound connections (TestNode.start leaves the line out for a
+        # node started with its own -connect), but listening for them.
+        f.write(CONNECT_LINE + "\n")
+        f.write("listen=1\n")
+        if chain == 'regtest':
+            f.write("maxtipage=%d\n" % REGTEST_MAX_TIP_AGE)
         f.write("printtoconsole=0\n")
         f.write("upnp=0\n")
         # No Tor control: a node stopped before its Tor control thread has

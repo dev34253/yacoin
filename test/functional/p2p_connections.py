@@ -139,9 +139,9 @@ class ConnectionsTest(BitcoinTestFramework):
         wait_until(lambda: [p['id'] for p in peers(node)] not in ([], [peer['id']]), timeout=10)
         assert_equal([(p['addr'], p['inbound']) for p in peers(node)], [(self.addr1, False)])
 
-        self.log.info("-connect still listens (bind=127.0.0.1 in yacoin.conf)")
-        # The framework's yacoin.conf has bind=127.0.0.1, which sets
-        # -listen=1 before -connect could turn it off.
+        self.log.info("-connect still listens (listen=1 and bind=127.0.0.1 in yacoin.conf)")
+        # The framework's yacoin.conf has listen=1 (and bind=127.0.0.1), so
+        # -connect cannot turn listening off.
         node.add_p2p_connection(P2PInterface())
         assert_equal(peers(node)[-1]['inbound'], True)
         node.disconnect_p2ps()

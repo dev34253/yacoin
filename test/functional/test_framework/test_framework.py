@@ -101,8 +101,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Sets test framework defaults. Do not override this method. Instead, override the set_test_params() method"""
         # The chain of the nodes, one of CHAINS. On regtest the nodes get the
         # fork and token heights through -testactivationheight, on main the
-        # fork height through -testnetNewLogicBlockNumber.
-        self.chain = 'main'
+        # fork height through -testnetNewLogicBlockNumber. A script that runs
+        # on main sets self.chain = 'main' and says why.
+        self.chain = 'regtest'
         self.setup_clean_chain = False
         self.nodes = []
         self.network_thread = None
@@ -395,6 +396,17 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         raise NotImplementedError
 
     # Public helper methods. These can be accessed by the subclass test scripts.
+
+    def main_test_node(self, i=0):
+        """A TestNode on main with a data directory of its own
+        (<tmpdir>/main/node<i>), for a check of main that needs no blocks
+        mined on main. It has node i's ports, so it runs only while node i
+        is stopped; it is not in self.nodes and not started."""
+        datadir = initialize_datadir(os.path.join(self.options.tmpdir, 'main'), i, 'main')
+        return TestNode(i, datadir, chain='main', rpchost=None, timewait=self.rpc_timeout,
+                        bitcoind=self.options.bitcoind, bitcoin_cli=self.options.bitcoincli,
+                        coverage_dir=self.options.coveragedir, cwd=self.options.tmpdir,
+                        extra_args=[], block_fork_1_0=self.block_fork_1_0)
 
     def add_nodes(self, num_nodes, extra_args=None, *, rpchost=None, binary=None, binary_cli=None, versions=None):
         """Instantiate TestNode objects.

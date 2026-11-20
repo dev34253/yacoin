@@ -6,10 +6,17 @@
 
 Later tests rely on these helpers, so check them against a real node, here on
 regtest:
-- the chain choice: regtest=1 in yacoin.conf (main gets no chain line), the
-  nodes report chain regtest and keep their files in <datadir>/regtest.
+- the chain choice: a script without a chain line runs on regtest; regtest=1
+  in yacoin.conf (main gets no chain line), the nodes report chain regtest
+  and keep their files in <datadir>/regtest (TestNode.chain_path); a main
+  node (main_test_node) runs main in the data directory itself.
+- the maxtipage line in a regtest node's yacoin.conf (none on main).
+- test nodes connect only to the nodes of their test: connect=0 and listen=1
+  in yacoin.conf, no automatic outbound connections; a node started with its
+  own -connect gets only that value.
 - the fork and token heights through -testactivationheight, with a script's
-  own tokens@<height> after the framework's.
+  own tokens@<height> after the framework's; a fork above 1 moves the
+  Heliopolis height to the fork height.
 - the RPC cookie and debug.log in the chain's directory: cookie
   authentication, assert_debug_log and combine_logs.py (also on a main
   layout).
@@ -53,6 +60,8 @@ from test_framework.mininode import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import FailedToStartError, TestNode
 from test_framework.util import (
+    CONNECT_LINE,
+    REGTEST_MAX_TIP_AGE,
     REGTEST_TOKEN_HEIGHT,
     assert_equal,
     assert_raises,
@@ -185,7 +194,7 @@ def read_lines(path):
 
 class FrameworkTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.chain = 'regtest'
+        # No chain line: the nodes run regtest.
         self.num_nodes = 2
         self.setup_clean_chain = True
 
@@ -199,6 +208,10 @@ class FrameworkTest(BitcoinTestFramework):
     def run_test(self):
         self.test_mocktime_at_start()
         self.test_regtest_chain()
+        self.test_main_node()
+        self.test_tip_age()
+        self.test_no_automatic_connections()
+        self.test_conf_lines()
         self.test_activation_heights()
         self.test_cookie()
         self.test_debug_log()
@@ -224,6 +237,8 @@ class FrameworkTest(BitcoinTestFramework):
         assert_equal(block['time'], self.start_mocktime)
 
     def test_regtest_chain(self):
+        self.log.info("A script without a chain line runs on regtest")
+        assert_equal(self.chain, 'regtest')
         self.log.info("The nodes run regtest: regtest=1 in yacoin.conf, the chain's files in <datadir>/regtest")
         for node in self.nodes:
             lines = read_lines(os.path.join(node.datadir, 'yacoin.conf'))
@@ -233,11 +248,65 @@ class FrameworkTest(BitcoinTestFramework):
             assert os.path.isfile(os.path.join(node.datadir, 'regtest', 'debug.log'))
             assert os.path.isdir(os.path.join(node.datadir, 'regtest', 'blocks'))
             assert not os.path.exists(os.path.join(node.datadir, 'blocks'))
+            assert_equal(node.chain_path('blocks'), os.path.join(node.datadir, 'regtest', 'blocks'))
 
-        self.log.info("initialize_datadir writes regtest=1 for regtest and no chain line for main")
+    def test_conf_lines(self):
+        self.log.info("initialize_datadir writes regtest=1 and maxtipage for regtest, neither for main")
         main_conf = read_lines(os.path.join(initialize_datadir(os.path.join(self.options.tmpdir, 'conf_main'), 0, 'main'), 'yacoin.conf'))
         regtest_conf = read_lines(os.path.join(initialize_datadir(os.path.join(self.options.tmpdir, 'conf_regtest'), 0, 'regtest'), 'yacoin.conf'))
-        assert_equal(regtest_conf, ['regtest=1'] + main_conf)
+        tip_age_line = 'maxtipage=%d' % REGTEST_MAX_TIP_AGE
+        assert tip_age_line in regtest_conf, regtest_conf
+        assert_equal(regtest_conf, ['regtest=1'] + main_conf[:main_conf.index('listen=1') + 1] + [tip_age_line] +
+                     main_conf[main_conf.index('listen=1') + 1:])
+
+    def test_main_node(self):
+        self.log.info("An explicit main node runs main, in the data directory itself")
+        node = self.main_test_node(2)
+        assert_equal(node.chain_path('blocks'), os.path.join(node.datadir, 'blocks'))
+        node.start()
+        node.wait_for_rpc_connection()
+        assert_equal(node.gettimechaininfo()['chain'], 'main')
+        node.stop_node()
+        node.wait_until_stopped()
+        assert os.path.isfile(os.path.join(node.datadir, 'debug.log'))
+        assert os.path.isdir(os.path.join(node.datadir, 'blocks'))
+        assert not os.path.exists(os.path.join(node.datadir, 'regtest'))
+
+    def test_tip_age(self):
+        node = self.nodes[1]
+        conf = os.path.join(node.datadir, 'yacoin.conf')
+        self.log.info("A regtest node's yacoin.conf has the maxtipage line, a main node's none")
+        assert 'maxtipage=%d' % REGTEST_MAX_TIP_AGE in read_lines(conf)
+        main_conf = os.path.join(self.main_test_node(2).datadir, 'yacoin.conf')
+        assert not [line for line in read_lines(main_conf) if line.startswith('maxtipage=')]
+
+    def test_no_automatic_connections(self):
+        node0, node1 = self.nodes
+        conf = os.path.join(node1.datadir, 'yacoin.conf')
+        self.log.info("A lone node makes no automatic connections")
+        # connect=0: the node starts no automatic connection thread (opencon).
+        with node1.assert_debug_log(["addcon thread start"], unexpected_msgs=["opencon thread start"]):
+            self.restart_node(1)
+        assert_equal(peers(node1), [])
+
+        self.log.info("yacoin.conf has connect=0 and listen=1")
+        for node in self.nodes:
+            lines = read_lines(os.path.join(node.datadir, 'yacoin.conf'))
+            assert CONNECT_LINE in lines and 'listen=1' in lines, lines
+
+        self.log.info("A node started with its own -connect gets only that value")
+        # A port nothing listens on (node 2's), so the node stays at genesis.
+        target = "127.0.0.1:%d" % p2p_port(2)
+        with node1.assert_debug_log(["opencon thread start", "trying connection %s lastseen" % target],
+                                    unexpected_msgs=["trying connection 0 lastseen"], timeout=10):
+            self.restart_node(1, ["-connect=%s" % target])
+        assert CONNECT_LINE not in read_lines(conf)
+
+        self.log.info("Without its own -connect the line is back")
+        self.restart_node(1)
+        assert CONNECT_LINE in read_lines(conf)
+        assert_equal(peers(node0), [])
+        assert_equal(peers(node1), [])
 
     def test_activation_heights(self):
         self.log.info("Regtest nodes get the fork and token heights through -testactivationheight")
@@ -252,12 +321,20 @@ class FrameworkTest(BitcoinTestFramework):
         assert "-testnetNewLogicBlockNumber=%d" % self.block_fork_1_0 in main_node.args, main_node.args
         assert not [arg for arg in main_node.args if arg.startswith("-testactivationheight")], main_node.args
 
-    def main_test_node(self):
-        """A TestNode on main in a data directory of its own; not started."""
-        return TestNode(0, os.path.join(self.options.tmpdir, 'main_node'), chain='main', rpchost=None,
+        self.log.info("A fork above 1 moves the Heliopolis height to the fork height on regtest")
+        for fork, heliopolis in ((0, []), (1, []), (2, ["-testactivationheight=heliopolis@2"]),
+                                 (30, ["-testactivationheight=heliopolis@30"])):
+            node = self.test_node_with_fork('regtest', fork)
+            assert_equal([arg for arg in node.args if arg.startswith("-testactivationheight=heliopolis")], heliopolis)
+        node = self.test_node_with_fork('main', 30)
+        assert not [arg for arg in node.args if arg.startswith("-testactivationheight")], node.args
+
+    def test_node_with_fork(self, chain, fork):
+        """A TestNode with the given fork height; not started."""
+        return TestNode(0, os.path.join(self.options.tmpdir, 'fork_%s_%d' % (chain, fork)), chain=chain, rpchost=None,
                         timewait=self.rpc_timeout, bitcoind=self.options.bitcoind,
                         bitcoin_cli=self.options.bitcoincli, coverage_dir=None, cwd=self.options.tmpdir,
-                        block_fork_1_0=self.block_fork_1_0)
+                        block_fork_1_0=fork)
 
     def test_cookie(self):
         node = self.nodes[1]

@@ -241,7 +241,7 @@ def main():
     parser.add_argument('--filter', help='filter scripts to run by regular expression')
     parser.add_argument('--exclude-file', metavar='FILE', help='leave out the scripts listed in FILE: one script name (with .py) per line, "#" starts a comment, blank lines are ignored. A listed name that is not a test script of this runner fails the run')
     parser.add_argument('--shard', metavar='K/N', help='run shard K of N (1 <= K <= N): the selected scripts whose position in the list of all scripts of this runner, counted from 0, modulo N is K-1. Applied after every other selection, so the N shards together run what the run without --shard runs, each script once. A shard without scripts is no error. A named script that is not in the list fails the run')
-    parser.add_argument('--chain', choices=RUNNER_CHAINS, help='run only the selected scripts whose nodes run on CHAIN: those that set self.chain = \'CHAIN\' (a script without that line runs on main). Applied before --shard; a selection without such a script fails the run, and so does a script whose line names another chain than main or regtest. The block cache is built for CHAIN only')
+    parser.add_argument('--chain', choices=RUNNER_CHAINS, help='run only the selected scripts whose nodes run on CHAIN: those that set self.chain = \'CHAIN\' (a script without that line runs on regtest). Applied before --shard; a selection without such a script fails the run, and so does a script whose line names another chain than main or regtest. The block cache is built for CHAIN only')
     parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty')
 
     args, unknown_args = parser.parse_known_args()
@@ -402,7 +402,7 @@ def select_shard(test_list, k, n):
 
 def script_chain(tests_dir, script):
     """Return the chain the nodes of the test script run on: the value of its
-    self.chain = '<chain>' line, or main if it has none. A script that cannot
+    self.chain = '<chain>' line, or regtest if it has none. A script that cannot
     be read, or whose line names a chain not in RUNNER_CHAINS, stops the run
     with an error."""
     try:
@@ -412,7 +412,7 @@ def script_chain(tests_dir, script):
         print("%sERROR!%s Cannot read the test script %s: %s" % (BOLD[1], BOLD[0], script, e))
         sys.exit(1)
     match = re.search(r"""^\s*self\.chain\s*=\s*['"](\w+)['"]""", source, re.MULTILINE)
-    chain = match.group(1) if match else 'main'
+    chain = match.group(1) if match else 'regtest'
     if chain not in RUNNER_CHAINS:
         print("%sERROR!%s The test script %s runs on chain '%s', which is not one of %s." %
               (BOLD[1], BOLD[0], script, chain, ", ".join(RUNNER_CHAINS)))

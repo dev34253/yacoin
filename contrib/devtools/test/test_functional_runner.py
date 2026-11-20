@@ -13,8 +13,8 @@ With --exclude-file FILE, the runner leaves out the scripts listed in FILE;
 a listed name that is not one of its scripts fails the run.
 
 With --chain CHAIN, the runner selects the scripts that set
-self.chain = 'CHAIN' (main: those without such a line), and builds the block
-cache of CHAIN only.
+self.chain = 'CHAIN' (regtest: also those without such a line), and builds
+the block cache of CHAIN only.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -466,21 +466,22 @@ class FunctionalRunnerShardTests(unittest.TestCase):
 
 class FunctionalRunnerChainTests(unittest.TestCase):
     """--chain CHAIN selects the scripts whose self.chain line names CHAIN
-    (main: the scripts without one), before --shard, and run_tests builds the
-    block cache of CHAIN only.
+    (regtest: also the scripts without one), before --shard, and run_tests
+    builds the block cache of CHAIN only.
 
     main() runs on a tree of its own, as in FunctionalRunnerExcludeFileTests,
     with script files whose text the runner reads."""
 
     SOURCES = {
-        "feature_r.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.chain = 'regtest'\n",
-        "wallet_m.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.num_nodes = 1\n",
-        "mining_r.py": 'class T:\n    def set_test_params(self):\n        self.chain = "regtest"\n',
+        "feature_m.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.chain = 'main'\n",
+        "wallet_r.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.num_nodes = 1\n",
+        "mining_m.py": 'class T:\n    def set_test_params(self):\n        self.chain = "main"\n',
         "mempool_v.py": "class T:\n    def run_test(self):\n        chain = []\n        self.chain = chain\n",
-        "p2p_s.py": "class T:\n    def run_test(self):\n        # self.chain = 'regtest' would select it\n        pass\n",
+        "p2p_s.py": "class T:\n    def run_test(self):\n        # self.chain = 'main' would select it\n        pass\n",
+        "rpc_x.py": "class T(BitcoinTestFramework):\n    def set_test_params(self):\n        self.chain = 'regtest'\n",
     }
-    EXTENDED = ["feature_r.py"]
-    BASE = ["wallet_m.py", "mining_r.py", "mining_r.py --opt", "mempool_v.py", "p2p_s.py"]
+    EXTENDED = ["feature_m.py"]
+    BASE = ["wallet_r.py", "mining_m.py", "mining_m.py --opt", "mempool_v.py", "p2p_s.py", "rpc_x.py"]
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="test_functional_runner.")
@@ -519,21 +520,22 @@ class FunctionalRunnerChainTests(unittest.TestCase):
 
     def test_the_chain_comes_from_the_scripts_line(self):
         chains = {name: test_runner.script_chain(self.tests_dir, name) for name in self.SOURCES}
-        self.assertEqual(chains, {"feature_r.py": "regtest", "wallet_m.py": "main", "mining_r.py": "regtest",
-                                  "mempool_v.py": "main", "p2p_s.py": "main"})
+        self.assertEqual(chains, {"feature_m.py": "main", "wallet_r.py": "regtest", "mining_m.py": "main",
+                                  "mempool_v.py": "regtest", "p2p_s.py": "regtest", "rpc_x.py": "regtest"})
 
-    def test_regtest_selects_the_scripts_that_set_it(self):
-        status, out, ran = self.main("--extended", "--chain=regtest")
+    def test_main_selects_the_scripts_that_set_it(self):
+        status, out, ran = self.main("--extended", "--chain=main")
         self.assertIsNone(status, out)
         # Also the run of the script with an argument.
-        self.assertEqual(ran["test_list"], ["feature_r.py", "mining_r.py", "mining_r.py --opt"])
-        self.assertEqual(ran["chain"], "regtest")
-
-    def test_main_selects_the_other_scripts(self):
-        status, out, ran = self.main("--chain", "main")
-        self.assertIsNone(status, out)
-        self.assertEqual(ran["test_list"], ["wallet_m.py", "mempool_v.py", "p2p_s.py"])
+        self.assertEqual(ran["test_list"], ["feature_m.py", "mining_m.py", "mining_m.py --opt"])
         self.assertEqual(ran["chain"], "main")
+
+    def test_regtest_selects_the_other_scripts(self):
+        status, out, ran = self.main("--chain", "regtest")
+        self.assertIsNone(status, out)
+        # Those without a line and the one that names regtest.
+        self.assertEqual(ran["test_list"], ["wallet_r.py", "mempool_v.py", "p2p_s.py", "rpc_x.py"])
+        self.assertEqual(ran["chain"], "regtest")
 
     def test_without_the_option_every_script_is_selected(self):
         status, out, ran = self.main("--extended")
@@ -544,16 +546,16 @@ class FunctionalRunnerChainTests(unittest.TestCase):
     def test_the_chain_applies_with_the_other_selections_and_before_the_shard(self):
         excluded = os.path.join(self.dir, "excluded-scripts")
         with open(excluded, "w") as f:
-            f.write("feature_r.py\n")
-        status, out, ran = self.main("--extended", "--chain=regtest", "--exclude-file=%s" % excluded)
+            f.write("feature_m.py\n")
+        status, out, ran = self.main("--extended", "--chain=main", "--exclude-file=%s" % excluded)
         self.assertIsNone(status, out)
-        self.assertEqual(ran["test_list"], ["mining_r.py", "mining_r.py --opt"])
-        # Positions in the runner's list: feature_r.py 0, mining_r.py 2, mining_r.py --opt 3.
-        self.assertEqual(self.main("--extended", "--chain=regtest", "--shard=1/2")[2]["test_list"],
-                         ["feature_r.py", "mining_r.py"])
-        self.assertEqual(self.main("--extended", "--chain=regtest", "--shard=2/2")[2]["test_list"],
-                         ["mining_r.py --opt"])
-        self.assertEqual(self.main("--chain=regtest", "wallet_m.py", "mining_r.py")[2]["test_list"], ["mining_r.py"])
+        self.assertEqual(ran["test_list"], ["mining_m.py", "mining_m.py --opt"])
+        # Positions in the runner's list: feature_m.py 0, mining_m.py 2, mining_m.py --opt 3.
+        self.assertEqual(self.main("--extended", "--chain=main", "--shard=1/2")[2]["test_list"],
+                         ["feature_m.py", "mining_m.py"])
+        self.assertEqual(self.main("--extended", "--chain=main", "--shard=2/2")[2]["test_list"],
+                         ["mining_m.py --opt"])
+        self.assertEqual(self.main("--chain=main", "wallet_r.py", "mining_m.py")[2]["test_list"], ["mining_m.py"])
 
     def test_an_unknown_chain_fails_before_any_script_runs(self):
         status, out, ran = self.main("--extended", "--chain=nosuchchain")
@@ -562,8 +564,8 @@ class FunctionalRunnerChainTests(unittest.TestCase):
         self.assertIsNone(ran)
 
     def test_a_selection_without_a_script_on_the_chain_fails_the_run(self):
-        for args in (["--chain=regtest", "wallet_m.py", "p2p_s.py"], ["--chain=main", "feature_r.py"],
-                     ["--chain=regtest", "--filter=wallet"]):
+        for args in (["--chain=main", "wallet_r.py", "p2p_s.py"], ["--chain=regtest", "feature_m.py"],
+                     ["--chain=main", "--filter=wallet"]):
             status, out, ran = self.main(*args)
             self.assertEqual(status, 1, args)
             self.assertIn("ERROR! No selected script runs on", out)

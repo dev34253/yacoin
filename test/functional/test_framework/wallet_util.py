@@ -23,7 +23,7 @@ Rules for porting Bitcoin Core wallet tests to YACoin:
 - dumpprivkey returns {"address_type", "private_key"[, "redeem_script"]}.
 - gettransaction has extra Credit, Debit and token_details fields, and
   returns transactions that aren't in the wallet through the txindex.
-- Wallet files live at os.path.join(node.datadir, '<name>').
+- Wallet files live in the node's chain directory: node.chain_path('<name>').
 - To build and sign transactions with explicit keys (token inputs, which
   the wallet can't sign, or invalid amounts), use yac_tx.py.
 """
@@ -92,7 +92,7 @@ def wipe_chain(node, *, wallet=False):
     if wallet:
         names += ['wallet.dat', 'database', 'db.log']
     for name in names:
-        path = os.path.join(node.datadir, name)
+        path = node.chain_path(name)
         if os.path.isdir(path):
             shutil.rmtree(path)
         elif os.path.exists(path):
