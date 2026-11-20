@@ -40,7 +40,7 @@ from test_framework.util import (
     read_block_file,
 )
 
-BASE = ["-tokenindex=1", "-tokenSupportBlockNumber=25"]
+BASE = ["-tokenindex=1", "-testactivationheight=tokens@25"]
 CBI = ["-checkblockindex=1"]
 
 
@@ -56,10 +56,10 @@ class VerifyDBTest(BitcoinTestFramework):
         connect_nodes(self.nodes[0], 1)
 
     def debug_log_size(self):
-        return os.path.getsize(os.path.join(self.nodes[0].datadir, 'debug.log'))
+        return os.path.getsize(self.nodes[0].debug_log_path)
 
     def debug_log_errors(self, offset):
-        with open(os.path.join(self.nodes[0].datadir, 'debug.log'), encoding='utf-8') as f:
+        with open(self.nodes[0].debug_log_path, encoding='utf-8') as f:
             f.seek(offset)
             return [line for line in f.read().splitlines() if 'ERROR:' in line]
 
@@ -159,8 +159,8 @@ class VerifyDBTest(BitcoinTestFramework):
         self.stop_node(0)
 
         self.log.info("Corrupted undo data")
-        rev = os.path.join(node0.datadir, 'blocks', 'rev00000.dat')
-        data, records = read_block_file(rev, MAGIC_BYTES['mainnet'], checksum_size=32)
+        rev = node0.chain_path('blocks', 'rev00000.dat')
+        data, records = read_block_file(rev, MAGIC_BYTES['regtest'], checksum_size=32)
         data = bytearray(data)
         # Overwrite the middle of the tip's undo record and checksum (written last).
         pos, size = records[-1]
@@ -186,7 +186,7 @@ class VerifyDBTest(BitcoinTestFramework):
         corrupted = block.serialize()
         assert_equal(len(corrupted), len(original))
         self.stop_node(0)
-        blk = os.path.join(node0.datadir, 'blocks', 'blk00000.dat')
+        blk = node0.chain_path('blocks', 'blk00000.dat')
         with open(blk, 'rb') as f:
             data = f.read()
         offset = data.find(original)

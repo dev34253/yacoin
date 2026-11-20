@@ -3,7 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the stake fields getblock reports, with the fork at block 40
-(-testnetNewLogicBlockNumber).
+(-testactivationheight=newlogic@40).
 
 - Every block: the entropy bit is the lowest bit of its hash; the proof hash of
   a proof-of-work block is its hash.

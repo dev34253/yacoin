@@ -62,7 +62,7 @@ class TokenOverflowTest(BitcoinTestFramework):
         self.supports_cli = False
         self.mocktime = TIME_GENESIS_BLOCK
         self.extra_args = [
-            ["-tokenindex=1", "-addressindex=1", "-tokenSupportBlockNumber=10"],
+            ["-tokenindex=1", "-addressindex=1", "-testactivationheight=tokens@10"],
         ]
 
     def mine_blocks(self, count):

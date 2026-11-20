@@ -111,12 +111,12 @@ class TorControlTest(BitcoinTestFramework):
 
     def debug_log(self, start=0):
         """debug.log from byte offset start on."""
-        with open(os.path.join(self.nodes[0].datadir, 'debug.log'), 'rb') as f:
+        with open(self.nodes[0].debug_log_path, 'rb') as f:
             f.seek(start)
             return f.read().decode('utf-8')
 
     def log_size(self):
-        return os.path.getsize(os.path.join(self.nodes[0].datadir, 'debug.log'))
+        return os.path.getsize(self.nodes[0].debug_log_path)
 
     def tor_lines(self, log):
         """The Tor control lines: its own and its thread's start and exit."""

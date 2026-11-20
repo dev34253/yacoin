@@ -24,7 +24,7 @@ import shutil
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
-BASE = ["-tokenindex=1", "-tokenSupportBlockNumber=10"]
+BASE = ["-tokenindex=1", "-testactivationheight=tokens@10"]
 
 
 class LoadblockTest(BitcoinTestFramework):
@@ -45,7 +45,7 @@ class LoadblockTest(BitcoinTestFramework):
         tokens = node0.listtokens('*', True)
         self.stop_node(0)
         blocks_file = os.path.join(self.options.tmpdir, 'blocks.dat')
-        shutil.copyfile(os.path.join(node0.datadir, 'blocks', 'blk00000.dat'), blocks_file)
+        shutil.copyfile(node0.chain_path('blocks', 'blk00000.dat'), blocks_file)
 
         self.log.info("-loadblock")
         with node1.assert_debug_log(["Importing blocks file %s..." % blocks_file,
@@ -69,7 +69,7 @@ class LoadblockTest(BitcoinTestFramework):
 
         self.log.info("bootstrap.dat")
         self.stop_node(2)
-        bootstrap = os.path.join(node2.datadir, 'bootstrap.dat')
+        bootstrap = node2.chain_path('bootstrap.dat')
         shutil.copyfile(blocks_file, bootstrap)
         with node2.assert_debug_log(["Importing bootstrap.dat..."]):
             self.start_node(2)

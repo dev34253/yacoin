@@ -33,8 +33,8 @@ from test_framework.util import (
     read_block_file,
 )
 
-BASE = ["-addressindex=1", "-tokenindex=1", "-tokenSupportBlockNumber=10"]
-MAGIC = MAGIC_BYTES['mainnet']
+BASE = ["-addressindex=1", "-tokenindex=1", "-testactivationheight=tokens@10"]
+MAGIC = MAGIC_BYTES['regtest']
 
 
 def record_block(data, record):
@@ -63,7 +63,7 @@ class ReindexTest(BitcoinTestFramework):
         connect_nodes(self.nodes[0], 1)
 
     def blk_file(self):
-        return os.path.join(self.nodes[0].datadir, 'blocks', 'blk00000.dat')
+        return self.nodes[0].chain_path('blocks', 'blk00000.dat')
 
     def snapshot(self):
         node = self.nodes[0]
@@ -196,7 +196,7 @@ class ReindexTest(BitcoinTestFramework):
 
         self.log.info("-reindex-fast with blocks/index deleted")
         self.stop_node(0)
-        shutil.rmtree(os.path.join(node0.datadir, 'blocks', 'index'))
+        shutil.rmtree(node0.chain_path('blocks', 'index'))
         self.start_node(0, BASE + ["-reindex-fast"])
         assert_equal(self.snapshot(), state)
         self.check_blocks()

@@ -39,7 +39,7 @@ class AbortNodeTest(BitcoinTestFramework):
         connect_nodes(self.nodes[0], 1)
 
     def undo_failures(self):
-        with open(os.path.join(self.nodes[0].datadir, 'debug.log'), encoding='utf-8') as f:
+        with open(self.nodes[0].debug_log_path, encoding='utf-8') as f:
             return f.read().count("DisconnectBlock(): failure reading undo data")
 
     def run_test(self):
@@ -49,7 +49,7 @@ class AbortNodeTest(BitcoinTestFramework):
         disconnect_nodes(node1, 0)
         self.mine_with_mocktime(node0, 3, sync=False)
         tip = node0.getbestblockhash()
-        for path in glob.glob(os.path.join(node0.datadir, 'blocks', 'rev*.dat')):
+        for path in glob.glob(node0.chain_path('blocks', 'rev*.dat')):
             os.remove(path)
 
         self.log.info("invalidateblock without undo data")
