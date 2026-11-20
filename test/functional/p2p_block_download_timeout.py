@@ -73,7 +73,7 @@ class BlockDownloadTimeoutTest(BitcoinTestFramework):
         def check():
             wait_until(lambda: not peer.is_connected or time.time() > start + 75, timeout=90)
             assert_equal([p['inflight'] for p in peers(node)], [])
-        self.known_failure("download timeout ×60 (t2B49V3R item 1)", check, "not([[4]] == [])")
+        self.known_failure("download timeout x60 (t2B49V3R item 1)", check, "not([[4]] == [])")
 
         self.log.info("Today the peer is disconnected after 120 s (the block spacing times the option)")
         with node.assert_debug_log(["Timeout downloading block %s from peer=" % block.hash], timeout=10):
