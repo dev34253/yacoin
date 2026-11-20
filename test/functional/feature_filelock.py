@@ -25,10 +25,11 @@ class FilelockTest(BitcoinTestFramework):
 
     def run_test(self):
         datadir = self.nodes[0].datadir
+        chain_dir = self.nodes[0].chain_path()
         self.log.info("Using datadir {}".format(datadir))
 
         self.log.info("Check that we can't start a second yacoind instance using the same datadir")
-        expected_msg = "Error: Cannot obtain a lock on data directory {}. Yacoin Core is probably already running.".format(datadir)
+        expected_msg = "Error: Cannot obtain a lock on data directory {}. Yacoin Core is probably already running.".format(chain_dir)
         self.nodes[1].assert_start_raises_init_error(extra_args=['-datadir={}'.format(datadir), '-noserver'], expected_msg=expected_msg)
         assert_equal(self.nodes[0].getblockcount(), 0)
 

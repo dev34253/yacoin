@@ -26,7 +26,7 @@ from test_framework.util import (
 )
 
 TOKEN_HEIGHT = 40
-COMMON = ["-tokenSupportBlockNumber=%d" % TOKEN_HEIGHT]
+COMMON = ["-testactivationheight=tokens@%d" % TOKEN_HEIGHT]
 ARGS = [["-addressindex=1"] + COMMON, ["-addressindex=1", "-tokenindex=1"] + COMMON, list(COMMON)]
 ADDRESS_RPCS = ['getaddressbalance', 'getaddressdeltas', 'getaddressutxos', 'getaddresstxids']
 REBUILD = "You need to rebuild the database using -reindex-fast or -reindex to change %s"

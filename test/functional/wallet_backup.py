@@ -118,9 +118,9 @@ class WalletBackupTest(BitcoinTestFramework):
         self.stop_node(2)
 
     def erase_three(self):
-        os.remove(os.path.join(self.nodes[0].datadir, 'wallet.dat'))
-        os.remove(os.path.join(self.nodes[1].datadir, 'wallet.dat'))
-        os.remove(os.path.join(self.nodes[2].datadir, 'wallet.dat'))
+        os.remove(self.nodes[0].chain_path('wallet.dat'))
+        os.remove(self.nodes[1].chain_path('wallet.dat'))
+        os.remove(self.nodes[2].chain_path('wallet.dat'))
 
     def assert_balances(self, balances):
         for node, balance in zip(self.nodes, balances):
@@ -190,9 +190,9 @@ class WalletBackupTest(BitcoinTestFramework):
         wipe_chain(self.nodes[2])
 
         # Restore wallets from backup
-        shutil.copyfile(os.path.join(self.nodes[0].datadir, 'wallet.bak'), os.path.join(self.nodes[0].datadir, 'wallet.dat'))
-        shutil.copyfile(os.path.join(self.nodes[1].datadir, 'wallet.bak'), os.path.join(self.nodes[1].datadir, 'wallet.dat'))
-        shutil.copyfile(os.path.join(self.nodes[2].datadir, 'wallet.bak'), os.path.join(self.nodes[2].datadir, 'wallet.dat'))
+        shutil.copyfile(os.path.join(self.nodes[0].datadir, 'wallet.bak'), self.nodes[0].chain_path('wallet.dat'))
+        shutil.copyfile(os.path.join(self.nodes[1].datadir, 'wallet.bak'), self.nodes[1].chain_path('wallet.dat'))
+        shutil.copyfile(os.path.join(self.nodes[2].datadir, 'wallet.bak'), self.nodes[2].chain_path('wallet.dat'))
 
         self.log.info("Re-starting nodes")
         self.start_three()
@@ -248,11 +248,12 @@ class WalletBackupTest(BitcoinTestFramework):
                                 os.path.join(self.options.tmpdir, 'nonexistent', 'wallet.bak'))
 
         # Backup to source wallet file must fail
+        wallet_dir = self.nodes[0].chain_path()
         sourcePaths = [
-            os.path.join(self.nodes[0].datadir, 'wallet.dat'),
-            os.path.join(self.nodes[0].datadir, '.', 'wallet.dat'),
-            os.path.join(self.nodes[0].datadir, ''),
-            os.path.join(self.nodes[0].datadir)]
+            os.path.join(wallet_dir, 'wallet.dat'),
+            os.path.join(wallet_dir, '.', 'wallet.dat'),
+            os.path.join(wallet_dir, ''),
+            os.path.join(wallet_dir)]
 
         for sourcePath in sourcePaths:
             assert_raises_rpc_error(-4, "backup failed", self.nodes[0].backupwallet, sourcePath)

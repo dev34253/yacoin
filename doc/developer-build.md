@@ -126,9 +126,10 @@ The unit tests run on the mainnet build (`./dev.sh unit`) and must pass on the
 low-difficulty build as well: CI runs them on both (the `unit-tests` job and
 the `build-ubuntu-1604-low-difficulty` job). A test that uses mainnet-only
 data, such as checkpoints or the genesis block, needs its own part for that
-build. The functional tests need the low-difficulty build; those that run on
-regtest also run on the mainnet build, except those listed in
-`test/functional/regtest-excluded-scripts` (see [Functional tests](#functional-tests)).
+build. The functional tests run on the low-difficulty build; those that run
+on regtest (all but the few that keep main) also run on the mainnet build,
+except those listed in `test/functional/regtest-excluded-scripts` (see
+[Functional tests](#functional-tests)).
 To run the unit tests on the low-difficulty build locally:
 
 ```sh
@@ -392,9 +393,20 @@ script's shard does not depend on timing. A shard without scripts is no
 error. The sharded CI jobs (`functional-tests-asan`, `coverage-functional-1`
 and `-2`) use it through `FTEST_SHARD`.
 
+The nodes of a script run on regtest; a script that runs on main sets
+`self.chain = 'main'` and says why in a comment. On regtest a node keeps its
+chain files (`debug.log`, `blocks/`, `chainstate/`, wallets, `mempool.dat`) in
+`<datadir>/regtest`; `TestNode.chain_path(...)` gives their paths on either
+chain. Every test node's `yacoin.conf` has `connect=0` and `listen=1`, so test
+nodes connect only to the nodes of their test (a node started with its own
+`-connect` gets only its own values), and on regtest a `maxtipage` line, so
+regtest test nodes leave initial download whatever the age of their tip. A
+regtest fork height above 1 also moves the Heliopolis height to the fork
+height.
+
 `test_runner.py --chain <chain>` runs only the selected scripts whose nodes
 run on that chain: those with a `self.chain = '<chain>'` line (a script
-without one runs on `main`), applied before `--shard`; the block cache is then
+without one runs on `regtest`), applied before `--shard`; the block cache is then
 built for that chain only (`create_cache.py --cachechain`). A selection without
 such a script, or a script whose line names another chain than `main` or
 `regtest`, fails the run. The scripts on
@@ -404,8 +416,8 @@ low-difficulty parameters (otherwise as `functional-tests`) and runs
 `test_runner.py --chain=regtest --extended`, but the scripts listed in
 `test/functional/regtest-excluded-scripts` (one script name per line, with
 the reason in a comment above it; `--exclude-file`), as the CI job
-`functional-tests-regtest` does. Such a script also runs directly against a
-`dev` build: `test/functional/<script> --configfile=build/dev/test/config.ini`.
+`functional-tests-regtest` does. A regtest script that is not listed also
+runs directly against a `dev` build: `test/functional/<script> --configfile=build/dev/test/config.ini`.
 
 Two runner invocations on the same build directory at the same time do
 interfere: each run without `--keepcache` deletes `build/func/test/cache`

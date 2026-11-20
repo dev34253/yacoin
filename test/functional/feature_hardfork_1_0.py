@@ -63,14 +63,11 @@ OLD_SUBSIDY_29 = 99950000
 
 class HardforkTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.chain = 'regtest'
         self.num_nodes = 3
         self.setup_clean_chain = True
         self.supports_cli = False
+        # The framework moves regtest's heliopolis height to the fork height.
         self.block_fork_1_0 = FORK
-        # The blocks below the fork are version 6, so regtest's heliopolis
-        # height moves to the fork height as well.
-        self.extra_args = [["-testactivationheight=heliopolis@%d" % FORK] for _ in range(self.num_nodes)]
 
     def setup_network(self):
         # Node 2 starts unconnected with an empty chain.
@@ -236,7 +233,7 @@ class HardforkTest(BitcoinTestFramework):
 
         self.log.info("-reindex on node 1 keeps the chain; it no longer marks the old branch invalid")
         tip_b = branch_b[-1].hash
-        self.restart_node(1, extra_args=self.extra_args[1] + ["-reindex"])
+        self.restart_node(1, extra_args=["-reindex"])
         wait_until(lambda: n1.getbestblockhash() == tip_b, timeout=60)
         assert_equal(int(n1.getinfo()['moneysupply'] * COIN), expected_supply)
         assert {'height': 33, 'hash': hash33, 'branchlen': 4, 'status': 'valid-fork'} in n1.getchaintips()

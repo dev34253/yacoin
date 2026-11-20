@@ -28,7 +28,7 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import FailedToStartError
 from test_framework.util import assert_equal
 
-BASE = ["-addressindex=1", "-tokenindex=1", "-tokenSupportBlockNumber=10", "-dbcache=4"]
+BASE = ["-addressindex=1", "-tokenindex=1", "-testactivationheight=tokens@10", "-dbcache=4"]
 ROUNDS = 25
 FANOUT = 100
 SMALL = Decimal('0.02')
@@ -46,11 +46,11 @@ class DBCrashTest(BitcoinTestFramework):
         self.setup_nodes()  # no connections: blocks go in with submitblock
 
     def debug_log_size(self, node):
-        return os.path.getsize(os.path.join(node.datadir, 'debug.log'))
+        return os.path.getsize(node.debug_log_path)
 
     def assert_crashed(self, node, offset):
         assert_equal(node.wait_for_exit(60), 0)
-        with open(os.path.join(node.datadir, 'debug.log'), 'rb') as f:
+        with open(node.debug_log_path, 'rb') as f:
             f.seek(offset)
             assert b"Simulating a crash. Goodbye." in f.read(), "node%d exited without a simulated crash" % node.index
 

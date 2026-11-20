@@ -81,7 +81,7 @@ class ShutdownTest(BitcoinTestFramework):
 
         self.log.info("stop while the Tor control thread is still starting")
         self.stop_node(0)
-        key_file = os.path.join(node.datadir, 'onion_private_key')
+        key_file = node.chain_path('onion_private_key')
         os.mkfifo(key_file)
         self.start_node(0, ["-listenonion=1"])
         log_start = len(self.debug_log(node))
@@ -115,7 +115,7 @@ class ShutdownTest(BitcoinTestFramework):
         return reply
 
     def debug_log(self, node):
-        with open(os.path.join(node.datadir, 'debug.log'), encoding='utf-8') as f:
+        with open(node.debug_log_path, encoding='utf-8') as f:
             return f.read()
 
 

@@ -9,10 +9,25 @@
 feature_activation_heights.py
 
 # Runs on the low-difficulty build.
+feature_block_limits.py
+
+# Runs on the low-difficulty build.
 feature_framework_cache.py
 
 # Runs on the low-difficulty build.
 feature_hardfork_1_0.py
 
 # Runs on the low-difficulty build.
-mining_basic.py
+feature_hardfork_v1_mempool.py
+
+# Runs on the low-difficulty build.
+feature_stake_modifier.py
+
+# Runs on the low-difficulty build.
+feature_verifydb.py
+
+# Runs on the low-difficulty build.
+mining_subsidy_before_fork.py
+
+# Runs on the low-difficulty build.
+wallet_coinbase_maturity.py

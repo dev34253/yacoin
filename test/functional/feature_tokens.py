@@ -52,7 +52,6 @@ NEGATIVE_START = "negative start in token address listings (rX9HGVUZ item 3)"
 
 class TokenRPCTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.chain = 'regtest'
         self.num_nodes = 2
         self.setup_clean_chain = True
         self.supports_cli = False

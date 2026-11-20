@@ -33,7 +33,6 @@ def read_lines(path):
 
 class FrameworkCacheTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.chain = 'regtest'
         self.num_nodes = 2
 
     def run_test(self):

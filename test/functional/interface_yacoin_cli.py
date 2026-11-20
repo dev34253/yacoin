@@ -37,7 +37,7 @@ class TestBitcoinCli(BitcoinTestFramework):
         # It compares yacoin-cli with the RPC interface itself.
         self.supports_cli = False
         # Tokens active from the start, for the reissue argument check.
-        self.extra_args = [['-tokenSupportBlockNumber=0']]
+        self.extra_args = [['-testactivationheight=tokens@0']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_cli()

@@ -35,7 +35,7 @@ class DisableWalletTest (BitcoinTestFramework):
             assert_raises_rpc_error(-32601, 'Method not found', getattr(node, method))
         assert_equal(sorted(node.getinfo()), sorted(['version', 'protocolversion', 'blocks', 'timeoffset', 'up-time',
             'moneysupply', 'connections', 'proxy', 'difficulty', 'testnet', 'paytxfee', 'errors']))
-        assert not os.path.exists(os.path.join(node.datadir, 'wallet.dat'))
+        assert not os.path.exists(node.chain_path('wallet.dat'))
 
         x = node.validateaddress('YLreZ2kuvpjdHcwfF34PyX6GsLa7K7TMsc')
         assert x['isvalid'] == False
@@ -61,7 +61,7 @@ class DisableWalletTest (BitcoinTestFramework):
         self.log.info("Wallet startup options are ignored")
         self.restart_node(0, ['-disablewallet', '-salvagewallet', '-upgradewallet=1', '-zapwallettxes=2', '-wallet=a', '-wallet=b'])
         assert_raises_rpc_error(-32601, 'Method not found', node.getwalletinfo)
-        assert_equal([f for f in os.listdir(node.datadir) if f.startswith('wallet') or f in ('a', 'b')], [])
+        assert_equal([f for f in os.listdir(node.chain_path()) if f.startswith('wallet') or f in ('a', 'b')], [])
 
 
 if __name__ == '__main__':

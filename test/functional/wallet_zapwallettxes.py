@@ -84,7 +84,7 @@ class ZapWalletTXesTest(BitcoinTestFramework):
 
         self.log.info("-zapwallettxes without a value")
         # The mempool saved earlier would bring old transactions back
-        mempool = os.path.join(node.datadir, 'mempool.dat')
+        mempool = node.chain_path('mempool.dat')
         if os.path.exists(mempool):
             os.remove(mempool)
         self.start_node(0)

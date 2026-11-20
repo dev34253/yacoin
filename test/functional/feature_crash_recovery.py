@@ -27,7 +27,7 @@ from test_framework.util import (
     disconnect_nodes,
 )
 
-BASE = ["-addressindex=1", "-tokenindex=1", "-tokenSupportBlockNumber=10"]
+BASE = ["-addressindex=1", "-tokenindex=1", "-testactivationheight=tokens@10"]
 CRASH = ["-dbcrashratio=1", "-dbbatchsize=1"]
 
 

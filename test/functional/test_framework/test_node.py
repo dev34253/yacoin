@@ -29,6 +29,7 @@ except ImportError:  # not POSIX
 from .authproxy import JSONRPCException
 from .mininode import P2PInterface
 from .util import (
+    CONNECT_LINE,
     MAX_NODES,
     REGTEST_TOKEN_HEIGHT,
     append_config,
@@ -104,7 +105,7 @@ class TestNode():
         self.stdout_dir = os.path.join(self.datadir, "stdout")
         self.stderr_dir = os.path.join(self.datadir, "stderr")
         self.chain = chain
-        self.debug_log_path = os.path.join(get_chain_dir(self.datadir, chain), 'debug.log')
+        self.debug_log_path = self.chain_path('debug.log')
         self.rpchost = rpchost
         self.rpc_timeout = timewait
         self.binary = bitcoind
@@ -134,6 +135,10 @@ class TestNode():
                 "-testactivationheight=newlogic@%d" % block_fork_1_0,
                 "-testactivationheight=tokens@%d" % REGTEST_TOKEN_HEIGHT,
             ]
+            # Regtest's Heliopolis height is 0, and the blocks below a fork
+            # above 1 are version 6, so it moves to the fork height.
+            if block_fork_1_0 > 1:
+                self.args.append("-testactivationheight=heliopolis@%d" % block_fork_1_0)
         else:
             self.args.append("-testnetNewLogicBlockNumber=%d" % block_fork_1_0)
         if use_valgrind:
@@ -241,6 +246,8 @@ class TestNode():
         # potentially interfere with our attempt to authenticate
         delete_cookie_file(self.datadir, self.chain)
 
+        self._set_connect_line(self.args + (extra_args or []))
+
         # add environment variable LIBC_FATAL_STDERR_=1 so that libc errors are written to stderr and not the terminal
         subp_env = dict(os.environ, LIBC_FATAL_STDERR_="1")
 
@@ -257,6 +264,32 @@ class TestNode():
 
         if self.start_perf:
             self._start_perf()
+
+    def chain_path(self, *paths):
+        """A path in the node's chain directory: <datadir>/regtest on regtest,
+        the data directory itself on main. The node keeps its debug.log,
+        blocks/, chainstate/, wallet files, mempool.dat, peers.dat and the
+        other files of its chain there."""
+        return os.path.join(get_chain_dir(self.datadir, self.chain), *paths)
+
+    def _set_connect_line(self, args):
+        """The connect=0 line of yacoin.conf (initialize_datadir) is left out
+        while the node's own arguments name -connect: the node then gets only
+        its own -connect values (a config file line would add one more)."""
+        conf = os.path.join(self.datadir, 'yacoin.conf')
+        if not os.path.isfile(conf):
+            return
+        with open(conf, encoding='utf8') as f:
+            lines = f.read().splitlines()
+        own_connect = any(arg.split('=', 1)[0] in ('-connect', '-noconnect') for arg in args)
+        if own_connect == (CONNECT_LINE not in lines):
+            return
+        if own_connect:
+            lines = [line for line in lines if line != CONNECT_LINE]
+        else:
+            lines.append(CONNECT_LINE)
+        with open(conf, 'w', encoding='utf8') as f:
+            f.write(''.join(line + '\n' for line in lines))
 
     def wait_for_rpc_connection(self):
         """Sets up an RPC connection to the bitcoind process. Returns False if unable to connect."""

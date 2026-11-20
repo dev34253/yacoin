@@ -146,7 +146,7 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         self.setup_nodes()
 
     def wallet_path(self, *name):
-        return os.path.join(self.nodes[0].datadir, *name)
+        return self.nodes[0].chain_path(*name)
 
     def write_wallet(self, data):
         with open(self.wallet_path('wallet.dat'), 'wb') as f:
@@ -234,7 +234,7 @@ class WalletStartupOptionsTest(BitcoinTestFramework):
         def salvage_warning(t):
             return ('Warning: Warning: Wallet file corrupt, data salvaged! Original wallet.dat saved as '
                     'wallet.dat.%d.bak in "%s"; if your balance or transactions are incorrect you should '
-                    'restore from a backup.') % (t, n0.datadir)
+                    'restore from a backup.') % (t, n0.chain_path())
 
         def damage_page_1(data):
             for k in range(ps + 8, ps + 12):  # page 1's page number

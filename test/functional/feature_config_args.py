@@ -4,6 +4,10 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test command-line and config file arguments.
 
+The chain selection and the init errors run on a node with a main data
+directory (no regtest line in its yacoin.conf, no blocks mined on main),
+the other checks on the framework's regtest node.
+
 - Chain selection: main by default, -regtest with its own data
   subdirectory, -testnet refused at start.
 - Init errors: invalid config file lines, -testnet with -regtest, -bind
@@ -41,10 +45,9 @@ class ConfArgsTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.supports_cli = False
 
-    def write_conf(self, name, drop=(), extra=()):
+    def write_conf(self, node, name, drop=(), extra=()):
         """Write a copy of the node's yacoin.conf to name in its datadir,
         without the lines starting with one of drop and with extra lines."""
-        node = self.nodes[0]
         with open(os.path.join(node.datadir, 'yacoin.conf'), encoding='utf8') as f:
             lines = [l for l in f.read().splitlines() if not l.startswith(tuple(drop))]
         path = os.path.join(node.datadir, name)
@@ -53,10 +56,9 @@ class ConfArgsTest(BitcoinTestFramework):
         return path
 
     @contextmanager
-    def without_height_options(self):
+    def without_height_options(self, node):
         """Start the node without the framework's -testnetNewLogicBlockNumber
         within the block."""
-        node = self.nodes[0]
         args = node.args
         node.args = [a for a in args if not a.startswith('-testnetNewLogicBlockNumber=')]
         try:
@@ -66,67 +68,77 @@ class ConfArgsTest(BitcoinTestFramework):
 
     def run_test(self):
         self.stop_node(0)
+        self.main_node = self.main_test_node()
         self.test_chain_selection()
         self.test_init_errors()
         self.test_warnings()
         self.test_options()
         self.test_config_files()
 
+    def start_main_node(self, extra_args=None):
+        self.main_node.start(extra_args)
+        self.main_node.wait_for_rpc_connection()
+
+    def stop_main_node(self):
+        self.main_node.stop_node()
+        self.main_node.wait_until_stopped()
+
     def test_chain_selection(self):
-        node = self.nodes[0]
+        node = self.main_node
         regtest_dir = os.path.join(node.datadir, 'regtest')
         self.log.info("The default chain is main, in the datadir itself")
-        self.start_node(0)
+        self.start_main_node()
         assert_equal(node.gettimechaininfo()['chain'], 'main')
-        self.stop_node(0)
+        self.stop_main_node()
         assert not os.path.exists(regtest_dir)
+        assert os.path.isfile(os.path.join(node.datadir, 'debug.log'))
 
         self.log.info("-regtest selects regtest, in the regtest subdirectory")
-        self.start_node(0, ['-regtest=1'])
+        self.start_main_node(['-regtest=1'])
         assert_equal(node.gettimechaininfo()['chain'], 'regtest')
         assert_equal(node.getblockcount(), 0)
-        self.stop_node(0)
+        self.stop_main_node()
         assert os.path.isfile(os.path.join(regtest_dir, 'debug.log'))
         assert os.path.isdir(os.path.join(regtest_dir, 'blocks'))
 
         self.log.info("-testactivationheight on regtest, given twice")
-        self.start_node(0, ['-regtest=1', '-testactivationheight=cltv@10', '-testactivationheight=heliopolis@5'])
+        self.start_main_node(['-regtest=1', '-testactivationheight=cltv@10', '-testactivationheight=heliopolis@5'])
         assert_equal(node.gettimechaininfo()['chain'], 'regtest')
         assert_equal(node.getblockcount(), 0)
-        self.stop_node(0)
+        self.stop_main_node()
 
         self.log.info("-testactivationheight=newlogic and tokens on regtest, no other height option")
-        with self.without_height_options():
-            self.start_node(0, ['-regtest=1', '-testactivationheight=newlogic@5', '-testactivationheight=tokens@7'])
+        with self.without_height_options(node):
+            self.start_main_node(['-regtest=1', '-testactivationheight=newlogic@5', '-testactivationheight=tokens@7'])
             assert_equal(node.gettimechaininfo()['chain'], 'regtest')
             assert_equal(node.getblockcount(), 0)
-            self.stop_node(0)
+            self.stop_main_node()
 
         self.log.info("Regtest without height options: blocks are mined and kept after a restart")
-        with self.without_height_options():
-            self.start_node(0, ['-regtest=1'])
+        with self.without_height_options(node):
+            self.start_main_node(['-regtest=1'])
             assert_equal(node.gettimechaininfo()['chain'], 'regtest')
             hashes = node.generate(3)
             assert_equal(len(hashes), 3)
             assert_equal(node.getblockcount(), 3)
             assert_equal(node.getbestblockhash(), hashes[-1])
-            self.stop_node(0)
-            self.start_node(0, ['-regtest=1'])
+            self.stop_main_node()
+            self.start_main_node(['-regtest=1'])
             assert_equal(node.getblockcount(), 3)
             assert_equal(node.getbestblockhash(), hashes[-1])
             node.generate(1)
             assert_equal(node.getblockcount(), 4)
-            self.stop_node(0)
+            self.stop_main_node()
 
         self.log.info("-testnet alone: the chain parameters know no testnet")
         node.assert_start_raises_init_error(['-testnet=1'], "Error: CreateChainParams: Unknown chain test.",
                                             match=ErrorMatch.FULL_TEXT)
 
     def test_init_errors(self):
-        node = self.nodes[0]
+        node = self.main_node
         self.log.info("Invalid config file lines")
         for line in ['foo', 'foo bar']:
-            self.write_conf('bad.conf', extra=[line])
+            self.write_conf(node, 'bad.conf', extra=[line])
             node.assert_start_raises_init_error(['-conf=bad.conf'],
                 "Error reading configuration file: the options configuration file contains an invalid line '%s'" % line)
 
@@ -200,7 +212,7 @@ class ConfArgsTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.log.info("-conf, relative to the datadir and absolute")
         # Without the file's own epochinterval line: the first value wins.
-        path = self.write_conf('alt.conf', drop=['epochinterval='], extra=['epochinterval=12', 'nowalletbroadcast=1'])
+        path = self.write_conf(node, 'alt.conf', drop=['epochinterval='], extra=['epochinterval=12', 'nowalletbroadcast=1'])
         self.start_node(0, ['-conf=alt.conf'])
         assert_equal(node.getmininginfo()['Epoch Interval'], 12)
         # A negated option in the file.
@@ -213,7 +225,7 @@ class ConfArgsTest(BitcoinTestFramework):
         self.stop_node(0)
 
         self.log.info("Two values in a file: the first wins; options in a section are ignored")
-        self.write_conf('dup.conf', drop=['epochinterval='],
+        self.write_conf(node, 'dup.conf', drop=['epochinterval='],
                         extra=['epochinterval=15', 'epochinterval=16', '[test]', 'nowalletbroadcast=1'])
         self.start_node(0, ['-conf=dup.conf'])
         assert_equal(node.getmininginfo()['Epoch Interval'], 15)

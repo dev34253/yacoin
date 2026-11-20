@@ -56,7 +56,7 @@ class TokenReorgTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         # -reindex with the fork at block 0 doesn't work (card XpHqZPNh).
         self.block_fork_1_0 = 1
-        self.extra_args = [["-tokenindex=1", "-addressindex=1", "-tokenSupportBlockNumber=10"]] * 3
+        self.extra_args = [["-tokenindex=1", "-addressindex=1", "-testactivationheight=tokens@10"]] * 3
 
     def state(self, node):
         """Token state as the RPCs show it.

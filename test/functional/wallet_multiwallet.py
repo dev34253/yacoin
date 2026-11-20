@@ -97,11 +97,11 @@ class MultiWalletTest(BitcoinTestFramework):
         assert_equal([w.getbalance() for w in (w1, w2, w3)], balances)
         dump = w1.dumpwallet(os.path.join(node.datadir, 'w1.dump'))['filename']
         assert_equal(dump, os.path.join(node.datadir, 'w1.dump'))
-        w1.backupwallet(os.path.join(node.datadir, 'w1.bak'))
+        w1.backupwallet(node.chain_path('w1.bak'))
 
         self.log.info("Init errors")
         self.stop_node(0)
-        datadir = node.datadir
+        datadir = node.chain_path()
 
         def init_error(args, message):
             node.assert_start_raises_init_error(args, message)

@@ -27,7 +27,7 @@ from test_framework.util import (
     wait_until,
 )
 
-MAGIC = MAGIC_BYTES['mainnet']
+MAGIC = MAGIC_BYTES['regtest']
 
 
 class SignalsTest(BitcoinTestFramework):
@@ -37,7 +37,7 @@ class SignalsTest(BitcoinTestFramework):
         self.block_fork_1_0 = 1
 
     def debug_log(self, name='debug.log'):
-        with open(os.path.join(self.nodes[0].datadir, name), encoding='utf-8') as f:
+        with open(self.nodes[0].chain_path(name), encoding='utf-8') as f:
             return f.read()
 
     def run_test(self):
@@ -63,7 +63,7 @@ class SignalsTest(BitcoinTestFramework):
             self.mine_with_mocktime(node, 1)
 
         self.log.info("SIGHUP")
-        log_file = os.path.join(node.datadir, 'debug.log')
+        log_file = node.debug_log_path
         os.rename(log_file, log_file + '.1')
         node.send_signal(signal.SIGHUP)
         block_hash = self.mine_with_mocktime(node, 1)[0]
@@ -78,7 +78,7 @@ class SignalsTest(BitcoinTestFramework):
         self.stop_node(0)
         # 128 MiB of record headers whose size check fails: the reindex scans
         # them byte by byte.
-        junk = os.path.join(node.datadir, 'blocks', 'blk00001.dat')
+        junk = node.chain_path('blocks', 'blk00001.dat')
         with open(junk, 'wb') as f:
             f.write((MAGIC + b'\xff\xff\xff\xff') * (128 * 131072))
         start = len(self.debug_log())

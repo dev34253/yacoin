@@ -16,6 +16,10 @@ Test the following RPCs:
     - getchaintxstats (including two blocks with the same time)
     - calculatescrypthash, calculateblockhash
     - verifychain
+    - verificationprogress: 1.0 on regtest, whose chain data has no
+      transaction rate; on a main node (genesis only, no blocks mined on
+      main) the tip's transaction count over the count main's chain data
+      expects now.
 
 Tests correspond to code in rpc/blockchain.cpp.
 """
@@ -73,8 +77,8 @@ class BlockchainTest(BitcoinTestFramework):
         self._test_gettxout()
         self._test_waitfor()
         self._test_getchaintxstats_same_time()
-        # More transactions than at the first check: the estimate rose
-        assert self._check_verificationprogress() > self.progress
+        assert_equal(self.nodes[0].gettimechaininfo()['verificationprogress'], 1)
+        self._test_verificationprogress_main()
         # Last: the invalidation can't be undone.
         self._test_getchaintxstats_not_in_main_chain()
 
@@ -109,21 +113,32 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(res['blocks'], 40)
         assert_equal(res['headers'], 40)
         assert_equal(res['txcount'], 41)
-        self.progress = self._check_verificationprogress()
+        assert_equal(res['verificationprogress'], 1)
 
-    def _check_verificationprogress(self):
+    def _test_verificationprogress_main(self):
+        self.log.info("verificationprogress on main follows main's chain data")
+        self.stop_node(0)
+        node = self.main_test_node()
+        node.start()
+        node.wait_for_rpc_connection()
+        assert_equal(node.gettimechaininfo()['txcount'], 1)
+        self._check_verificationprogress(node)
+        node.stop_node()
+        node.wait_until_stopped()
+        self.start_node(0)
+
+    def _check_verificationprogress(self, node):
         """verificationprogress is the tip's transaction count over the count the
         chain data expects now (the node's clock, not the mock time)."""
         before = time.time()
-        res = self.nodes[0].gettimechaininfo()
+        res = node.gettimechaininfo()
         after = time.time() + 1
         progress = float(res['verificationprogress'])
 
         def expected(now):
             return res['txcount'] / (CHAIN_TX_COUNT + (int(now) - CHAIN_TX_TIME) * CHAIN_TX_RATE)
-        assert 0 < progress <= 1
+        assert 0 < progress < 1
         assert expected(after) * (1 - 1e-9) <= progress <= expected(before) * (1 + 1e-9), progress
-        return progress
 
     def _test_getchaintxstats(self):
         self.log.info("Test getchaintxstats")

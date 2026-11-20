@@ -224,7 +224,7 @@ class AddrTest(BitcoinTestFramework):
         node.setban("99.99.99.99", "add")
         self.stop_node(2)
         for name in ["peers.dat", "banlist.dat"]:
-            with open(os.path.join(node.datadir, name), "wb") as f:
+            with open(node.chain_path(name), "wb") as f:
                 f.write(b"junk" * 10)
         with node.assert_debug_log(["Invalid or missing peers.dat; recreating",
                                     "Invalid or missing banlist.dat; recreating"]):

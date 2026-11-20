@@ -142,8 +142,8 @@ class WalletTimelockRPCTest(BitcoinTestFramework):
         node1.backupwallet(backup)
         self.stop_node(1)
         wipe_chain(node1, wallet=True)
-        assert not os.path.exists(os.path.join(node1.datadir, 'blocks'))
-        shutil.copyfile(backup, os.path.join(node1.datadir, 'wallet.dat'))
+        assert not os.path.exists(node1.chain_path('blocks'))
+        shutil.copyfile(backup, node1.chain_path('wallet.dat'))
         self.start_node(1)
         node1 = self.nodes[1]
         connect_nodes(node1, 0)

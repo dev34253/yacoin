@@ -137,7 +137,7 @@ class SetGenerateTest(BitcoinTestFramework):
 
     @staticmethod
     def debug_log(node):
-        return os.path.join(node.datadir, 'debug.log')
+        return node.debug_log_path
 
     def connect_stored_blocks(self, node):
         """Connect the blocks that are stored but not connected (getchaintips
