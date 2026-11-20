@@ -135,10 +135,10 @@ class InvalidTxTest(BitcoinTestFramework):
         return tx
 
     def debug_log_size(self):
-        return os.path.getsize(os.path.join(self.nodes[0].datadir, 'debug.log'))
+        return os.path.getsize(self.nodes[0].debug_log_path)
 
     def debug_log_since(self, offset):
-        with open(os.path.join(self.nodes[0].datadir, 'debug.log'), encoding='utf-8') as f:
+        with open(self.nodes[0].debug_log_path, encoding='utf-8') as f:
             f.seek(offset)
             return f.read()
 

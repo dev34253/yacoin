@@ -64,7 +64,7 @@ class RPCInterfaceTest(BitcoinTestFramework):
         command = info['active_commands'][0]
         assert_equal(command['method'], 'getrpcinfo')
         assert_greater_than_or_equal(command['duration'], 0)
-        assert_equal(info['logpath'], os.path.join(self.nodes[0].datadir, 'debug.log'))
+        assert_equal(info['logpath'], self.nodes[0].debug_log_path)
         # A number, not a string.
         assert_equal(info['RPCport'], rpc_port(0))
 
@@ -161,7 +161,7 @@ class RPCInterfaceTest(BitcoinTestFramework):
         self.log.info("Testing work queue exceeded...")
         self.restart_node(0, ['-rpcworkqueue=1', '-rpcthreads=1'])
         node = self.nodes[0]
-        debug_log = os.path.join(node.datadir, 'debug.log')
+        debug_log = node.debug_log_path
         with open(debug_log, 'rb') as f:
             f.seek(0, 2)
             log_start = f.tell()

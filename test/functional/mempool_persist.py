@@ -104,7 +104,7 @@ class MempoolPersistTest(BitcoinTestFramework):
         assert large in self.nodes[0].getrawmempool()
 
         self.log.debug("Stop node0 with mempool.dat.new pointing at a full device. Verify that the dump fails and mempool.dat keeps the earlier dump.")
-        mempool_dat = os.path.join(self.nodes[0].datadir, 'mempool.dat')
+        mempool_dat = self.nodes[0].chain_path('mempool.dat')
         with open(mempool_dat, 'rb') as f:
             earlier_dump = f.read()
         os.symlink('/dev/full', mempool_dat + '.new')

@@ -97,6 +97,9 @@ def make_writable(path):
 
 class ToolReplayTest(BitcoinTestFramework):
     def set_test_params(self):
+        # Main: the replay tool reads a main data directory (the chain files
+        # in the data directory itself) and starts its nodes on main.
+        self.chain = 'main'
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.block_fork_1_0 = 1
