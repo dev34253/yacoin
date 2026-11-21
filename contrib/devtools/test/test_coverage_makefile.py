@@ -1,8 +1,10 @@
 """Tests of the test runner calls of "make cov-functional" in Makefile.am.
 
 The target runs test/functional/test_runner.py twice: the scripts in
-parallel, then those of FTEST_SERIAL alone. FTEST_SHARD=K/N passes
---shard=K/N to both calls; without it neither call has --shard.
+parallel, then those of FTEST_SERIAL alone, both on regtest
+(--chain=regtest) with the scripts of test/functional/regtest-excluded-scripts
+left out. FTEST_SHARD=K/N passes --shard=K/N to both calls; without it
+neither call has --shard.
 
 The coverage part of Makefile.am (between "if USE_LCOV" and its "endif")
 is copied into a makefile of its own and printed with "make -n", so no
@@ -47,9 +49,12 @@ class CovFunctionalRunnerCallsTests(unittest.TestCase):
         return [" ".join(call.split()) for call in re.findall(r"(test/functional/test_runner\.py -j [^>]*)>", out)]
 
     def test_without_a_shard_neither_call_has_the_option(self):
+        select = "--chain=regtest --exclude-file=/s/test/functional/regtest-excluded-scripts"
         self.assertEqual(self.runner_calls(), [
-            "test/functional/test_runner.py -j 4 --exclude=p2p_invalid_messages.py --tmpdirprefix=/b/test/tmp",
-            "test/functional/test_runner.py -j 1 --keepcache --tmpdirprefix=/b/test/tmp p2p_invalid_messages.py",
+            "test/functional/test_runner.py -j 4 %s --exclude=p2p_invalid_messages.py --tmpdirprefix=/b/test/tmp"
+            % select,
+            "test/functional/test_runner.py -j 1 --keepcache %s --tmpdirprefix=/b/test/tmp p2p_invalid_messages.py"
+            % select,
         ])
         self.assertEqual(self.runner_calls("FTEST_SHARD="), self.runner_calls())
 
