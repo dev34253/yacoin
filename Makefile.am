@@ -208,19 +208,17 @@ if USE_LCOV
 
 COV_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 # cov-functional runs the functional test scripts FTEST_JOBS in parallel
-# (gcov merges the counters of concurrent processes under a file lock), then
-# the scripts in FTEST_SERIAL one at a time: at -O0 and next to other scripts,
-# p2p_invalid_messages' 2 s ping checks during its junk-message flood fail.
+# (gcov merges the counters of concurrent processes under a file lock).
+# FTEST_TIMEOUT_FACTOR is passed to every script as --timeout-factor; scripts
+# that read it multiply their timeouts by it (the coverage build is
+# unoptimised and instrumented).
 FTEST_JOBS ?= 4
-FTEST_SERIAL ?= p2p_invalid_messages.py
-# FTEST_SHARD=K/N runs shard K of N of the scripts (test_runner.py --shard),
-# in both runner calls; unset: all scripts. Both calls run the scripts on
-# regtest but those of the list (FTEST_SELECT).
+FTEST_TIMEOUT_FACTOR ?= 4
+# FTEST_SHARD=K/N runs shard K of N of the scripts (test_runner.py --shard);
+# unset: all scripts. The scripts run on regtest but those of the list
+# (FTEST_SELECT).
 FTEST_SHARD ?=
 FTEST_SELECT = --chain=regtest --exclude-file=$(abs_top_srcdir)/test/functional/regtest-excluded-scripts
-cov_comma := ,
-cov_space := $(subst ,, )
-FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
 FTEST_SHARD_OPT = $(if $(strip $(FTEST_SHARD)),--shard=$(strip $(FTEST_SHARD)))
 COV_TOOLS = $(abs_top_srcdir)/contrib/devtools
 COV_CAPTURE = $(COV_TOOLS)/coverage-capture.sh --geninfo "$(GENINFO) $(LCOV_OPTS)" \
@@ -273,18 +271,12 @@ cov-functional:
 	if test "$(abs_top_srcdir)" != "$(abs_top_builddir)"; then \
 	  ln -sf $(abs_top_srcdir)/test/functional/test_runner.py test/functional/test_runner.py; fi
 	$(LCOV) $(LCOV_OPTS) -q -z -d $(abs_builddir)/src
-	@# The baseline only reads .gcno files, so it runs while the tests run. The
-	@# scripts in FTEST_SERIAL run after the others, alone, on the cache the
-	@# first run made.
+	@# The baseline only reads .gcno files, so it runs while the tests run.
 	nice -n 10 $(COV_CAPTURE) --initial --out functional_baseline.info > functional_baseline.log 2>&1 & pid=$$!; \
 	  trap 'kill $$pid 2>/dev/null' INT TERM HUP; \
 	  status=0; \
-	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_SELECT) $(FTEST_EXCLUDE) $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp \
-	    > functional_test.log 2>&1 || status=1; \
-	  if test -n "$(strip $(FTEST_SERIAL))"; then \
-	    test/functional/test_runner.py -j 1 --keepcache $(FTEST_SELECT) $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp $(FTEST_SERIAL) \
-	      >> functional_test.log 2>&1 || status=1; \
-	  fi; \
+	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_SELECT) --timeout-factor=$(FTEST_TIMEOUT_FACTOR) $(FTEST_SHARD_OPT) \
+	    --tmpdirprefix=$(abs_builddir)/test/tmp > functional_test.log 2>&1 || status=1; \
 	  echo $$status > functional_test.status; \
 	  wait $$pid || { cat functional_baseline.log >&2; exit 1; }
 	$(COV_FUNCTIONS) --out functional_test_functions.json > functional_test_functions.log 2>&1 || \

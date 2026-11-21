@@ -1,10 +1,10 @@
-"""Tests of the test runner calls of "make cov-functional" in Makefile.am.
+"""Tests of the test runner call of "make cov-functional" in Makefile.am.
 
-The target runs test/functional/test_runner.py twice: the scripts in
-parallel, then those of FTEST_SERIAL alone, both on regtest
-(--chain=regtest) with the scripts of test/functional/regtest-excluded-scripts
-left out. FTEST_SHARD=K/N passes --shard=K/N to both calls; without it
-neither call has --shard.
+The target runs test/functional/test_runner.py once: FTEST_JOBS scripts in
+parallel on regtest (--chain=regtest) with the scripts of
+test/functional/regtest-excluded-scripts left out, and
+--timeout-factor=$(FTEST_TIMEOUT_FACTOR) passed to every script.
+FTEST_SHARD=K/N passes --shard=K/N; without it the call has no --shard.
 
 The coverage part of Makefile.am (between "if USE_LCOV" and its "endif")
 is copied into a makefile of its own and printed with "make -n", so no
@@ -22,6 +22,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAKEFILE_AM = os.path.join(HERE, "..", "..", "..", "Makefile.am")
+SELECT = "--chain=regtest --exclude-file=/s/test/functional/regtest-excluded-scripts"
 
 
 def coverage_part():
@@ -48,30 +49,22 @@ class CovFunctionalRunnerCallsTests(unittest.TestCase):
                              check=True, capture_output=True, text=True).stdout.replace("\\\n", " ")
         return [" ".join(call.split()) for call in re.findall(r"(test/functional/test_runner\.py -j [^>]*)>", out)]
 
-    def test_without_a_shard_neither_call_has_the_option(self):
-        select = "--chain=regtest --exclude-file=/s/test/functional/regtest-excluded-scripts"
+    def test_one_call_runs_every_script_with_the_timeout_factor(self):
         self.assertEqual(self.runner_calls(), [
-            "test/functional/test_runner.py -j 4 %s --exclude=p2p_invalid_messages.py --tmpdirprefix=/b/test/tmp"
-            % select,
-            "test/functional/test_runner.py -j 1 --keepcache %s --tmpdirprefix=/b/test/tmp p2p_invalid_messages.py"
-            % select,
+            "test/functional/test_runner.py -j 4 %s --timeout-factor=4 --tmpdirprefix=/b/test/tmp" % SELECT,
         ])
         self.assertEqual(self.runner_calls("FTEST_SHARD="), self.runner_calls())
 
-    def test_the_shard_reaches_both_calls(self):
-        calls = self.runner_calls("FTEST_SHARD=2/3")
-        self.assertEqual(len(calls), 2)
-        for call in calls:
-            self.assertEqual(call.split().count("--shard=2/3"), 1, call)
-        self.assertEqual([c.replace(" --shard=2/3", "") for c in calls], self.runner_calls())
+    def test_the_jobs_and_the_timeout_factor_can_be_set(self):
+        self.assertEqual(self.runner_calls("FTEST_JOBS=2", "FTEST_TIMEOUT_FACTOR=1.5"), [
+            "test/functional/test_runner.py -j 2 %s --timeout-factor=1.5 --tmpdirprefix=/b/test/tmp" % SELECT,
+        ])
 
-    def test_the_serial_scripts_get_the_shard_too(self):
-        calls = self.runner_calls("FTEST_SHARD=1/2", "FTEST_SERIAL=p2p_a.py p2p_b.py")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("--exclude=p2p_a.py,p2p_b.py", calls[0].split())
-        self.assertIn("--shard=1/2", calls[0].split())
-        self.assertTrue(calls[1].endswith(" p2p_a.py p2p_b.py"), calls[1])
-        self.assertIn("--shard=1/2", calls[1].split())
+    def test_the_shard_reaches_the_call(self):
+        calls = self.runner_calls("FTEST_SHARD=2/3")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].split().count("--shard=2/3"), 1, calls[0])
+        self.assertEqual([c.replace(" --shard=2/3", "") for c in calls], self.runner_calls())
 
 
 if __name__ == "__main__":
