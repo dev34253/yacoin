@@ -767,6 +767,15 @@ class TreeExcludedScriptsTests(unittest.TestCase):
         for name in names:
             self.assertIn(test_runner.script_chain(tests_dir, name), ("main", "regtest"), name)
 
+    def test_every_script_outside_the_regtest_list_runs_on_regtest(self):
+        # The runs on the mainnet build select --chain=regtest; a script on
+        # main that is not listed would run in no job.
+        tests_dir = os.path.join(HERE, "..", "..", "..", "test", "functional")
+        listed = set(self.check_list("test", "functional", "regtest-excluded-scripts"))
+        on_main = sorted({test.split()[0] for test in test_runner.ALL_SCRIPTS
+                          if test_runner.script_chain(tests_dir, test.split()[0]) != "regtest"} - listed)
+        self.assertEqual(on_main, [])
+
 
 if __name__ == "__main__":
     unittest.main()
