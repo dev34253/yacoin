@@ -8,6 +8,7 @@ import configparser
 from enum import Enum
 import logging
 import argparse
+import math
 import os
 import pdb
 import random
@@ -52,6 +53,17 @@ TMPDIR_PREFIX = "bitcoin_func_test_"
 # The chains a script can choose with self.chain; create_cache.py builds the
 # block cache of each.
 CHAINS = ('main', 'regtest')
+
+
+def timeout_factor(value):
+    """Type of --timeout-factor: a finite number of at least 1."""
+    try:
+        factor = float(value)
+    except ValueError:
+        factor = None
+    if factor is None or not math.isfinite(factor) or factor < 1:
+        raise argparse.ArgumentTypeError("must be a finite number of at least 1, not {!r}".format(value))
+    return factor
 
 
 class SkipTest(Exception):
@@ -184,6 +196,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                             help="run nodes under the valgrind memory error detector: expect at least a ~10x slowdown, valgrind 3.14 or later required")
         parser.add_argument("--randomseed", type=int,
                             help="set a random seed for deterministically reproducing a previous test run")
+        parser.add_argument("--timeout-factor", dest="timeout_factor", type=timeout_factor, default=1,
+                            help="multiply the timeouts of the scripts that read it (self.options.timeout_factor) by this factor, a finite number of at least 1 (default: %(default)s)")
         self.add_options(parser)
         self.options = parser.parse_args()
 

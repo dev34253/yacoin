@@ -454,7 +454,7 @@ consensus, `build/cov` (`--enable-lcov`, `-O0 -g`), as CI runs the tests:
 | Make target | Runs |
 |---|---|
 | `make cov-unit` | `test_bitcoin` (all unit tests) |
-| `make cov-functional` | The functional tests on regtest, but those listed in `test/functional/regtest-excluded-scripts`: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); `make cov-functional FTEST_SHARD=K/N` runs only shard K of N of them (`./dev.sh cov` runs all) |
+| `make cov-functional` | The functional tests on regtest, but those listed in `test/functional/regtest-excluded-scripts`: `FTEST_JOBS` scripts in parallel (default 4), with `--timeout-factor=$(FTEST_TIMEOUT_FACTOR)` (default 4); `make cov-functional FTEST_SHARD=K/N` runs only shard K of N of them (`./dev.sh cov` runs all) |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests
@@ -481,10 +481,10 @@ Notes:
 - In the build image (`./dev.sh container cov-unit`, `cov-functional`), with
   the depends packages cached and without ccache, `cov-unit` takes about 11
   minutes on 8 cores (build about 5, tests about 4, captures about 1) and
-  `cov-functional` about 19 (build about 6, the scripts in parallel about 7,
-  `p2p_invalid_messages.py` alone 3½ to 4½, captures about 1); with 4 cores
-  (`docker run --cpus=4`) about 13 and 19 minutes. The unit test time is
-  bounded by `transaction_tests/test_big_transaction` (about 4 minutes).
+  `cov-functional` about 15 (build about 7, the scripts in parallel about 8,
+  captures about 1); with 4 cores (`docker run --cpus=4`) about 13 and 17
+  minutes. The unit test time is bounded by
+  `transaction_tests/test_big_transaction` (about 4 minutes).
 - To keep that time down, the captures run `geninfo --parallel`
   (`contrib/devtools/coverage-capture.sh`), the baseline is captured while
   the tests run, and the unit test suites run in parallel

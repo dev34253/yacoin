@@ -39,6 +39,8 @@ regtest:
 - start_nodes, when one node fails to start, stops the nodes it connected
   to by the stop RPC and the others by SIGTERM, and raises the start error;
   wait_for_exit_or_kill kills a node that does not exit in time.
+- --timeout-factor takes a finite number of at least 1; any other value is
+  an argument error before a node starts.
 """
 
 from decimal import Decimal
@@ -207,6 +209,7 @@ class FrameworkTest(BitcoinTestFramework):
 
     def run_test(self):
         self.test_mocktime_at_start()
+        self.test_timeout_factor()
         self.test_regtest_chain()
         self.test_main_node()
         self.test_tip_age()
@@ -235,6 +238,24 @@ class FrameworkTest(BitcoinTestFramework):
             assert "-mocktime=%d" % self.start_mocktime in node.process.args
         block = self.nodes[0].getblockheader(self.nodes[0].generate(1)[0])
         assert_equal(block['time'], self.start_mocktime)
+
+    def test_timeout_factor(self):
+        script = os.path.realpath(__file__)
+        for value in ("0.5", "0", "-1", "abc", "nan", "inf"):
+            self.log.info("A script started with --timeout-factor=%s stops with an argument error", value)
+            tmpdir = os.path.join(self.options.tmpdir, "timeout_factor_%s" % value)
+            result = subprocess.run([sys.executable, script, "--timeout-factor=%s" % value, "--tmpdir=%s" % tmpdir,
+                                     "--configfile=%s" % self.options.configfile],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+            assert_equal(result.returncode, 2)
+            assert "argument --timeout-factor: must be a finite number of at least 1, not '%s'" % value in result.stderr, \
+                result.stderr
+            # The data directories are made in the script's temporary directory.
+            assert not os.path.exists(tmpdir)
+
+        self.log.info("This script's own --timeout-factor is a number of at least 1")
+        factor = self.options.timeout_factor
+        assert isinstance(factor, (int, float)) and factor >= 1, factor
 
     def test_regtest_chain(self):
         self.log.info("A script without a chain line runs on regtest")
