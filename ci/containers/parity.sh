@@ -55,7 +55,7 @@ done
 
 default_modes() {
     case "$1" in
-        ubuntu.16.04) echo build,unit-tests,functional-tests-regtest ;;
+        ubuntu.16.04) echo build,unit-tests,build-low-difficulty ;;
         ubuntu.22.04) echo build,unit-tests,functional-tests ;;
         *) echo build ;;
     esac
@@ -173,7 +173,7 @@ check_mode() {
         unit-tests)
             grep -E '^[0-9]+ passed, 0 failed' "$log" | sed 's/^/    unit test suites: /' | grep . ||
                 { echo "    no '<n> passed, 0 failed' line"; return 1; } ;;
-        functional-tests|functional-tests-regtest)
+        functional-tests|build-low-difficulty)
             local n
             n=$(grep -cE '^[A-Za-z0-9_.-]+\.py[^|]*\|.*Passed' "$log" || true)
             grep -qE '^ALL +\|.*Passed' "$log" || { echo "    the runner did not report ALL passed"; return 1; }

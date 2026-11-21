@@ -11,7 +11,12 @@
 #                     the release build with --enable-low-difficulty-for-development,
 #                     then all unit test suites of its test_bitcoin in parallel
 #                     (logs in /src/build/docker-<image>/build-low-difficulty/
-#                     unit-test-logs, recreated on every run)
+#                     unit-test-logs, recreated on every run), then the
+#                     functional test scripts listed in
+#                     test/functional/regtest-excluded-scripts on that build,
+#                     FTEST_JOBS in parallel (test_runner.py --include-file;
+#                     data and logs in /src/build/docker-<image>/
+#                     build-low-difficulty/test/tmp, recreated on every run)
 #   unit-tests        build test_bitcoin and bench_yacoin (mainnet consensus,
 #                     --enable-bench), run all unit test suites in parallel,
 #                     then print the CPU model and run every benchmark once in
@@ -39,10 +44,12 @@
 #                     (contrib/devtools/run-fuzz-corpus.py, logs in
 #                     /src/build/docker-<image>/fuzz-corpus/fuzz-corpus-logs);
 #                     any report fails the mode. Ubuntu 22.04 image only
-#   functional-tests  low-difficulty build, then all functional test scripts,
-#                     the extended ones too, FTEST_JOBS in parallel; with
-#                     FTEST_SHARD=K/N only shard K of N of them
-#                     (test_runner.py --shard)
+#   functional-tests  mainnet consensus build, then the functional test
+#                     scripts, the extended ones too, FTEST_JOBS in parallel,
+#                     on regtest (test_runner.py --chain=regtest) but those
+#                     listed in test/functional/regtest-excluded-scripts
+#                     (build-low-difficulty runs them); with FTEST_SHARD=K/N
+#                     only shard K of N of them (test_runner.py --shard)
 #   functional-tests-asan
 #                     functional-tests under AddressSanitizer, LeakSanitizer
 #                     and UBSan (the flags and runtime options of
@@ -54,20 +61,14 @@
 #                     scripts' outcome; the reports are printed at the end.
 #                     The scripts listed in
 #                     test/sanitizer_suppressions/asan-excluded-scripts are
-#                     left out. Ubuntu 22.04 image only
-#   functional-tests-regtest
-#                     functional-tests on the mainnet build (no
-#                     --enable-low-difficulty-for-development) for the
-#                     scripts that run on regtest (test_runner.py
-#                     --chain=regtest; FTEST_SHARD as in functional-tests),
-#                     but those listed in
-#                     test/functional/regtest-excluded-scripts
+#                     left out, as well as those functional-tests leaves out.
+#                     Ubuntu 22.04 image only
 #   cov-unit          coverage build (--enable-lcov, -O0) and "make cov-unit";
 #                     needs lcov 2.6 or newer (Ubuntu 22.04 image only)
-#   cov-functional    low-difficulty coverage build and "make cov-functional"
-#                     (functional test scripts FTEST_JOBS in parallel; with
-#                     FTEST_SHARD=K/N only shard K of N of them); needs
-#                     lcov 2.6 or newer
+#   cov-functional    the same coverage build and "make cov-functional"
+#                     (the scripts of functional-tests but the extended ones,
+#                     FTEST_JOBS in parallel; with FTEST_SHARD=K/N only shard
+#                     K of N of them); needs lcov 2.6 or newer
 #
 # The test modes build out of tree in /src/build/docker-<image>/<mode>, which
 # is recreated on every run. If a cache dir is mounted at /cache, depends
@@ -76,10 +77,11 @@
 #
 # Environment: JOBS (default: number of CPUs), BUILDVERSION (passed through
 # to the version string), FTEST_JOBS (functional-tests, functional-tests-asan,
-# functional-tests-regtest, cov-functional: functional test scripts in parallel, default 4: the CI
-# runners' vCPUs and the number the run times were measured with; a fixed
-# default, so a local run schedules the scripts as CI does whatever its CPU
-# count), FTEST_SHARD (the same modes: K/N runs shard K of N of the scripts;
+# cov-functional, build-low-difficulty: functional test scripts in parallel,
+# default 4: the CI runners' vCPUs and the number the run times were measured
+# with; a fixed default, so a local run schedules the scripts as CI does
+# whatever its CPU count), FTEST_SHARD (functional-tests,
+# functional-tests-asan, cov-functional: K/N runs shard K of N of the scripts;
 # unset: all), SANITIZE (unit-tests-asan: address or undefined; unset: both).
 # SRC_DIR and CACHE_DIR override /src and /cache.
 set -euo pipefail
@@ -117,8 +119,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|functional-tests-regtest|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, functional-tests-regtest, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, cov-unit, cov-functional)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -158,37 +160,39 @@ if [[ "$MODE" == unit-tests-asan ]]; then
     [[ "${SANITIZE:-}" =~ ^(|address|undefined)$ ]] ||
         die "SANITIZE must be address, undefined or unset (both), not '$SANITIZE'"
 fi
-# test_runner.py fails after the build when it can't read its list of scripts
-# to leave out; the mode checks for it first.
+# test_runner.py fails after the build when it can't read its lists of
+# scripts to leave out or to run; the modes check for them first. Without
+# the options the runner would pass them on to every script, which would all
+# fail on them after the build.
 asan_excluded_scripts="$SRC/test/sanitizer_suppressions/asan-excluded-scripts"
+regtest_excluded_scripts="$SRC/test/functional/regtest-excluded-scripts"
+runner_options=()
+case "$MODE" in
+    functional-tests) runner_options=(--chain --exclude-file) ;;
+    functional-tests-asan) runner_options=(--chain --exclude-file --sanitizer-logs) ;;
+    build-low-difficulty) runner_options=(--include-file) ;;
+esac
 if [[ "$MODE" == functional-tests-asan ]]; then
     [[ "$IMAGE" == ubuntu.22.04 ]] || die "functional-tests-asan runs only in the Ubuntu 22.04 image (this is $IMAGE)"
     [[ -f "$lsan_suppressions" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/lsan"
     [[ -f "$asan_excluded_scripts" ]] || die "this YaCoin tree has no test/sanitizer_suppressions/asan-excluded-scripts"
-    # Without the options the runner would pass them on to every script,
-    # which would all fail on them after the build.
+fi
+if (( ${#runner_options[@]} )); then
+    [[ -f "$regtest_excluded_scripts" ]] || die "this YaCoin tree has no test/functional/regtest-excluded-scripts"
     runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
-    for option in --sanitizer-logs --exclude-file; do
+    for option in "${runner_options[@]}"; do
         grep -q -- "$option" <<< "$runner_src" ||
             die "this YaCoin tree's test/functional/test_runner.py has no $option option"
     done
 fi
-regtest_excluded_scripts="$SRC/test/functional/regtest-excluded-scripts"
-if [[ "$MODE" == functional-tests-regtest ]]; then
+if [[ "$MODE" == cov-functional ]]; then
     [[ -f "$regtest_excluded_scripts" ]] || die "this YaCoin tree has no test/functional/regtest-excluded-scripts"
-    # Without the options the runner would pass them on to every script,
-    # which would all fail on them after the build.
-    runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
-    for option in --chain --exclude-file; do
-        grep -q -- "$option" <<< "$runner_src" ||
-            die "this YaCoin tree's test/functional/test_runner.py has no $option option"
-    done
 fi
 # Without them the runner would pass --shard on to every script, and make
 # would run every script in each shard.
 if [[ -n "${FTEST_SHARD:-}" ]]; then
     case "$MODE" in
-        functional-tests|functional-tests-asan|functional-tests-regtest)
+        functional-tests|functional-tests-asan)
             runner_src=$(cat test/functional/test_runner.py 2>/dev/null) || runner_src=""
             grep -q -- --shard <<< "$runner_src" ||
                 die "this YaCoin tree's test/functional/test_runner.py has no --shard option (FTEST_SHARD)" ;;
@@ -320,6 +324,15 @@ if (( release )); then
         [[ -x src/test/test_bitcoin ]] || die "the build made no src/test/test_bitcoin (configured without tests?)"
         contrib/devtools/run-unit-suites.sh "$SRC/src/test/test_bitcoin" \
             "$SRC/build/docker-$IMAGE/$MODE/unit-test-logs" "$JOBS"
+        # The functional test scripts the mainnet build's runs leave out,
+        # on this build (the runner reads the in-tree test/config.ini). A
+        # listed name that is not a script of the runner, or a list without
+        # one, fails the run.
+        echo "== Running the functional tests listed in test/functional/regtest-excluded-scripts =="
+        ftest_tmp="$SRC/build/docker-$IMAGE/$MODE/test/tmp"
+        rm -rf "$ftest_tmp"; mkdir -p "$ftest_tmp"
+        TMPDIR="$ftest_tmp" test/functional/test_runner.py -j "${FTEST_JOBS:-4}" --tmpdirprefix="$ftest_tmp" \
+            --include-file="$regtest_excluded_scripts"
     fi
 else
     builddir="$SRC/build/docker-$IMAGE/$MODE"
@@ -348,7 +361,6 @@ else
                 # ignore log_path and go to stderr. Linked into the
                 # binaries, the two runtimes share one report file.
                 ldflags+=" -static-libasan -static-libubsan"
-                flags+=(--enable-low-difficulty-for-development)
             fi
             flags+=(--with-asm=no "CXXFLAGS=-O1 -g1 $san" "CFLAGS=-O1 -g1 $san" "LDFLAGS=$ldflags") ;;
         unit-tests-tsan)
@@ -369,10 +381,8 @@ else
             printf '%s\n' "ac_site_file='$CONFIG_SITE'" '. "$ac_site_file"' 'CC=clang' 'CXX=clang++' \
                 > "$builddir/config.site"
             export CONFIG_SITE="$builddir/config.site" ;;
-        functional-tests) flags+=(--enable-low-difficulty-for-development "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
-        functional-tests-regtest) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
-        cov-unit) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
-        cov-functional) flags+=(--enable-lcov --enable-low-difficulty-for-development "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
+        functional-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
+        cov-unit|cov-functional) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
     esac
     (cd "$builddir" && "$SRC/configure" "${flags[@]}")
     export TMPDIR="$builddir/test/tmp"; mkdir -p "$TMPDIR"
@@ -423,13 +433,15 @@ else
             contrib/devtools/run-fuzz-corpus.py --jobs "$JOBS" "$builddir/src/test/fuzz/fuzz" "$fuzz_corpus" \
                 "$builddir/fuzz-corpus-logs"
             ;;
-        functional-tests|functional-tests-asan|functional-tests-regtest)
+        functional-tests|functional-tests-asan)
             # The functional tests only run yacoind and yacoin-cli.
             make -C "$builddir/src" -j"$JOBS" yacoind yacoin-cli
             # The runner reads ../config.ini relative to its own path.
             mkdir -p "$builddir/test/functional"
             ln -sf "$SRC/test/functional/test_runner.py" "$builddir/test/functional/test_runner.py"
-            runner_opts=()
+            # The scripts on regtest, but the listed ones; a listed name that
+            # is not a script of the runner fails the run.
+            runner_opts=(--chain=regtest --exclude-file="$regtest_excluded_scripts")
             if [[ "$MODE" == functional-tests-asan ]]; then
                 # The runtime options of unit-tests-asan. The runner adds a
                 # log_path per script, so the reports of every process go to
@@ -439,18 +451,13 @@ else
                 # would still write the suppression counts there
                 # (print_suppressions=0). A segmentation fault ends the
                 # process with the signal, as in the other functional runs
-                # (handle_segv=0). The listed scripts are left out; a listed
-                # name that is not a script of the runner fails the run.
+                # (handle_segv=0). The scripts of the sanitizers' list are
+                # left out as well.
                 export ASAN_OPTIONS=detect_leaks=1:handle_segv=0
                 export LSAN_OPTIONS="suppressions=$lsan_suppressions:print_suppressions=0"
                 export UBSAN_OPTIONS=print_stacktrace=1
                 sanitizer_logs="$builddir/sanitizer-logs"
-                runner_opts=(--sanitizer-logs="$sanitizer_logs" --exclude-file="$asan_excluded_scripts")
-            elif [[ "$MODE" == functional-tests-regtest ]]; then
-                # The scripts that run on regtest, but the listed ones; a
-                # listed name that is not a script of the runner fails the
-                # run.
-                runner_opts=(--chain=regtest --exclude-file="$regtest_excluded_scripts")
+                runner_opts+=(--sanitizer-logs="$sanitizer_logs" --exclude-file="$asan_excluded_scripts")
             fi
             [[ -z "${FTEST_SHARD:-}" ]] || runner_opts+=(--shard="$FTEST_SHARD")
             status=0
