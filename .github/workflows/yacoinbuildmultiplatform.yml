@@ -879,12 +879,13 @@ jobs:
     # Functional test coverage, shard 1 of 2: a coverage build of its own,
     # configured as coverage-unit's, and "make cov-functional" with
     # FTEST_SHARD=1/2 (cov-functional mode of the yacoin-build image; the
-    # shard's scripts run 4 in parallel, then the timing-sensitive ones alone;
-    # test_runner.py --shard picks a script's shard by its position in the
-    # runner's list). coverage-functional-2 runs the other shard; written out
-    # twice, so that each job has outputs of its own. Cache as in
-    # coverage-unit: the functional-tests job's, restored only. Artifact name
-    # (per shard and attempt) and outputs as in coverage-unit.
+    # shard's scripts run 4 in parallel, with make's FTEST_TIMEOUT_FACTOR
+    # passed as --timeout-factor; test_runner.py --shard picks a script's
+    # shard by its position in the runner's list). coverage-functional-2 runs
+    # the other shard; written out twice, so that each job has outputs of its
+    # own. Cache as in coverage-unit: the functional-tests job's, restored
+    # only. Artifact name (per shard and attempt) and outputs as in
+    # coverage-unit.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -954,12 +955,13 @@ jobs:
     # Functional test coverage, shard 2 of 2: a coverage build of its own,
     # configured as coverage-unit's, and "make cov-functional" with
     # FTEST_SHARD=2/2 (cov-functional mode of the yacoin-build image; the
-    # shard's scripts run 4 in parallel, then the timing-sensitive ones alone;
-    # test_runner.py --shard picks a script's shard by its position in the
-    # runner's list). coverage-functional-1 runs the other shard; written out
-    # twice, so that each job has outputs of its own. Cache as in
-    # coverage-unit: the functional-tests job's, restored only. Artifact name
-    # (per shard and attempt) and outputs as in coverage-unit.
+    # shard's scripts run 4 in parallel, with make's FTEST_TIMEOUT_FACTOR
+    # passed as --timeout-factor; test_runner.py --shard picks a script's
+    # shard by its position in the runner's list). coverage-functional-1 runs
+    # the other shard; written out twice, so that each job has outputs of its
+    # own. Cache as in coverage-unit: the functional-tests job's, restored
+    # only. Artifact name (per shard and attempt) and outputs as in
+    # coverage-unit.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
