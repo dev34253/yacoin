@@ -349,25 +349,32 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     return hashes
 
 
-def make_run(out, heights=3, fields=None, failures=(), **kwargs):
+def make_run(out, heights=3, fields=None, failures=(), regtest=False, **kwargs):
     """The output directory of a complete full run: OUT/datadir (as
     make_datadir with blk, plus debug.log, yacoin.conf, .lock and
     peers.dat) and the report files of its digest, with the failures
-    (logscan.Failure) given; fields replace fields of the report. Returns
-    the report."""
+    (logscan.Failure) given; fields replace fields of the report. With
+    regtest, a run of run --regtest: the chain files, debug.log and .lock
+    in OUT/datadir/regtest, yacoin.conf in OUT/datadir. Returns the
+    report."""
     from replaylib import digest, logscan, report, runner
     datadir = os.path.join(out, "datadir")
-    make_datadir(datadir, heights=heights, blk=True, **kwargs)
-    for name, data in (("debug.log", b"2026-11-08 10:00:00 Done loading\n"), ("yacoin.conf", b"# conf\n"),
-                       (".lock", b""), ("peers.dat", b"\x01\x02")):
-        with open(os.path.join(datadir, name), "wb") as f:
+    chain_dir = os.path.join(datadir, "regtest") if regtest else datadir
+    make_datadir(chain_dir, heights=heights, blk=True, **kwargs)
+    with open(os.path.join(datadir, "yacoin.conf"), "wb") as f:
+        f.write(b"# conf\n")
+    for name, data in (("debug.log", b"2026-11-08 10:00:00 Done loading\n"), (".lock", b""),
+                       ("peers.dat", b"\x01\x02")):
+        with open(os.path.join(chain_dir, name), "wb") as f:
             f.write(data)
-    d = digest.compute(datadir)
+    d = digest.compute(chain_dir)
     rep = {"format": runner.REPORT_FORMAT, "kind": "run", "mode": "full", "snapshot": None, "status": "complete",
            "incomplete_reasons": [], "datadir": datadir, "source": "/source/blocks",
            "command": ["/bin/yacoind", "-datadir=" + datadir, "-reindex"],
            "binary": {"path": "/bin/yacoind", "sha256": "ab" * 32}, "stop_at_height": None,
            "start_time": "2026-11-08T10:00:00Z", "end_time": "2026-11-08T10:01:00Z"}
+    if regtest:
+        rep["regtest"] = True
     runner.fill_digest(rep, d)
     marked = logscan.mark_main_chain(list(failures), d.rows)
     rep["failures"], rep["failure_blocks"] = logscan.counts(list(failures))

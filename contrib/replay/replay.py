@@ -18,7 +18,9 @@ run      copies the block files of SOURCE_BLOCKS into OUT/datadir/blocks,
          --up-to-height H, the block files hold only the main-chain blocks
          0 to H of the chain of DATADIR; with --snapshot, the snapshot's
          databases are copied into OUT/datadir and the node gets the
-         main-chain blocks above the snapshot with -loadblock instead
+         main-chain blocks above the snapshot with -loadblock instead;
+         with --regtest the node runs on regtest, its chain files in
+         OUT/datadir/regtest
 snapshot makes a read-only snapshot of the data directory of a complete run
 digest   writes the report of the state of a stopped node's data directory
 compare  prints "identical" (exit status 0) or where two reports differ
@@ -45,7 +47,8 @@ def cmd_run(args, extra):
     try:
         rep = runner.run(args.yacoind, args.source, args.out, port=args.port, rpcport=args.rpcport,
                          dbcache=args.dbcache, stop_at_height=args.stop_at_height, extra=extra, log=log,
-                         snapshot=args.snapshot, up_to_height=args.up_to_height, chain=args.chain)
+                         snapshot=args.snapshot, up_to_height=args.up_to_height, chain=args.chain,
+                         regtest=args.regtest)
     except runner.RunRefused as e:
         log(str(e))
         return 2
@@ -122,6 +125,9 @@ def parser():
     r.add_argument("--chain", metavar="DATADIR",
                    help="a stopped node's data directory whose block index gives the main chain "
                         "(with --up-to-height or --snapshot)")
+    r.add_argument("--regtest", action="store_true",
+                   help="run the node on regtest (-regtest), with its chain files in OUT/datadir/regtest; "
+                        "--snapshot then takes a snapshot of a run with --regtest")
     r.add_argument("--stop-at-height", type=int, metavar="N", help="stop the node at height N (-stopatheight)")
     r.add_argument("--dbcache", type=int, metavar="MB", help="-dbcache of the node (default: the node's)")
     r.add_argument("--port", type=int, default=runner.DEFAULT_PORT,

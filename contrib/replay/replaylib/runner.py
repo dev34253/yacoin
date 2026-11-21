@@ -2,6 +2,8 @@
 data directory, imports them with yacoind -reindex -replayvalidation=report
 on a node without network connections, stops the node, computes the digest,
 checks the block files against the block index and writes the report.
+With regtest, the node runs on regtest (-regtest), and its chain files are
+in the data directory's regtest subdirectory.
 
 With --up-to-height H the data directory gets block files holding only the
 main-chain blocks 0 to H of the chain (--chain). The snapshot run copies a
@@ -50,7 +52,7 @@ CONF_TEXT = "# Written by contrib/replay/replay.py; the options are on the comma
 OWN_OPTIONS = (
     "datadir", "conf", "daemon", "reindex", "replayvalidation", "connect", "listen", "dnsseed",
     "discover", "upnp", "listenonion", "server", "disablewallet", "printtoconsole", "port", "rpcport",
-    "dbcache", "stopatheight", "loadblock",
+    "dbcache", "stopatheight", "loadblock", "regtest",
 )
 
 
@@ -109,10 +111,14 @@ def loadblock_files(imports):
     return list(imports) * IMPORT_PASSES
 
 
-def node_command(binary, datadir, conf, port, rpcport, dbcache=None, stop_at_height=None, extra=(), imports=None):
+def node_command(binary, datadir, conf, port, rpcport, dbcache=None, stop_at_height=None, extra=(), imports=None,
+                 regtest=False):
     """The node's command line: with -reindex, or, when imports is a list
-    of block files, with -loadblock for each of loadblock_files(imports)."""
+    of block files, with -loadblock for each of loadblock_files(imports);
+    with regtest, -regtest."""
     cmd = [binary, "-datadir=" + datadir, "-conf=" + conf, "-daemon=0"]
+    if regtest:
+        cmd.append("-regtest")
     if imports is None:
         cmd.append("-reindex")
     cmd.append("-replayvalidation=report")
@@ -233,9 +239,10 @@ def load_chain(chain, meta, stop_at_height, up_to_height):
     return c
 
 
-def check_snapshot(snapshot, out, stop_at_height):
+def check_snapshot(snapshot, out, stop_at_height, regtest=False):
     """The content of the snapshot's snapshot.json; raises RunRefused when
-    the snapshot run cannot be made."""
+    the snapshot run cannot be made, also when the snapshot was made from a
+    run on the other chain (regtest or main)."""
     real_snapshot = os.path.realpath(snapshot)
     if os.path.commonpath([real_snapshot, os.path.realpath(out)]) == real_snapshot:
         raise RunRefused("output directory %s is inside the snapshot directory %s" % (out, snapshot))
@@ -246,6 +253,9 @@ def check_snapshot(snapshot, out, stop_at_height):
         raise RunRefused(str(e))
     if stop_at_height is not None and stop_at_height <= meta["height"]:
         raise RunRefused("--stop-at-height %d is not above the snapshot's height %d" % (stop_at_height, meta["height"]))
+    if bool(meta.get("regtest")) != regtest:
+        raise RunRefused("the snapshot %s was made from a run on %s; run %s --regtest" % (
+            snapshot, "regtest" if meta.get("regtest") else "main", "with" if meta.get("regtest") else "without"))
     return meta
 
 
@@ -258,12 +268,12 @@ def _copy_block_files(files, directory):
 
 
 def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache=None, stop_at_height=None,
-        extra=(), log=print, snapshot=None, up_to_height=None, chain=None):
+        extra=(), log=print, snapshot=None, up_to_height=None, chain=None, regtest=False):
     """Runs the replay: a full one, up to height up_to_height of the main
     chain of the data directory chain if given, or from the snapshot
-    directory snapshot with the main-chain blocks of chain above it.
-    Returns the report dict. Raises RunRefused before anything is created
-    when a precondition does not hold."""
+    directory snapshot with the main-chain blocks of chain above it; with
+    regtest, on a regtest node. Returns the report dict. Raises RunRefused
+    before anything is created when a precondition does not hold."""
     binary = os.path.abspath(binary)
     source = os.path.abspath(source)
     out = os.path.abspath(out)
@@ -274,7 +284,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     meta = None
     if snapshot is not None:
         snapshot = os.path.abspath(snapshot)
-        meta = check_snapshot(snapshot, out, stop_at_height)
+        meta = check_snapshot(snapshot, out, stop_at_height, regtest)
     main_chain = None
     chain_seconds = None
     if chain is not None:
@@ -290,8 +300,13 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
         rep["snapshot"] = {"path": snapshot, "height": meta["height"], "hash": meta["hash"], "digest": meta["digest"],
                            "binary": meta.get("binary")}
     datadir = os.path.join(out, "datadir")
-    blocks = os.path.join(datadir, "blocks")
+    # The node's chain files: in the data directory, on regtest in its
+    # regtest subdirectory.
+    chain_dir = os.path.join(datadir, "regtest") if regtest else datadir
+    blocks = os.path.join(chain_dir, "blocks")
     rep["datadir"] = datadir
+    if regtest:
+        rep["regtest"] = True
     rep["stop_at_height"] = stop_at_height
     rep["up_to_height"] = up_to_height
     rep["chain"] = None
@@ -327,7 +342,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     if meta is not None:
         os.makedirs(datadir)
         try:
-            count, total = snapshot_mod.copy_into(snapshot, meta, datadir)
+            count, total = snapshot_mod.copy_into(snapshot, meta, chain_dir)
         except snapshot_mod.SnapshotMismatch as e:
             log(str(e))
             phases["copy_seconds"] = round(time.monotonic() - t0, 3)
@@ -339,10 +354,10 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     conf = os.path.join(datadir, "yacoin.conf")
     with open(conf, "w") as f:
         f.write(CONF_TEXT)
-    cmd = node_command(binary, datadir, conf, port, rpcport, dbcache, stop_at_height, extra, imports)
+    cmd = node_command(binary, datadir, conf, port, rpcport, dbcache, stop_at_height, extra, imports, regtest)
     rep["command"] = cmd
 
-    follower = logscan.LogFollower(os.path.join(datadir, "debug.log"))
+    follower = logscan.LogFollower(os.path.join(chain_dir, "debug.log"))
     marks = {"reindex_finished_seconds": None, "done_loading_seconds": None}
     stop_sent = [False]
     log("starting the node")
@@ -423,7 +438,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
 
     t1 = time.monotonic()
     try:
-        d = digest_mod.compute(datadir)
+        d = digest_mod.compute(chain_dir)
         rep["digest_error"] = None
     except digest_mod.DigestError as e:
         d = None
@@ -454,7 +469,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     rep["block_file_check"] = None
     if d is not None:
         t2 = time.monotonic()
-        result = blockfiles.check(block_files(blocks) if imports is None else imports, datadir, d.tip_height,
+        result = blockfiles.check(block_files(blocks) if imports is None else imports, chain_dir, d.tip_height,
                                   stop_at_height)
         phases["block_file_check_seconds"] = round(time.monotonic() - t2, 3)
         rep["block_file_check"] = result.fields

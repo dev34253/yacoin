@@ -15,7 +15,7 @@ The script runs under `python3 -I`.
 ### `run`
 
 ```
-contrib/replay/replay.py run [--up-to-height H --chain DATADIR | --snapshot SNAPSHOT --chain DATADIR]
+contrib/replay/replay.py run [--up-to-height H --chain DATADIR | --snapshot SNAPSHOT --chain DATADIR] [--regtest]
                              [--stop-at-height N] [--dbcache MB] [--port P] [--rpcport R]
                              YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
 ```
@@ -43,7 +43,7 @@ Without `--snapshot` (a full replay):
    outside `OUT` (for example `-addnode`, `-seednode`, `-pid`). The options the script sets itself are refused after
    `--` (also in their `-no` form): `-datadir`, `-conf`, `-daemon`, `-reindex`, `-replayvalidation`, `-connect`,
    `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`,
-   `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`.
+   `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
    exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1.
 5. Computes the digest of `OUT/datadir` (as `digest` does), reads the failure lines of `-replayvalidation` from
@@ -71,10 +71,18 @@ by hand, for example with `pkill -TERM -f -- "-datadir=OUT/datadir"`.
 
 The node's output is in `OUT/node-stdout.log` and `OUT/node-stderr.log`, its log in `OUT/datadir/debug.log`.
 
+With `--regtest` the node runs on regtest: its command line has `-regtest` after `-daemon=0`, and its chain files are
+in the data directory's `regtest` subdirectory, as for every regtest node. The block files are copied into
+`OUT/datadir/regtest/blocks/`, the script follows `OUT/datadir/regtest/debug.log`, the digest and the block-file check
+are taken on `OUT/datadir/regtest`, and the report has `"regtest": true`; `yacoin.conf` stays in `OUT/datadir`. The
+rules the node checks under (activation heights and the other regtest options) are given as `NODE_ARGS`. A run without
+`--regtest` has the node command line and the report fields described above.
+
 #### The chain
 
 `--chain DATADIR` names a stopped node's data directory whose block index gives the main chain: the blocks from genesis
-to the chainstate's best block, one per height. It is needed with `--up-to-height` and with `--snapshot`, and refused
+to the chainstate's best block, one per height. For a regtest node it is the `regtest` subdirectory of its data
+directory. It is needed with `--up-to-height` and with `--snapshot`, and refused
 (exit status 2) when a running node holds the lock of `DATADIR`, when its block index or chainstate cannot be read, when
 its chain does not reach the heights the run needs, or when `OUT` is inside `DATADIR`. Nothing in `DATADIR` is written.
 
@@ -87,12 +95,14 @@ with different content, the run ends before the node starts: the report is incom
 
 With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
 
-1. Checks as above, and that `OUT` is not inside `SNAPSHOT`, that `SNAPSHOT` has a `snapshot.json` of a known format,
+1. Checks as above, and that `OUT` is not inside `SNAPSHOT`, that `SNAPSHOT` has a `snapshot.json` of a known format
+   and was made from a run on the same chain (with `--regtest` from a run with `--regtest`, without it from one
+   without),
    that the chain of `DATADIR` holds the snapshot's block at its height H and goes above it, and that
    `--stop-at-height N`, if given, is above H and not above the chain's tip.
 2. Writes the main-chain blocks from H + 1 to the chain's tip into `OUT/import/` (see [The chain](#the-chain)).
-3. Copies the files of the snapshot into `OUT/datadir` (copies, never links), checking each against the snapshot's
-   manifest. A file that is missing or differs ends the run before the node starts: the report is incomplete and
+3. Copies the files of the snapshot into `OUT/datadir` (with `--regtest`, `OUT/datadir/regtest`; copies, never links),
+   checking each against the snapshot's manifest. A file that is missing or differs ends the run before the node starts: the report is incomplete and
    names the file.
 4. Starts
 
@@ -127,7 +137,8 @@ Makes the snapshot `SNAPSHOT` of the data directory of the full run in `RUN_OUT`
    `report.json`, or the report is not of a run, not complete, of a snapshot run, of a run with `--stop-at-height` or
    without a digest, when `RUN_OUT/failures.tsv` cannot be read or does not have the report's number of failures, when
    `RUN_OUT/datadir` lacks `blocks/`, `blocks/index/`, `chainstate/` or `tokens/`, and when a running node holds the
-   lock of `RUN_OUT/datadir`.
+   lock of `RUN_OUT/datadir`. For a run with `--regtest`, `RUN_OUT/datadir/regtest` takes the place of
+   `RUN_OUT/datadir` here and below.
 2. Copies the databases of `RUN_OUT/datadir` into `SNAPSHOT`: `blocks/` (the `blk` and `rev` files and `blocks/index`),
    `chainstate/` and `tokens/`, nothing else, and records the size and SHA-256 of every file in a manifest.
 3. Computes the digest of the copy, which must have the tip and digest of the run's report, and makes the block-file
@@ -135,7 +146,8 @@ Makes the snapshot `SNAPSHOT` of the data directory of the full run in `RUN_OUT`
    `snapshot.json`; a directory without `snapshot.json` is not a snapshot.
 4. Writes `SNAPSHOT/snapshot.json`: `format` (1), `height`, `hash`, `digest` and `sections` of the state, the run's
    `command`, `binary` (path and SHA-256), `source`, `up_to_height` and `chain`, its `failures`, `failure_blocks` and
-   `failures_off_main_chain`, the run directory (`run`), the time it was made (`made`) and the `manifest`; copies the
+   `failures_off_main_chain`, the run directory (`run`), the time it was made (`made`), the `manifest`, and for a run
+   with `--regtest` `"regtest": true`; copies the
    run's `report.json` and `failures.tsv` beside it; and makes every file and directory of `SNAPSHOT` read-only.
 
 ### `digest`
@@ -144,7 +156,8 @@ Makes the snapshot `SNAPSHOT` of the data directory of the full run in `RUN_OUT`
 contrib/replay/replay.py digest DATADIR OUT
 ```
 
-Writes the report files of the state in `DATADIR` into `OUT` (which must not exist), without the fields of a run. The
+Writes the report files of the state in `DATADIR` into `OUT` (which must not exist), without the fields of a run. For
+a regtest node, `DATADIR` is the `regtest` subdirectory of its data directory. The
 node of `DATADIR` must be stopped; the command refuses a data directory whose lock a running node holds, and a
 chainstate that was not closed cleanly. Nothing in `DATADIR` is changed. Exit status 0; 1 when the digest cannot be
 computed (including a data directory whose lock a running node holds); 2 when the command is refused (`DATADIR` is
@@ -196,7 +209,8 @@ line is an error (exit status 2).
 | `blocks_above_snapshot` | snapshot run: the tip's height minus the snapshot's height H (null for a full run and without a digest); also in the summary line `run` prints |
 | `status`, `incomplete_reasons` | `complete` or `incomplete`, and why |
 | `start_time`, `end_time` | UTC |
-| `datadir` | the data directory the digest was taken from |
+| `datadir` | the data directory the digest was taken from; for a run with `--regtest`, the node's data directory, whose `regtest` subdirectory the digest was taken from |
+| `regtest` | run with `--regtest`: `true`; absent otherwise |
 | `tip` | `height` and `hash` of the chainstate's best block |
 | `sections`, `digest`, `digest_error` | `count` and `sha256` per section; the overall digest; the error if there is no digest |
 | `phases.digest_seconds` | time of the digest |
