@@ -111,6 +111,7 @@ BITCOIN_TESTS =\
   test/test_bitcoin_main.cpp \
   test/timedata_tests.cpp \
   test/timelock_tests.cpp \
+  test/tip_block_tests.cpp \
   test/token_cache_tests.cpp \
   test/token_db_tests.cpp \
   test/token_deployment_tests.cpp \
