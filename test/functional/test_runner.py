@@ -240,7 +240,8 @@ def main():
     parser.add_argument('--tmpdirprefix', '-t', default=tempfile.gettempdir(), help="Root directory for datadirs")
     parser.add_argument('--failfast', action='store_true', help='stop execution after the first test failure')
     parser.add_argument('--filter', help='filter scripts to run by regular expression')
-    parser.add_argument('--exclude-file', metavar='FILE', help='leave out the scripts listed in FILE: one script name (with .py) per line, "#" starts a comment, blank lines are ignored. A listed name that is not a test script of this runner fails the run')
+    parser.add_argument('--exclude-file', metavar='FILE', action='append', help='leave out the scripts listed in FILE: one script name (with .py) per line, "#" starts a comment, blank lines are ignored. A listed name that is not a test script of this runner fails the run. May be given more than once; the scripts of every FILE are left out')
+    parser.add_argument('--include-file', metavar='FILE', help='run only the scripts listed in FILE (the format of --exclude-file), every run of each, in place of the base or extended scripts; the other selections apply after it. A listed name that is not a test script of this runner, a FILE without a script, and script names on the command line fail the run')
     parser.add_argument('--shard', metavar='K/N', help='run shard K of N (1 <= K <= N): the selected scripts whose position in the list of all scripts of this runner, counted from 0, modulo N is K-1. Applied after every other selection, so the N shards together run what the run without --shard runs, each script once. A shard without scripts is no error. A named script that is not in the list fails the run')
     parser.add_argument('--chain', choices=RUNNER_CHAINS, help='run only the selected scripts whose nodes run on CHAIN: those that set self.chain = \'CHAIN\' (a script without that line runs on regtest). Applied before --shard; a selection without such a script fails the run, and so does a script whose line names another chain than main or regtest. The block cache is built for CHAIN only')
     parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty')
@@ -285,7 +286,16 @@ def main():
 
     # Build list of tests
     test_list = []
-    if tests:
+    if args.include_file:
+        if tests:
+            print("%sERROR!%s --include-file is not taken with script names on the command line." % (BOLD[1], BOLD[0]))
+            sys.exit(1)
+        included = read_exclude_file(args.include_file, purpose="run")
+        if not included:
+            print("%sERROR!%s %s lists no script to run." % (BOLD[1], BOLD[0], args.include_file))
+            sys.exit(1)
+        test_list = [test for test in ALL_SCRIPTS if test.split()[0] in included]
+    elif tests:
         # Individual tests have been specified. Run specified tests that exist
         # in the ALL_SCRIPTS list. Accept names with or without a .py extension.
         # Specified tests can contain wildcards, but in that case the supplied
@@ -327,13 +337,13 @@ def main():
             if not exclude_list:
                 print("{}WARNING!{} Test '{}' not found in current test list.".format(BOLD[1], BOLD[0], exclude_test))
 
-    # Remove the scripts listed in the exclude file.
-    if args.exclude_file:
-        excluded = read_exclude_file(args.exclude_file)
+    # Remove the scripts listed in the exclude files.
+    for exclude_file in args.exclude_file or []:
+        excluded = read_exclude_file(exclude_file)
         left_out = [test for test in test_list if test.split()[0] in excluded]
         test_list = [test for test in test_list if test not in left_out]
         if left_out:
-            logging.info("Left out (listed in %s): %s" % (args.exclude_file, ", ".join(left_out)))
+            logging.info("Left out (listed in %s): %s" % (exclude_file, ", ".join(left_out)))
 
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
@@ -420,11 +430,12 @@ def script_chain(tests_dir, script):
         sys.exit(1)
     return chain
 
-def read_exclude_file(path):
+def read_exclude_file(path, purpose="leave out"):
     """Return the script names listed in the file at path: one per line, "#"
     starts a comment, blank lines are ignored. Each must be the file name of a
     test script of ALL_SCRIPTS; otherwise, or if the file cannot be read, the
-    run stops with an error, so an entry cannot outlive its script unnoticed."""
+    run stops with an error, so an entry cannot outlive its script unnoticed.
+    purpose names what the list is for in the error messages."""
     def error(message):
         print("%sERROR!%s %s" % (BOLD[1], BOLD[0], message))
         sys.exit(1)
@@ -432,7 +443,7 @@ def read_exclude_file(path):
         with open(path, encoding="utf8") as f:
             lines = f.read().splitlines()
     except OSError as e:
-        error("Cannot read the list of scripts to leave out: %s" % e)
+        error("Cannot read the list of scripts to %s: %s" % (purpose, e))
     known = {test.split()[0] for test in ALL_SCRIPTS}
     names = []
     for number, line in enumerate(lines, 1):
