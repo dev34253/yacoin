@@ -189,9 +189,8 @@ COVERAGE_FUNCTIONAL_FILES = functional_baseline.info functional_test.info \
 
 if USE_LCOV
 # Coverage of the unit tests (cov-unit) and of the functional tests
-# (cov-functional). They need differently configured builds: the unit tests
-# assume mainnet consensus, the functional tests need
-# --enable-low-difficulty-for-development. dev.sh builds both and merges them.
+# (cov-functional), both on one build with mainnet consensus; dev.sh runs
+# both and merges them.
 #
 # Each target zeroes the counters, records a baseline (so files that never run
 # still count), runs the tests, captures, removes vendored and test code, and
@@ -215,8 +214,10 @@ COV_JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 FTEST_JOBS ?= 4
 FTEST_SERIAL ?= p2p_invalid_messages.py
 # FTEST_SHARD=K/N runs shard K of N of the scripts (test_runner.py --shard),
-# in both runner calls; unset: all scripts.
+# in both runner calls; unset: all scripts. Both calls run the scripts on
+# regtest but those of the list (FTEST_SELECT).
 FTEST_SHARD ?=
+FTEST_SELECT = --chain=regtest --exclude-file=$(abs_top_srcdir)/test/functional/regtest-excluded-scripts
 cov_comma := ,
 cov_space := $(subst ,, )
 FTEST_EXCLUDE = $(if $(strip $(FTEST_SERIAL)),--exclude=$(subst $(cov_space),$(cov_comma),$(strip $(FTEST_SERIAL))))
@@ -278,10 +279,10 @@ cov-functional:
 	nice -n 10 $(COV_CAPTURE) --initial --out functional_baseline.info > functional_baseline.log 2>&1 & pid=$$!; \
 	  trap 'kill $$pid 2>/dev/null' INT TERM HUP; \
 	  status=0; \
-	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_EXCLUDE) $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp \
+	  test/functional/test_runner.py -j $(FTEST_JOBS) $(FTEST_SELECT) $(FTEST_EXCLUDE) $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp \
 	    > functional_test.log 2>&1 || status=1; \
 	  if test -n "$(strip $(FTEST_SERIAL))"; then \
-	    test/functional/test_runner.py -j 1 --keepcache $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp $(FTEST_SERIAL) \
+	    test/functional/test_runner.py -j 1 --keepcache $(FTEST_SELECT) $(FTEST_SHARD_OPT) --tmpdirprefix=$(abs_builddir)/test/tmp $(FTEST_SERIAL) \
 	      >> functional_test.log 2>&1 || status=1; \
 	  fi; \
 	  echo $$status > functional_test.status; \

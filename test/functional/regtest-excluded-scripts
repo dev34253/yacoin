@@ -1,9 +1,11 @@
-# Functional test scripts on regtest left out of the runs on the mainnet build
-# (the functional-tests-regtest mode of the CI images, through
-# test/functional/test_runner.py --chain=regtest --exclude-file); the
-# functional-tests runs still run them. One script name (with .py) per line,
-# with the reason in the comment above it. A listed name that is not a test
-# script of the runner fails the run.
+# Functional test scripts left out of the runs on the mainnet build (the
+# functional-tests, functional-tests-asan and cov-functional modes of the CI
+# images and ./dev.sh ftest, through test/functional/test_runner.py
+# --chain=regtest --exclude-file); the build-low-difficulty mode runs them on
+# its build (test_runner.py --include-file, without --chain), so a script on
+# main or on regtest can be listed. One script name (with .py) per line, with
+# the reason in the comment above it. A listed name that is not a test script
+# of the runner fails the run.
 
 # Runs on the low-difficulty build.
 feature_activation_heights.py

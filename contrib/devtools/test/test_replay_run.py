@@ -34,7 +34,8 @@ link count, inode), then
 Without SIGTERM it exits with status 3 after 20 s. It records its
 arguments in <datadir>/args.json, its process id in
 <datadir>/pid and its blocked-signal mask (SigBlk of /proc/self/status,
-where there is one) in <datadir>/sigblk.
+where there is one) in <datadir>/sigblk. With -regtest, <datadir> in all
+of this is the regtest subdirectory of its -datadir, as for yacoind.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -62,6 +63,9 @@ sys.path.insert(0, %(testdir)r)
 import replay_testutil as tu
 import hashlib
 datadir = [a.split("=", 1)[1] for a in sys.argv if a.startswith("-datadir=")][0]
+if "-regtest" in sys.argv:
+    datadir = os.path.join(datadir, "regtest")
+    os.makedirs(datadir, exist_ok=True)
 mode = os.environ["FAKE_MODE"]
 files = {}
 for root, _, names in os.walk(datadir):
@@ -183,8 +187,8 @@ class RunTest(unittest.TestCase):
         with open(os.path.join(self.tmp, out, "report.json")) as f:
             return json.load(f)
 
-    def node_args(self, out="out"):
-        with open(os.path.join(self.tmp, out, "datadir", "args.json")) as f:
+    def node_args(self, out="out", chain_dir=""):
+        with open(os.path.join(self.tmp, out, "datadir", chain_dir, "args.json")) as f:
             return json.load(f)
 
     def test_complete_run(self):
@@ -219,6 +223,7 @@ class RunTest(unittest.TestCase):
         self.assertGreater(rep["peak_rss_kib"], 0)
         self.assertEqual(rep["binary"]["sha256"], runner.file_sha256(self.bin))
         self.assertEqual((rep["mode"], rep["snapshot"], rep["blocks_above_snapshot"]), ("full", None, None))
+        self.assertNotIn("regtest", rep)
         self.assertNotIn("chain_seconds", rep["phases"])
         self.assertNotIn("above the snapshot", stdout)
         self.assertEqual(rep["block_file_check"], {"blocks": 4, "not_in_index": 0, "stored_above_tip": None})
@@ -230,6 +235,39 @@ class RunTest(unittest.TestCase):
                 self.assertFalse(mask & (1 << (sig - 1)), "%s blocked in the node" % sig.name)
         self.assertEqual(sorted(os.listdir(self.source)), ["blk00000.dat", "blk00001.dat", "blk00003.dat",
                                                            "rev00000.dat"])
+
+    def test_complete_run_on_regtest(self):
+        code, stdout, stderr = self.run_cli("normal", "--regtest", "--dbcache", "300", extra=["-par=2"])
+        self.assertEqual(code, 0, stdout + stderr)
+        self.assertTrue(stdout.startswith("complete: tip 3 "), stdout)
+        rep = self.report()
+        datadir = os.path.join(self.tmp, "out", "datadir")
+        chain_dir = os.path.join(datadir, "regtest")
+        # The node command of a run on main with -regtest after -daemon=0.
+        self.assertEqual(rep["command"], self.node_args(chain_dir="regtest"))
+        self.assertEqual(rep["command"], [
+            self.bin, "-datadir=" + datadir, "-conf=" + os.path.join(datadir, "yacoin.conf"), "-daemon=0",
+            "-regtest", "-reindex", "-replayvalidation=report", "-connect=0", "-listen=0", "-dnsseed=0",
+            "-discover=0", "-upnp=0", "-listenonion=0", "-server=0", "-disablewallet", "-printtoconsole=0",
+            "-port=%d" % self.ports[0], "-rpcport=%d" % self.ports[1], "-dbcache=300", "-par=2"])
+        self.assertIs(rep["regtest"], True)
+        self.assertEqual(rep["datadir"], datadir)
+        # The block files are copied into the chain directory, the node's
+        # debug.log is read and the digest taken there.
+        self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
+        self.assertEqual(sorted(os.listdir(os.path.join(chain_dir, "blocks.copied"))),
+                         ["blk00000.dat", "blk00001.dat"])
+        self.assertEqual(rep["status"], "complete")
+        self.assertEqual((rep["failures"], rep["failure_blocks"], rep["failures_off_main_chain"]), (2, 2, 1))
+        self.assertTrue(rep["reindex_finished"] and rep["done_loading"])
+        self.assertEqual(rep["tip"]["height"], 3)
+        self.assertEqual(rep["digest"], runner.digest_mod.compute(chain_dir).overall)
+        self.assertEqual(rep["block_file_check"], {"blocks": 4, "not_in_index": 0, "stored_above_tip": None})
+        # The same run without the option: the report has the same fields
+        # but regtest.
+        code, _, _ = self.run_cli("normal", "--dbcache", "300", out="main", extra=["-par=2"])
+        self.assertEqual(code, 0)
+        self.assertEqual(set(rep), set(self.report("main")) | {"regtest"})
 
     def test_block_not_in_the_index_is_incomplete(self):
         code, stdout, _ = self.run_cli("extra")
@@ -436,13 +474,15 @@ class RunTest(unittest.TestCase):
 
     def test_node_arguments_set_by_the_script_are_refused(self):
         for arg in ("-printtoconsole=1", "--datadir=/elsewhere", "-nolisten", "-reindex", "-stopatheight=5",
-                    "-conf=x.conf", "-noserver=0", "-dbcache=100", "-loadblock=/x/blk00000.dat"):
-            with self.subTest(arg=arg):
-                code, _, err = self.run_cli("normal", extra=[arg])
-                self.assertEqual(code, 2)
-                self.assertIn("node argument %s: -" % arg, err)
-                self.assertIn("is set by the script", err)
-                self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+                    "-conf=x.conf", "-noserver=0", "-dbcache=100", "-loadblock=/x/blk00000.dat", "-regtest",
+                    "-regtest=1", "-noregtest"):
+            for options in ([], ["--regtest"]):
+                with self.subTest(arg=arg, options=options):
+                    code, _, err = self.run_cli("normal", *options, extra=[arg])
+                    self.assertEqual(code, 2)
+                    self.assertIn("node argument %s: -" % arg, err)
+                    self.assertIn("is set by the script", err)
+                    self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
         for arg in ("-par=2", "-nodebug", "-debug=net", "-portable", "-listenx", "x-datadir", "-rpcthreads=2"):
             with self.subTest(arg=arg):
                 self.assertIsNone(runner.own_option(arg))
@@ -532,6 +572,21 @@ class UpToHeightTest(unittest.TestCase):
         with open(os.path.join(copied, "blk00000.dat"), "rb") as f:
             self.assertEqual(f.read(), expected)
         self.assertEqual(rep["block_files"], {"count": 1, "bytes": len(expected)})
+
+    def test_complete_run_up_to_height_on_regtest(self):
+        # The chain is the chain directory of a regtest node.
+        code, stdout, stderr = self.run_cli("normal", "--regtest", "--up-to-height", "3", "--chain", self.chain)
+        self.assertEqual(code, 0, stdout + stderr)
+        rep = self.report()
+        datadir = os.path.join(self.tmp, "out", "datadir")
+        self.assertEqual(rep["status"], "complete")
+        self.assertIs(rep["regtest"], True)
+        self.assertEqual(rep["chain"], {"datadir": self.chain, "height": 5, "hash": tu.fake_hash(5)[::-1].hex()})
+        self.assertEqual(rep["command"][4:6], ["-regtest", "-reindex"])
+        copied = os.path.join(datadir, "regtest", "blocks.copied")
+        with open(os.path.join(copied, "blk00000.dat"), "rb") as f:
+            self.assertEqual(f.read(), b"".join(self.records[h] for h in range(4)))
+        self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
 
     def test_other_tip_is_incomplete(self):
         code, stdout, _ = self.run_cli("normal", "--up-to-height", "4", "--chain", self.chain)
@@ -682,6 +737,45 @@ class SnapshotRunTest(unittest.TestCase):
             self.assertNotIn("cannot write", f.read())
         # The snapshot is unchanged: listing, content, size, mode, mtime.
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
+
+    def test_complete_snapshot_run_on_regtest(self):
+        run_out = os.path.join(self.tmp, "regtest-run")
+        tu.make_run(run_out, heights=3, regtest=True)
+        snap = os.path.join(self.tmp, "regtest-snap")
+        meta = snapshot.make(run_out, snap, log=lambda msg: None)
+        code, stdout, stderr = self.run_cli("import", "--regtest", snap=snap)
+        self.assertEqual(code, 0, stdout + stderr)
+        self.assertIn(", 2 blocks above the snapshot at height 3\n", stdout)
+        out = os.path.join(self.tmp, "out")
+        datadir = os.path.join(out, "datadir")
+        rep = self.report()
+        self.assertEqual(rep["status"], "complete")
+        self.assertIs(rep["regtest"], True)
+        self.assertEqual(rep["command"][:5], [self.bin, "-datadir=" + datadir,
+                                              "-conf=" + os.path.join(datadir, "yacoin.conf"), "-daemon=0",
+                                              "-regtest"])
+        self.assertEqual(rep["command"], self.datadir_file(os.path.join("regtest", "args.json")))
+        # The snapshot's files are restored into the chain directory.
+        files = self.datadir_file(os.path.join("regtest", "files.json"))
+        self.assertEqual(sorted(files), sorted(meta["manifest"]))
+        for path, (sha256, nlink, ino) in files.items():
+            self.assertEqual(sha256, meta["manifest"][path]["sha256"], path)
+        self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
+        self.assertEqual(rep["tip"]["height"], 5)
+        self.assertEqual(rep["block_file_check"], {"blocks": 2, "not_in_index": 0, "stored_above_tip": None})
+
+    def test_snapshot_and_run_on_different_chains_are_refused(self):
+        run_out = os.path.join(self.tmp, "regtest-run")
+        tu.make_run(run_out, heights=3, regtest=True)
+        snap = os.path.join(self.tmp, "regtest-snap")
+        snapshot.make(run_out, snap, log=lambda msg: None)
+        code, _, err = self.run_cli("import", snap=snap)
+        self.assertEqual(code, 2)
+        self.assertIn("the snapshot %s was made from a run on regtest; run with --regtest" % snap, err)
+        code, _, err = self.run_cli("import", "--regtest")
+        self.assertEqual(code, 2)
+        self.assertIn("the snapshot %s was made from a run on main; run without --regtest" % self.snap, err)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
 
     def test_missing_import_line_is_incomplete(self):
         code, stdout, _ = self.run_cli("import-missing")

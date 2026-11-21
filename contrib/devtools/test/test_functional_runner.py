@@ -9,8 +9,10 @@ status, and the report is printed with its output; a file that belongs to no
 script fails the run. The scripts here are fakes that record their
 environment and write report files as a sanitizer runtime would.
 
-With --exclude-file FILE, the runner leaves out the scripts listed in FILE;
-a listed name that is not one of its scripts fails the run.
+With --exclude-file FILE, the runner leaves out the scripts listed in FILE,
+and with the option more than once, those of every FILE; a listed name that
+is not one of its scripts fails the run. With --include-file FILE, it runs
+only the scripts listed in FILE.
 
 With --chain CHAIN, the runner selects the scripts that set
 self.chain = 'CHAIN' (regtest: also those without such a line), and builds
@@ -320,6 +322,99 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         status, out = self.main("--extended", "--exclude-file=%s" % missing)
         self.assertEqual(status, 1)
         self.assertIn("ERROR! Cannot read the list of scripts to leave out", out)
+        self.assertIn(missing, out)
+        self.assertEqual(self.ran, [])
+
+    def write_second_list(self, text):
+        second = os.path.join(self.dir, "more-excluded-scripts")
+        with open(second, "w") as f:
+            f.write(text)
+        return second
+
+    def test_the_scripts_of_every_list_are_left_out(self):
+        self.write_list("wallet_b.py\n")
+        second = self.write_second_list("# Another list.\nmining_c.py\n")
+        status, _ = self.main("--extended", "--exclude-file=%s" % self.list, "--exclude-file", second)
+        self.assertIsNone(status)
+        self.assertEqual(self.ran, [["wallet_a.py"]])
+
+    def test_a_script_in_two_lists_is_no_error(self):
+        self.write_list("wallet_b.py\n")
+        second = self.write_second_list("wallet_b.py\n")
+        status, _ = self.main("--extended", "--exclude-file=%s" % self.list, "--exclude-file=%s" % second)
+        self.assertIsNone(status)
+        self.assertEqual(self.ran, [["mining_c.py", "wallet_a.py"]])
+
+    def test_a_name_the_runner_does_not_know_in_any_list_fails_the_run(self):
+        good = self.write_second_list("wallet_a.py\n")
+        self.write_list("wallet_gone.py\n")
+        for lists in ((good, self.list), (self.list, good)):
+            self.ran.clear()
+            status, out = self.main("--extended", *["--exclude-file=%s" % path for path in lists])
+            self.assertEqual(status, 1)
+            self.assertIn("ERROR! %s:1: 'wallet_gone.py' is not a test script of test_runner.py" % self.list, out)
+            self.assertEqual(self.ran, [])
+
+
+class FunctionalRunnerIncludeFileTests(unittest.TestCase):
+    """--include-file FILE runs only the scripts listed in FILE (the format
+    of --exclude-file), every run of each, in the order of the runner's
+    list; a listed name that is not a script of the runner, a list without
+    a script and script names on the command line fail the run.
+
+    main() runs on a tree of its own, as in FunctionalRunnerExcludeFileTests."""
+
+    SCRIPTS = FunctionalRunnerExcludeFileTests.SCRIPTS
+    setUp = FunctionalRunnerExcludeFileTests.setUp
+    write_list = FunctionalRunnerExcludeFileTests.write_list
+    main = FunctionalRunnerExcludeFileTests.main
+
+    def test_only_the_listed_scripts_run(self):
+        self.write_list("# The scripts to run.\n\nwallet_b.py  # a reason\n  wallet_a.py\n")
+        for args in ([], ["--extended"]):
+            self.ran.clear()
+            status, out = self.main("--include-file=%s" % self.list, *args)
+            self.assertIsNone(status, out)
+            # Every run of a listed script, in the order of the runner's list.
+            self.assertEqual(self.ran, [["wallet_b.py --opt", "wallet_a.py", "wallet_b.py"]])
+
+    def test_the_other_selections_apply_after_it(self):
+        self.write_list("wallet_b.py\nmining_c.py\n")
+        excluded = os.path.join(self.dir, "excluded-scripts-2")
+        with open(excluded, "w") as f:
+            f.write("mining_c.py\n")
+        status, _ = self.main("--include-file", self.list, "--exclude-file=%s" % excluded)
+        self.assertIsNone(status)
+        self.assertEqual(self.ran, [["wallet_b.py --opt", "wallet_b.py"]])
+
+    def test_a_name_the_runner_does_not_know_fails_the_run(self):
+        self.write_list("wallet_a.py\nwallet_gone.py\n")
+        status, out = self.main("--include-file=%s" % self.list)
+        self.assertEqual(status, 1)
+        self.assertIn("ERROR! %s:2: 'wallet_gone.py' is not a test script of test_runner.py" % self.list, out)
+        self.assertEqual(self.ran, [])
+
+    def test_a_list_without_a_script_fails_the_run(self):
+        for text in ("", "# Only a comment.\n\n"):
+            self.ran.clear()
+            self.write_list(text)
+            status, out = self.main("--include-file=%s" % self.list)
+            self.assertEqual(status, 1)
+            self.assertIn("ERROR! %s lists no script to run" % self.list, out)
+            self.assertEqual(self.ran, [])
+
+    def test_script_names_on_the_command_line_fail_the_run(self):
+        self.write_list("wallet_a.py\n")
+        status, out = self.main("--include-file=%s" % self.list, "wallet_b.py")
+        self.assertEqual(status, 1)
+        self.assertIn("ERROR! --include-file is not taken with script names", out)
+        self.assertEqual(self.ran, [])
+
+    def test_a_file_that_cannot_be_read_fails_the_run(self):
+        missing = os.path.join(self.dir, "no-such-list")
+        status, out = self.main("--include-file=%s" % missing)
+        self.assertEqual(status, 1)
+        self.assertIn("ERROR! Cannot read the list of scripts to run", out)
         self.assertIn(missing, out)
         self.assertEqual(self.ran, [])
 
@@ -661,12 +756,25 @@ class TreeExcludedScriptsTests(unittest.TestCase):
         # checked here as well, so a stale entry fails before a build.
         self.check_list("test", "sanitizer_suppressions", "asan-excluded-scripts")
 
-    def test_the_trees_regtest_list_names_regtest_scripts(self):
-        # The list the functional-tests-regtest mode passes with
-        # --chain=regtest: each entry is a script on regtest.
+    def test_the_trees_regtest_list_names_scripts_of_either_chain(self):
+        # The list the functional modes on the mainnet build leave out
+        # (with --chain=regtest) and build-low-difficulty runs
+        # (--include-file, without --chain): each entry is a script on main
+        # or regtest, and the list names at least one.
         tests_dir = os.path.join(HERE, "..", "..", "..", "test", "functional")
-        for name in self.check_list("test", "functional", "regtest-excluded-scripts"):
-            self.assertEqual(test_runner.script_chain(tests_dir, name), "regtest", name)
+        names = self.check_list("test", "functional", "regtest-excluded-scripts")
+        self.assertTrue(names)
+        for name in names:
+            self.assertIn(test_runner.script_chain(tests_dir, name), ("main", "regtest"), name)
+
+    def test_every_script_outside_the_regtest_list_runs_on_regtest(self):
+        # The runs on the mainnet build select --chain=regtest; a script on
+        # main that is not listed would run in no job.
+        tests_dir = os.path.join(HERE, "..", "..", "..", "test", "functional")
+        listed = set(self.check_list("test", "functional", "regtest-excluded-scripts"))
+        on_main = sorted({test.split()[0] for test in test_runner.ALL_SCRIPTS
+                          if test_runner.script_chain(tests_dir, test.split()[0]) != "regtest"} - listed)
+        self.assertEqual(on_main, [])
 
 
 if __name__ == "__main__":

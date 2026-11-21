@@ -95,6 +95,30 @@ class SnapshotTest(unittest.TestCase):
         # The run directory is unchanged.
         self.assertEqual(tu.tree_state(self.run_out), before)
 
+    def test_snapshot_of_a_regtest_run(self):
+        main_out = os.path.join(self.tmp, "main-run")
+        tu.make_run(main_out, heights=4)
+        rep = tu.make_run(self.run_out, heights=4, regtest=True)
+        code, out, err = self.cli()
+        self.assertEqual(code, 0, err)
+        meta = self.meta()
+        self.assertIs(meta["regtest"], True)
+        self.assertEqual((meta["height"], meta["digest"]), (4, rep["digest"]))
+        # The databases of the run's chain directory, at the paths of a
+        # snapshot of a run on main; a snapshot of a run on main has no
+        # regtest entry.
+        main_snap = os.path.join(self.tmp, "main-snap")
+        self.assertEqual(self.cli(main_out, main_snap)[0], 0)
+        with open(os.path.join(main_snap, "snapshot.json")) as f:
+            main_meta = json.load(f)
+        self.assertNotIn("regtest", main_meta)
+        self.assertEqual(set(meta), set(main_meta) | {"regtest"})
+        self.assertEqual(sorted(meta["manifest"]), sorted(main_meta["manifest"]))
+        for path, entry in meta["manifest"].items():
+            self.assertEqual(entry["sha256"],
+                             runner.file_sha256(os.path.join(self.run_out, "datadir", "regtest", path)), path)
+        self.assertNotIn("regtest", os.listdir(self.snap))
+
     def test_snapshot_of_a_run_up_to_a_height(self):
         chain = {"datadir": "/chain", "height": 9, "hash": "77" * 32}
         rep = tu.make_run(self.run_out, heights=4, fields={"up_to_height": 4, "chain": chain})
@@ -170,23 +194,28 @@ class SnapshotTest(unittest.TestCase):
                 self.assertFalse(os.path.exists(self.snap))
 
     def test_refused_when_a_node_holds_the_lock(self):
-        tu.make_run(self.run_out)
-        lock = os.path.join(self.run_out, "datadir", ".lock")
-        holder = subprocess.Popen(
-            [sys.executable, "-I", "-c", "import fcntl, os, sys\n"
-             "fd = os.open(sys.argv[1], os.O_RDWR)\n"
-             "fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
-             "print('locked', flush=True)\n"
-             "sys.stdin.read()\n", lock],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
-        try:
-            self.assertEqual(holder.stdout.readline(), "locked\n")
-            self.assert_refused("in use by a running node")
-            self.assertFalse(os.path.exists(self.snap))
-        finally:
-            holder.stdin.close()
-            holder.wait(timeout=30)
-            holder.stdout.close()
+        # On regtest the node locks the chain directory.
+        for regtest, lock_dir in ((False, "datadir"), (True, os.path.join("datadir", "regtest"))):
+            with self.subTest(regtest=regtest):
+                if os.path.exists(self.run_out):
+                    shutil.rmtree(self.run_out)
+                tu.make_run(self.run_out, regtest=regtest)
+                lock = os.path.join(self.run_out, lock_dir, ".lock")
+                holder = subprocess.Popen(
+                    [sys.executable, "-I", "-c", "import fcntl, os, sys\n"
+                     "fd = os.open(sys.argv[1], os.O_RDWR)\n"
+                     "fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+                     "print('locked', flush=True)\n"
+                     "sys.stdin.read()\n", lock],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
+                try:
+                    self.assertEqual(holder.stdout.readline(), "locked\n")
+                    self.assert_refused("in use by a running node")
+                    self.assertFalse(os.path.exists(self.snap))
+                finally:
+                    holder.stdin.close()
+                    holder.wait(timeout=30)
+                    holder.stdout.close()
 
     def test_refused_without_a_database_directory(self):
         tu.make_run(self.run_out)

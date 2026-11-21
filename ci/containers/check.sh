@@ -23,8 +23,11 @@
 #           seccomp option for unit-tests-tsan only and CCACHE_DISABLE=1 for
 #           the sanitizer modes (unit-tests-asan, unit-tests-tsan,
 #           fuzz-corpus, functional-tests-asan) only and passing SANITIZE
-#           and FTEST_SHARD on when set (stub docker), cov running every
-#           functional test script whatever FTEST_SHARD says, asan's
+#           and FTEST_SHARD on when set (stub docker), cov running both
+#           coverage targets in one build and every functional test script
+#           whatever FTEST_SHARD says, ftest running the scripts on regtest
+#           with the regtest list left out, the variants func and cov-func
+#           refused, asan's
 #           sanitizer options (the suppression file, the caller's own options
 #           kept) and its list of test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
@@ -36,7 +39,9 @@
 #           coverage modes (cov-unit, cov-functional; 22.04 image) configure
 #           with their flags (unit-tests-asan also with SANITIZE=address and
 #           undefined, and rejects other values; -g1 in unit-tests-asan and
-#           functional-tests-asan), build-low-difficulty, unit-tests and the unit
+#           functional-tests-asan), the functional modes and cov-functional
+#           configure without the low-difficulty parameters,
+#           build-low-difficulty, unit-tests and the unit
 #           sanitizer modes run the unit test suites of their build with JOBS
 #           (the sanitizer modes with their runtime options and nothing else
 #           does, unit-tests-tsan with address randomisation off) and fail when
@@ -61,14 +66,18 @@
 #           with --extended and FTEST_JOBS (with FTEST_SHARD also --shard;
 #           a malformed FTEST_SHARD or a runner without --shard stops them
 #           before the build; cov-functional passes FTEST_SHARD to make and
-#           stops on a target without it) and fail when it fails, and
+#           stops on a target without it or a tree without the regtest list)
+#           and fail when it fails, and
 #           functional-tests-asan runs it with the sanitizers' options, a
 #           directory for their reports and its list of scripts left out and
-#           fails on a report there even when every script passed;
-#           functional-tests-regtest configures without the low-difficulty
-#           parameters, runs it with --chain=regtest and its list of scripts
-#           left out, and stops before the build on a tree without its list
-#           or with a runner without --chain or --exclude-file
+#           fails on a report there even when every script passed; the
+#           functional modes run it with --chain=regtest and the regtest list
+#           left out, and stop before the build on a tree without that list
+#           or with a runner without --chain or --exclude-file;
+#           build-low-difficulty then runs the scripts of the regtest list
+#           with FTEST_JOBS (test_runner.py --include-file), fails when the
+#           runner fails and stops before the build on a tree without the
+#           list or with a runner without --include-file
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -275,7 +284,7 @@ step_devsh() {
     printf '%s\n' '#!/bin/bash' '[[ "${1:-}" != run ]] || echo "$*" >> "$STUB_DOCKER"' > "$bin/docker"
     chmod +x "$bin/docker"
     local dlog="$work/devsh/docker.log" mode
-    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests functional-tests-regtest; do
+    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests build-low-difficulty; do
         rm -f "$dlog"
         PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" "$a/dev.sh" container --no-image-build --no-cache "$mode" \
             > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
@@ -308,15 +317,47 @@ step_devsh() {
         [[ " $got " == *" -e $v "* ]] && pass "devsh: container passes $v when it is set: $got" ||
             fail "devsh: container does not pass $v: $got"
     done
-    # cov runs every functional test script, also with an FTEST_SHARD in the
-    # environment (the stub make records the arguments; configured build
-    # directories, so cov only runs make).
-    mkdir -p "$a/build/cov-unit" "$a/build/cov-func"; : > "$a/build/cov-unit/Makefile"; : > "$a/build/cov-func/Makefile"
+    # cov runs both coverage targets in one build, and every functional test
+    # script, also with an FTEST_SHARD in the environment (the stub make
+    # records the arguments; a configured build directory, so cov only runs
+    # make).
+    mkdir -p "$a/build/cov"; : > "$a/build/cov/Makefile"
     rm -f "$log"
     PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" FTEST_SHARD=1/2 "$a/dev.sh" cov > "$work/devsh/a.log" 2>&1 || true
     got=$(grep -m1 ' cov-functional$' "$log" || echo "no make cov-functional")
     [[ " $got " == *" FTEST_SHARD= "* ]] && pass "devsh: cov runs make cov-functional with FTEST_SHARD empty: ${got#start }" ||
         fail "devsh: cov with FTEST_SHARD=1/2 in the environment runs: $got"
+    got=$(grep -E ' cov-(unit|functional)$' "$log" | sed 's/^start -C \([^ ]*\) .* \(cov-[a-z]*\)$/\1 \2/' | tr '\n' ' ')
+    [[ "$got" == "$a/build/cov cov-unit $a/build/cov cov-functional " ]] &&
+        pass "devsh: cov runs both coverage targets in build/cov" || fail "devsh: cov runs: $got"
+    # ftest runs the scripts on regtest, but those of the regtest list, on
+    # the dev build (a runner that records its arguments); dev.sh has no
+    # variant with the low-difficulty parameters.
+    mkdir -p "$a/build/dev/test/functional" "$a/test/functional"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/bash' 'echo "$*" > "$STUB_ENV.args"' > "$a/build/dev/test/functional/test_runner.py"
+    chmod +x "$a/build/dev/test/functional/test_runner.py"
+    rm -f "$a/build/dev/config.status"
+    : > "$a/test/functional/wallet_x.py"
+    local select="--chain=regtest --exclude-file=$a/test/functional/regtest-excluded-scripts" ftest_args
+    # Without a named script the list is left out, also when an option's
+    # separate value names a script or is no option; a named script (with or
+    # without .py, or as a path) runs as given.
+    for ftest_args in "--failfast -j 2" "--filter wallet" "--exclude wallet_x.py --shard 1/2" \
+                      "--tmpdirprefix /tmp/x" "wallet_x.py" "wallet_x" "test/functional/wallet_x.py -j 2"; do
+        rm -f "$work/devsh/ftest.args"
+        # shellcheck disable=SC2086 # the arguments are split on purpose
+        PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$work/devsh/ftest" DEV_CACHE="$c" "$a/dev.sh" ftest $ftest_args \
+            > "$work/devsh/a.log" 2>&1 || fail "devsh: ftest $ftest_args in a"
+        got=$(cat "$work/devsh/ftest.args" 2>/dev/null || echo "the runner did not run")
+        want="$select $ftest_args"
+        [[ $ftest_args != *wallet_x* || $ftest_args == --exclude* ]] || want="--chain=regtest $ftest_args"
+        [[ "$got" == *" $want" ]] && pass "devsh: ftest $ftest_args runs: test_runner.py $got" ||
+            fail "devsh: ftest $ftest_args runs: test_runner.py $got (want ... $want)"
+    done
+    for v in func cov-func; do
+        expect_status 2 "devsh: the variant $v is refused" env DEV_CACHE="$c" "$a/dev.sh" build "$v"
+    done
     # asan runs the suites with the tree's LeakSanitizer suppressions and its
     # default options, and keeps the caller's own (a configured build
     # directory, the stub make, and a runner that records its environment).
@@ -403,10 +444,9 @@ step_smoke() {
         grep -q 'unit-tests-tsan' "$work/out.txt" || fail "smoke: $image: the mode list does not name unit-tests-tsan"
         grep -q 'fuzz-corpus' "$work/out.txt" || fail "smoke: $image: the mode list does not name fuzz-corpus"
         grep -q 'functional-tests-asan' "$work/out.txt" || fail "smoke: $image: the mode list does not name functional-tests-asan"
-        grep -q 'functional-tests-regtest' "$work/out.txt" || fail "smoke: $image: the mode list does not name functional-tests-regtest"
         # The modes that run tests must stop early, with a clear message, on
         # a tree without the scripts and targets they need.
-        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan functional-tests-regtest build-low-difficulty cov-unit cov-functional; do
+        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests functional-tests-asan build-low-difficulty cov-unit cov-functional; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -431,17 +471,45 @@ step_smoke() {
         # build-low-difficulty runs every unit test suite of the test_bitcoin
         # it built in the tree, JOBS at a time, logs to its own directory,
         # and fails when a suite fails or the build made no test_bitcoin.
+        # Then it runs the scripts of the regtest list in the tree,
+        # FTEST_JOBS at a time, and fails when the runner fails.
         local want_args="/src/src/test/test_bitcoin /src/build/docker-$image/build-low-difficulty/unit-test-logs 3"
+        local want_runner ftest_jobs
+        for ftest_jobs in "" 2; do
+            want_runner="-j ${ftest_jobs:-4} --tmpdirprefix=/src/build/docker-$image/build-low-difficulty/test/tmp"
+            want_runner+=" --include-file=/src/test/functional/regtest-excluded-scripts"
+            make_unit_stub "$stub" "$tag" 0
+            docker run --rm -v "$stub:/src" -e JOBS=3 ${ftest_jobs:+-e FTEST_JOBS="$ftest_jobs"} "$tag" build-low-difficulty \
+                > "$work/out.txt" 2>&1 && status=0 || status=$?
+            args=$(cat "$stub/suites-args" 2>/dev/null || echo "run-unit-suites.sh did not run")
+            if [[ $status == 0 && "$args" == "$want_args" ]]; then
+                pass "smoke: $image: build-low-difficulty runs: run-unit-suites.sh $args"
+            else
+                tail -n 5 "$work/out.txt"
+                fail "smoke: $image: build-low-difficulty (exit status $status) runs: run-unit-suites.sh $args"
+            fi
+            args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
+            [[ "$args" == "$want_runner" ]] &&
+                pass "smoke: $image: build-low-difficulty (FTEST_JOBS=${ftest_jobs:-unset}) runs: test_runner.py $args" ||
+                fail "smoke: $image: build-low-difficulty (FTEST_JOBS=${ftest_jobs:-unset}) runs: test_runner.py $args (want $want_runner)"
+        done
+        make_unit_stub "$stub" "$tag" 0 4
+        expect_status 4 "smoke: $image: build-low-difficulty fails when a functional test fails" \
+            docker run --rm -v "$stub:/src" "$tag" build-low-difficulty
         make_unit_stub "$stub" "$tag" 0
-        docker run --rm -v "$stub:/src" -e JOBS=3 "$tag" build-low-difficulty \
-            > "$work/out.txt" 2>&1 && status=0 || status=$?
-        args=$(cat "$stub/suites-args" 2>/dev/null || echo "run-unit-suites.sh did not run")
-        if [[ $status == 0 && "$args" == "$want_args" ]]; then
-            pass "smoke: $image: build-low-difficulty runs: run-unit-suites.sh $args"
-        else
-            tail -n 5 "$work/out.txt"
-            fail "smoke: $image: build-low-difficulty (exit status $status) runs: run-unit-suites.sh $args"
-        fi
+        rm "$stub/test/functional/regtest-excluded-scripts"
+        expect_status 1 "smoke: $image: build-low-difficulty stops on a tree without its list of scripts" \
+            docker run --rm -v "$stub:/src" "$tag" build-low-difficulty
+        grep -q 'error: .*test/functional/regtest-excluded-scripts' "$work/out.txt" ||
+            fail "smoke: $image: build-low-difficulty without its list gave no 'error: ' message"
+        [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: build-low-difficulty configured without its list"
+        make_unit_stub "$stub" "$tag" 0
+        printf '#!/bin/sh\n# --chain --exclude-file\nexit 0\n' > "$stub/test/functional/test_runner.py"
+        expect_status 1 "smoke: $image: build-low-difficulty stops on a runner without --include-file" \
+            docker run --rm -v "$stub:/src" "$tag" build-low-difficulty
+        grep -q -- "error: .*--include-file" "$work/out.txt" ||
+            fail "smoke: $image: build-low-difficulty with a runner without --include-file gave no 'error: ' message naming it"
+        [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: build-low-difficulty configured with a runner without --include-file"
         make_unit_stub "$stub" "$tag" 3
         expect_status 3 "smoke: $image: build-low-difficulty fails when a unit test suite fails" \
             docker run --rm -v "$stub:/src" "$tag" build-low-difficulty
@@ -453,39 +521,43 @@ step_smoke() {
         grep -q 'error: the build made no src/test/test_bitcoin' "$work/out.txt" ||
             fail "smoke: $image: a build without test_bitcoin gave no 'error: ' message"
         [[ ! -f "$stub/suites-args" ]] || fail "smoke: $image: run-unit-suites.sh ran without test_bitcoin"
-        # functional-tests-regtest configures out of tree with the flags of
-        # functional-tests, without the low-difficulty parameters.
+        # functional-tests configures out of tree with -O1, without the
+        # low-difficulty parameters.
         make_configure_stub "$stub" "$tag"
-        docker run --rm -v "$stub:/src" "$tag" functional-tests-regtest > "$work/out.txt" 2>&1 || true
+        docker run --rm -v "$stub:/src" "$tag" functional-tests > "$work/out.txt" 2>&1 || true
         args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
         if [[ " $args " == *" CXXFLAGS=-O1 -g "* && " $args " == *" CFLAGS=-O1 -g "* &&
               " $args " == *" --without-gui --disable-man --enable-ccache "* &&
               " $args " != *" --enable-low-difficulty-for-development "* && " $args " != *-fsanitize* ]]; then
-            pass "smoke: $image: functional-tests-regtest configures with: $args"
+            pass "smoke: $image: functional-tests configures with: $args"
         else
-            tail -n 5 "$work/out.txt"; fail "smoke: $image: functional-tests-regtest configure arguments: $args"
+            tail -n 5 "$work/out.txt"; fail "smoke: $image: functional-tests configure arguments: $args"
         fi
-        # Without its list the runner would fail after the build, and a
-        # runner without the options would pass them on to every script; the
-        # mode stops before the build.
-        make_runner_stub "$stub" "$tag" 0
-        rm "$stub/test/functional/regtest-excluded-scripts"
-        expect_status 1 "smoke: $image: functional-tests-regtest stops on a tree without its list of scripts left out" \
-            docker run --rm -v "$stub:/src" "$tag" functional-tests-regtest
-        grep -q 'error: .*test/functional/regtest-excluded-scripts' "$work/out.txt" ||
-            fail "smoke: $image: functional-tests-regtest without its list gave no 'error: ' message"
-        [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: functional-tests-regtest built without its list"
-        local option other
-        for option in --chain --exclude-file; do
-            other=--exclude-file
-            [[ $option != --exclude-file ]] || other=--chain
+        # Without the regtest list the runner would fail after the build, and
+        # a runner without the options would pass them on to every script;
+        # the functional modes stop before the build.
+        local option other func_mode
+        local list_modes=(functional-tests)
+        [[ "$image" != ubuntu.22.04 ]] || list_modes+=(functional-tests-asan)
+        for func_mode in "${list_modes[@]}"; do
             make_runner_stub "$stub" "$tag" 0
-            printf '#!/bin/sh\n# %s\nexit 0\n' "$other" > "$stub/test/functional/test_runner.py"
-            expect_status 1 "smoke: $image: functional-tests-regtest stops on a runner without $option" \
-                docker run --rm -v "$stub:/src" "$tag" functional-tests-regtest
-            grep -q -- "error: .*$option" "$work/out.txt" ||
-                fail "smoke: $image: functional-tests-regtest with a runner without $option gave no 'error: ' message naming it"
-            [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: functional-tests-regtest built with a runner without $option"
+            rm "$stub/test/functional/regtest-excluded-scripts"
+            expect_status 1 "smoke: $image: $func_mode stops on a tree without the regtest list" \
+                docker run --rm -v "$stub:/src" "$tag" "$func_mode"
+            grep -q 'error: .*test/functional/regtest-excluded-scripts' "$work/out.txt" ||
+                fail "smoke: $image: $func_mode without the regtest list gave no 'error: ' message"
+            [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: $func_mode built without the regtest list"
+            for option in --chain --exclude-file; do
+                other="--sanitizer-logs --exclude-file"
+                [[ $option != --exclude-file ]] || other="--sanitizer-logs --chain"
+                make_runner_stub "$stub" "$tag" 0
+                printf '#!/bin/sh\n# %s\nexit 0\n' "$other" > "$stub/test/functional/test_runner.py"
+                expect_status 1 "smoke: $image: $func_mode stops on a runner without $option" \
+                    docker run --rm -v "$stub:/src" "$tag" "$func_mode"
+                grep -q -- "error: .*$option" "$work/out.txt" ||
+                    fail "smoke: $image: $func_mode with a runner without $option gave no 'error: ' message naming it"
+                [[ ! -f "$stub/make-goals" ]] || fail "smoke: $image: $func_mode built with a runner without $option"
+            done
         done
         # The sanitizer modes run in the 22.04 image only; the others refuse
         # them before the build.
@@ -538,15 +610,15 @@ step_smoke() {
                 [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-asan configured with SANITIZE=$leg"
             done
             # functional-tests-asan: the flags of unit-tests-asan (both
-            # sanitizers; SANITIZE does not apply) on the low-difficulty
-            # build, with both sanitizer runtimes linked into the binaries.
+            # sanitizers; SANITIZE does not apply), mainnet consensus, with
+            # both sanitizer runtimes linked into the binaries.
             make_configure_stub "$stub" "$tag"
             docker run --rm -v "$stub:/src" -e SANITIZE=address "$tag" functional-tests-asan > "$work/out.txt" 2>&1 || true
             args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
             if [[ " $args " == *" --with-asm=no "* && " $args " == *" CXXFLAGS=-O1 -g1 $san "* &&
                   " $args " == *" CFLAGS=-O1 -g1 $san "* && " $args " == *" LDFLAGS=$san -static-libasan -static-libubsan "* &&
                   " $args " == *" --without-gui --disable-man --enable-ccache "* &&
-                  " $args " == *" --enable-low-difficulty-for-development "* ]]; then
+                  " $args " != *" --enable-low-difficulty-for-development "* ]]; then
                 pass "smoke: $image: functional-tests-asan configures with: $args"
             else
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: functional-tests-asan configure arguments: $args"
@@ -702,8 +774,8 @@ step_smoke() {
             # list would pass them on to every script; the mode stops before
             # the build.
             for option in --sanitizer-logs --exclude-file; do
-                other=--exclude-file
-                [[ $option != --exclude-file ]] || other=--sanitizer-logs
+                other="--chain --exclude-file"
+                [[ $option != --exclude-file ]] || other="--chain --sanitizer-logs"
                 make_runner_stub "$stub" "$tag" 0
                 printf '#!/bin/sh\n# %s\nexit 0\n' "$other" > "$stub/test/functional/test_runner.py"
                 expect_status 1 "smoke: $image: functional-tests-asan stops on a runner without $option" \
@@ -723,13 +795,12 @@ step_smoke() {
             [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: unit-tests-tsan configured under the seccomp filter"
         fi
         # The functional modes build only yacoind and yacoin-cli and run
-        # every script, the extended ones too, FTEST_JOBS (default 4) at a
-        # time, and fail when the runner fails. functional-tests-asan (22.04
-        # image) runs them with the sanitizers' runtime options, a directory
-        # for their reports and its list of scripts left out, and only it
-        # does; functional-tests-regtest runs the scripts on regtest but
-        # those of its list, and only it does.
-        local want ftest_jobs status func_modes=(functional-tests functional-tests-regtest) goals logs want_opts has_opts
+        # the scripts on regtest, but those of the regtest list, the extended
+        # ones too, FTEST_JOBS (default 4) at a time, and fail when the
+        # runner fails. functional-tests-asan (22.04 image) runs them with
+        # the sanitizers' runtime options, a directory for their reports and
+        # its list of scripts left out, and only it does.
+        local want ftest_jobs status func_modes=(functional-tests) goals logs want_opts has_opts
         local excluded="/src/test/sanitizer_suppressions/asan-excluded-scripts"
         local regtest_excluded="/src/test/functional/regtest-excluded-scripts"
         [[ "$image" != ubuntu.22.04 ]] || func_modes+=(functional-tests-asan)
@@ -742,12 +813,10 @@ step_smoke() {
                     > "$work/out.txt" 2>&1 && status=0 || status=$?
                 args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
                 goals=$(tr '\n' ' ' < "$stub/make-goals" 2>/dev/null || echo "make did not run")
-                # Its two options (1 + 2) for functional-tests-asan, its two
-                # (4 + 8) for functional-tests-regtest, none for
-                # functional-tests.
-                want_opts=0 has_opts=0
-                [[ $mode != functional-tests-asan ]] || want_opts=3
-                [[ $mode != functional-tests-regtest ]] || want_opts=12
+                # The regtest options (4 + 8) for both, the sanitizer options
+                # (1 + 2) for functional-tests-asan only.
+                want_opts=12 has_opts=0
+                [[ $mode != functional-tests-asan ]] || want_opts=15
                 [[ " $args " != *" --sanitizer-logs=$logs "* ]] || has_opts=$(( has_opts + 1 ))
                 [[ " $args " != *" --exclude-file=$excluded "* ]] || has_opts=$(( has_opts + 2 ))
                 [[ " $args " != *" --chain=regtest "* ]] || has_opts=$(( has_opts + 4 ))
@@ -834,11 +903,8 @@ step_smoke() {
             printf 'cov-unit:\ncov-functional:\n' > "$stub/Makefile.am"
             docker run --rm -v "$stub:/src" "$tag" "$mode" > "$work/out.txt" 2>&1 || true
             args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
-            want_low=0 has_low=0
-            [[ $mode != cov-functional ]] || want_low=1
-            [[ " $args " != *" --enable-low-difficulty-for-development "* ]] || has_low=1
             if [[ " $args " == *" --enable-lcov "* && " $args " == *" CXXFLAGS=-O0 -g "* &&
-                  $want_low == "$has_low" ]]; then
+                  " $args " != *" --enable-low-difficulty-for-development "* ]]; then
                 pass "smoke: $image: $mode configures with: $args"
             else
                 tail -n 5 "$work/out.txt"; fail "smoke: $image: $mode configure arguments: $args"
@@ -864,6 +930,15 @@ step_smoke() {
         grep -q 'error: .*FTEST_SHARD' "$work/out.txt" ||
             fail "smoke: $image: cov-functional with a target without FTEST_SHARD gave no 'error: ' message naming it"
         [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: cov-functional configured with a target without FTEST_SHARD"
+        # Without the regtest list the target would fail after the build; the
+        # mode stops before it.
+        make_cov_stub "$stub" "$tag"
+        rm "$stub/test/functional/regtest-excluded-scripts"
+        expect_status 1 "smoke: $image: cov-functional stops on a tree without the regtest list" \
+            docker run --rm -v "$stub:/src" "$tag" cov-functional
+        grep -q 'error: .*test/functional/regtest-excluded-scripts' "$work/out.txt" ||
+            fail "smoke: $image: cov-functional without the regtest list gave no 'error: ' message"
+        [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: cov-functional configured without the regtest list"
         # The out-of-tree configure left root-owned build directories.
         docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${stub##*/}"
     done
@@ -940,14 +1015,15 @@ make_configure_stub() {
     # sanitizer modes their suppression files, unit-tests-asan its list of
     # test cases left out, functional-tests-asan its list of scripts left
     # out and a functional test runner with the options for the sanitizer
-    # reports and the list, functional-tests-regtest its list and a runner
-    # with --chain and --exclude-file.
+    # reports and the lists, the functional modes and build-low-difficulty
+    # the regtest list and a runner with --chain, --exclude-file and
+    # --include-file.
     mkdir -p "$d/contrib/devtools" "$d/test/sanitizer_suppressions" "$d/test/functional"
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-unit-suites.sh"
     # fuzz-corpus: its replay script and corpus.
     printf '#!/bin/sh\nexit 1\n' > "$d/contrib/devtools/run-fuzz-corpus.py"
     mkdir -p "$d/test/fuzz/corpus"
-    printf '#!/bin/sh\n# --sanitizer-logs --exclude-file --chain\nexit 1\n' > "$d/test/functional/test_runner.py"
+    printf '#!/bin/sh\n# --sanitizer-logs --exclude-file --chain --include-file\nexit 1\n' > "$d/test/functional/test_runner.py"
     : > "$d/test/sanitizer_suppressions/lsan"
     : > "$d/test/sanitizer_suppressions/tsan"
     : > "$d/test/sanitizer_suppressions/asan-excluded-cases"
@@ -1010,19 +1086,26 @@ make_tests_stub() {
 }
 
 # A stub source tree for build-low-difficulty: depends, autogen.sh, configure,
-# make and make install are no-ops, src/test/test_bitcoin exists, and
+# make and make install are no-ops, src/test/test_bitcoin exists,
 # contrib/devtools/run-unit-suites.sh records its arguments in
-# /src/suites-args and exits with <status>.
-# make_unit_stub <dir> <tag> <status>
+# /src/suites-args and exits with <status>, and
+# test/functional/test_runner.py records its arguments in /src/runner-args
+# and exits with <runner status> (default 0).
+# make_unit_stub <dir> <tag> <status> [runner status]
 make_unit_stub() {
     local d="$1" tag="$2"
     make_configure_stub "$d" "$tag"
-    printf '%s\n' '#!/bin/sh' 'printf "all:\ninstall:\n" > Makefile' > "$d/configure"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'printf "all:\ninstall:\n" > Makefile' > "$d/configure"
     mkdir -p "$d/src/test"
     printf '#!/bin/sh\nexit 1\n' > "$d/src/test/test_bitcoin"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/suites-args' "exit $3" > "$d/contrib/devtools/run-unit-suites.sh"
-    chmod +x "$d/configure" "$d/src/test/test_bitcoin" "$d/contrib/devtools/run-unit-suites.sh"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' '# Takes --include-file.' 'echo "$@" > /src/runner-args' "exit ${4:-0}" \
+        > "$d/test/functional/test_runner.py"
+    chmod +x "$d/configure" "$d/src/test/test_bitcoin" "$d/contrib/devtools/run-unit-suites.sh" \
+        "$d/test/functional/test_runner.py"
 }
 
 # A stub source tree for the functional modes: depends, autogen.sh and
@@ -1043,7 +1126,7 @@ make_runner_stub() {
         'printf "yacoind yacoin-cli:\n\t@echo \$@ >> /src/make-goals\n" > src/Makefile' > "$d/configure"
     mkdir -p "$d/test/functional"
     # shellcheck disable=SC2016 # expanded by the stub
-    printf '%s\n' '#!/bin/sh' '# Takes --sanitizer-logs, --exclude-file, --chain and --shard.' 'echo "$@" > /src/runner-args' \
+    printf '%s\n' '#!/bin/sh' '# Takes --sanitizer-logs, --exclude-file, --chain, --include-file and --shard.' 'echo "$@" > /src/runner-args' \
         'echo "ASAN_OPTIONS=${ASAN_OPTIONS:-} LSAN_OPTIONS=${LSAN_OPTIONS:-} UBSAN_OPTIONS=${UBSAN_OPTIONS:-} TSAN_OPTIONS=${TSAN_OPTIONS:-}" > /src/runner-env' \
         "report='${4:-}'" \
         'for a in "$@"; do case "$a" in --sanitizer-logs=*) dir="${a#*=}" ;; --tmpdirprefix=*) tmp="${a#*=}" ;; esac; done' \

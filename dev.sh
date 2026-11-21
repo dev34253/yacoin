@@ -74,8 +74,11 @@ Usage: ./dev.sh <command> [args]
   unit [suite...]         Build test_bitcoin (dev) and run unit test suites;
                           no suites = all suites, in parallel (UNIT_JOBS)
   check                   Full "make check" on build/dev (serial, as upstream)
-  ftest [test...]         Functional tests on build/func, FTEST_JOBS in
-                          parallel (default 4)
+  ftest [test...]         Functional tests on build/dev, on regtest, FTEST_JOBS
+                          in parallel (default 4); without tests all but those
+                          listed in test/functional/regtest-excluded-scripts
+                          (they need the low-difficulty build: ./dev.sh
+                          container ubuntu.16.04 build-low-difficulty)
   asan [suite...]         Build and run unit tests with ASan + UBSan (the
                           suppressions and the test cases left out in
                           test/sanitizer_suppressions/)
@@ -93,10 +96,10 @@ Usage: ./dev.sh <command> [args]
                           in it on this checkout (default: ubuntu.22.04 build;
                           options: ci/containers/run.sh --help)
 
-Variants: dev (mainnet consensus, no GUI, -O1 -g), func (dev + low difficulty),
+Variants: dev (mainnet consensus, no GUI, -O1 -g),
           release (default optimisation),
           asan (dev + AddressSanitizer/UndefinedBehaviorSanitizer),
-          cov-unit and cov-func (coverage builds used by "cov")
+          cov (coverage build used by "cov")
 
 Cache shared by all checkouts (ccache and the built dependencies; DEV_CACHE
 sets it, removing the directory clears it):
@@ -210,15 +213,11 @@ variant_flags() {
     # Debug info names paths relative to the checkout (gdb finds the sources
     # when started in it), so other checkouts can share the cached objects.
     flags=(--without-gui --disable-man --enable-ccache "CPPFLAGS=-fdebug-prefix-map=$ROOT=.")
-    # Unit tests run on the mainnet build (CI also runs them on the
-    # low-difficulty one), while the functional tests need the low-difficulty
-    # build, as in CI.
+    # The unit and functional tests run on the mainnet build (CI also runs
+    # the unit tests and some functional tests on the low-difficulty one).
     case "$1" in
         dev)
             flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
-        func)
-            flags+=(--enable-low-difficulty-for-development
-                    "CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         release)
             ;;
         asan)
@@ -226,12 +225,9 @@ variant_flags() {
             # left under ASan, so build it in plain C (passed to its configure).
             flags+=(--with-asm=no
                     "CXXFLAGS=-O1 -g $san" "CFLAGS=-O1 -g $san" "LDFLAGS=$san") ;;
-        # Coverage builds: -O0 so lines and branches map exactly to the source.
-        cov-unit)
+        # Coverage build: -O0 so lines and branches map exactly to the source.
+        cov)
             flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
-        cov-func)
-            flags+=(--enable-lcov --enable-low-difficulty-for-development
-                    "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
         *) echo "unknown variant: $1" >&2; exit 2 ;;
     esac
 }
@@ -295,9 +291,26 @@ cmd_check() {
     make -C "$BUILD_ROOT/dev" check
 }
 
+# As CI's functional-tests mode: the scripts on regtest, but those of the
+# list. Scripts named on the command line run as given: an argument that
+# names a script of test/functional (with or without .py, also as a path)
+# and is not the value of a runner option given as a separate argument.
 cmd_ftest() {
-    cmd_build func
-    "$BUILD_ROOT/func/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --tmpdirprefix="$TMPDIR" "$@"
+    local arg name value=0 select=(--exclude-file="$ROOT/test/functional/regtest-excluded-scripts")
+    for arg in "$@"; do
+        if (( value )); then
+            value=0
+        elif [[ "$arg" =~ ^(-c|--combinedlogslen|-x|--exclude|-j|--jobs|-t|--tmpdirprefix|--filter|--exclude-file|--include-file|--shard|--chain|--sanitizer-logs)$ ]]; then
+            value=1
+        elif [[ "$arg" != -* ]]; then
+            name="${arg##*/}"
+            [[ "$name" == *.py ]] || name+=.py
+            [[ ! -f "$ROOT/test/functional/$name" ]] || select=()
+        fi
+    done
+    cmd_build dev
+    "$BUILD_ROOT/dev/test/functional/test_runner.py" -j "${FTEST_JOBS:-4}" --tmpdirprefix="$TMPDIR" \
+        --chain=regtest ${select[@]+"${select[@]}"} "$@"
 }
 
 # The sanitizer options of CI's unit-tests-asan mode (ci/containers/
@@ -315,48 +328,44 @@ cmd_asan() {
         --exclude-cases "$ROOT/test/sanitizer_suppressions/asan-excluded-cases" "$@"
 }
 
-# Unit test coverage (mainnet build) and functional test coverage
-# (low-difficulty build), then both merged and checked against the targets
-# (cmd_cov_check). The Makefile targets capture coverage even when tests fail,
-# so all reports are written either way.
+# Unit test coverage and functional test coverage on one coverage build,
+# then both merged and checked against the targets (cmd_cov_check). The
+# Makefile targets capture coverage even when tests fail, so all reports are
+# written either way.
 cmd_cov() {
-    local out="$DEVBUILD/coverage" status=0 v
+    local out="$DEVBUILD/coverage" status=0 b="$BUILD_ROOT/cov"
     ensure_dirs
     # Only configure here: the make targets build what they need.
-    for v in cov-unit cov-func; do
-        check_prefix "$BUILD_ROOT/$v"
-        [[ -f "$BUILD_ROOT/$v/Makefile" ]] || cmd_configure "$v"
-    done
-    make -s -C "$BUILD_ROOT/cov-func" test/config.ini
+    check_prefix "$b"
+    [[ -f "$b/Makefile" ]] || cmd_configure cov
+    make -s -C "$b" test/config.ini
     # Delete old reports here too, not only in the make targets: if make fails
     # before a recipe runs, an old report must not be shown as this run's.
     # A report that exists after make comes from this run, even if tests failed.
-    rm -rf "$BUILD_ROOT/cov-unit/test_bitcoin.coverage" "$BUILD_ROOT/cov-unit/test_bitcoin_coverage.info" \
-        "$BUILD_ROOT/cov-unit/test_bitcoin_functions.json" \
-        "$BUILD_ROOT/cov-func/functional_test.coverage" "$BUILD_ROOT/cov-func/functional_test_coverage.info" \
-        "$BUILD_ROOT/cov-func/functional_test_functions.json"
-    make -C "$BUILD_ROOT/cov-unit" -j"$JOBS" COV_JOBS="$JOBS" cov-unit || status=1
+    rm -rf "$b/test_bitcoin.coverage" "$b/test_bitcoin_coverage.info" "$b/test_bitcoin_functions.json" \
+        "$b/functional_test.coverage" "$b/functional_test_coverage.info" "$b/functional_test_functions.json"
+    make -C "$b" -j"$JOBS" COV_JOBS="$JOBS" cov-unit || status=1
     # FTEST_JOBS, if set, replaces the Makefile's number of parallel scripts.
     # Every script runs: an FTEST_SHARD in the environment does not reach make.
-    make -C "$BUILD_ROOT/cov-func" -j"$JOBS" COV_JOBS="$JOBS" ${FTEST_JOBS:+FTEST_JOBS="$FTEST_JOBS"} FTEST_SHARD= \
+    make -C "$b" -j"$JOBS" COV_JOBS="$JOBS" ${FTEST_JOBS:+FTEST_JOBS="$FTEST_JOBS"} FTEST_SHARD= \
         cov-functional || status=1
     # Use the lcov and genhtml settings configure and Makefile.am chose, so the
-    # merged report matches the per-build reports. Read after make, which may
+    # merged report matches the per-target reports. Read after make, which may
     # have regenerated the Makefile.
-    local mk="$BUILD_ROOT/cov-unit/Makefile" lcov genhtml
+    local mk="$b/Makefile" lcov genhtml
     read -ra lcov <<< "$(sed -n 's/^LCOV = //p' "$mk") $(sed -n 's/^LCOV_OPTS = //p' "$mk")"
     read -ra genhtml <<< "$(sed -n 's/^GENHTML = //p' "$mk") $(sed -n 's/^LCOV_OPTS = //p' "$mk") $(sed -n 's/^GENHTML_OPTS = //p' "$mk")"
     rm -rf "$out"; mkdir -p "$out"
     local parts=() src_dir src_info src_functions part
     for part in unit functional; do
         if [[ $part == unit ]]; then
-            src_dir="$BUILD_ROOT/cov-unit/test_bitcoin.coverage"
-            src_info="$BUILD_ROOT/cov-unit/test_bitcoin_coverage.info"
-            src_functions="$BUILD_ROOT/cov-unit/test_bitcoin_functions.json"
+            src_dir="$b/test_bitcoin.coverage"
+            src_info="$b/test_bitcoin_coverage.info"
+            src_functions="$b/test_bitcoin_functions.json"
         else
-            src_dir="$BUILD_ROOT/cov-func/functional_test.coverage"
-            src_info="$BUILD_ROOT/cov-func/functional_test_coverage.info"
-            src_functions="$BUILD_ROOT/cov-func/functional_test_functions.json"
+            src_dir="$b/functional_test.coverage"
+            src_info="$b/functional_test_coverage.info"
+            src_functions="$b/functional_test_functions.json"
         fi
         if [[ -f "$src_info" && -d "$src_dir" ]]; then
             cp -r "$src_dir" "$out/$part"; cp "$src_info" "$out/$part.info"; parts+=("$part")
@@ -366,8 +375,7 @@ cmd_cov() {
         # The function extents, for the per-function numbers of cov-check.
         if [[ -f "$src_functions" ]]; then cp "$src_functions" "$out/${part}_functions.json"; fi
     done
-    # Both builds record the same absolute source paths, so lcov merges them
-    # per file. See doc/developer-build.md for the limits of this merge.
+    # Both reports come from one build, so lcov merges them per file.
     if [[ ${#parts[@]} -eq 2 ]]; then
         "${lcov[@]}" -q -a "$out/unit.info" -a "$out/functional.info" -o "$out/total.info"
         "${genhtml[@]}" -q "$out/total.info" -o "$out/total"
@@ -381,7 +389,7 @@ cmd_cov() {
         log "Coverage check"
         cmd_cov_check || status=1
     fi
-    [[ "$status" -eq 0 ]] || { echo "Tests failed, a report is missing or the coverage check failed; see ${BUILD_ROOT#"$ROOT"/}/cov-*/*.log" >&2; return 1; }
+    [[ "$status" -eq 0 ]] || { echo "Tests failed, a report is missing or the coverage check failed; see ${BUILD_ROOT#"$ROOT"/}/cov/*.log" >&2; return 1; }
 }
 
 # Checks the reports of "cov" against contrib/devtools/coverage-targets.json
@@ -412,7 +420,7 @@ cmd_container() {
         esac
     done
     case "${1:-}" in
-        ""|build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|functional-tests-regtest|cov-unit|cov-functional) ;;
+        ""|build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional) ;;
         *) image="$1"; shift ;;
     esac
     local env_args=(-u JOBS -u CCACHE_MAXSIZE)

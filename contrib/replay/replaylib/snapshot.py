@@ -7,7 +7,10 @@ report.json and failures.tsv, and snapshot.json: format, height, hash,
 digest and section digests of the state, the run's node command line,
 binary, source and directory, its failure counts, the time it was made,
 and the manifest (size and SHA-256 of every copied file). A directory
-without snapshot.json is not a snapshot.
+without snapshot.json is not a snapshot. The snapshot of a run on regtest
+(run --regtest) holds the databases of its chain directory, the data
+directory's regtest subdirectory, and its snapshot.json has "regtest":
+true.
 """
 
 import hashlib
@@ -111,6 +114,8 @@ def make(run_out, snap, log=print):
     if _inside(snap, run_out):
         raise SnapshotRefused("snapshot directory %s is inside the run directory %s" % (snap, run_out))
     rep = _load_run_report(run_out)
+    if rep.get("regtest"):
+        datadir = os.path.join(datadir, "regtest")
     if not os.path.isdir(datadir):
         raise SnapshotRefused("not a directory: %s" % datadir)
     try:
@@ -163,6 +168,8 @@ def make(run_out, snap, log=print):
             "made": report.utc_now(),
             "manifest": manifest,
         }
+        if rep.get("regtest"):
+            meta["regtest"] = True
         shutil.copyfile(os.path.join(run_out, "report.json"), os.path.join(snap, "report.json"))
         shutil.copyfile(failures_path, os.path.join(snap, "failures.tsv"))
         make_read_only(snap, top=False)

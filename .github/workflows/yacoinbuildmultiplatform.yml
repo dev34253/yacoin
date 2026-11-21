@@ -105,10 +105,13 @@ jobs:
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
           if-no-files-found: error
   functional-tests:
-    # Low-difficulty build of yacoind and yacoin-cli, then every functional
-    # test script, the three extended ones too, 4 at a time, one per vCPU of
-    # the runner (functional-tests mode of the yacoin-build image, Python
-    # 3.10). Cached and saved like the unit-tests job, in its own namespace.
+    # Mainnet consensus build of yacoind and yacoin-cli, then the functional
+    # test scripts, the three extended ones too, 4 at a time, one per vCPU of
+    # the runner, on regtest, but those listed in
+    # test/functional/regtest-excluded-scripts, which run in the
+    # build-ubuntu-1604-low-difficulty job (functional-tests mode of the
+    # yacoin-build image, Python 3.10). Cached and saved like the unit-tests
+    # job, in its own namespace.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -167,8 +170,8 @@ jobs:
   functional-tests-asan:
     # The functional-tests job's scripts under AddressSanitizer,
     # LeakSanitizer and UBSan (functional-tests-asan mode of the yacoin-build
-    # image: the flags and options of unit-tests-asan on the low-difficulty
-    # build), but those listed in
+    # image: the flags and options of unit-tests-asan on the mainnet
+    # consensus build), but those listed in
     # test/sanitizer_suppressions/asan-excluded-scripts. Every process a
     # script starts writes its reports to a file named after the script; any
     # report that is not suppressed fails its script and the leg, and the
@@ -232,65 +235,6 @@ jobs:
             build/docker-*/functional-tests-asan/test/tmp/test_runner_*/**/*.log
             build/docker-*/functional-tests-asan/test/tmp/test_runner_*/**/std*/*
             build/docker-*/functional-tests-asan/config.log
-          retention-days: 14
-  functional-tests-regtest:
-    # Mainnet consensus build of yacoind and yacoin-cli (the flags of
-    # functional-tests without the low-difficulty parameters), then the
-    # functional test scripts that run on regtest, the extended ones too, 4
-    # at a time, but those listed in test/functional/regtest-excluded-scripts
-    # (functional-tests-regtest mode of the yacoin-build image:
-    # test_runner.py --chain=regtest). The functional-tests job runs every
-    # script on the low-difficulty build. Cache: the unit-tests job's,
-    # restored only, for its depends packages (the same image, packages and
-    # prefix).
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      IMAGE: ubuntu.16.04
-    steps:
-      - uses: actions/checkout@v6
-      - name: image
-        id: image
-        uses: ./.github/actions/yacoin-build-image
-        with:
-          image: ${{ env.IMAGE }}
-      - name: cache dir and key
-        run: |
-          echo "REGTEST_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=unit-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
-        with:
-          path: ${{ env.REGTEST_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            unit-tests-${{ env.IMAGE }}-
-      - name: build and run the functional tests on regtest
-        # Below the job timeout, so a hang fails this step and the logs are
-        # still uploaded.
-        timeout-minutes: 25
-        env:
-          IMAGE_TAG: ${{ steps.image.outputs.tag }}
-        run: |
-          mkdir -p "$REGTEST_CACHE"
-          docker run --rm --init --name functional-tests-regtest -v "$GITHUB_WORKSPACE":/src -v "$REGTEST_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=2G \
-            "$IMAGE_TAG" functional-tests-regtest
-      - name: stop the container and make the logs readable
-        if: always()
-        run: |
-          # A step timeout may kill docker run without stopping the container.
-          docker rm -f functional-tests-regtest 2>/dev/null || true
-          # The nodes write their datadirs with umask 077 as root.
-          if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
-        if: failure()
-        with:
-          name: functional-test-logs-regtest
-          path: |
-            build/docker-*/functional-tests-regtest/test/tmp/test_runner_*/**/*.log
-            build/docker-*/functional-tests-regtest/test/tmp/test_runner_*/**/std*/*
-            build/docker-*/functional-tests-regtest/config.log
           retention-days: 14
   unit-tests:
     # Mainnet consensus build of test_bitcoin and bench_yacoin, every unit
@@ -532,7 +476,9 @@ jobs:
     # build-low-difficulty mode of the image, which then runs all unit test
     # suites of that build, so a test that only passes with the mainnet
     # parameters fails here (the unit-tests job runs them on the mainnet
-    # build). Cached and saved like the release jobs, under its own key;
+    # build), and the functional test scripts listed in
+    # test/functional/regtest-excluded-scripts, 4 at a time (Python 3.5).
+    # Cached and saved like the release jobs, under its own key;
     # without a cache of its own it starts from the 16.04 release job's
     # (same depends packages).
     runs-on: ubuntu-latest
@@ -583,13 +529,13 @@ jobs:
           docker run --rm --init --name low-difficulty-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
             -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG" build-low-difficulty
-      - name: stop the container and make the cache readable for saving and the unit test logs for uploading
+      - name: stop the container and make the cache readable for saving and the test logs for uploading
         if: always()
         run: |
           # A step timeout may kill docker run without stopping the container.
           docker rm -f low-difficulty-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
-          # The unit test logs, written by root with umask 077.
+          # The test logs, written by root with umask 077.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/cache/save@v5
         if: success() && env.SAVE_CACHE == 'true'
@@ -601,6 +547,14 @@ jobs:
         with:
           name: unit-test-logs-low-difficulty
           path: build/docker-*/build-low-difficulty/unit-test-logs/
+          retention-days: 14
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: functional-test-logs-low-difficulty
+          path: |
+            build/docker-*/build-low-difficulty/test/tmp/test_runner_*/**/*.log
+            build/docker-*/build-low-difficulty/test/tmp/test_runner_*/**/std*/*
           retention-days: 14
       - uses: actions/upload-artifact@v6
         with:
@@ -922,15 +876,15 @@ jobs:
             build/docker-*/cov-unit/config.log
           retention-days: 14
   coverage-functional-1:
-    # Functional test coverage, shard 1 of 2: low-difficulty coverage build
-    # and "make cov-functional" with FTEST_SHARD=1/2 (cov-functional mode of
-    # the yacoin-build image; the shard's scripts run 4 in parallel, then the
-    # timing-sensitive ones alone; test_runner.py --shard picks a script's
-    # shard by its position in the runner's list). coverage-functional-2
-    # runs the other shard; written out twice, so that each job has outputs
-    # of its own. Cache as in coverage-unit: the functional-tests job's,
-    # restored only. Artifact name (per shard and attempt) and outputs as in
-    # coverage-unit.
+    # Functional test coverage, shard 1 of 2: a coverage build of its own,
+    # configured as coverage-unit's, and "make cov-functional" with
+    # FTEST_SHARD=1/2 (cov-functional mode of the yacoin-build image; the
+    # shard's scripts run 4 in parallel, then the timing-sensitive ones alone;
+    # test_runner.py --shard picks a script's shard by its position in the
+    # runner's list). coverage-functional-2 runs the other shard; written out
+    # twice, so that each job has outputs of its own. Cache as in
+    # coverage-unit: the functional-tests job's, restored only. Artifact name
+    # (per shard and attempt) and outputs as in coverage-unit.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -997,15 +951,15 @@ jobs:
             build/docker-*/cov-functional/test/tmp/test_runner_*/**/std*/*
           retention-days: 14
   coverage-functional-2:
-    # Functional test coverage, shard 2 of 2: low-difficulty coverage build
-    # and "make cov-functional" with FTEST_SHARD=2/2 (cov-functional mode of
-    # the yacoin-build image; the shard's scripts run 4 in parallel, then the
-    # timing-sensitive ones alone; test_runner.py --shard picks a script's
-    # shard by its position in the runner's list). coverage-functional-1
-    # runs the other shard; written out twice, so that each job has outputs
-    # of its own. Cache as in coverage-unit: the functional-tests job's,
-    # restored only. Artifact name (per shard and attempt) and outputs as in
-    # coverage-unit.
+    # Functional test coverage, shard 2 of 2: a coverage build of its own,
+    # configured as coverage-unit's, and "make cov-functional" with
+    # FTEST_SHARD=2/2 (cov-functional mode of the yacoin-build image; the
+    # shard's scripts run 4 in parallel, then the timing-sensitive ones alone;
+    # test_runner.py --shard picks a script's shard by its position in the
+    # runner's list). coverage-functional-1 runs the other shard; written out
+    # twice, so that each job has outputs of its own. Cache as in
+    # coverage-unit: the functional-tests job's, restored only. Artifact name
+    # (per shard and attempt) and outputs as in coverage-unit.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

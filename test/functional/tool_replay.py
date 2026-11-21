@@ -3,7 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test contrib/replay/replay.py: run, snapshot, digest and compare on a
-real node.
+real regtest node; the runs start their nodes with run --regtest.
 
 Builds a chain of about 150 blocks with wallet payments and a restart in
 the middle, stops the node and takes the digest of its data directory.
@@ -97,9 +97,6 @@ def make_writable(path):
 
 class ToolReplayTest(BitcoinTestFramework):
     def set_test_params(self):
-        # Main: the replay tool reads a main data directory (the chain files
-        # in the data directory itself) and starts its nodes on main.
-        self.chain = 'main'
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.block_fork_1_0 = 1
@@ -114,6 +111,9 @@ class ToolReplayTest(BitcoinTestFramework):
         self.binary = os.path.abspath(self.options.bitcoind)
 
     def replay(self, *args, expect=0):
+        # Every run starts its node on regtest.
+        if args[0] == "run":
+            args = ("run", "--regtest") + args[1:]
         p = subprocess.run([sys.executable, "-I", self.script] + list(args), stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE, universal_newlines=True)
         self.log.debug("replay.py %s: %d\n%s%s" % (args[0], p.returncode, p.stdout, p.stderr))
@@ -170,34 +170,37 @@ class ToolReplayTest(BitcoinTestFramework):
         assert_greater_than(spent, 10)
 
         self.log.info("digest refuses the data directory of a running node")
-        _, err = self.replay("digest", node.datadir, self.out("refused"), expect=1)
+        _, err = self.replay("digest", node.chain_path(), self.out("refused"), expect=1)
         assert "in use by a running node" in err, err
         assert not os.path.exists(self.out("refused"))
 
         self.stop_node(0)
-        blocks = os.path.join(node.datadir, "blocks")
+        blocks = node.chain_path("blocks")
         before = snapshot(blocks)
         for db in ("chainstate", os.path.join("blocks", "index")):
-            sizes = {name[-4:]: size for name, (size, _) in snapshot(os.path.join(node.datadir, db)).items()}
+            sizes = {name[-4:]: size for name, (size, _) in snapshot(node.chain_path(db)).items()}
             assert sizes.get(".ldb", 0) > 0 and sizes.get(".log", 0) > 0, (db, sizes)
 
         self.log.info("digest of the stopped node")
-        self.replay("digest", node.datadir, self.out("node"))
+        self.replay("digest", node.chain_path(), self.out("node"))
         node_report = self.report_mod.load(self.out("node"))
         assert_equal(node_report.report["tip"], {"height": tip_height, "hash": tip_hash})
         assert_equal(node_report.report["status"], "complete")
         assert_equal(sorted(node_report.rows), list(range(tip_height + 1)))
         for height, row in node_report.rows.items():
             assert_equal(row.mint, mints[height])
-        coins = {self.digest_mod.decode_coin_key(k) for k, _ in self.digest_mod.read_coins(node.datadir)}
+        coins = {self.digest_mod.decode_coin_key(k) for k, _ in self.digest_mod.read_coins(node.chain_path())}
         assert_equal(coins, unspent)
         assert coins < outputs
         assert_equal(node_report.report["sections"]["coins"]["count"], len(unspent))
 
         self.log.info("run on a copy of the node's block files")
         port, rpcport = p2p_port(1), rpc_port(1)
-        node_args = ["-testnetNewLogicBlockNumber=%d" % self.block_fork_1_0, "-epochinterval=10",
-                     "-nFactorAtHardfork=%d" % NFACTOR_AT_HARDFORK, "-mocktime=%d" % node.mocktime]
+        # The activation heights, epoch interval and N-factor of the node.
+        node_args = [a for a in node.args if a.startswith("-testactivationheight=")]
+        assert_equal(len(node_args), 2)
+        node_args += ["-epochinterval=10", "-nFactorAtHardfork=%d" % NFACTOR_AT_HARDFORK,
+                      "-mocktime=%d" % node.mocktime]
         run1 = self.out("run1")
         self.replay("run", "--port", str(port), "--rpcport", str(rpcport), self.binary, blocks, run1,
                     "--", *node_args)
@@ -221,10 +224,10 @@ class ToolReplayTest(BitcoinTestFramework):
         assert_equal(rep["binary"]["path"], self.binary)
         with open(self.binary, "rb") as f:
             assert_equal(rep["binary"]["sha256"], hashlib.sha256(f.read()).hexdigest())
-        copied = [n for n in os.listdir(os.path.join(run1, "datadir", "blocks")) if n.startswith("blk")]
+        copied = [n for n in os.listdir(os.path.join(run1, "datadir", "regtest", "blocks")) if n.startswith("blk")]
         assert_equal(sorted(copied), sorted(n for n in before if n.startswith("blk")))
         for name in copied:
-            path = os.path.join(run1, "datadir", "blocks", name)
+            path = os.path.join(run1, "datadir", "regtest", "blocks", name)
             assert not os.path.islink(path)
             assert os.stat(path).st_ino != os.stat(os.path.join(blocks, name)).st_ino
 
@@ -232,7 +235,7 @@ class ToolReplayTest(BitcoinTestFramework):
         datadir = os.path.join(run1, "datadir")
         assert_equal(rep["command"], [
             self.binary, "-datadir=" + datadir, "-conf=" + os.path.join(datadir, "yacoin.conf"),
-            "-daemon=0", "-reindex", "-replayvalidation=report",
+            "-daemon=0", "-regtest", "-reindex", "-replayvalidation=report",
             "-connect=0", "-listen=0", "-dnsseed=0", "-discover=0", "-upnp=0", "-listenonion=0",
             "-server=0", "-disablewallet", "-printtoconsole=0",
             "-port=%d" % port, "-rpcport=%d" % rpcport] + node_args)
@@ -294,17 +297,17 @@ class ToolReplayTest(BitcoinTestFramework):
         assert_greater_than(new_tip_height, tip_height + 10)
         raw = [bytes.fromhex(node.getblock(node.getblockhash(h), False)) for h in range(new_tip_height + 1)]
         self.stop_node(0)
-        self.replay("digest", node.datadir, self.out("node2"))
+        self.replay("digest", node.chain_path(), self.out("node2"))
         node2_report = self.report_mod.load(self.out("node2"))
         node2 = node2_report.report
         assert_equal(node2["tip"], {"height": new_tip_height, "hash": new_tip_hash})
         node_args[-1] = "-mocktime=%d" % node.mocktime
-        chain = {"datadir": node.datadir, "height": new_tip_height, "hash": new_tip_hash}
+        chain = {"datadir": node.chain_path(), "height": new_tip_height, "hash": new_tip_hash}
 
         self.log.info("A run up to a height below the tip, with the node's data directory as the chain")
         height = tip_height - 20
         run_h = self.out("run-h")
-        self.replay("run", "--up-to-height", str(height), "--chain", node.datadir, "--port", str(port),
+        self.replay("run", "--up-to-height", str(height), "--chain", node.chain_path(), "--port", str(port),
                     "--rpcport", str(rpcport), self.binary, blocks, run_h, "--", *node_args)
         rep_h = self.report_mod.load(run_h).report
         assert_equal(rep_h["status"], "complete")
@@ -313,7 +316,7 @@ class ToolReplayTest(BitcoinTestFramework):
         assert_equal(rep_h["block_file_check"], {"blocks": height + 1, "not_in_index": 0, "stored_above_tip": None})
         assert "-reindex" in rep_h["command"]
         # The node got the main-chain blocks 0 to H in height order.
-        assert_equal(block_records(os.path.join(run_h, "datadir", "blocks")), raw[:height + 1])
+        assert_equal(block_records(os.path.join(run_h, "datadir", "regtest", "blocks")), raw[:height + 1])
         out, _ = self.replay("compare", self.out("node2"), run_h, expect=1)
         assert_equal(out.splitlines()[0], "first difference at height %d: only in A" % (height + 1))
 
@@ -332,8 +335,8 @@ class ToolReplayTest(BitcoinTestFramework):
 
         self.log.info("Snapshot run on the node's block files")
         run3 = self.out("run3")
-        self.replay("run", "--snapshot", snap, "--chain", node.datadir, "--port", str(port), "--rpcport", str(rpcport),
-                    self.binary, blocks, run3, "--", *node_args)
+        self.replay("run", "--snapshot", snap, "--chain", node.chain_path(), "--port", str(port),
+                    "--rpcport", str(rpcport), self.binary, blocks, run3, "--", *node_args)
         rep3 = self.report_mod.load(run3).report
         assert_equal(rep3["status"], "complete")
         assert_equal(rep3["incomplete_reasons"], [])
@@ -356,7 +359,7 @@ class ToolReplayTest(BitcoinTestFramework):
         imports = sorted(os.path.join(import_dir, n) for n in os.listdir(import_dir))
         assert_equal(rep3["command"], [
             self.binary, "-datadir=" + datadir3, "-conf=" + os.path.join(datadir3, "yacoin.conf"),
-            "-daemon=0", "-replayvalidation=report",
+            "-daemon=0", "-regtest", "-replayvalidation=report",
             "-connect=0", "-listen=0", "-dnsseed=0", "-discover=0", "-upnp=0", "-listenonion=0",
             "-server=0", "-disablewallet", "-printtoconsole=0",
             "-port=%d" % port, "-rpcport=%d" % rpcport] + ["-loadblock=" + p for p in imports] * 2 + node_args)
@@ -373,7 +376,7 @@ class ToolReplayTest(BitcoinTestFramework):
         self.log.info("Snapshot run stopped at a height below the tip")
         stop = height + 5
         run5 = self.out("run5")
-        self.replay("run", "--snapshot", snap, "--chain", node.datadir, "--stop-at-height", str(stop),
+        self.replay("run", "--snapshot", snap, "--chain", node.chain_path(), "--stop-at-height", str(stop),
                     "--port", str(port), "--rpcport", str(rpcport), self.binary, blocks, run5, "--", *node_args)
         rep5 = self.report_mod.load(run5).report
         assert_equal(rep5["status"], "complete")
@@ -396,8 +399,8 @@ class ToolReplayTest(BitcoinTestFramework):
         with open(last, "wb") as f:
             f.write(data[:parent_pos - 8] + tip_record + parent_record + data[tip_pos + len(raw[-1]):])
         run8 = self.out("run8")
-        self.replay("run", "--snapshot", snap, "--chain", node.datadir, "--port", str(port), "--rpcport", str(rpcport),
-                    self.binary, swapped, run8, "--", *node_args)
+        self.replay("run", "--snapshot", snap, "--chain", node.chain_path(), "--port", str(port),
+                    "--rpcport", str(rpcport), self.binary, swapped, run8, "--", *node_args)
         assert_equal(block_records(os.path.join(run8, "import")), raw[height + 1:])
         out, _ = self.replay("compare", self.out("node2"), run8)
         assert_equal(out, "identical\n")
@@ -428,7 +431,7 @@ class ToolReplayTest(BitcoinTestFramework):
         assert "1 blocks of the block files are not in the block index" in rep6["incomplete_reasons"], rep6
 
         self.log.info("run --snapshot refuses a directory without snapshot.json and a run without --chain")
-        _, err = self.replay("run", "--snapshot", self.out("node2"), "--chain", node.datadir, "--port", str(port),
+        _, err = self.replay("run", "--snapshot", self.out("node2"), "--chain", node.chain_path(), "--port", str(port),
                              "--rpcport", str(rpcport), self.binary, blocks, self.out("run7"), expect=2)
         assert "no snapshot.json" in err, err
         _, err = self.replay("run", "--snapshot", snap, "--port", str(port), "--rpcport", str(rpcport),
