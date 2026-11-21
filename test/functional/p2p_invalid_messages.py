@@ -33,6 +33,9 @@ class InvalidMessagesTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = True
 
+    def timeout(self, seconds):
+        return seconds * self.options.timeout_factor
+
     def run_test(self):
         """
          . Test msg header
@@ -44,6 +47,8 @@ class InvalidMessagesTest(BitcoinTestFramework):
         2. Send a few messages with an incorrect data size in the header, ensure the
            messages are ignored.
         """
+        # Timeouts scale with --timeout-factor.
+        self.log.info("Timeout factor: %g" % self.options.timeout_factor)
         self.test_magic_bytes()
         self.test_checksum()
         self.test_size()
@@ -75,11 +80,11 @@ class InvalidMessagesTest(BitcoinTestFramework):
         # Check that, even though the node is being hammered by nonsense from one
         # connection, it can still service other peers in a timely way.
         for _ in range(20):
-            conn2.sync_with_ping(timeout=2)
+            conn2.sync_with_ping(timeout=self.timeout(2))
 
         # Peer 1, despite serving up a bunch of nonsense, should still be connected.
         self.log.info("Waiting for node to drop junk messages.")
-        node.p2p.sync_with_ping(timeout=400)
+        node.p2p.sync_with_ping(timeout=self.timeout(400))
         assert node.p2p.is_connected
 
         #
@@ -97,9 +102,9 @@ class InvalidMessagesTest(BitcoinTestFramework):
 
             # An unknown message type (or *any* message type) over
             # MAX_PROTOCOL_MESSAGE_LENGTH should result in a disconnect.
-            with node.assert_debug_log(['Oversized message from peer=']):
+            with node.assert_debug_log(['Oversized message from peer='], timeout=self.timeout(2)):
                 node.p2p.send_message(msg_over_size)
-                node.p2p.wait_for_disconnect(timeout=4)
+                node.p2p.wait_for_disconnect(timeout=self.timeout(4))
 
             node.disconnect_p2ps()
             conn = node.add_p2p_connection(P2PDataStore())
@@ -136,7 +141,7 @@ class InvalidMessagesTest(BitcoinTestFramework):
             except IOError:
                 pass
 
-            node.p2p.wait_for_disconnect(timeout=10)
+            node.p2p.wait_for_disconnect(timeout=self.timeout(10))
             node.disconnect_p2ps()
             node.add_p2p_connection(P2PDataStore())
 
@@ -154,14 +159,15 @@ class InvalidMessagesTest(BitcoinTestFramework):
         # we might run into races later on
         asyncio.run_coroutine_threadsafe(swap_magic_bytes(), NetworkThread.network_event_loop).result()
 
-        with self.nodes[0].assert_debug_log(['PROCESSMESSAGE: INVALID MESSAGESTART ping']):
+        with self.nodes[0].assert_debug_log(['PROCESSMESSAGE: INVALID MESSAGESTART ping'], timeout=self.timeout(2)):
             conn.send_message(messages.msg_ping(nonce=0xff))
-            conn.wait_for_disconnect(timeout=1)
+            conn.wait_for_disconnect(timeout=self.timeout(1))
             self.nodes[0].disconnect_p2ps()
 
     def test_checksum(self):
         conn = self.nodes[0].add_p2p_connection(P2PDataStore())
-        with self.nodes[0].assert_debug_log(['(badmsg, 2 bytes): CHECKSUM ERROR expected 78df0a04 was ffffffff']):
+        with self.nodes[0].assert_debug_log(['(badmsg, 2 bytes): CHECKSUM ERROR expected 78df0a04 was ffffffff'],
+                                            timeout=self.timeout(2)):
             msg = conn.build_message(msg_unrecognized(str_data="d"))
             cut_len = (
                 4 +  # magic
@@ -171,7 +177,7 @@ class InvalidMessagesTest(BitcoinTestFramework):
             # modify checksum
             msg = msg[:cut_len] + b'\xff' * 4 + msg[cut_len + 4:]
             self.nodes[0].p2p.send_raw_message(msg)
-            conn.sync_with_ping(timeout=1)
+            conn.sync_with_ping(timeout=self.timeout(1))
             self.nodes[0].disconnect_p2ps()
 
     def test_size(self):
@@ -180,7 +186,7 @@ class InvalidMessagesTest(BitcoinTestFramework):
         peer_id = max(peer['id'] for peer in peers(self.nodes[0]))
         # A length above MAX_SIZE fails while reading the header, so the
         # node just drops the connection (no "Oversized message" log line).
-        with self.nodes[0].assert_debug_log(['disconnecting peer=%d\n' % peer_id]):
+        with self.nodes[0].assert_debug_log(['disconnecting peer=%d\n' % peer_id], timeout=self.timeout(2)):
             msg = conn.build_message(msg_unrecognized(str_data="d"))
             cut_len = (
                 4 +  # magic
@@ -189,19 +195,19 @@ class InvalidMessagesTest(BitcoinTestFramework):
             # modify len to MAX_SIZE + 1
             msg = msg[:cut_len] + struct.pack("<I", 0x02000000 + 1) + msg[cut_len + 4:]
             self.nodes[0].p2p.send_raw_message(msg)
-            conn.wait_for_disconnect(timeout=1)
+            conn.wait_for_disconnect(timeout=self.timeout(1))
             self.nodes[0].disconnect_p2ps()
 
     def test_command(self):
         conn = self.nodes[0].add_p2p_connection(P2PDataStore())
-        with self.nodes[0].assert_debug_log(['PROCESSMESSAGE: ERRORS IN HEADER']):
+        with self.nodes[0].assert_debug_log(['PROCESSMESSAGE: ERRORS IN HEADER'], timeout=self.timeout(2)):
             msg = msg_unrecognized(str_data="d")
             msg.command = b'\xff' * 12
             msg = conn.build_message(msg)
             # Modify command
             msg = msg[:7] + b'\x00' + msg[7 + 1:]
             self.nodes[0].p2p.send_raw_message(msg)
-            conn.sync_with_ping(timeout=1)
+            conn.sync_with_ping(timeout=self.timeout(1))
             self.nodes[0].disconnect_p2ps()
 
     def _tweak_msg_data_size(self, message, wrong_size):
