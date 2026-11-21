@@ -64,21 +64,21 @@ with this checkout mounted:
 
 ```sh
 ./dev.sh container unit-tests                # ubuntu.22.04 image: test_bitcoin, all suites in parallel, then bench_yacoin once (short)
-./dev.sh container functional-tests          # ubuntu.22.04 image: low-difficulty build, all functional tests, 4 in parallel
+./dev.sh container functional-tests          # ubuntu.22.04 image: mainnet build, the functional tests on regtest, 4 in parallel
 ./dev.sh container ubuntu.16.04 unit-tests   # the same in another image
 ./dev.sh container unit-tests-asan           # all unit test suites under ASan/LSan/UBSan (see AddressSanitizer below)
 ./dev.sh container unit-tests-tsan           # all unit test suites under ThreadSanitizer (see ThreadSanitizer below)
 ./dev.sh container fuzz-corpus               # the fuzz binary (clang), every input of the fuzz corpus once (doc/fuzzing.md)
-./dev.sh container functional-tests-asan     # every functional test except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
+./dev.sh container functional-tests-asan     # the functional tests of functional-tests except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
 SANITIZE=undefined ./dev.sh container unit-tests-asan     # one leg of CI's unit-tests-asan: UBSan only (address: ASan and LSan only)
 FTEST_SHARD=2/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan
-./dev.sh container ubuntu.16.04 functional-tests-regtest  # mainnet build, the functional tests that run on regtest (see Functional tests below)
+./dev.sh container ubuntu.16.04 build-low-difficulty  # low-difficulty release build, its unit tests and the functional tests that need it (see Functional tests below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, `functional-tests-regtest`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`
+`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`
 and `cov-functional`; `windows` and
 `macos` only build.
 
@@ -87,8 +87,9 @@ and `cov-functional`; `windows` and
   `build/docker-<image>/functional-tests/test/tmp/`.
 - The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` in the checkout (not into the
   shared cache of `./dev.sh depends`), configure in the source tree, and `make install` into `release-root/`. `build-low-difficulty` does the same with
-  `--enable-low-difficulty-for-development` and then runs all unit test suites of that build's `src/test/test_bitcoin`, as the CI job
-  `build-ubuntu-1604-low-difficulty` does; their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/`. Because both
+  `--enable-low-difficulty-for-development` and then runs all unit test suites of that build's `src/test/test_bitcoin` and the
+  functional test scripts listed in `test/functional/regtest-excluded-scripts`, as the CI job `build-ubuntu-1604-low-difficulty` does;
+  their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/` and `.../build-low-difficulty/test/tmp/`. Because both
   configure in place, out-of-tree builds (`dev.sh` and the test modes) refuse the tree afterwards until `make distclean`. Run release
   builds in a separate clone, for example `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
 - Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
@@ -97,8 +98,8 @@ and `cov-functional`; `windows` and
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
 - `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (the parallel scripts of
-  `functional-tests`, `functional-tests-asan`, `functional-tests-regtest` and `cov-functional`, default 4 as on the CI runners, whatever the host's CPU count),
-  `FTEST_SHARD` (the same modes: `K/N` runs only shard K of N of the scripts, as the sharded CI jobs do), `SANITIZE` (`unit-tests-asan`:
+  `functional-tests`, `functional-tests-asan`, `cov-functional` and `build-low-difficulty`, default 4 as on the CI runners, whatever the
+  host's CPU count), `FTEST_SHARD` (the first three: `K/N` runs only shard K of N of the scripts, as the sharded CI jobs do), `SANITIZE` (`unit-tests-asan`:
   `address` or `undefined` builds with that sanitizer only, as one CI leg; unset, both), `BUILDVERSION`,
   `CCACHE_MAXSIZE` (default 5G) and `CCACHE_COMPRESS` are passed on as well. Only values you set are passed on, not `dev.sh`'s own
   defaults for its host builds. Set `FTEST_SHARD` as a prefix of the one command, e.g.
@@ -117,25 +118,21 @@ and `cov-functional`; `windows` and
 
 | Variant | Purpose | Configuration |
 |---|---|---|
-| `dev` | Unit tests, TDD loop | Mainnet consensus, no GUI, `-O1 -g` |
-| `func` | Functional tests | `dev` plus `--enable-low-difficulty-for-development` (as in CI) |
+| `dev` | Unit and functional tests, TDD loop | Mainnet consensus, no GUI, `-O1 -g` |
 | `release` | Check before a PR | Mainnet, default optimisation |
 | `asan` | Memory and UB checks | `dev` plus AddressSanitizer, LeakSanitizer and UBSan |
+| `cov` | Coverage (`./dev.sh cov`) | Mainnet consensus, no GUI, `--enable-lcov`, `-O0 -g` |
 
 The unit tests run on the mainnet build (`./dev.sh unit`) and must pass on the
 low-difficulty build as well: CI runs them on both (the `unit-tests` job and
 the `build-ubuntu-1604-low-difficulty` job). A test that uses mainnet-only
 data, such as checkpoints or the genesis block, needs its own part for that
-build. The functional tests run on the low-difficulty build; those that run
-on regtest (all but the few that keep main) also run on the mainnet build,
-except those listed in `test/functional/regtest-excluded-scripts` (see
-[Functional tests](#functional-tests)).
-To run the unit tests on the low-difficulty build locally:
-
-```sh
-./dev.sh build func test/test_bitcoin
-contrib/devtools/run-unit-suites.sh build/func/src/test/test_bitcoin .devbuild/logs/unit-func "$(nproc)"
-```
+build. The functional tests run on the mainnet build, on regtest, except
+those listed in `test/functional/regtest-excluded-scripts`, which run on the
+low-difficulty build (see [Functional tests](#functional-tests)).
+`./dev.sh container ubuntu.16.04 build-low-difficulty` runs the unit tests
+and the listed functional tests on the low-difficulty build locally, in the
+image of that CI job.
 
 All variants use one ccache directory. Because they're built with `-g`, ccache
 keys entries on the build directory, so variants don't share cached objects.
@@ -301,10 +298,11 @@ in `build/docker-ubuntu.22.04/unit-tests-asan/unit-test-logs/`.
 The functional tests run under the same sanitizers in the
 `functional-tests-asan` job; `./dev.sh container functional-tests-asan` runs
 it locally, with ccache off. The mode builds `yacoind` and `yacoin-cli` with
-the low-difficulty parameters, the same compiler flags and both sanitizer
+mainnet consensus, the same compiler flags and both sanitizer
 runtimes linked in (`-static-libasan -static-libubsan`), and runs every
 functional test script except those listed in
-`test/sanitizer_suppressions/asan-excluded-scripts` (below), the extended ones
+`test/sanitizer_suppressions/asan-excluded-scripts` (below) and those
+`functional-tests` leaves out, the extended ones
 too, `FTEST_JOBS` at a time, with
 the runtime options above plus `print_suppressions=0` and `handle_segv=0` (a
 segmentation fault ends the process with the signal, as in the other
@@ -326,8 +324,9 @@ locally.
 `test/sanitizer_suppressions/asan-excluded-scripts` lists the functional test
 scripts the mode leaves out: one script name (with `.py`) per line, with the
 reason in a comment above it (`#` starts a comment). The runner's
-`--exclude-file <list>` leaves them out; the other functional test runs
-(`functional-tests`, `coverage-functional-1` and `-2`) run them as usual. A listed name
+`--exclude-file <list>` leaves them out (the option can be given more than
+once); the other functional test runs (`functional-tests`,
+`coverage-functional-1` and `-2`) run them as usual. A listed name
 that is not a test script of the runner fails the run.
 
 ### ThreadSanitizer
@@ -379,7 +378,9 @@ the output.
 
 ### Functional tests
 
-`./dev.sh ftest` runs `FTEST_JOBS` scripts in parallel (default 4;
+`./dev.sh ftest` runs the scripts on the `dev` build, on regtest, but those
+listed in `test/functional/regtest-excluded-scripts` (scripts named on the
+command line run as given), `FTEST_JOBS` in parallel (default 4;
 `FTEST_JOBS=1` for a serial run). Each script gets its own data directory under
 `.devbuild/tmp/` and its own ports, and the runner builds the shared chain cache
 once before starting the scripts.
@@ -394,7 +395,10 @@ error. The sharded CI jobs (`functional-tests-asan`, `coverage-functional-1`
 and `-2`) use it through `FTEST_SHARD`.
 
 The nodes of a script run on regtest; a script that runs on main sets
-`self.chain = 'main'` and says why in a comment. On regtest a node keeps its
+`self.chain = 'main'` and says why in a comment, and goes into
+`test/functional/regtest-excluded-scripts` (the runs on the mainnet build
+select `--chain=regtest`; the list may name scripts on either chain, and the
+low-difficulty run of the listed scripts runs them without `--chain`). On regtest a node keeps its
 chain files (`debug.log`, `blocks/`, `chainstate/`, wallets, `mempool.dat`) in
 `<datadir>/regtest`; `TestNode.chain_path(...)` gives their paths on either
 chain. Every test node's `yacoin.conf` has `connect=0` and `listen=1`, so test
@@ -409,23 +413,23 @@ run on that chain: those with a `self.chain = '<chain>'` line (a script
 without one runs on `regtest`), applied before `--shard`; the block cache is then
 built for that chain only (`create_cache.py --cachechain`). A selection without
 such a script, or a script whose line names another chain than `main` or
-`regtest`, fails the run. The scripts on
-regtest also run on the mainnet build: `./dev.sh container ubuntu.16.04
-functional-tests-regtest` builds `yacoind` and `yacoin-cli` without the
-low-difficulty parameters (otherwise as `functional-tests`) and runs
-`test_runner.py --chain=regtest --extended`, but the scripts listed in
+`regtest`, fails the run. The functional test modes and jobs on the mainnet
+build (`functional-tests`, `functional-tests-asan`, `cov-functional`) run
+`test_runner.py --chain=regtest`, but the scripts listed in
 `test/functional/regtest-excluded-scripts` (one script name per line, with
-the reason in a comment above it; `--exclude-file`), as the CI job
-`functional-tests-regtest` does. A regtest script that is not listed also
+the reason in a comment above it; `--exclude-file`). The `build-low-difficulty`
+mode, and with it the CI job `build-ubuntu-1604-low-difficulty`, runs the
+listed scripts on its build (`test_runner.py --include-file`: only the scripts
+of a list, in its format). A script that is not listed also
 runs directly against a `dev` build: `test/functional/<script> --configfile=build/dev/test/config.ini`.
 
 Two runner invocations on the same build directory at the same time do
-interfere: each run without `--keepcache` deletes `build/func/test/cache`
+interfere: each run without `--keepcache` deletes `build/dev/test/cache`
 while the other may be copying it, and both number their scripts' port seeds
 from 0. For a second, concurrent run, set `TEST_RUNNER_PORT_MIN` to a range the
 first doesn't use (the default base is 11000 and a run uses 10000 ports, so
 e.g. `TEST_RUNNER_PORT_MIN=22000`) and pass `--keepcache`. A script run
-directly (`test/functional/<script>.py --configfile=build/func/test/config.ini`)
+directly (`test/functional/<script>.py --configfile=build/dev/test/config.ini`)
 keeps its cache in `test/cache` and takes its port seed from its process id,
 so it only needs `TEST_RUNNER_PORT_MIN` to stay clear of a runner's ports.
 
@@ -444,14 +448,13 @@ version.
 ./dev.sh cov
 ```
 
-The unit coverage is measured on the mainnet build, as CI runs the unit
-tests, and the functional tests need the low-difficulty build, so `./dev.sh
-cov` uses two coverage builds (`--enable-lcov`, `-O0 -g`):
+`./dev.sh cov` runs both targets on one coverage build with mainnet
+consensus, `build/cov` (`--enable-lcov`, `-O0 -g`), as CI runs the tests:
 
-| Build | Runs | Make target |
-|---|---|---|
-| `build/cov-unit` | `test_bitcoin` (all unit tests) | `make cov-unit` |
-| `build/cov-func` | The functional tests: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); `make cov-functional FTEST_SHARD=K/N` runs only shard K of N of them (`./dev.sh cov` runs all) | `make cov-functional` |
+| Make target | Runs |
+|---|---|
+| `make cov-unit` | `test_bitcoin` (all unit tests) |
+| `make cov-functional` | The functional tests on regtest, but those listed in `test/functional/regtest-excluded-scripts`: `FTEST_JOBS` scripts in parallel (default 4), then the scripts in `FTEST_SERIAL` alone (`p2p_invalid_messages.py`, which fails under load at `-O0`); `make cov-functional FTEST_SHARD=K/N` runs only shard K of N of them (`./dev.sh cov` runs all) |
 
 Each target zeroes the counters, records a baseline (so files that are never
 executed still count), runs the tests, and keeps the coverage even if tests
@@ -469,11 +472,9 @@ coverage to `.devbuild/coverage/` and runs the coverage check
 
 Notes:
 
-- The merged report combines two builds. Lines that exist in only one build
-  (inside `LOW_DIFFICULTY_FOR_DEVELOPMENT` blocks) only have that build's
-  counts. Branches are merged by position, so on the few lines whose
-  conditions differ between the builds the merged branch numbers are only
-  approximate. Line and function coverage aren't affected.
+- The coverage counts the mainnet build only: lines inside
+  `LOW_DIFFICULTY_FOR_DEVELOPMENT` blocks, and the functional test scripts
+  listed in `test/functional/regtest-excluded-scripts`, are not measured.
 - Every lcov, geninfo and genhtml call takes its settings from
   `contrib/devtools/coverage-lcovrc` (configure passes it with
   `--config-file`), and from no system or user lcovrc.
@@ -596,7 +597,7 @@ Each line says when and on which state of `master` it was measured.
 
 - Unit tests (`dev`, 2026-11-02, `master` 06329a8b): 70 of 70 suites, 422
   test cases pass.
-- Unit tests on the low-difficulty build (`func`, 2026-11-02, `master`
+- Unit tests on the low-difficulty build (2026-11-02, `master`
   0f8685e2): 70 of 70 suites, 422 test cases pass.
 - Functional tests (CI `functional-tests` job, 2026-11-02, `master` 06329a8b):
   119 of 119 test runs pass, none skipped (a script run with arguments counts

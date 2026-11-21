@@ -23,8 +23,11 @@
 #           seccomp option for unit-tests-tsan only and CCACHE_DISABLE=1 for
 #           the sanitizer modes (unit-tests-asan, unit-tests-tsan,
 #           fuzz-corpus, functional-tests-asan) only and passing SANITIZE
-#           and FTEST_SHARD on when set (stub docker), cov running every
-#           functional test script whatever FTEST_SHARD says, asan's
+#           and FTEST_SHARD on when set (stub docker), cov running both
+#           coverage targets in one build and every functional test script
+#           whatever FTEST_SHARD says, ftest running the scripts on regtest
+#           with the regtest list left out, the variants func and cov-func
+#           refused, asan's
 #           sanitizer options (the suppression file, the caller's own options
 #           kept) and its list of test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
@@ -314,15 +317,47 @@ step_devsh() {
         [[ " $got " == *" -e $v "* ]] && pass "devsh: container passes $v when it is set: $got" ||
             fail "devsh: container does not pass $v: $got"
     done
-    # cov runs every functional test script, also with an FTEST_SHARD in the
-    # environment (the stub make records the arguments; configured build
-    # directories, so cov only runs make).
-    mkdir -p "$a/build/cov-unit" "$a/build/cov-func"; : > "$a/build/cov-unit/Makefile"; : > "$a/build/cov-func/Makefile"
+    # cov runs both coverage targets in one build, and every functional test
+    # script, also with an FTEST_SHARD in the environment (the stub make
+    # records the arguments; a configured build directory, so cov only runs
+    # make).
+    mkdir -p "$a/build/cov"; : > "$a/build/cov/Makefile"
     rm -f "$log"
     PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" FTEST_SHARD=1/2 "$a/dev.sh" cov > "$work/devsh/a.log" 2>&1 || true
     got=$(grep -m1 ' cov-functional$' "$log" || echo "no make cov-functional")
     [[ " $got " == *" FTEST_SHARD= "* ]] && pass "devsh: cov runs make cov-functional with FTEST_SHARD empty: ${got#start }" ||
         fail "devsh: cov with FTEST_SHARD=1/2 in the environment runs: $got"
+    got=$(grep -E ' cov-(unit|functional)$' "$log" | sed 's/^start -C \([^ ]*\) .* \(cov-[a-z]*\)$/\1 \2/' | tr '\n' ' ')
+    [[ "$got" == "$a/build/cov cov-unit $a/build/cov cov-functional " ]] &&
+        pass "devsh: cov runs both coverage targets in build/cov" || fail "devsh: cov runs: $got"
+    # ftest runs the scripts on regtest, but those of the regtest list, on
+    # the dev build (a runner that records its arguments); dev.sh has no
+    # variant with the low-difficulty parameters.
+    mkdir -p "$a/build/dev/test/functional" "$a/test/functional"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/bash' 'echo "$*" > "$STUB_ENV.args"' > "$a/build/dev/test/functional/test_runner.py"
+    chmod +x "$a/build/dev/test/functional/test_runner.py"
+    rm -f "$a/build/dev/config.status"
+    : > "$a/test/functional/wallet_x.py"
+    local select="--chain=regtest --exclude-file=$a/test/functional/regtest-excluded-scripts" ftest_args
+    # Without a named script the list is left out, also when an option's
+    # separate value names a script or is no option; a named script (with or
+    # without .py, or as a path) runs as given.
+    for ftest_args in "--failfast -j 2" "--filter wallet" "--exclude wallet_x.py --shard 1/2" \
+                      "--tmpdirprefix /tmp/x" "wallet_x.py" "wallet_x" "test/functional/wallet_x.py -j 2"; do
+        rm -f "$work/devsh/ftest.args"
+        # shellcheck disable=SC2086 # the arguments are split on purpose
+        PATH="$bin:$PATH" STUB_LOG="$log" STUB_ENV="$work/devsh/ftest" DEV_CACHE="$c" "$a/dev.sh" ftest $ftest_args \
+            > "$work/devsh/a.log" 2>&1 || fail "devsh: ftest $ftest_args in a"
+        got=$(cat "$work/devsh/ftest.args" 2>/dev/null || echo "the runner did not run")
+        want="$select $ftest_args"
+        [[ $ftest_args != *wallet_x* || $ftest_args == --exclude* ]] || want="--chain=regtest $ftest_args"
+        [[ "$got" == *" $want" ]] && pass "devsh: ftest $ftest_args runs: test_runner.py $got" ||
+            fail "devsh: ftest $ftest_args runs: test_runner.py $got (want ... $want)"
+    done
+    for v in func cov-func; do
+        expect_status 2 "devsh: the variant $v is refused" env DEV_CACHE="$c" "$a/dev.sh" build "$v"
+    done
     # asan runs the suites with the tree's LeakSanitizer suppressions and its
     # default options, and keeps the caller's own (a configured build
     # directory, the stub make, and a runner that records its environment).
