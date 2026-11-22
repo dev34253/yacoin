@@ -17,6 +17,9 @@ regtest:
 - the fork and token heights through -testactivationheight, with a script's
   own tokens@<height> after the framework's; a fork above 1 moves the
   Heliopolis height to the fork height.
+- all_activation_heights_zero gives a script's regtest nodes tokens@0
+  instead of the default token height; a script with it and a
+  block_fork_1_0 other than 0, or on main, fails at start with its message.
 - the RPC cookie and debug.log in the chain's directory: cookie
   authentication, assert_debug_log and combine_logs.py (also on a main
   layout).
@@ -194,6 +197,35 @@ def read_lines(path):
         return f.read().splitlines()
 
 
+# A script with all_activation_heights_zero and the given chain and
+# block_fork_1_0. Its node is made but not started; the script prints the
+# node's arguments after ARGS_MARKER.
+ARGS_MARKER = "node arguments:"
+OPTION_SCRIPT = '''import sys
+sys.path.insert(0, {functional_dir!r})
+from test_framework.test_framework import BitcoinTestFramework
+
+
+class OptionScript(BitcoinTestFramework):
+    def set_test_params(self):
+        self.num_nodes = 1
+        self.setup_clean_chain = True
+        self.chain = {chain!r}
+        self.block_fork_1_0 = {fork}
+        self.all_activation_heights_zero = True
+
+    def setup_network(self):
+        self.add_nodes(self.num_nodes)
+
+    def run_test(self):
+        print({marker!r}, " ".join(self.nodes[0].args))
+        self.nodes.clear()
+
+
+OptionScript().main()
+'''
+
+
 class FrameworkTest(BitcoinTestFramework):
     def set_test_params(self):
         # No chain line: the nodes run regtest.
@@ -216,6 +248,7 @@ class FrameworkTest(BitcoinTestFramework):
         self.test_no_automatic_connections()
         self.test_conf_lines()
         self.test_activation_heights()
+        self.test_all_activation_heights_zero()
         self.test_cookie()
         self.test_debug_log()
         self.test_exit_codes()
@@ -350,12 +383,55 @@ class FrameworkTest(BitcoinTestFramework):
         node = self.test_node_with_fork('main', 30)
         assert not [arg for arg in node.args if arg.startswith("-testactivationheight")], node.args
 
-    def test_node_with_fork(self, chain, fork):
+    def test_all_activation_heights_zero(self):
+        def heights(args):
+            return [arg for arg in args if arg.startswith("-testactivationheight")]
+
+        self.log.info("Without all_activation_heights_zero a regtest node gets the default token height")
+        assert_equal(heights(self.test_node_with_fork('regtest', 0).args),
+                     ["-testactivationheight=newlogic@0", "-testactivationheight=tokens@%d" % REGTEST_TOKEN_HEIGHT])
+        assert not self.all_activation_heights_zero
+
+        self.log.info("With it a regtest node gets tokens@0 instead")
+        node = self.test_node_with_fork('regtest', 0, all_activation_heights_zero=True)
+        assert_equal(heights(node.args), ["-testactivationheight=newlogic@0", "-testactivationheight=tokens@0"])
+
+        self.log.info("A script with the option gives its nodes tokens@0 and not the default token height")
+        result = self.run_option_script('regtest', 0)
+        assert_equal(result.returncode, 0)
+        lines = [line for line in result.stdout.splitlines() if line.startswith(ARGS_MARKER)]
+        assert_equal(len(lines), 1)
+        assert_equal(heights(lines[0][len(ARGS_MARKER):].split()),
+                     ["-testactivationheight=newlogic@0", "-testactivationheight=tokens@0"])
+
+        for chain, fork, message in (
+                ('regtest', 1, "all_activation_heights_zero sets every activation height to 0 and cannot be combined with block_fork_1_0"),
+                ('regtest', 2, "all_activation_heights_zero sets every activation height to 0 and cannot be combined with block_fork_1_0"),
+                ('main', 0, "all_activation_heights_zero is a regtest option")):
+            self.log.info("A script with the option on %s with block_fork_1_0 %d fails at start: %s", chain, fork, message)
+            result = self.run_option_script(chain, fork)
+            assert_equal(result.returncode, 1)
+            assert "AssertionError: %s" % message in result.stderr, result.stderr
+            assert ARGS_MARKER not in result.stdout, result.stdout
+
+    def run_option_script(self, chain, fork):
+        """Run OPTION_SCRIPT with this chain and fork height in a test
+        directory of its own; returns the finished process."""
+        name = "option_%s_%d" % (chain, fork)
+        script = os.path.join(self.options.tmpdir, name + ".py")
+        with open(script, 'w', encoding='utf8') as f:
+            f.write(OPTION_SCRIPT.format(functional_dir=os.path.dirname(os.path.realpath(__file__)),
+                                         chain=chain, fork=fork, marker=ARGS_MARKER))
+        return subprocess.run([sys.executable, script, "--tmpdir=%s" % os.path.join(self.options.tmpdir, name),
+                               "--configfile=%s" % self.options.configfile],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+
+    def test_node_with_fork(self, chain, fork, **kwargs):
         """A TestNode with the given fork height; not started."""
         return TestNode(0, os.path.join(self.options.tmpdir, 'fork_%s_%d' % (chain, fork)), chain=chain, rpchost=None,
                         timewait=self.rpc_timeout, bitcoind=self.options.bitcoind,
                         bitcoin_cli=self.options.bitcoincli, coverage_dir=None, cwd=self.options.tmpdir,
-                        block_fork_1_0=fork)
+                        block_fork_1_0=fork, **kwargs)
 
     def test_cookie(self):
         node = self.nodes[1]

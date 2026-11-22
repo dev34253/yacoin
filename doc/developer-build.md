@@ -406,7 +406,10 @@ nodes connect only to the nodes of their test (a node started with its own
 `-connect` gets only its own values), and on regtest a `maxtipage` line, so
 regtest test nodes leave initial download whatever the age of their tip. A
 regtest fork height above 1 also moves the Heliopolis height to the fork
-height.
+height. A script that sets `self.all_activation_heights_zero = True` starts
+its regtest nodes with every activation height at 0, the token height
+included; it cannot be combined with a `block_fork_1_0` other than 0 or
+with main.
 
 `test_runner.py --chain <chain>` runs only the selected scripts whose nodes
 run on that chain: those with a `self.chain = '<chain>'` line (a script

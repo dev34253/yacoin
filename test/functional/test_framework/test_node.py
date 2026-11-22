@@ -92,11 +92,14 @@ class TestNode():
     To make things easier for the test writer, any unrecognised messages will
     be dispatched to the RPC connection."""
 
-    def __init__(self, i, datadir, *, chain, rpchost, timewait, bitcoind, bitcoin_cli, coverage_dir, cwd, extra_conf=None, extra_args=None, use_cli=False, start_perf=False, use_valgrind=False, version=None, block_fork_1_0=0):
+    def __init__(self, i, datadir, *, chain, rpchost, timewait, bitcoind, bitcoin_cli, coverage_dir, cwd, extra_conf=None, extra_args=None, use_cli=False, start_perf=False, use_valgrind=False, version=None, block_fork_1_0=0, all_activation_heights_zero=False):
         """
         Kwargs:
             start_perf (bool): If True, begin profiling the node with `perf` as soon as
                 the node starts.
+            all_activation_heights_zero (bool): on regtest, the token height
+                is 0 instead of REGTEST_TOKEN_HEIGHT (see
+                BitcoinTestFramework.all_activation_heights_zero).
         """
 
         self.index = i
@@ -133,7 +136,7 @@ class TestNode():
         if chain == 'regtest':
             self.args += [
                 "-testactivationheight=newlogic@%d" % block_fork_1_0,
-                "-testactivationheight=tokens@%d" % REGTEST_TOKEN_HEIGHT,
+                "-testactivationheight=tokens@%d" % (0 if all_activation_heights_zero else REGTEST_TOKEN_HEIGHT),
             ]
             # Regtest's Heliopolis height is 0, and the blocks below a fork
             # above 1 are version 6, so it moves to the fork height.
