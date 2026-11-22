@@ -21,7 +21,8 @@ import time
 
 from .authproxy import JSONRPCException
 from . import coverage
-from .blocktools import TIME_GENESIS_BLOCK
+from .blocktools import TIME_GENESIS_BLOCK, get_template
+from .messages import BLOCK_VERSION
 from .test_node import TestNode, describe_exit_code
 from .mininode import NetworkThread
 from .util import (
@@ -632,6 +633,31 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         elif sync:
             self.sync_all(sync)
         return hashes
+
+    def mine_activated_chain(self, blocks):
+        """Mine blocks on node 0 (generate), sync all nodes and check each
+        of them with check_activated_chain. For scripts that set
+        all_activation_heights_zero. Returns the block hashes."""
+        assert self.all_activation_heights_zero, "mine_activated_chain needs all_activation_heights_zero"
+        hashes = self.nodes[0].generate(blocks)
+        self.sync_blocks()
+        self.check_activated_chain()
+        return hashes
+
+    def check_activated_chain(self, min_blocks=30):
+        """Check every node: every activation height is 0 (its
+        -testactivationheight arguments; regtest's own heights are 0), its
+        chain has at least min_blocks blocks, its best block is version 7,
+        getblocktemplate answers with version 7 (it refuses during initial
+        download) and listtokens answers. getblocktemplate needs a peer."""
+        for node in self.nodes:
+            assert_equal([arg for arg in node.args if arg.startswith("-testactivationheight=")],
+                         ["-testactivationheight=newlogic@0", "-testactivationheight=tokens@0"])
+            height = node.getblockcount()
+            assert height >= min_blocks, "node{} has {} blocks, fewer than {}".format(node.index, height, min_blocks)
+            assert_equal(node.getblockheader(node.getbestblockhash())['version'], BLOCK_VERSION)
+            assert_equal(get_template(node)['version'], BLOCK_VERSION)
+            assert_equal(type(node.listtokens()), list)
 
     def single_utxo_wallet(self, funder, node, amount):
         """Give node's wallet exactly one confirmed UTXO of amount, and return it.
