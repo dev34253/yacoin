@@ -291,6 +291,11 @@ bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
 FILE* OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 /** Translation to a filesystem path */
 fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
+/** Maximum number of block records LoadExternalBlockFile reads ahead when it has hash workers
+ *  (-hashcalcthreads above 1): the hashes of a batch are computed on the hash calculation
+ *  threads before its blocks are processed in file order. A batch holds at most
+ *  IMPORT_HASH_BATCH_SIZE * MAX_BLOCK_SERIALIZED_SIZE bytes of serialized blocks. */
+static const unsigned int IMPORT_HASH_BATCH_SIZE = 64;
 /** Import blocks from an external file */
 bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskBlockPos *dbp = nullptr);
 /** Ensures we have a genesis block in the block tree, possibly writing one to disk. */
