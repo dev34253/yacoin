@@ -123,6 +123,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self.supports_cli = True
         self.bind_to_localhost_only = True
         self.block_fork_1_0=0
+        # True: the regtest nodes start with every activation height at 0,
+        # the token height included (-testactivationheight=tokens@0 instead
+        # of REGTEST_TOKEN_HEIGHT). Only on regtest, with block_fork_1_0 0.
+        self.all_activation_heights_zero = False
         # Set by set_mocktime() and mine_with_mocktime(); see there.
         self.mocktime = None
         # True once set_mocktime() was used. Only then do nodes get the
@@ -131,6 +135,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         self._mocktime_managed = False
         self.set_test_params()
         assert self.chain in CHAINS, "self.chain must be one of {}, not {!r}".format(CHAINS, self.chain)
+        if self.all_activation_heights_zero:
+            assert self.chain == 'regtest', "all_activation_heights_zero is a regtest option"
+            assert self.block_fork_1_0 == 0, \
+                "all_activation_heights_zero sets every activation height to 0 and cannot be combined with block_fork_1_0"
         self.parse_args()
 
     def main(self):
@@ -461,7 +469,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 use_cli=self.options.usecli,
                 start_perf=self.options.perf,
                 use_valgrind=self.options.valgrind,
-                block_fork_1_0=self.block_fork_1_0
+                block_fork_1_0=self.block_fork_1_0,
+                all_activation_heights_zero=self.all_activation_heights_zero,
             ))
             if self._mocktime_managed:
                 # Nodes added later start on the test's clock too.
