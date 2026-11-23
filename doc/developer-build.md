@@ -144,7 +144,7 @@ secp256k1 without its x86_64 assembly, which doesn't compile under ASan.
 
 ```sh
 ./dev.sh build dev                  # build everything in build/dev
-./dev.sh build dev test/test_bitcoin  # build one make target
+./dev.sh build dev test/test_bitcoin  # build one make target, relative to src/
 ./dev.sh unit                       # all unit test suites, in parallel
 ./dev.sh unit pow_tests coins_tests # selected suites
 ./dev.sh check                      # upstream "make check" (serial)
@@ -156,6 +156,11 @@ secp256k1 without its x86_64 assembly, which doesn't compile under ASan.
 ./dev.sh ccache-stats
 ./dev.sh cache                      # the paths of the shared cache
 ```
+
+The target of `./dev.sh build` is a make target relative to `src/` of the
+build directory, such as `test/test_bitcoin`. A target written as a path of
+the source tree, `src/<path>` (e.g. `src/test/test_bitcoin`), is built as
+`<path>`, with a line on stderr naming the target used.
 
 A variant is configured automatically on first use; `./dev.sh configure
 <variant>` reconfigures it. `./dev.sh all` runs every step even when one

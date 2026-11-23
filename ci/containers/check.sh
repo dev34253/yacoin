@@ -28,7 +28,11 @@
 #           coverage targets in one build and every functional test script
 #           whatever FTEST_SHARD says, ftest running the scripts on regtest
 #           with the regtest list left out, the variants func and cov-func
-#           refused, asan's
+#           refused, build passing its target to make in src/ (src/<path>
+#           as <path>, with one line on stderr; other targets unchanged; none
+#           for the whole build directory) and make's error and exit status
+#           for an unknown target, the help saying the target is relative to
+#           src/, asan's
 #           sanitizer options (the suppression file, the caller's own options
 #           kept) and its list of test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
@@ -233,13 +237,16 @@ step_devsh() {
     [[ "$pa" != "$pb" && "$pb" =~ $want ]] && pass "devsh: a recipe change gives a new prefix ($pb)" ||
         fail "devsh: a recipe change gave the prefix $pb"
     # A stub make records its arguments and the start and end of its run,
-    # and writes the config.site of the prefix it gets. (b has other
+    # writes the config.site of the prefix it gets, and fails as make does
+    # on the target named by STUB_NO_RULE. (b has other
     # recipes now, so both runs build.)
     local bin="$work/devsh/bin" log="$work/devsh/make.log"
     mkdir -p "$bin"; rm -f "$log"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s
 ' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep 1; echo "end" >> "$STUB_LOG"' \
+        '[[ -z ${STUB_NO_RULE:-} || " $* " != *" $STUB_NO_RULE "* ]] ||' \
+        '    { echo "make: *** No rule to make target '\''$STUB_NO_RULE'\''.  Stop." >&2; exit 2; }' \
         'for x in "$@"; do [[ $x != x86_64_linux_prefix=* ]] || { mkdir -p "${x#*=}/share"; : > "${x#*=}/share/config.site"; }; done' \
         > "$bin/make"
     chmod +x "$bin/make"
@@ -359,6 +366,42 @@ step_devsh() {
     for v in func cov-func; do
         expect_status 2 "devsh: the variant $v is refused" env DEV_CACHE="$c" "$a/dev.sh" build "$v"
     done
+    # build passes a target to make in build/<variant>/src: a target given as
+    # src/<path> is built as <path> with one line on stderr, every other one
+    # goes to make unchanged, and make's error for an unknown target and its
+    # exit status come through.
+    local err="$work/devsh/err.log" tgt what
+    for tgt in src/test/test_bitcoin test/test_bitcoin src/ ""; do
+        rm -f "$log"; what="build dev${tgt:+ $tgt}"
+        PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" build dev ${tgt:+"$tgt"} > "$work/devsh/a.log" 2> "$err" ||
+            fail "devsh: $what in a"
+        got=$(grep "^start -C $a/build/dev[/ ]" "$log" || echo "no make run")
+        out=$(cat "$work/devsh/a.log" "$err")
+        case "$tgt" in
+            src/?*) want="start -C $a/build/dev/src -j[0-9]+ ${tgt#src/}" ;;
+            ?*) want="start -C $a/build/dev/src -j[0-9]+ $tgt" ;;
+            *) want="start -C $a/build/dev -j[0-9]+" ;;
+        esac
+        if [[ ! "$got" =~ ^$want$ ]]; then
+            fail "devsh: $what runs: $got (want $want)"
+        elif [[ $tgt == src/?* ]]; then
+            [[ "$(wc -l < "$err")" == 1 && "$(cat "$err")" == *"relative to src/"*" ${tgt#src/}" &&
+                "$(grep -c -- "$tgt" "$log")" == 0 && "$(grep -c -- "${tgt#src/}" <<< "$out")" == 1 ]] &&
+                pass "devsh: $what runs ${got#start } and says so: $(cat "$err")" ||
+                fail "devsh: $what runs ${got#start }, with the output: $out"
+        else
+            [[ ! -s "$err" ]] && pass "devsh: $what runs ${got#start }" ||
+                fail "devsh: $what runs ${got#start }, with on stderr: $(cat "$err")"
+        fi
+    done
+    expect_status 2 "devsh: build dev with an unknown target fails as make does" \
+        env PATH="$bin:$PATH" STUB_LOG="$log" STUB_NO_RULE=no/such/target DEV_CACHE="$c" "$a/dev.sh" build dev no/such/target
+    grep -q "No rule to make target 'no/such/target'" "$work/out.txt" ||
+        fail "devsh: build dev no/such/target does not name the target: $(cat "$work/out.txt")"
+    out=$(env DEV_CACHE="$c" "$a/dev.sh" 2>&1) || true
+    got=$(awk '/^  build /{p=1; print; next} p && /^      /{print; next} {p=0}' <<< "$out" | tr -s ' \n' '  ')
+    [[ "$got" == *"relative to src/"*"test/test_bitcoin"* ]] && pass "devsh: the help says build's target is relative to src/" ||
+        fail "devsh: the help's build entry: $got"
     # asan runs the suites with the tree's LeakSanitizer suppressions and its
     # default options, and keeps the caller's own (a configured build
     # directory, the stub make, and a runner that records its environment).
