@@ -45,11 +45,14 @@ jobs:
       - name: cache dir and keys
         # Two cache entries: the depends packages and sources, keyed
         # release-depends-<image tag>-<depends hash>, and the ccache, keyed
-        # release-ccache-<image tag>-<commit> and restored by that prefix (the
-        # newest entry). A push to master saves each entry whose key is missing,
-        # and prune-caches deletes the superseded ones. On a tag push the build
-        # jobs (build-ubuntu-1604, build-ubuntu-1604-low-difficulty,
-        # build-ubuntu-2204, build-windows, build-macos) start without a cache.
+        # release-ccache-<image tag>-<commit>. A push to master saves each
+        # entry whose key is missing, and prune-caches deletes the superseded
+        # ones. The build jobs (build-ubuntu-1604,
+        # build-ubuntu-1604-low-difficulty, build-ubuntu-2204, build-windows,
+        # build-macos) start without a cache on a push to master, where their
+        # restores only look up the keys (lookup-only), and on a tag push,
+        # where the restores are skipped; other runs restore the depends entry
+        # by its key and the newest ccache entry by the key's prefix.
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
@@ -66,6 +69,7 @@ jobs:
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - uses: actions/cache/restore@v5
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -73,10 +77,11 @@ jobs:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ env.KEY_CCACHE }}
           restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: build
         # Below the job timeout. Builds with the depends packages and the
-        # ccache restored above, if any (the entrypoint keeps both in
-        # /cache).
+        # ccache restored above (the entrypoint keeps both in /cache);
+        # on a push to master and on a tag push the cache starts empty.
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
@@ -138,7 +143,7 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and keys
-        # Cache entries as in build-ubuntu-1604, keyed
+        # Cache keys as in build-ubuntu-1604, keyed
         # functional-tests-depends-<image tag>-<depends hash> and
         # functional-tests-ccache-<image tag>-<commit>.
         env:
@@ -294,7 +299,7 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and keys
-        # Cache entries as in build-ubuntu-1604, keyed
+        # Cache keys as in build-ubuntu-1604, keyed
         # unit-tests-depends-<image tag>-<depends hash> and
         # unit-tests-ccache-<image tag>-<commit>.
         env:
@@ -583,6 +588,7 @@ jobs:
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - uses: actions/cache/restore@v5
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -590,10 +596,11 @@ jobs:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ env.KEY_CCACHE }}
           restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: build
         # Below the job timeout. Builds with the depends packages and the
-        # ccache restored above, if any (the entrypoint keeps both in
-        # /cache).
+        # ccache restored above (the entrypoint keeps both in /cache);
+        # on a push to master and on a tag push the cache starts empty.
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
@@ -678,6 +685,7 @@ jobs:
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - uses: actions/cache/restore@v5
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -685,10 +693,11 @@ jobs:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ env.KEY_CCACHE }}
           restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: build
         # Below the job timeout. Builds with the depends packages and the
-        # ccache restored above, if any (the entrypoint keeps both in
-        # /cache).
+        # ccache restored above (the entrypoint keeps both in /cache);
+        # on a push to master and on a tag push the cache starts empty.
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
@@ -767,6 +776,7 @@ jobs:
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - uses: actions/cache/restore@v5
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -774,10 +784,11 @@ jobs:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ env.KEY_CCACHE }}
           restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: build
         # Below the job timeout. Builds with the depends packages and the
-        # ccache restored above, if any (the entrypoint keeps both in
-        # /cache/windows).
+        # ccache restored above (the entrypoint keeps both in /cache/windows);
+        # on a push to master and on a tag push the cache starts empty.
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}
@@ -856,6 +867,7 @@ jobs:
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - uses: actions/cache/restore@v5
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -863,10 +875,11 @@ jobs:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ env.KEY_CCACHE }}
           restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
+          lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - name: build
         # Below the job timeout. Builds with the depends packages and the
-        # ccache restored above, if any (the entrypoint keeps both in
-        # /cache/macos).
+        # ccache restored above (the entrypoint keeps both in /cache/macos);
+        # on a push to master and on a tag push the cache starts empty.
         timeout-minutes: 50
         env:
           IMAGE_TAG: ${{ steps.image.outputs.tag }}

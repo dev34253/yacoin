@@ -25,7 +25,9 @@
 #     (<kind>-depends-<image tag>-<depends hash>, exact key only) and a
 #     ccache entry (<kind>-ccache-<image tag>-<commit>), each saved under
 #     the key its restore looked up and only without an exact hit; the build
-#     jobs restore nothing on a tag push; build-ubuntu-1604-low-difficulty
+#     jobs restore nothing on a tag push and, on a push to master, only look
+#     up their keys (lookup-only), while no other job's cache step sets
+#     lookup-only; build-ubuntu-1604-low-difficulty
 #     uses the depends entry of build-ubuntu-1604; the sanitizer and coverage
 #     jobs (fuzz-corpus, functional-tests-asan, unit-tests-asan,
 #     unit-tests-tsan, coverage-unit, coverage-functional-<n>) restore the
@@ -274,7 +276,8 @@ echo "== the workflow's caches =="
 #   J <job> perm <line>            a line of the job's permissions:
 #   W perm <line>                  a line of the workflow's permissions:
 #   C <job> <n> <field> <value>    the n-th actions/cache step of the job:
-#                                  uses, id, if, keyraw, key, path, rkey
+#                                  uses, id, if, keyraw, key, path, rkey,
+#                                  lookup (its lookup-only input, as written)
 # key, path and rkey (the restore-keys) are resolved as the runner would:
 # ${{ env.V }} from the job's env: and the $GITHUB_ENV lines of earlier
 # steps; ${{ steps.<id>.outputs.cache-primary-key }} as the key of that
@@ -361,6 +364,7 @@ cache_records() {
             for (i = 1; i <= npath; i++) out("path", expr(paths[i]))
             if ("restore-keys" in w) out("rkey", expr(w["restore-keys"]))
             for (i = 1; i <= nrkey; i++) out("rkey", expr(rkeys[i]))
+            if ("lookup-only" in w) out("lookup", w["lookup-only"])
         }
         for (k in pend) genv[k] = pend[k]
         split("", pend); split("", sh); split("", senv); split("", w)
@@ -525,6 +529,22 @@ cache_checks() {
         check "$job: the cache restore is skipped on a tag push" test "$ok" = 1
     done
 
+    # On a push to master the build jobs' restores only look up their keys;
+    # on any other run they restore.
+    for job in "${build_jobs[@]}"; do
+        mapfile -t restores < <(steps_of "$job" '^actions/cache/restore@')
+        ok=1; (( ${#restores[@]} == 2 )) || ok=0
+        for n in "${restores[@]}"; do
+            [[ "$(field "$job" "$n" lookup)" == "\${{ $master_push }}" ]] || ok=0
+        done
+        check "$job: the cache restore downloads nothing on a push to master" test "$ok" = 1
+    done
+    ok=1
+    while IFS=$'\t' read -r job n; do
+        [[ " ${build_jobs[*]} " == *" $job "* && "$(field "$job" "$n" uses)" == actions/cache/restore@* ]] || ok=0
+    done < <(awk -F'\t' '$1 == "C" && $4 == "lookup" { print $2 "\t" $3 }' <<< "$recs")
+    check "only the build jobs' cache restores set lookup-only" test "$ok" = 1
+
     # The sanitizer and coverage jobs restore the functional-tests depends
     # entry, with its paths, and save none.
     n=$(saves_of functional-tests depends)
@@ -607,6 +627,14 @@ plant "build-ubuntu-1604: the depends key holds the image tag" build-ubuntu-1604
     "s/^\( *\)image_key=\(.*\)$/\1echo \"KEY_IMAGE=\2\" >> \"\$GITHUB_ENV\"/; /KEY_DEPENDS=/s/\$image_key/\$KEY_IMAGE/"
 plant "build-ubuntu-1604-low-difficulty: the cache restore is skipped on a tag push" build-ubuntu-1604-low-difficulty \
     "/^        id: ccache$/{n;d}"
+plant "build-ubuntu-1604: the cache restore downloads nothing on a push to master" build-ubuntu-1604 \
+    "/^        id: ccache$/,/^      - /{/^ *lookup-only:/d}"
+plant "build-ubuntu-2204: the cache restore downloads nothing on a push to master" build-ubuntu-2204 \
+    "/^        id: depends$/,/^      - /s/^\( *lookup-only:\).*/\1 true/"
+plant "build-macos: the cache restore downloads nothing on a push to master" build-macos \
+    "/lookup-only:/s/ && github\.ref == 'refs\/heads\/master'//"
+plant "only the build jobs' cache restores set lookup-only" unit-tests \
+    "/^          key: \${{ env\.KEY_DEPENDS }}$/a\          lookup-only: \${{ $master_push }}"
 plant "fuzz-corpus: restores the functional-tests depends entry and nothing else" fuzz-corpus \
     "s|/depends-built-tests$|/depends-built|"
 plant "build-ubuntu-1604-low-difficulty: the depends entry is that of build-ubuntu-1604" build-ubuntu-1604-low-difficulty \
