@@ -659,6 +659,8 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
+      - name: planted failure
+        run: exit 1
       - uses: actions/checkout@v6
       - name: image
         id: image
