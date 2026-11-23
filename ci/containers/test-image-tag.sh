@@ -425,7 +425,7 @@ cache_records() {
 # The hashFiles call of the depends key: every depends build input.
 depends_hash="\${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}"
 # The event that saves caches.
-master_push="github.event_name == 'push' && github.ref == 'refs/heads/master'"
+master_push="github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves')"
 
 # cache_checks <workflow>: the checks of the workflow's caches.
 cache_checks() {

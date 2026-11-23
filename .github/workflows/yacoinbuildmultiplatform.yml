@@ -92,14 +92,14 @@ jobs:
           docker rm -f release-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -182,14 +182,14 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$FUNC_CACHE"
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/depends-built-tests
             ${{ env.FUNC_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -336,14 +336,14 @@ jobs:
           docker rm -f unit-tests 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" "$UNIT_CACHE"
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/depends-built-tests
             ${{ env.UNIT_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -611,14 +611,14 @@ jobs:
           # The test logs, written by root with umask 077.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -704,14 +704,14 @@ jobs:
           docker rm -f release-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -793,14 +793,14 @@ jobs:
           docker rm -f windows-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -882,14 +882,14 @@ jobs:
           docker rm -f macos-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
       - uses: actions/cache/save@v5
-        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        if: ${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
@@ -1241,7 +1241,7 @@ jobs:
     # and cache version and deletes the others. A group with more than one
     # cache version gets a warning. Builds nothing.
     needs: [build-ubuntu-1604, functional-tests, unit-tests, build-ubuntu-1604-low-difficulty, build-ubuntu-2204, build-windows, build-macos]
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    if: ${{ !cancelled() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-08-cache-saves') }}
     runs-on: ubuntu-latest
     permissions:
       actions: write  # deletes superseded cache entries
