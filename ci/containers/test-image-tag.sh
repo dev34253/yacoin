@@ -17,12 +17,23 @@
 #     filter off (the mode needs it, see entrypoint.sh), and they do;
 #   - the sanitizer jobs run their modes (unit-tests-asan, unit-tests-tsan,
 #     fuzz-corpus, functional-tests-asan), with ccache off;
-#   - the fuzz-corpus, functional-tests-asan, unit-tests-asan and
-#     coverage-functional-<n> jobs restore the functional-tests job's cache
-#     and save none, and the workflow has 15 jobs;
 #   - unit-tests-asan runs one leg per sanitizer (SANITIZE),
 #     functional-tests-asan and the coverage-functional-<n> jobs one shard
-#     each (FTEST_SHARD), and coverage-report merges every shard.
+#     each (FTEST_SHARD), and coverage-report merges every shard;
+#   - the caches: every save runs only on a push to master, with no run id
+#     or attempt in its key; the jobs that save keep a depends entry
+#     (<kind>-depends-<image tag>-<depends hash>, exact key only) and a
+#     ccache entry (<kind>-ccache-<image tag>-<commit>), each saved under
+#     the key its restore looked up and only without an exact hit; the build
+#     jobs restore nothing on a tag push; build-ubuntu-1604-low-difficulty
+#     uses the depends entry of build-ubuntu-1604; the sanitizer and coverage
+#     jobs (fuzz-corpus, functional-tests-asan, unit-tests-asan,
+#     unit-tests-tsan, coverage-unit, coverage-functional-<n>) restore the
+#     functional-tests depends entry and save none; prune-caches runs only
+#     on a push to master, runs no docker and is the one job with
+#     actions: write. Planted copies of the workflow, each with one change,
+#     must fail their named check;
+#   - the workflow has 16 jobs.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
