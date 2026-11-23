@@ -31,7 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: image tag tests
-        # How every job's image tag is computed (seconds, no Docker).
+        # How every job's image tag is computed, the checks of this
+        # workflow's jobs and caches, and all-jobs-passed.sh (seconds, no
+        # Docker).
         run: ci/containers/test-image-tag.sh
       - name: image
         id: image
@@ -1279,3 +1281,40 @@ jobs:
               echo "::warning::could not delete $key (id $id)"
           done < superseded.tsv
           echo "$(wc -l < superseded.tsv) superseded cache entries"
+  all-jobs-passed:
+    # Passes only when every other job of this workflow passed: each job in
+    # needs: ends in success, except that prune-caches may be skipped when the
+    # run is not a push to master (ci/containers/all-jobs-passed.sh prints
+    # each job's result). Runs whatever the needed jobs' results are
+    # (always()); a needed job that failed, was cancelled or was skipped
+    # makes it fail. test-image-tag.sh checks that needs: lists every other
+    # job and that the job is written as here.
+    needs:
+      - build-ubuntu-1604
+      - functional-tests
+      - functional-tests-asan
+      - unit-tests
+      - unit-tests-asan
+      - unit-tests-tsan
+      - fuzz-corpus
+      - build-ubuntu-1604-low-difficulty
+      - build-ubuntu-2204
+      - build-windows
+      - build-macos
+      - coverage-unit
+      - coverage-functional-1
+      - coverage-functional-2
+      - coverage-report
+      - prune-caches
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: results of the needed jobs
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          MASTER_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        run: ci/containers/all-jobs-passed.sh
