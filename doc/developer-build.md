@@ -392,7 +392,9 @@ N is K-1, applied after every other selection (`--extended`, `--exclude`,
 each selected script once, a new script lands in a shard by itself, and a
 script's shard does not depend on timing. A shard without scripts is no
 error. The sharded CI jobs (`functional-tests-asan`, `coverage-functional-1`
-and `-2`) use it through `FTEST_SHARD`.
+and `-2`) use it through `FTEST_SHARD`. A selection that ends without a
+script (for example `--include-file L --exclude-file L`, only names that are
+no script of the runner, or a `--filter` that matches none) fails the run.
 
 The nodes of a script run on regtest; a script that runs on main sets
 `self.chain = 'main'` and says why in a comment, and goes into

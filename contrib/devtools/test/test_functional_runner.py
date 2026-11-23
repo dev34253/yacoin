@@ -1,5 +1,5 @@
-"""Tests of the options of test/functional/test_runner.py for the sanitizer
-runs.
+"""Tests of test/functional/test_runner.py: its options, and how it reports
+the scripts it runs.
 
 With --sanitizer-logs DIR, the runner starts every test script with the
 sanitizers' log_path set to DIR/<test directory name>, so every process the
@@ -17,6 +17,9 @@ only the scripts listed in FILE.
 With --chain CHAIN, the runner selects the scripts that set
 self.chain = 'CHAIN' (regtest: also those without such a line), and builds
 the block cache of CHAIN only.
+
+A selection that ends without a script fails the run; an empty shard does
+not.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -541,9 +544,9 @@ class FunctionalRunnerShardTests(unittest.TestCase):
         # wallet_a.py is at position 2 of the runner's list.
         self.assertEqual(self.main("--shard=1/2", "wallet_a.py")[2], ["wallet_a.py"])
 
-    def test_without_the_option_an_empty_selection_runs_nothing(self):
+    def test_without_the_option_an_empty_selection_fails(self):
         status, out, ran = self.main("--filter=no_such_script")
-        self.assertEqual(status, 0)
+        self.assertEqual(status, 1)
         self.assertIn("No valid test scripts specified", out)
         self.assertIsNone(ran)
 
@@ -737,6 +740,55 @@ class FunctionalRunnerCacheChainTests(unittest.TestCase):
         args = self.run_tests(None)
         self.assertIsNotNone(args)
         self.assertFalse(any(a.startswith("--cachechain") for a in args))
+
+
+class FunctionalRunnerEmptySelectionTests(unittest.TestCase):
+    """A selection that ends without a script fails the run; an empty shard
+    does not (FunctionalRunnerShardTests).
+
+    main() runs on a tree of its own, as in FunctionalRunnerExcludeFileTests."""
+
+    SCRIPTS = FunctionalRunnerExcludeFileTests.SCRIPTS
+    setUp = FunctionalRunnerExcludeFileTests.setUp
+    write_list = FunctionalRunnerExcludeFileTests.write_list
+    main = FunctionalRunnerExcludeFileTests.main
+    MESSAGE = "No valid test scripts specified."
+
+    def test_including_and_excluding_the_same_list_fails(self):
+        self.write_list("wallet_a.py\nwallet_b.py\nmining_c.py\n")
+        status, out = self.main("--include-file=%s" % self.list, "--exclude-file=%s" % self.list)
+        self.assertEqual(status, 1)
+        self.assertIn(self.MESSAGE, out)
+        self.assertEqual(self.ran, [])
+
+    def test_only_unknown_script_names_fail(self):
+        status, out = self.main("wallet_gone.py", "mining_gone")
+        self.assertEqual(status, 1)
+        self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)
+        self.assertIn("WARNING! Test 'mining_gone' not found in full test list.", out)
+        self.assertIn(self.MESSAGE, out)
+        self.assertEqual(self.ran, [])
+
+    def test_a_filter_or_exclude_that_removes_every_script_fails(self):
+        for args in (["--filter=no_such_script"], ["--exclude=wallet_a,wallet_b"],
+                     ["--extended", "--exclude=wallet_a,wallet_b,mining_c"]):
+            self.ran.clear()
+            status, out = self.main(*args)
+            self.assertEqual(status, 1, args)
+            self.assertIn(self.MESSAGE, out)
+            self.assertEqual(self.ran, [])
+
+    def test_an_empty_selection_with_chain_fails_with_the_message(self):
+        status, out = self.main("--chain=regtest", "wallet_gone.py")
+        self.assertEqual(status, 1)
+        self.assertIn(self.MESSAGE, out)
+        self.assertEqual(self.ran, [])
+
+    def test_known_and_unknown_names_run_the_known_ones(self):
+        status, out = self.main("wallet_a.py", "wallet_gone.py")
+        self.assertIsNone(status, out)
+        self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)
+        self.assertEqual(self.ran, [["wallet_a.py"]])
 
 
 class TreeExcludedScriptsTests(unittest.TestCase):

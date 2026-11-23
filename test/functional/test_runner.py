@@ -349,6 +349,11 @@ def main():
     if args.filter:
         test_list = list(filter(re.compile(args.filter).search, test_list))
 
+    if not test_list:
+        print("No valid test scripts specified. Check that your test is in one "
+              "of the test lists in test_runner.py, or run test_runner.py with no arguments to run all tests")
+        sys.exit(1)
+
     if args.chain:
         tests_dir = os.path.join(config["environment"]["SRCDIR"], "test", "functional")
         test_list = [test for test in test_list if script_chain(tests_dir, test.split()[0]) == args.chain]
@@ -363,11 +368,6 @@ def main():
         if not test_list:
             print("Shard %d/%d holds none of the %d selected script(s); nothing to run." % (shard + (selected,)))
             sys.exit(0)
-
-    if not test_list:
-        print("No valid test scripts specified. Check that your test is in one "
-              "of the test lists in test_runner.py, or run test_runner.py with no arguments to run all tests")
-        sys.exit(0)
 
     if args.help:
         # Print help for test_runner.py, then print help of the first script (with args removed) and exit.
