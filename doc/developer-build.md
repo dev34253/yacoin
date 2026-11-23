@@ -396,6 +396,23 @@ and `-2`) use it through `FTEST_SHARD`. A selection that ends without a
 script (for example `--include-file L --exclude-file L`, only names that are
 no script of the runner, or a `--filter` that matches none) fails the run.
 
+A script fails when it exits with a code other than 0 and 77 (77: skipped),
+when it exits with 0 but writes to stderr, or when it has a sanitizer report
+(see "AddressSanitizer, LeakSanitizer and UBSan" above), whatever its exit
+code. The runner prints
+its stdout and stderr under a header with its exit code,
+`<script> failed (exit code N), Duration: T s`; a script ended by a signal
+shows the negative code and the signal's name (`exit code -15, signal
+SIGTERM`). A failed script keeps its test directory (`test_framework.log` and
+the nodes' data directories) under the run's `test_runner_<date>_<time>/`,
+and the runner prints its path after the header. The runner starts every script
+with `--nocleanup` and itself removes the test directory of a script that
+passed or was skipped, and the run's directory when nothing is left in it. With
+`--nocleanup`, `--noshutdown` or `--perf` passed on to the scripts, it adds
+nothing and removes no test directory. With `--failfast`, the directories of
+the scripts that are still running or not yet reported when the run stops
+stay as well.
+
 The nodes of a script run on regtest; a script that runs on main sets
 `self.chain = 'main'` and says why in a comment, and goes into
 `test/functional/regtest-excluded-scripts` (the runs on the mainnet build

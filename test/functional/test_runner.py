@@ -210,6 +210,11 @@ ALL_SCRIPTS = EXTENDED_SCRIPTS + BASE_SCRIPTS
 # <prefix>.<exe>.<pid> (log_exe_name=1) instead of its stderr.
 SANITIZER_OPTIONS_VARS = ("ASAN_OPTIONS", "LSAN_OPTIONS", "UBSAN_OPTIONS")
 
+# The options of the test framework with which it keeps a script's test
+# directory. Without them the runner starts every script with --nocleanup and
+# removes the test directory itself when the script passed or was skipped.
+KEEP_TESTDIR_FLAGS = ("--nocleanup", "--noshutdown", "--perf")
+
 # The chains of test_framework.CHAINS, for --chain
 RUNNER_CHAINS = ('main', 'regtest')
 
@@ -466,6 +471,22 @@ def sanitizer_env(environ, log_prefix):
         env[var] = ":".join(options + ["log_path=" + log_prefix, "log_exe_name=1"])
     return env
 
+def keeps_testdirs(flags):
+    """Return whether flags hold one of KEEP_TESTDIR_FLAGS, or an abbreviation
+    of one, which the framework's argument parser takes as well."""
+    return any(arg[:2] == "--" and len(arg) > 2 and flag.startswith(arg.split("=", 1)[0])
+               for arg in flags for flag in KEEP_TESTDIR_FLAGS)
+
+def describe_exit_code(exit_code):
+    """Return the exit code of a script as text; for a negative code (the
+    script was ended by a signal) with the name of the signal."""
+    if exit_code < 0:
+        try:
+            return "%d, signal %s" % (exit_code, signal.Signals(-exit_code).name)
+        except ValueError:
+            pass
+    return str(exit_code)
+
 def read_sanitizer_reports(paths):
     """Return the text of the sanitizer report files, each with its name."""
     text = ""
@@ -546,7 +567,9 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
         elif test_result.status == "Skipped":
             logging.debug("%s skipped" % (done_str))
         else:
-            print("%s failed, Duration: %s s\n" % (done_str, test_result.time))
+            print("%s failed (exit code %s), Duration: %s s\n" % (done_str, describe_exit_code(test_result.exit_code), test_result.time))
+            if os.path.isdir(testdir):
+                print("test directory: %s\n" % testdir)
             print(BOLD[1] + 'stdout:\n' + BOLD[0] + stdout + '\n')
             print(BOLD[1] + 'stderr:\n' + BOLD[0] + stderr + '\n')
             if combined_logs_len and os.path.isdir(testdir):
@@ -637,6 +660,9 @@ class TestHandler:
         self.sanitizer_logs = sanitizer_logs
         # The sanitizer report files already shown with their scripts.
         self.reported = set()
+        # Whether the scripts get --nocleanup and the handler removes the test
+        # directories of those that passed or were skipped.
+        self.removes_testdirs = not keeps_testdirs(flags)
 
     def get_next(self):
         while self.num_running < self.num_jobs and self.test_list:
@@ -650,13 +676,14 @@ class TestHandler:
             test_argv = test.split()
             testdir = "{}/{}_{}".format(self.tmpdir, re.sub(".py$", "", test_argv[0]), portseed)
             tmpdir_arg = ["--tmpdir={}".format(testdir)]
+            nocleanup_arg = ["--nocleanup"] if self.removes_testdirs else []
             env = None
             if self.sanitizer_logs:
                 # Named like the test directory, which is unique in a run.
                 env = sanitizer_env(os.environ, os.path.join(self.sanitizer_logs, os.path.basename(testdir)))
             self.jobs.append((test,
                               time.time(),
-                              subprocess.Popen([sys.executable, self.tests_dir + test_argv[0]] + test_argv[1:] + self.flags + portseed_arg + tmpdir_arg,
+                              subprocess.Popen([sys.executable, self.tests_dir + test_argv[0]] + test_argv[1:] + self.flags + portseed_arg + tmpdir_arg + nocleanup_arg,
                                                universal_newlines=True,
                                                stdout=log_stdout,
                                                stderr=log_stderr,
@@ -698,13 +725,19 @@ class TestHandler:
                             status = "Failed"
                             stderr += read_sanitizer_reports(reports)
                             self.reported.update(reports)
+                    if self.removes_testdirs and status != "Failed" and os.path.isdir(testdir):
+                        try:
+                            shutil.rmtree(testdir)
+                        except OSError as e:
+                            status = "Failed"
+                            stderr += "Cannot remove the test directory {}: {}\n".format(testdir, e)
                     self.num_running -= 1
                     self.jobs.remove(job)
                     if self.use_term_control:
                         clearline = '\r' + (' ' * dot_count) + '\r'
                         print(clearline, end='', flush=True)
                     dot_count = 0
-                    return TestResult(name, status, int(time.time() - start_time)), testdir, stdout, stderr
+                    return TestResult(name, status, int(time.time() - start_time), exit_code=proc.returncode), testdir, stdout, stderr
             if self.use_term_control:
                 print('.', end='', flush=True)
             dot_count += 1
@@ -721,10 +754,11 @@ class TestHandler:
 
 
 class TestResult():
-    def __init__(self, name, status, time):
+    def __init__(self, name, status, time, exit_code=None):
         self.name = name
         self.status = status
         self.time = time
+        self.exit_code = exit_code
         self.padding = 0
 
     def sort_key(self):
