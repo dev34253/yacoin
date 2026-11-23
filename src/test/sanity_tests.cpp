@@ -17,4 +17,9 @@ BOOST_AUTO_TEST_CASE(basic_sanity)
   BOOST_CHECK_MESSAGE(ECC_InitSanityCheck() == true, "openssl ECC test");
 }
 
+BOOST_AUTO_TEST_CASE(planted_upload_check_failure)
+{
+  BOOST_CHECK(false);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
