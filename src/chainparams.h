@@ -35,6 +35,9 @@ struct CCheckpointData {
     MapCheckpoints mapCheckpoints;
 };
 
+/** Stake modifier checkpoints: block height to stake modifier checksum */
+typedef std::map<int, unsigned int> MapModifierCheckpoints;
+
 struct ChainTxData {
     int64_t nTime;
     int64_t nTxCount;
@@ -80,6 +83,7 @@ public:
     const std::vector<unsigned char>& Base58Prefix(Base58Type type) const { return base58Prefixes[type]; }
     const std::vector<SeedSpec6>& FixedSeeds() const { return vFixedSeeds; }
     const CCheckpointData& Checkpoints() const { return checkpointData; }
+    const MapModifierCheckpoints& StakeModifierCheckpoints() const { return mapStakeModifierCheckpoints; }
     const ChainTxData& TxData() const { return chainTxData; }
     void UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout);
     void UpdateActivationHeight(Consensus::ActivationRule rule, int nHeight);
@@ -100,6 +104,7 @@ protected:
     bool fMineBlocksOnDemand;
     bool fMiningRequiresPeers;
     CCheckpointData checkpointData;
+    MapModifierCheckpoints mapStakeModifierCheckpoints;
     ChainTxData chainTxData;
 };
 

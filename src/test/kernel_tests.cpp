@@ -7,7 +7,8 @@
 //
 // The tests run on the main network with the fork height at 1890000 and an active tip far
 // below it, so the stake modifier code runs as it does for the historical chain. Block index
-// entries are synthetic (SyntheticChain); the kernel tests use real mainnet blocks.
+// entries are synthetic (SyntheticChain); the kernel tests use real mainnet blocks. The cases
+// of regtest's stake modifier checkpoint select regtest while they run.
 
 #include "chainparams.h"
 #include "consensus/validation.h"
@@ -185,6 +186,9 @@ const ::uint32_t OTHER_BUILD_GENESIS_CHECKSUM = 0xfd11f4e7;
 const ::uint32_t MAIN_GENESIS_CHECKSUM = 0xfd11f4e7;
 const ::uint32_t OTHER_BUILD_GENESIS_CHECKSUM = 0x0e00670b;
 #endif
+
+/** The stake-modifier checksum of regtest's genesis block, in every build */
+const ::uint32_t REGTEST_GENESIS_CHECKSUM = 0xfd11f4e7;
 
 /** Main's stake-modifier checkpoints: height and checksum */
 const std::vector<std::pair<int, ::uint32_t>> MAIN_MODIFIER_CHECKPOINTS = {
@@ -462,12 +466,6 @@ BOOST_AUTO_TEST_CASE(modifier_checkpoints)
     BOOST_CHECK(!CheckStakeModifierCheckpoints(712177, 0));
     BOOST_CHECK(CheckStakeModifierCheckpoints(15001, 0));
     BOOST_CHECK(CheckStakeModifierCheckpoints(712178, 0x12345678));
-
-    // Testnet's table has only height 0
-    ValueGuard<bool> testnet(fTestNet, true);
-    BOOST_CHECK(CheckStakeModifierCheckpoints(0, 0x0e00670b));
-    BOOST_CHECK(!CheckStakeModifierCheckpoints(0, 0xfd11f4e7));
-    BOOST_CHECK(CheckStakeModifierCheckpoints(15000, 0));
 }
 
 /* Main's checkpoints in this build */
@@ -486,6 +484,49 @@ BOOST_AUTO_TEST_CASE(modifier_checkpoints_main_table)
         BOOST_CHECK_MESSAGE(!CheckStakeModifierCheckpoints(checkpoint.first, checkpoint.second ^ 1),
                             "height " << checkpoint.first);
     }
+}
+
+/* With fTestNet set, main's checkpoints apply as without it */
+BOOST_AUTO_TEST_CASE(modifier_checkpoints_testnet_flag)
+{
+    ValueGuard<bool> testnet(fTestNet, true);
+    CheckMainModifierCheckpoints();
+}
+
+/* Regtest's only checkpoint is its genesis block's checksum at height 0; main's heights are not
+ * listed there */
+BOOST_AUTO_TEST_CASE(modifier_checkpoints_regtest)
+{
+    SelectedParamsGuard regtest(CBaseChainParams::REGTEST);
+    BOOST_CHECK(CheckStakeModifierCheckpoints(0, REGTEST_GENESIS_CHECKSUM));
+    BOOST_CHECK(!CheckStakeModifierCheckpoints(0, REGTEST_GENESIS_CHECKSUM ^ 1));
+    BOOST_CHECK(!CheckStakeModifierCheckpoints(0, 0x0e00670b));
+    for (const int nHeight : {15000, 712177}) {
+        BOOST_CHECK_MESSAGE(CheckStakeModifierCheckpoints(nHeight, 0), "height " << nHeight);
+        BOOST_CHECK_MESSAGE(CheckStakeModifierCheckpoints(nHeight, 0x12345678), "height " << nHeight);
+    }
+}
+
+/* Regtest's genesis block, indexed as AddToBlockIndex does, with its entropy bit and modifier,
+ * gets modifier 0 and the checksum of regtest's checkpoint */
+BOOST_AUTO_TEST_CASE(modifier_checkpoint_regtest_genesis)
+{
+    SelectedParamsGuard regtest(CBaseChainParams::REGTEST);
+    const CBlock& genesis = Params().GenesisBlock();
+    const uint256 hash = genesis.GetHash();
+    CBlockIndex index(genesis);
+    index.phashBlock = &hash;
+    index.nHeight = 0;
+    BOOST_REQUIRE(index.SetStakeEntropyBit(genesis.GetStakeEntropyBit(0)));
+    ::uint64_t nModifier = 1;
+    bool fGenerated = false;
+    BOOST_REQUIRE(ComputeNextStakeModifier(&index, nModifier, fGenerated));
+    BOOST_CHECK_EQUAL(nModifier, 0U);
+    BOOST_CHECK(fGenerated);
+    index.SetStakeModifier(nModifier, fGenerated);
+    const ::uint32_t nChecksum = GetStakeModifierChecksum(&index);
+    BOOST_CHECK_EQUAL(nChecksum, REGTEST_GENESIS_CHECKSUM);
+    BOOST_CHECK(CheckStakeModifierCheckpoints(0, nChecksum));
 }
 
 /* When the next block (tip height + 1) is at or past the new-logic height, the stake-modifier

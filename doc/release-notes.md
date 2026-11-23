@@ -32,3 +32,5 @@ Unreleased
   `-testactivationheight` and with `-tokenSupportBlockNumber`, is an error at startup.
 - Regtest uses its own checkpoint data (its genesis block) and a token fee lock of 10 YAC for 10 blocks in
   every build. The checkpoints and the token fee lock mainnet uses are unchanged in both builds.
+- Regtest uses its own stake-modifier checkpoint (one, at its genesis block) in every build. The stake-modifier
+  checkpoints mainnet uses are unchanged in both builds.

@@ -257,6 +257,35 @@ BOOST_AUTO_TEST_CASE(regtest_parameters)
     BOOST_CHECK_EQUAL(txData.dTxRate, 0);
 }
 
+/* Main's stake-modifier checkpoints: 26, height 0 with the build's genesis checksum */
+BOOST_AUTO_TEST_CASE(main_stake_modifier_checkpoints)
+{
+    const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::MAIN);
+
+    const MapModifierCheckpoints& checkpoints = params->StakeModifierCheckpoints();
+    BOOST_REQUIRE_EQUAL(checkpoints.size(), 26U);
+    BOOST_CHECK_EQUAL(checkpoints.begin()->first, 0);
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+    BOOST_CHECK_EQUAL(checkpoints.begin()->second, 0x0e00670bU);
+#else
+    BOOST_CHECK_EQUAL(checkpoints.begin()->second, 0xfd11f4e7U);
+#endif
+    BOOST_CHECK_EQUAL(checkpoints.at(15000), 0x085e9cafU);
+    BOOST_CHECK_EQUAL(checkpoints.rbegin()->first, 712177);
+    BOOST_CHECK_EQUAL(checkpoints.rbegin()->second, 0xad692cc0U);
+}
+
+/* Regtest's stake-modifier checkpoint is its genesis block's checksum, in every build */
+BOOST_AUTO_TEST_CASE(regtest_stake_modifier_checkpoints)
+{
+    const std::unique_ptr<CChainParams> params = CreateChainParams(CBaseChainParams::REGTEST);
+
+    const MapModifierCheckpoints& checkpoints = params->StakeModifierCheckpoints();
+    BOOST_REQUIRE_EQUAL(checkpoints.size(), 1U);
+    BOOST_CHECK_EQUAL(checkpoints.begin()->first, 0);
+    BOOST_CHECK_EQUAL(checkpoints.begin()->second, 0xfd11f4e7U);
+}
+
 BOOST_AUTO_TEST_CASE(create_chain_params_unknown_chain)
 {
     // The base parameters know a testnet, the chain parameters do not.

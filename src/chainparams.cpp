@@ -240,6 +240,39 @@ public:
         };
 #endif
 
+        mapStakeModifierCheckpoints = {
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+            { 0, 0x0e00670bu },
+#else
+            { 0, 0xfd11f4e7 },
+#endif
+            { 15000, 0x085e9cafu },
+            { 30000, 0x3f123e2cu },
+            { 45000, 0x3e2ecf4fu },
+            { 60000, 0x1e8458eau },
+            { 75000, 0xd72d1395u },
+            { 90000, 0x7dce92ffu },
+            { 105000, 0x57cc71e0u },
+            { 120000, 0x4442fccbu },
+            { 135000, 0x4cea240fu },
+            { 150000, 0xd06bea80u },
+            { 165000, 0x697caae6u },
+            { 180000, 0x5d6f2627u },
+            { 195000, 0x054b2756u },
+            { 214998, 0xcbb62f73u },
+            { 236895, 0x05ee6bd6u },
+            { 259405, 0xb31abd61u },
+            { 281002, 0x95174906u },
+            { 303953, 0x4ba15dbcu },
+            { 388314, 0x97f8e820u },
+            { 420000, 0x9b6c9d80u },
+            { 465000, 0x1b1a219cu },
+            { 487658, 0xe7d5a3bcu },
+            { 550177, 0x8a1e3994u },
+            { 612177, 0x949c4dc0u },
+            { 712177, 0xad692cc0u },
+        };
+
         // TODO: Implement later
         chainTxData = ChainTxData{
             // Data as of block 00000c75a8a38f320cb41ce2ea86557b6b53f9daddc9a085d95f1c77aebbc547 (height 1949485).
@@ -333,6 +366,11 @@ public:
             {
                 { 0, std::make_pair(consensus.hashGenesisBlock, genesis.nTime) },
             }
+        };
+
+        // Its genesis block's stake modifier checksum
+        mapStakeModifierCheckpoints = {
+            { 0, 0xfd11f4e7u },
         };
 
         chainTxData = ChainTxData{
