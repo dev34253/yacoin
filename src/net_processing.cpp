@@ -108,6 +108,51 @@ bool CHashCalculation::operator()()
     return true;
 }
 
+bool CImportHashCalculation::operator()()
+{
+    pBlock->GetHash();
+    return true;
+}
+
+CImportHashWorkers::ThreadJoiner::~ThreadJoiner()
+{
+    // join_all() is an interruption point; this may run while an exception unwinds the stack
+    boost::this_thread::disable_interruption noInterruption;
+    group.interrupt_all();
+    group.join_all();
+}
+
+CImportHashWorkers::CImportHashWorkers(int nThreads) : m_queue(1)
+{
+    try {
+        for (int i = 0; i < nThreads - 1; i++) {
+            m_threads.group.create_thread([this] {
+                RenameThread("yacoin-hashimp");
+                m_queue.Thread();
+            });
+        }
+    } catch (const boost::thread_resource_error& e) {
+        LogPrintf("%s: started %u of %d hash workers: %s\n", __func__, Workers(), nThreads - 1, e.what());
+    }
+}
+
+unsigned int CImportHashWorkers::Workers() const
+{
+    return m_threads.group.size();
+}
+
+unsigned int CImportHashWorkers::Hash(const std::vector<CBlockHeader*>& vBlocks)
+{
+    std::vector<CImportHashCalculation> vChecks;
+    vChecks.reserve(vBlocks.size());
+    for (CBlockHeader* pBlock : vBlocks)
+        vChecks.emplace_back(pBlock);
+    CCheckQueueControl<CImportHashCalculation> control(&m_queue);
+    control.Add(vChecks);
+    control.Wait();
+    return vBlocks.size();
+}
+
 struct IteratorComparator
 {
     template<typename I>

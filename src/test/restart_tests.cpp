@@ -40,6 +40,7 @@
 #include "test/consensus_test_util.h"
 #include "test/known_failure.h"
 #include "test/log_test_util.h"
+#include "test/p2p_test_util.h"
 #include "test/stake_test_util.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
@@ -61,6 +62,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <cstdio>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -282,6 +284,76 @@ void CheckSame(const IndexSnapshot& a, const IndexSnapshot& b)
         BOOST_CHECK_EQUAL(a.files[i].nTimeFirst, b.files[i].nTimeFirst);
         BOOST_CHECK_EQUAL(a.files[i].nTimeLast, b.files[i].nTimeLast);
     }
+}
+
+/** The counts of the summary line a block file import writes under -debug=reindex */
+struct ImportCounts {
+    unsigned int records = 0;
+    unsigned int queued = 0;
+    unsigned int workers = 0;
+};
+
+/** The counts of every import summary line in log, in order */
+std::vector<ImportCounts> ParseImportCounts(const std::string& log)
+{
+    std::vector<ImportCounts> counts;
+    const std::string prefix = "LoadExternalBlockFile: ";
+    std::istringstream lines(log);
+    std::string line;
+    while (std::getline(lines, line)) {
+        const size_t pos = line.find(prefix);
+        if (pos == std::string::npos) continue;
+        ImportCounts c;
+        char extra;
+        if (sscanf(line.c_str() + pos + prefix.size(), "%u records, %u hashes queued, %u workers%c",
+                   &c.records, &c.queued, &c.workers, &extra) == 3) {
+            counts.push_back(c);
+        }
+    }
+    return counts;
+}
+
+/** Turns the reindex log category on while alive */
+struct ReindexLogging {
+    const uint32_t saved{logCategories};
+    ReindexLogging() { logCategories |= BCLog::REINDEX; }
+    ~ReindexLogging() { logCategories = saved; }
+};
+
+/** The counts of an import run under P2PTestHashWorkers(nThreads): with hash workers (nThreads
+ *  above 1) nThreads - 1 workers, and hashes queued for a file whose records need hashes;
+ *  without, no worker and nothing queued */
+void CheckCounts(const ImportCounts& c, int nThreads, bool fNeedsHashes)
+{
+    BOOST_CHECK_EQUAL(c.workers, nThreads > 1 ? (unsigned int)(nThreads - 1) : 0U);
+    if (nThreads > 1 && fNeedsHashes) {
+        BOOST_CHECK(c.queued > 0);
+    } else {
+        BOOST_CHECK_EQUAL(c.queued, 0U);
+    }
+}
+
+/** What an import leaves behind: block index, chain, block files, mapHash and the import
+ *  summary counts */
+struct ImportRun {
+    IndexSnapshot snapshot;
+    std::map<uint256, uint256> hashes;
+    std::vector<ImportCounts> counts;
+};
+
+ImportRun TakeImportRun(const std::vector<ImportCounts>& counts)
+{
+    return ImportRun{TakeSnapshot(), mapHash, counts};
+}
+
+/** Two imports of the same files left the same state behind */
+void CheckSameRun(const ImportRun& a, const ImportRun& b)
+{
+    CheckSame(a.snapshot, b.snapshot);
+    BOOST_CHECK(a.hashes == b.hashes);
+    BOOST_CHECK_EQUAL(a.counts.size(), b.counts.size());
+    for (size_t i = 0; i < std::min(a.counts.size(), b.counts.size()); i++)
+        BOOST_CHECK_EQUAL(a.counts[i].records, b.counts[i].records);
 }
 
 /** Import file record: message start, size, block */
@@ -634,6 +706,31 @@ struct RestartSetup : public ConsoleLogging, public TestChain100Setup {
             if (!file) break;
             loaded.push_back(LoadExternalBlockFile(Params(), file, &pos));
         }
+        return loaded;
+    }
+
+    /** Import with the reindex log category on; appends the counts of its summary line */
+    bool CountedImport(const fs::path& path, std::vector<ImportCounts>& counts, CDiskBlockPos* dbp = nullptr)
+    {
+        ReindexLogging logging;
+        LogCapture capture(DataFile("import.log"));
+        const bool fLoaded = Import(path, dbp);
+        const std::vector<ImportCounts> found = ParseImportCounts(capture.Stop());
+        BOOST_CHECK_EQUAL(found.size(), 1U);
+        counts.insert(counts.end(), found.begin(), found.end());
+        return fLoaded;
+    }
+
+    /** ReindexBlockFiles with the reindex log category on; appends the counts of its summary
+     *  lines, one per file */
+    std::vector<bool> CountedReindex(std::vector<ImportCounts>& counts)
+    {
+        ReindexLogging logging;
+        LogCapture capture(DataFile("import.log"));
+        const std::vector<bool> loaded = ReindexBlockFiles();
+        const std::vector<ImportCounts> found = ParseImportCounts(capture.Stop());
+        BOOST_CHECK_EQUAL(found.size(), loaded.size());
+        counts.insert(counts.end(), found.begin(), found.end());
         return loaded;
     }
 
@@ -1239,45 +1336,188 @@ BOOST_AUTO_TEST_CASE(import_blocks_into_fresh_datadir)
         CAutoFile out(fsbridge::fopen(file2, "wb"), SER_DISK, CLIENT_VERSION);
         for (int h = 5; h <= 14; h++) AppendBlock(out, b[h]);
     }
-
-    FreshNode();
-    BOOST_CHECK(Tip()->GetBlockHash() == b[0].GetHash());
-    {
-        LOCK(cs_main);
-        BOOST_CHECK_EQUAL(mapBlockIndex.size(), 1U);
-        bool fFlag = false;
-        BOOST_CHECK(pblocktree->ReadFlag("txindex", fFlag) && fFlag && fTxIndex);
-        BOOST_CHECK(pblocktree->ReadFlag("tokenindex", fFlag) && fFlag == DEFAULT_TOKENINDEX && fTokenIndex == DEFAULT_TOKENINDEX);
-        BOOST_CHECK(pblocktree->ReadFlag("addressindex", fFlag) && fFlag == DEFAULT_ADDRESSINDEX && fAddressIndex == DEFAULT_ADDRESSINDEX);
-    }
-    // B1's header is already known; its data comes from the file
-    BOOST_REQUIRE(SubmitHeader(b[1]));
-
-    BOOST_CHECK(Import(file1));
-    BOOST_CHECK(Tip()->GetBlockHash() == b[4].GetHash());
-    for (int h = 1; h <= 4; h++) BOOST_CHECK(AtHeight(h)->GetBlockHash() == b[h].GetHash());
-    BOOST_CHECK(!Known(b[5].GetHash()));
-    BOOST_CHECK(!Known(b[6].GetHash()));
-    BOOST_CHECK(!Known(badMerkle.GetHash()));
-    BOOST_CHECK(mapHash.count(b[2].GetSHA256Hash()) && mapHash[b[2].GetSHA256Hash()] == b[2].GetHash());
-
-    BOOST_CHECK(Import(file2));
-    BOOST_CHECK(Tip()->GetBlockHash() == hashTip);
-
-    // Everything known now: nothing loaded
-    BOOST_CHECK(!Import(file1));
-    BOOST_CHECK(!Import(file2));
-    BOOST_CHECK(Tip()->GetBlockHash() == hashTip);
-
     const fs::path empty = DataFile("empty.dat");
     { CAutoFile out(fsbridge::fopen(empty, "wb"), SER_DISK, CLIENT_VERSION); }
-    BOOST_CHECK(!Import(empty));
     const fs::path junk = DataFile("junk.dat");
     {
         CAutoFile out(fsbridge::fopen(junk, "wb"), SER_DISK, CLIENT_VERSION);
         AppendBytes(out, std::vector<unsigned char>(1000, 'x'));
     }
-    BOOST_CHECK(!Import(junk));
+
+    // The same imports with and without hash workers
+    auto run = [&](int nThreads) {
+        P2PTestHashWorkers workers(nThreads);
+        std::vector<ImportCounts> counts;
+        FreshNode(); // both runs start from the same state
+        BOOST_CHECK(Tip()->GetBlockHash() == b[0].GetHash());
+        {
+            LOCK(cs_main);
+            BOOST_CHECK_EQUAL(mapBlockIndex.size(), 1U);
+            bool fFlag = false;
+            BOOST_CHECK(pblocktree->ReadFlag("txindex", fFlag) && fFlag && fTxIndex);
+            BOOST_CHECK(pblocktree->ReadFlag("tokenindex", fFlag) && fFlag == DEFAULT_TOKENINDEX && fTokenIndex == DEFAULT_TOKENINDEX);
+            BOOST_CHECK(pblocktree->ReadFlag("addressindex", fFlag) && fFlag == DEFAULT_ADDRESSINDEX && fAddressIndex == DEFAULT_ADDRESSINDEX);
+        }
+        // B1's header is already known; its data comes from the file
+        BOOST_REQUIRE(SubmitHeader(b[1]));
+
+        BOOST_CHECK(CountedImport(file1, counts));
+        BOOST_CHECK(Tip()->GetBlockHash() == b[4].GetHash());
+        for (int h = 1; h <= 4; h++) BOOST_CHECK(AtHeight(h)->GetBlockHash() == b[h].GetHash());
+        BOOST_CHECK(!Known(b[5].GetHash()));
+        BOOST_CHECK(!Known(b[6].GetHash()));
+        BOOST_CHECK(!Known(badMerkle.GetHash()));
+        BOOST_CHECK(mapHash.count(b[2].GetSHA256Hash()) && mapHash[b[2].GetSHA256Hash()] == b[2].GetHash());
+
+        BOOST_CHECK(CountedImport(file2, counts));
+        BOOST_CHECK(Tip()->GetBlockHash() == hashTip);
+
+        // Everything known now: nothing loaded
+        BOOST_CHECK(!CountedImport(file1, counts));
+        BOOST_CHECK(!CountedImport(file2, counts));
+        BOOST_CHECK(Tip()->GetBlockHash() == hashTip);
+
+        BOOST_CHECK(!CountedImport(empty, counts));
+        BOOST_CHECK(!CountedImport(junk, counts));
+
+        BOOST_REQUIRE_EQUAL(counts.size(), 6U);
+        BOOST_CHECK_EQUAL(counts[0].records, 8U);
+        BOOST_CHECK_EQUAL(counts[1].records, 10U);
+        BOOST_CHECK_EQUAL(counts[4].records, 0U);
+        BOOST_CHECK_EQUAL(counts[5].records, 0U);
+        CheckCounts(counts[0], nThreads, true);
+        CheckCounts(counts[1], nThreads, true);
+        for (size_t i = 2; i < counts.size(); i++) CheckCounts(counts[i], nThreads, false);
+        return TakeImportRun(counts);
+    };
+    const ImportRun without = run(1);
+    const ImportRun with = run(4);
+    CheckSameRun(without, with);
+}
+
+/* Records in batches: files shorter than a batch, of exactly one batch and of one batch plus one
+ * record, and a file with a block before its parent inside one batch, a duplicate record inside
+ * one batch and a block before its parent across two batches give the same result with and
+ * without hash workers */
+BOOST_AUTO_TEST_CASE(import_in_batches_with_and_without_hash_workers)
+{
+    const unsigned int nBatch = IMPORT_HASH_BATCH_SIZE;
+    while (Tip()->nHeight < (int)nBatch + 1) Mine();
+    const std::vector<CBlock> b = ReadChain();
+
+    // b[1] to b[n]
+    auto inOrder = [&](unsigned int n) { return std::vector<CBlock>(b.begin() + 1, b.begin() + 1 + n); };
+    std::vector<CBlock> mixed;
+    for (int h = 1; h <= 9; h++) mixed.push_back(b[h]);
+    mixed.push_back(b[11]); // before its parent, in the same batch
+    mixed.push_back(b[10]);
+    mixed.push_back(b[12]);
+    mixed.push_back(b[12]); // a duplicate record
+    int h = 13;
+    while (mixed.size() < nBatch - 1) mixed.push_back(b[h++]);
+    mixed.push_back(b[h + 1]); // the last record of the first batch, before its parent
+    mixed.push_back(b[h]);     // the first record of the second batch
+    mixed.push_back(b[h + 2]);
+    BOOST_REQUIRE_EQUAL(mixed.size(), nBatch + 2);
+
+    // The records as block file blk00001.dat, imported from their positions into a new data
+    // directory
+    auto run = [&](int nThreads, const std::vector<CBlock>& records, bool fInOrder) {
+        P2PTestHashWorkers workers(nThreads);
+        FreshNode(); // both runs start from the same state
+        CDiskBlockPos pos(1, 0);
+        const fs::path path = GetBlockPosFilename(pos, "blk");
+        {
+            CAutoFile out(fsbridge::fopen(path, "wb"), SER_DISK, CLIENT_VERSION);
+            for (const CBlock& block : records) AppendBlock(out, block);
+        }
+        std::vector<ImportCounts> counts;
+        BOOST_CHECK(CountedImport(path, counts, &pos));
+        BOOST_REQUIRE_EQUAL(counts.size(), 1U);
+        BOOST_CHECK_EQUAL(counts[0].records, records.size());
+        CheckCounts(counts[0], nThreads, true);
+        // Records in order, none of them in mapHash: every record's hash is queued
+        if (fInOrder && nThreads > 1) BOOST_CHECK_EQUAL(counts[0].queued, records.size());
+        return TakeImportRun(counts);
+    };
+    for (unsigned int n : {nBatch - 1, nBatch, nBatch + 1}) {
+        BOOST_TEST_MESSAGE("records in order: " << n);
+        const ImportRun without = run(1, inOrder(n), true);
+        const ImportRun with = run(4, inOrder(n), true);
+        CheckSameRun(without, with);
+        BOOST_CHECK(Tip()->GetBlockHash() == b[n].GetHash());
+    }
+    const ImportRun without = run(1, mixed, false);
+    const ImportRun with = run(4, mixed, false);
+    CheckSameRun(without, with);
+    BOOST_CHECK(Tip()->GetBlockHash() == b[h + 2].GetHash());
+}
+
+/* An import with hash workers queues no hash that mapHash holds, and the result is the same */
+BOOST_AUTO_TEST_CASE(import_of_known_hashes_with_hash_workers)
+{
+    const std::vector<CBlock> b = ReadChain();
+    const fs::path file = DataFile("bootstrap.dat");
+    {
+        CAutoFile out(fsbridge::fopen(file, "wb"), SER_DISK, CLIENT_VERSION);
+        for (const CBlock& block : b) AppendBlock(out, block);
+    }
+    P2PTestHashWorkers workers(4);
+    auto run = [&](bool fKnown) {
+        FreshNode(); // both runs start from the same state
+        if (fKnown) {
+            // mapHash already holds every record's hash
+            for (const CBlock& block : b) mapHash[block.GetSHA256Hash()] = block.GetHash();
+        }
+        std::vector<ImportCounts> counts;
+        BOOST_CHECK(CountedImport(file, counts));
+        BOOST_REQUIRE_EQUAL(counts.size(), 1U);
+        BOOST_CHECK_EQUAL(counts[0].records, b.size());
+        BOOST_CHECK_EQUAL(counts[0].workers, 3U);
+        if (fKnown) {
+            BOOST_CHECK_EQUAL(counts[0].queued, 0U);
+        } else {
+            BOOST_CHECK(counts[0].queued > 0);
+        }
+        BOOST_CHECK(Tip()->GetBlockHash() == b.back().GetHash());
+        return TakeImportRun(counts);
+    };
+    const ImportRun hashed = run(false);
+    const ImportRun known = run(true);
+    CheckSameRun(hashed, known);
+}
+
+/* The hash workers of an import compute every block's hash, with and without worker threads */
+BOOST_FIXTURE_TEST_CASE(import_hash_workers_hash_every_block, BasicTestingSetup)
+{
+    BOOST_CHECK_EQUAL(CImportHashWorkers(0).Workers(), 0U);
+    BOOST_CHECK_EQUAL(CImportHashWorkers(1).Workers(), 0U);
+    {
+        CImportHashWorkers workers(4); // destroyed without a Hash() call
+        BOOST_CHECK_EQUAL(workers.Workers(), 3U);
+    }
+
+    std::vector<CBlockHeader> headers;
+    std::vector<uint256> expected;
+    for (uint32_t n = 1; n <= 10; n++) {
+        CBlockHeader header = Params().GenesisBlock().GetBlockHeader();
+        header.nNonce += n;
+        headers.push_back(header);
+        expected.push_back(header.CalculateHash());
+    }
+    for (int nThreads : {1, 4}) {
+        std::vector<CBlockHeader> copies = headers;
+        CImportHashWorkers workers(nThreads);
+        BOOST_CHECK_EQUAL(workers.Workers(), nThreads > 1 ? (unsigned int)(nThreads - 1) : 0U);
+        BOOST_CHECK_EQUAL(workers.Hash({}), 0U);
+        BOOST_CHECK_EQUAL(workers.Hash({&copies[0]}), 1U);
+        BOOST_CHECK(copies[0].blockHash == expected[0]);
+        std::vector<CBlockHeader*> rest; // more blocks than workers
+        for (size_t i = 1; i < copies.size(); i++) rest.push_back(&copies[i]);
+        BOOST_CHECK_EQUAL(workers.Hash(rest), rest.size());
+        for (size_t i = 0; i < copies.size(); i++)
+            BOOST_CHECK_MESSAGE(copies[i].blockHash == expected[i], "block " << i);
+    } // destroyed after Hash() calls
 }
 
 /* LoadGenesisBlock writes the genesis block into an empty data directory, and writes nothing
@@ -1423,35 +1663,44 @@ BOOST_AUTO_TEST_CASE(import_stops_when_activation_fails)
     {
         CAutoFile out(fsbridge::fopen(file, "wb"), SER_DISK, CLIENT_VERSION);
         AppendBlock(out, b[0]);
-        AppendBlock(out, b[2]);
+        for (int h = 2; h <= 5; h++) AppendBlock(out, b[h]);
     }
-    FreshNode();
-    CBlockIndex* pgenesis = Tip();
-    ShutdownRequestRecorder recorder;
-    StartShutdown(); // block 1 is stored, not connected
-    Submit(b[1]);
-    ShutdownRequestRecorder::Reset();
-    CBlockIndex* p1 = Index(b[1].GetHash());
-    BOOST_REQUIRE(p1 && (p1->nStatus & BLOCK_HAVE_DATA));
-    BOOST_REQUIRE(Tip() == pgenesis);
-    unsigned int nDataPos;
-    {
-        LOCK(cs_main);
-        nDataPos = p1->nDataPos;
-        p1->nDataPos = 0x7fffffff;
+    // With and without hash workers
+    for (int nThreads : {1, 4}) {
+        P2PTestHashWorkers workers(nThreads);
+        FreshNode(); // both runs start from the same state
+        CBlockIndex* pgenesis = Tip();
+        ShutdownRequestRecorder recorder;
+        StartShutdown(); // block 1 is stored, not connected
+        Submit(b[1]);
+        ShutdownRequestRecorder::Reset();
+        CBlockIndex* p1 = Index(b[1].GetHash());
+        BOOST_REQUIRE(p1 && (p1->nStatus & BLOCK_HAVE_DATA));
+        BOOST_REQUIRE(Tip() == pgenesis);
+        unsigned int nDataPos;
+        {
+            LOCK(cs_main);
+            nDataPos = p1->nDataPos;
+            p1->nDataPos = 0x7fffffff;
+        }
+        std::vector<ImportCounts> counts;
+        BOOST_CHECK(!CountedImport(file, counts));
+        BOOST_CHECK(ShutdownRequested());
+        BOOST_CHECK(Tip() == pgenesis);
+        for (int h = 2; h <= 5; h++) BOOST_CHECK_MESSAGE(!Known(b[h].GetHash()), "height " << h);
+        // With hash workers the batch, all five records, was read before the genesis record was
+        // processed; without, only the genesis record
+        BOOST_REQUIRE_EQUAL(counts.size(), 1U);
+        BOOST_CHECK_EQUAL(counts[0].records, nThreads > 1 ? 5U : 1U);
+        ShutdownRequestRecorder::Reset();
+        SetMiscWarning("");
+        {
+            LOCK(cs_main);
+            p1->nDataPos = nDataPos;
+        }
+        BOOST_CHECK(Import(file));
+        BOOST_CHECK(Tip()->GetBlockHash() == b[5].GetHash());
     }
-    BOOST_CHECK(!Import(file));
-    BOOST_CHECK(ShutdownRequested());
-    BOOST_CHECK(Tip() == pgenesis);
-    BOOST_CHECK(!Known(b[2].GetHash()));
-    ShutdownRequestRecorder::Reset();
-    SetMiscWarning("");
-    {
-        LOCK(cs_main);
-        p1->nDataPos = nDataPos;
-    }
-    BOOST_CHECK(Import(file));
-    BOOST_CHECK(Tip()->GetBlockHash() == b[2].GetHash());
 }
 
 BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
@@ -1482,8 +1731,6 @@ BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
     badMerkle.hashMerkleRoot = uint256S("0x1234");
     Solve(badMerkle);
 
-    // Index, coins and token databases wiped, block files kept (-reindex)
-    FreshNode(false);
     std::map<uint256, unsigned int> offsets;
     {
         const int c = nHeight0;
@@ -1497,48 +1744,63 @@ BOOST_AUTO_TEST_CASE(reindex_rebuilds_index_from_block_files)
     // as feature_reindex.py does.
     ConsensusGlobalsGuard guard;
     guard.Set(1, nEpochInterval);
-    fReindex = true;
-    BOOST_REQUIRE(pblocktree->WriteReindexing(true));
-    {
-        LOCK(cs_main);
-        BOOST_CHECK(LoadBlockIndex(Params()));
-        BOOST_CHECK(mapBlockIndex.empty());
-    }
-    const std::vector<bool> loaded = ReindexBlockFiles();
-    BOOST_CHECK_EQUAL(loaded.size(), 2U);
-    for (bool fLoaded : loaded) BOOST_CHECK(fLoaded);
-    BOOST_REQUIRE(pblocktree->WriteReindexing(false));
-    fReindex = false;
-    {
-        LOCK(cs_main);
-        BOOST_CHECK(LoadGenesisBlock(Params()));
-    }
-    CValidationState state;
-    BOOST_REQUIRE(ActivateBestChain(state, Params()));
+    // The same reindex with and without hash workers
+    auto run = [&](int nThreads) {
+        P2PTestHashWorkers workers(nThreads);
+        // Index, coins and token databases wiped, block files kept (-reindex); both runs start
+        // from the same state
+        FreshNode(false);
+        fReindex = true;
+        BOOST_REQUIRE(pblocktree->WriteReindexing(true));
+        {
+            LOCK(cs_main);
+            BOOST_CHECK(LoadBlockIndex(Params()));
+            BOOST_CHECK(mapBlockIndex.empty());
+        }
+        std::vector<ImportCounts> counts;
+        const std::vector<bool> loaded = CountedReindex(counts);
+        BOOST_CHECK_EQUAL(loaded.size(), 2U);
+        for (bool fLoaded : loaded) BOOST_CHECK(fLoaded);
+        BOOST_REQUIRE_EQUAL(counts.size(), 2U);
+        for (const ImportCounts& c : counts) CheckCounts(c, nThreads, true);
+        BOOST_CHECK_EQUAL(counts[1].records, offsets.size());
+        BOOST_REQUIRE(pblocktree->WriteReindexing(false));
+        fReindex = false;
+        {
+            LOCK(cs_main);
+            BOOST_CHECK(LoadGenesisBlock(Params()));
+        }
+        CValidationState state;
+        BOOST_REQUIRE(ActivateBestChain(state, Params()));
 
-    BOOST_CHECK(Tip()->GetBlockHash() == hashTip);
-    BOOST_CHECK(!Known(badPow.GetHash()));
-    BOOST_CHECK(!Known(badMerkle.GetHash()));
-    {
-        LOCK(cs_main);
-        BOOST_CHECK(pcoinsTip->GetBestBlock() == hashTip);
-        for (int h = 0; h <= chainActive.Height(); h++) {
-            const CBlockIndex* p = chainActive[h];
-            BOOST_CHECK(p->GetBlockHash() == b[h].GetHash());
-            BOOST_CHECK(p->nStatus & BLOCK_HAVE_DATA);
-            BOOST_CHECK(h == 0 || (p->nStatus & BLOCK_HAVE_UNDO));
-            BOOST_CHECK_MESSAGE(h == 0 || p->IsValid(BLOCK_VALID_SCRIPTS), "height " << h); // ConnectBlock returns early for genesis
-            const CBlockIndex& o = original.entries.at(p->GetBlockHash()).index;
-            BOOST_CHECK_EQUAL(p->nTx, o.nTx);
-            if (h <= nHeight0) {
-                BOOST_CHECK_EQUAL(p->nFile, 0);
-                BOOST_CHECK_EQUAL(p->nDataPos, o.nDataPos);
-            } else {
-                BOOST_CHECK_EQUAL(p->nFile, 1);
-                BOOST_CHECK_EQUAL(p->nDataPos, offsets[p->GetBlockHash()]);
+        BOOST_CHECK(Tip()->GetBlockHash() == hashTip);
+        BOOST_CHECK(!Known(badPow.GetHash()));
+        BOOST_CHECK(!Known(badMerkle.GetHash()));
+        {
+            LOCK(cs_main);
+            BOOST_CHECK(pcoinsTip->GetBestBlock() == hashTip);
+            for (int h = 0; h <= chainActive.Height(); h++) {
+                const CBlockIndex* p = chainActive[h];
+                BOOST_CHECK(p->GetBlockHash() == b[h].GetHash());
+                BOOST_CHECK(p->nStatus & BLOCK_HAVE_DATA);
+                BOOST_CHECK(h == 0 || (p->nStatus & BLOCK_HAVE_UNDO));
+                BOOST_CHECK_MESSAGE(h == 0 || p->IsValid(BLOCK_VALID_SCRIPTS), "height " << h); // ConnectBlock returns early for genesis
+                const CBlockIndex& o = original.entries.at(p->GetBlockHash()).index;
+                BOOST_CHECK_EQUAL(p->nTx, o.nTx);
+                if (h <= nHeight0) {
+                    BOOST_CHECK_EQUAL(p->nFile, 0);
+                    BOOST_CHECK_EQUAL(p->nDataPos, o.nDataPos);
+                } else {
+                    BOOST_CHECK_EQUAL(p->nFile, 1);
+                    BOOST_CHECK_EQUAL(p->nDataPos, offsets[p->GetBlockHash()]);
+                }
             }
         }
-    }
+        return TakeImportRun(counts);
+    };
+    const ImportRun without = run(1);
+    const ImportRun with = run(4);
+    CheckSameRun(without, with);
 
     // Blocks imported from a known position never had a block hash index entry; the next
     // load writes them

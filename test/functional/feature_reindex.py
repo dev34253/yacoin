@@ -13,6 +13,7 @@ outputs, address index, tokens), and checks that it is unchanged after:
 - a plain restart, -reindex and -reindex-fast; a block mined afterwards pays
   the recorded subsidy;
 - -reindex over a block file whose records are out of order;
+- each -reindex runs once with -hashcalcthreads=1 and once with the default;
 - -reindex-fast over a block file in which two records of equal size were
   swapped (known bug H0aGvZOs: the chain ends before the second one);
 - -reindex-fast after kill -9 right after mining, and with blocks/index
@@ -137,6 +138,12 @@ class ReindexTest(BitcoinTestFramework):
         self.restart()
         assert_equal(self.snapshot(), state)
 
+        self.log.info("-reindex with -hashcalcthreads=1")
+        with node0.assert_debug_log(["Reindexing block file blk00000.dat...", ", 0 hashes queued, 0 workers",
+                                     "Reindexing finished"]):
+            self.restart(["-reindex", "-hashcalcthreads=1"])
+        assert_equal(self.snapshot(), state)
+
         self.log.info("-reindex")
         with node0.assert_debug_log(["Reindexing block file blk00000.dat...", "Reindexing finished"]):
             self.restart(["-reindex"])
@@ -155,11 +162,17 @@ class ReindexTest(BitcoinTestFramework):
         self.sync_blocks(self.nodes[:2])
         state = self.snapshot()
 
-        self.log.info("-reindex over out-of-order block records")
+        self.log.info("-reindex over out-of-order block records, with -hashcalcthreads=1")
         self.stop_node(0)
         swap_records(self.blk_file(), 14, 16)
+        with node0.assert_debug_log(["Out of order block", "Processing out of order child",
+                                     ", 0 hashes queued, 0 workers"]):
+            self.start_node(0, BASE + ["-reindex", "-hashcalcthreads=1"])
+        assert_equal(self.snapshot(), state)
+
+        self.log.info("-reindex over out-of-order block records")
         with node0.assert_debug_log(["Out of order block", "Processing out of order child"]):
-            self.start_node(0, BASE + ["-reindex"])
+            self.restart(["-reindex"])
         assert_equal(self.snapshot(), state)
 
         self.log.info("-reindex-fast over two swapped records of equal size")
@@ -177,6 +190,9 @@ class ReindexTest(BitcoinTestFramework):
         tip_height = len(state['blocks']) - 1
         self.known_failure("R-B2 (H0aGvZOs)", lambda: assert_equal(node0.getblockcount(), tip_height),
                            "not(%d == %d)" % (b - 1, tip_height))
+        with node0.assert_debug_log([", 0 hashes queued, 0 workers"]):
+            self.restart(["-reindex", "-hashcalcthreads=1"])
+        assert_equal(self.snapshot(), state)
         self.restart(["-reindex"])
         assert_equal(self.snapshot(), state)
 

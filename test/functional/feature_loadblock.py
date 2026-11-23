@@ -11,6 +11,8 @@ to a file, which fresh nodes import:
 - -loadblock=<file>: same tip and tokens; importing it again loads nothing;
   a missing file is only a warning;
 - <datadir>/bootstrap.dat: imported and renamed to bootstrap.dat.old;
+- the -loadblock and bootstrap.dat imports run once with -hashcalcthreads=1
+  (node4, node5) and once with the default (node1, node2);
 - -loadblock with -stopafterblockimport: the node imports and exits (exit
   code 1 today, VdCO5Ac4), and has the blocks after a restart. This start
   has -listenonion=0: the import requests shutdown before startup has
@@ -29,15 +31,15 @@ BASE = ["-tokenindex=1", "-testactivationheight=tokens@10"]
 
 class LoadblockTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.num_nodes = 4
+        self.num_nodes = 6
         self.setup_clean_chain = True
-        self.extra_args = [BASE] * 4
+        self.extra_args = [BASE] * 6
 
     def setup_network(self):
         self.setup_nodes()
 
     def run_test(self):
-        node0, node1, node2, node3 = self.nodes
+        node0, node1, node2, node3, node4, node5 = self.nodes
         self.mine_with_mocktime(node0, 12, sync=False)
         node0.issue("LOADTOK", 1000, 0, True, False, "", node0.getnewaddress(), "")
         self.mine_with_mocktime(node0, 18, sync=False)
@@ -46,6 +48,15 @@ class LoadblockTest(BitcoinTestFramework):
         self.stop_node(0)
         blocks_file = os.path.join(self.options.tmpdir, 'blocks.dat')
         shutil.copyfile(node0.chain_path('blocks', 'blk00000.dat'), blocks_file)
+
+        self.log.info("-loadblock with -hashcalcthreads=1")
+        with node4.assert_debug_log(["Importing blocks file %s..." % blocks_file,
+                                     ", 0 hashes queued, 0 workers",
+                                     "Loaded 30 blocks from external file"]):
+            self.restart_node(4, BASE + ["-hashcalcthreads=1", "-loadblock=" + blocks_file])
+        assert_equal(node4.getblockcount(), 30)
+        assert_equal(node4.getbestblockhash(), tip)
+        assert_equal(node4.listtokens('*', True), tokens)
 
         self.log.info("-loadblock")
         with node1.assert_debug_log(["Importing blocks file %s..." % blocks_file,
@@ -74,6 +85,18 @@ class LoadblockTest(BitcoinTestFramework):
         with node2.assert_debug_log(["Importing bootstrap.dat..."]):
             self.start_node(2)
         assert_equal(node2.getbestblockhash(), tip)
+        assert_equal(node2.listtokens('*', True), tokens)
+        assert not os.path.exists(bootstrap)
+        assert os.path.exists(bootstrap + ".old")
+
+        self.log.info("bootstrap.dat with -hashcalcthreads=1")
+        self.stop_node(5)
+        bootstrap = node5.chain_path('bootstrap.dat')
+        shutil.copyfile(blocks_file, bootstrap)
+        with node5.assert_debug_log(["Importing bootstrap.dat...", ", 0 hashes queued, 0 workers"]):
+            self.start_node(5, BASE + ["-hashcalcthreads=1"])
+        assert_equal(node5.getbestblockhash(), tip)
+        assert_equal(node5.listtokens('*', True), tokens)
         assert not os.path.exists(bootstrap)
         assert os.path.exists(bootstrap + ".old")
 

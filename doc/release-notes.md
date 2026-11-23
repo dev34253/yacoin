@@ -24,6 +24,8 @@ Unreleased
 
 ### Other changes
 
+- The hash calculation threads also hash the headers of block files during `-reindex`, `-loadblock` and the
+  `bootstrap.dat` import.
 - Regtest: the activation heights `newlogic` and `tokens` default to 0, and `-testactivationheight` accepts both
   names. A regtest node started without height options mines and accepts blocks. On regtest, setting `newlogic`
   both with `-testactivationheight` and with `-testnetNewLogicBlockNumber`, or `tokens` both with

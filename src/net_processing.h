@@ -6,9 +6,11 @@
 #ifndef BITCOIN_NET_PROCESSING_H
 #define BITCOIN_NET_PROCESSING_H
 
+#include "checkqueue.h"
 #include "net.h"
 #include "validationinterface.h"
 #include <boost/array.hpp>
+#include <boost/thread/thread.hpp>
 
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
@@ -99,6 +101,49 @@ public:
         std::swap(pBlock, check.pBlock);
         std::swap(pNode, check.pNode);
     }
+};
+
+/** Closure representing one block hash calculation of a block file import: computes the
+ *  block's hash, which the block keeps. Note that this stores pointer to the block */
+class CImportHashCalculation
+{
+private:
+    CBlockHeader* pBlock;
+
+public:
+    CImportHashCalculation() : pBlock(nullptr) {}
+    explicit CImportHashCalculation(CBlockHeader* pBlockIn) : pBlock(pBlockIn) {}
+
+    bool operator()();
+    void swap(CImportHashCalculation& check) { std::swap(pBlock, check.pBlock); }
+};
+
+/** Hash workers of one block file import: a queue of their own and nThreads - 1 worker
+ *  threads, started by the constructor and interrupted and joined when the object is
+ *  destroyed. If a thread cannot be started, the workers started so far are kept. */
+class CImportHashWorkers
+{
+public:
+    explicit CImportHashWorkers(int nThreads);
+    CImportHashWorkers(const CImportHashWorkers&) = delete;
+    CImportHashWorkers& operator=(const CImportHashWorkers&) = delete;
+
+    /** Number of worker threads */
+    unsigned int Workers() const;
+    /** Computes the hash of every block in vBlocks on the worker threads and the calling
+     *  thread; returns when all are done, with the number of hashes queued */
+    unsigned int Hash(const std::vector<CBlockHeader*>& vBlocks);
+
+private:
+    /** Interrupts and joins its threads when destroyed, also during stack unwinding */
+    struct ThreadJoiner {
+        boost::thread_group group;
+        ~ThreadJoiner();
+    };
+
+    CCheckQueue<CImportHashCalculation> m_queue;
+    //! Declared after m_queue, so the threads have ended before the queue is destroyed
+    ThreadJoiner m_threads;
 };
 
 /** Get statistics from node state */
