@@ -209,18 +209,19 @@ image, and a depends entry per depends kind and image (the low-difficulty job sh
 `release`, `low-difficulty`, `unit-tests` and `functional-tests`. The depends entry holds the depends packages and
 sources, keyed `<kind>-depends-<image>-<tag hash>-<depends hash>` (the content hash in the image tag and a hash of the depends definitions,
 `depends/packages/*.mk`, `patches/`, `Makefile`, `funcs.mk`, `hosts/*.mk` and `builders/*.mk`), and is restored by that exact key only.
-The ccache entry is keyed `<kind>-ccache-<image>-<tag hash>-<commit>`; a run restores the newest entry of its kind and image tag. The
+The ccache entry is keyed `<kind>-ccache-<image>-<tag hash>-<commit>`; a restoring run takes the newest entry of its kind and image tag. The
 ccache is limited to 250 MB in the build jobs and to 1 GB in `unit-tests` and `functional-tests` (`CCACHE_MAXSIZE`).
 `build-ubuntu-1604-low-difficulty` uses the `release` depends entry of `ubuntu.16.04` (the same packages) and a ccache entry of its own.
 Only pushes to `master` save the entries, each one whose key is missing; after the saving jobs, `prune-caches` keeps the newest entry
-per kind, image, entry type and cache version and deletes the others. On a tag push the build jobs (`build-ubuntu-1604`,
-`build-ubuntu-1604-low-difficulty`, `build-ubuntu-2204`, `build-windows`, `build-macos`) start without a cache; the other jobs restore
-as on any run. The coverage jobs (`coverage-unit`, `coverage-functional-1`, `coverage-functional-2`) and the sanitizer jobs
-(`unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`), every leg included, restore the
+per kind, image, entry type and cache version and deletes the others. On a push to `master` the build jobs (`build-ubuntu-1604`,
+`build-ubuntu-1604-low-difficulty`, `build-ubuntu-2204`, `build-windows`, `build-macos`) only look up their keys (`lookup-only`) and
+build without a restored cache; they save the entries pull request runs restore. On a tag push they start without a cache. The other
+jobs with a cache step restore on every run. The coverage jobs (`coverage-unit`, `coverage-functional-1`, `coverage-functional-2`) and
+the sanitizer jobs (`unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`), every leg included, restore the
 `functional-tests-depends-…` entry (the same image, packages and prefix) and never save one; they build with ccache off, since their
-`-O0` or sanitizer objects never match the cached ones. `test-image-tag.sh` checks these keys, paths and conditions, and that
-`prune-caches` runs only on a push to `master`, runs no docker and is the one job with `actions: write`; planted copies of the
-workflow, each with one change, must fail their named check. `coverage-functional-1` and `-2` run shard 1/2 and
-2/2 of the functional tests (`FTEST_SHARD`), each with its own artifact per attempt and its own outputs. `coverage-report` downloads
-the artifact of the attempt each coverage job last ran in, merges the unit tracefile with both shards' tracefiles, and runs
-`contrib/devtools/coverage-check.py` with every function extents file.
+`-O0` or sanitizer objects never match the cached ones. `test-image-tag.sh` checks these keys, paths and conditions, that only the
+build jobs' restores set `lookup-only`, and that `prune-caches` runs only on a push to `master`, runs no docker and is the one job with
+`actions: write`; planted copies of the workflow, each with one change, must fail their named check. `coverage-functional-1` and `-2`
+run shard 1/2 and 2/2 of the functional tests (`FTEST_SHARD`), each with its own artifact per attempt and its own outputs.
+`coverage-report` downloads the artifact of the attempt each coverage job last ran in, merges the unit tracefile with both shards'
+tracefiles, and runs `contrib/devtools/coverage-check.py` with every function extents file.
