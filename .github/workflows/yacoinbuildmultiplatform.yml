@@ -42,33 +42,40 @@ jobs:
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Two cache entries: the depends packages and sources, keyed
+        # release-depends-<image tag>-<depends hash>, and the ccache, keyed
+        # release-ccache-<image tag>-<commit> and restored by that prefix (the
+        # newest entry). A push to master saves each entry whose key is missing,
+        # and prune-caches deletes the superseded ones. On a tag push the build
+        # jobs (build-ubuntu-1604, build-ubuntu-1604-low-difficulty,
+        # build-ubuntu-2204, build-windows, build-macos) start without a cache.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-          # Pushes to master and release tags build from scratch; only master
-          # saves the cache. Branches and PRs reuse it.
-          clean=false; save=false
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            case "$GITHUB_REF" in
-              refs/heads/master) clean=true; save=true ;;
-              refs/tags/*) clean=true ;;
-            esac
-          fi
-          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
-          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
-        if: env.CLEAN_BUILD != 'true'
+        id: depends
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build
-        # Below the job timeout. Pushes to master and tags build from scratch
-        # (nothing restored); other runs reuse the cached depends packages and
-        # the ccache of the last master build (the entrypoint keeps both in
+        # Below the job timeout. Builds with the depends packages and the
+        # ccache restored above, if any (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
         env:
@@ -76,7 +83,7 @@ jobs:
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name release-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=250M \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
@@ -85,10 +92,17 @@ jobs:
           docker rm -f release-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: success() && env.SAVE_CACHE == 'true'
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         with:
           name: yacoind-ubuntu-16.04
@@ -111,7 +125,7 @@ jobs:
     # test/functional/regtest-excluded-scripts, which run in the
     # build-ubuntu-1604-low-difficulty job (functional-tests mode of the
     # yacoin-build image, Python 3.10). Cached and saved like the unit-tests
-    # job, in its own namespace.
+    # job, under its own keys.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -123,17 +137,31 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Cache entries as in build-ubuntu-1604, keyed
+        # functional-tests-depends-<image tag>-<depends hash> and
+        # functional-tests-ccache-<image tag>-<commit>.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "FUNC_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=functional-tests-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=functional-tests-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.FUNC_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.FUNC_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        with:
+          path: ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build and run the functional tests
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -143,7 +171,7 @@ jobs:
         run: |
           mkdir -p "$FUNC_CACHE"
           docker run --rm --init --name functional-tests -v "$GITHUB_WORKSPACE":/src -v "$FUNC_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=2G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
             "$IMAGE_TAG" functional-tests
       - name: stop the container and make the cache and logs readable
         if: always()
@@ -154,10 +182,17 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$FUNC_CACHE"
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/cache/save@v5
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.FUNC_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.FUNC_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
@@ -180,8 +215,8 @@ jobs:
     # scripts (FTEST_SHARD=<leg>/<number of legs>, test_runner.py --shard:
     # by each script's position in the runner's list), so together the legs
     # run every script once; a new script lands in a shard by itself.
-    # Cache as in unit-tests-asan: the functional-tests job's, restored only,
-    # for the depends packages; ccache is off.
+    # Cache as in unit-tests-asan: the functional-tests job's depends entry,
+    # restored only; ccache is off.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -198,16 +233,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "ASAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.ASAN_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.ASAN_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.ASAN_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build and run the functional tests under the sanitizers
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -240,8 +279,9 @@ jobs:
     # Mainnet consensus build of test_bitcoin and bench_yacoin, every unit
     # test suite in parallel, then every benchmark once in a short mode
     # (unit-tests mode of the yacoin-build image). Depends packages,
-    # depends sources and ccache are kept in /cache between runs; only master
-    # pushes save that cache, so PR runs can't evict it.
+    # depends sources and ccache are kept in /cache between runs, in a
+    # depends entry and a ccache entry; only master pushes save them, so PR
+    # runs can't evict them.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -253,17 +293,31 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Cache entries as in build-ubuntu-1604, keyed
+        # unit-tests-depends-<image tag>-<depends hash> and
+        # unit-tests-ccache-<image tag>-<commit>.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "UNIT_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=unit-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=unit-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=unit-tests-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=unit-tests-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.UNIT_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            unit-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.UNIT_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        with:
+          path: ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build and run the unit tests
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -273,7 +327,7 @@ jobs:
         run: |
           mkdir -p "$UNIT_CACHE"
           docker run --rm --init --name unit-tests -v "$GITHUB_WORKSPACE":/src -v "$UNIT_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=2G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
             "$IMAGE_TAG" unit-tests
       - name: stop the container and make the cache readable for saving
         if: always()
@@ -282,10 +336,17 @@ jobs:
           docker rm -f unit-tests 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" "$UNIT_CACHE"
       - uses: actions/cache/save@v5
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.UNIT_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.UNIT_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
@@ -321,16 +382,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "ASAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.ASAN_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.ASAN_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.ASAN_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build and run the unit tests under the sanitizers
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -378,16 +443,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "TSAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.TSAN_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.TSAN_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.TSAN_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build and run the unit tests under ThreadSanitizer
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -434,16 +503,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "FUZZ_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.FUZZ_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.FUZZ_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.FUZZ_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build the fuzz binary and replay the corpus
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -478,9 +551,8 @@ jobs:
     # parameters fails here (the unit-tests job runs them on the mainnet
     # build), and the functional test scripts listed in
     # test/functional/regtest-excluded-scripts, 4 at a time (Python 3.5).
-    # Cached and saved like the release jobs, under its own key;
-    # without a cache of its own it starts from the 16.04 release job's
-    # (same depends packages).
+    # Cached and saved like the release jobs; its depends entry is the 16.04
+    # release job's (same depends packages), its ccache entry its own.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -492,34 +564,35 @@ jobs:
         uses: ./.github/actions/yacoin-build-image
         with:
           image: ${{ env.IMAGE }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Cache entries as in build-ubuntu-1604: the depends entry is that
+        # job's, the ccache entry low-difficulty-ccache-<image tag>-<commit>.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=low-difficulty-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-          # Pushes to master and release tags build from scratch; only master
-          # saves the cache. Branches and PRs reuse it.
-          clean=false; save=false
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            case "$GITHUB_REF" in
-              refs/heads/master) clean=true; save=true ;;
-              refs/tags/*) clean=true ;;
-            esac
-          fi
-          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
-          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=low-difficulty-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=low-difficulty-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
-        if: env.CLEAN_BUILD != 'true'
+        id: depends
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            low-difficulty-${{ env.IMAGE }}-
-            release-${{ env.IMAGE }}-
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build
-        # Below the job timeout. Pushes to master and tags build from scratch
-        # (nothing restored); other runs reuse the cached depends packages and
-        # the ccache of the last master build (the entrypoint keeps both in
+        # Below the job timeout. Builds with the depends packages and the
+        # ccache restored above, if any (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
         env:
@@ -527,7 +600,7 @@ jobs:
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name low-difficulty-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=250M \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG" build-low-difficulty
       - name: stop the container and make the cache readable for saving and the test logs for uploading
         if: always()
@@ -538,10 +611,17 @@ jobs:
           # The test logs, written by root with umask 077.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
       - uses: actions/cache/save@v5
-        if: success() && env.SAVE_CACHE == 'true'
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
@@ -580,33 +660,34 @@ jobs:
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Cache entries as in build-ubuntu-1604.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-          # Pushes to master and release tags build from scratch; only master
-          # saves the cache. Branches and PRs reuse it.
-          clean=false; save=false
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            case "$GITHUB_REF" in
-              refs/heads/master) clean=true; save=true ;;
-              refs/tags/*) clean=true ;;
-            esac
-          fi
-          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
-          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
-        if: env.CLEAN_BUILD != 'true'
+        id: depends
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build
-        # Below the job timeout. Pushes to master and tags build from scratch
-        # (nothing restored); other runs reuse the cached depends packages and
-        # the ccache of the last master build (the entrypoint keeps both in
+        # Below the job timeout. Builds with the depends packages and the
+        # ccache restored above, if any (the entrypoint keeps both in
         # /cache).
         timeout-minutes: 50
         env:
@@ -614,7 +695,7 @@ jobs:
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name release-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=250M \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
@@ -623,10 +704,17 @@ jobs:
           docker rm -f release-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: success() && env.SAVE_CACHE == 'true'
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         with:
           name: yacoind-ubuntu-22.04
@@ -661,33 +749,34 @@ jobs:
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Cache entries as in build-ubuntu-1604.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-          # Pushes to master and release tags build from scratch; only master
-          # saves the cache. Branches and PRs reuse it.
-          clean=false; save=false
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            case "$GITHUB_REF" in
-              refs/heads/master) clean=true; save=true ;;
-              refs/tags/*) clean=true ;;
-            esac
-          fi
-          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
-          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
-        if: env.CLEAN_BUILD != 'true'
+        id: depends
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build
-        # Below the job timeout. Pushes to master and tags build from scratch
-        # (nothing restored); other runs reuse the cached depends packages and
-        # the ccache of the last master build (the entrypoint keeps both in
+        # Below the job timeout. Builds with the depends packages and the
+        # ccache restored above, if any (the entrypoint keeps both in
         # /cache/windows).
         timeout-minutes: 50
         env:
@@ -695,7 +784,7 @@ jobs:
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name windows-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=250M \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
@@ -704,10 +793,17 @@ jobs:
           docker rm -f windows-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: success() && env.SAVE_CACHE == 'true'
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         with:
           name: yacoin-qt-windows
@@ -742,33 +838,34 @@ jobs:
           # Only master publishes; branches and pull requests build what
           # the registry lacks and keep it local.
           publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - name: cache dir and key
+      - name: cache dir and keys
+        # Cache entries as in build-ubuntu-1604.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "REL_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=release-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-          # Pushes to master and release tags build from scratch; only master
-          # saves the cache. Branches and PRs reuse it.
-          clean=false; save=false
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            case "$GITHUB_REF" in
-              refs/heads/master) clean=true; save=true ;;
-              refs/tags/*) clean=true ;;
-            esac
-          fi
-          echo "CLEAN_BUILD=$clean" >> "$GITHUB_ENV"
-          echo "SAVE_CACHE=$save" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
+          echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
-        if: env.CLEAN_BUILD != 'true'
+        id: depends
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            release-${{ env.IMAGE }}-
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
+      - uses: actions/cache/restore@v5
+        id: ccache
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ env.KEY_CCACHE }}
+          restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
       - name: build
-        # Below the job timeout. Pushes to master and tags build from scratch
-        # (nothing restored); other runs reuse the cached depends packages and
-        # the ccache of the last master build (the entrypoint keeps both in
+        # Below the job timeout. Builds with the depends packages and the
+        # ccache restored above, if any (the entrypoint keeps both in
         # /cache/macos).
         timeout-minutes: 50
         env:
@@ -776,7 +873,7 @@ jobs:
         run: |
           mkdir -p "$REL_CACHE"
           docker run --rm --init --name macos-build -v "$GITHUB_WORKSPACE":/src -v "$REL_CACHE":/cache \
-            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=1G \
+            -e CCACHE_COMPRESS=1 -e CCACHE_MAXSIZE=250M \
             -e BUILDVERSION="$GITHUB_RUN_NUMBER" "$IMAGE_TAG"
       - name: stop the container and make the cache readable for saving
         if: always()
@@ -785,10 +882,17 @@ jobs:
           docker rm -f macos-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
       - uses: actions/cache/save@v5
-        if: success() && env.SAVE_CACHE == 'true'
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
-          path: ${{ env.REL_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
+            ${{ env.REL_CACHE }}/depends-sources
+          key: ${{ steps.depends.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v5
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v6
         with:
           name: yacoin-qt-macos
@@ -828,16 +932,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.COV_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.COV_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.COV_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build and measure the unit test coverage
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -903,16 +1011,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.COV_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.COV_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.COV_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build and measure the functional test coverage
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -979,16 +1091,20 @@ jobs:
         with:
           image: ${{ env.IMAGE }}
       - name: cache dir and key
+        # The functional-tests job's depends entry, restored only.
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
         run: |
+          image_key=${IMAGE_TAG##*:}
           echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
-          echo "CACHE_KEY=functional-tests-$IMAGE-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
+          echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v5
+        id: depends
         with:
-          path: ${{ env.COV_CACHE }}
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}-
-            functional-tests-${{ env.IMAGE }}-
+          path: |
+            ${{ env.COV_CACHE }}/${{ env.IMAGE }}/depends-built-tests
+            ${{ env.COV_CACHE }}/depends-sources
+          key: ${{ env.KEY_DEPENDS }}
       - name: build and measure the functional test coverage
         # Below the job timeout, so a hang fails this step and the logs are
         # still uploaded.
@@ -1117,3 +1233,36 @@ jobs:
             coverage/total/
           if-no-files-found: ignore
           retention-days: 14
+  prune-caches:
+    # After the jobs that save caches, on a push to master: of the cache
+    # entries <kind>-depends-<image>-<tag hash>-<depends hash> and
+    # <kind>-ccache-<image>-<tag hash>-<commit> of this branch, keeps the
+    # newest (the highest cache id) per kind, image, type (depends or ccache)
+    # and cache version and deletes the others. A group with more than one
+    # cache version gets a warning. Builds nothing.
+    needs: [build-ubuntu-1604, functional-tests, unit-tests, build-ubuntu-1604-low-difficulty, build-ubuntu-2204, build-windows, build-macos]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # deletes superseded cache entries
+    timeout-minutes: 5
+    steps:
+      - name: delete superseded cache entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?ref=$GITHUB_REF&per_page=100" \
+            --jq '.actions_caches[]' > caches.json
+          groups='[.[] | select(.key | test("^.+-(depends|ccache)-[a-z0-9.]+-[0-9a-f]{12}-[0-9a-f]+$"))
+                   | .group = (.key | capture("^(?<g>.+-(depends|ccache)-[a-z0-9.]+)-[0-9a-f]{12}-[0-9a-f]+$").g)]'
+          jq -r -s "$groups"' | group_by(.group)[] | select([.[].version] | unique | length > 1)
+                   | "::warning::cache entries of \(.[0].group) with more than one cache version: \([.[] | "\(.key) (\(.version))"] | join(", "))"' caches.json
+          jq -r -s "$groups"' | group_by([.group, .version])[] | sort_by(.id) | .[:-1][]
+                   | "\(.id)\t\(.key)"' caches.json > superseded.tsv
+          while IFS=$'\t' read -r id key; do
+            echo "deleting $key"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" > /dev/null ||
+              echo "::warning::could not delete $key (id $id)"
+          done < superseded.tsv
+          echo "$(wc -l < superseded.tsv) superseded cache entries"

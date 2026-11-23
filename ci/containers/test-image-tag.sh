@@ -17,12 +17,23 @@
 #     filter off (the mode needs it, see entrypoint.sh), and they do;
 #   - the sanitizer jobs run their modes (unit-tests-asan, unit-tests-tsan,
 #     fuzz-corpus, functional-tests-asan), with ccache off;
-#   - the fuzz-corpus, functional-tests-asan, unit-tests-asan and
-#     coverage-functional-<n> jobs restore the functional-tests job's cache
-#     and save none, and the workflow has 15 jobs;
 #   - unit-tests-asan runs one leg per sanitizer (SANITIZE),
 #     functional-tests-asan and the coverage-functional-<n> jobs one shard
-#     each (FTEST_SHARD), and coverage-report merges every shard.
+#     each (FTEST_SHARD), and coverage-report merges every shard;
+#   - the caches: every save runs only on a push to master, with no run id
+#     or attempt in its key; the jobs that save keep a depends entry
+#     (<kind>-depends-<image tag>-<depends hash>, exact key only) and a
+#     ccache entry (<kind>-ccache-<image tag>-<commit>), each saved under
+#     the key its restore looked up and only without an exact hit; the build
+#     jobs restore nothing on a tag push; build-ubuntu-1604-low-difficulty
+#     uses the depends entry of build-ubuntu-1604; the sanitizer and coverage
+#     jobs (fuzz-corpus, functional-tests-asan, unit-tests-asan,
+#     unit-tests-tsan, coverage-unit, coverage-functional-<n>) restore the
+#     functional-tests depends entry and save none; prune-caches runs only
+#     on a push to master, runs no docker and is the one job with
+#     actions: write. Planted copies of the workflow, each with one change,
+#     must fail their named check;
+#   - the workflow has 16 jobs.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -210,17 +221,9 @@ for mode in unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan; d
     check "${wf#"$ROOT"/}: a docker run of the $mode mode" \
         grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+'"$mode"'[[:space:]]*$' <<< "$joined"
 done
-# The text of a job of the workflow, from its name to the next job.
-job_text() { awk -v name="  $1:" '$0 == name { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:$/ { exit } on' "$wf"; }
-# These jobs restore the functional-tests job's cache, for the depends
-# packages, and save none.
-for name in fuzz-corpus functional-tests-asan unit-tests-asan coverage-functional-1 coverage-functional-2; do
-    job=$(job_text "$name")
-    check "${wf#"$ROOT"/}: the $name job runs the ubuntu.22.04 image" grep -qx ' *IMAGE: ubuntu.22.04' <<< "$job"
-    check "${wf#"$ROOT"/}: the $name job restores the functional-tests cache" \
-        grep -q 'CACHE_KEY=functional-tests-\$IMAGE-' <<< "$job"
-    check "${wf#"$ROOT"/}: the $name job saves no cache" bash -c '! grep -q "actions/cache/save\|actions/cache@" <<< "$1"' _ "$job"
-done
+# job_text_of <workflow> <job>: the text of a job, from its name to the next job.
+job_text_of() { awk -v name="  $2:" '$0 == name { on = 1; print; next } on && /^  [A-Za-z0-9_-]+:$/ { exit } on' "$1"; }
+job_text() { job_text_of "$wf" "$1"; }
 # passes_var <var> <mode> <job text>: the job's docker run of <mode>, joined
 # across its continuation lines, passes <var> to the container (-e <var>).
 passes_var() {
@@ -260,9 +263,364 @@ for k in 1 2; do
     check "${wf#"$ROOT"/}: coverage-report checks the functions of shard $k" \
         grep -q "coverage/functional-$k/functional_test_functions.json" <<< "$job"
 done
+
+echo "== the workflow's caches =="
+# The cache steps of a workflow, read without a YAML parser from the layout
+# the workflow is written in (jobs at two spaces, steps at "      - ", their
+# keys at eight, the keys under with: and env: at ten). One tab-separated
+# line per fact:
+#   J <job> env <name> <value>     a variable of the job's env:
+#   J <job> if <condition>         the job's if:
+#   J <job> perm <line>            a line of the job's permissions:
+#   W perm <line>                  a line of the workflow's permissions:
+#   C <job> <n> <field> <value>    the n-th actions/cache step of the job:
+#                                  uses, id, if, keyraw, key, path, rkey
+# key, path and rkey (the restore-keys) are resolved as the runner would:
+# ${{ env.V }} from the job's env: and the $GITHUB_ENV lines of earlier
+# steps; ${{ steps.<id>.outputs.cache-primary-key }} as the key of that
+# step; ${{ steps.<id>.outputs.tag }} of the image action as <tag:IMAGE>,
+# IMAGE being the action's resolved image input; in a run: block, $V from a
+# shell assignment earlier in the block, the step's env:, the job's env: or
+# the $GITHUB_ENV lines of earlier steps (a $GITHUB_ENV line sets nothing
+# for the rest of its own block). ${V##*:} of <tag:IMAGE> gives <tagid:IMAGE>
+# (the image-<hash> part of the tag). $GITHUB_* and $RUNNER_* stay as they
+# are, other ${{ }} expressions too; anything else that does not resolve
+# becomes {unresolved:V}. A multi-line if: is {multiline}.
+cache_records() {
+    awk '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function indent_of(s) { match(s, /^ */); return RLENGTH }
+    function keyname(s) { s = trim(s); sub(/:.*/, "", s); return s }
+    function value(s,   k) { s = trim(s); k = keyname(s); return trim(substr(s, length(k) + 2)) }
+    function expr(s,   out, i, j, e, v, name) {
+        out = ""
+        while ((i = index(s, "${{")) > 0) {
+            out = out substr(s, 1, i - 1); s = substr(s, i)
+            j = index(s, "}}")
+            if (j == 0) break
+            e = trim(substr(s, 4, j - 4)); v = substr(s, 1, j + 1); s = substr(s, j + 2)
+            if (e ~ /^env\.[A-Za-z_][A-Za-z0-9_]*$/) {
+                name = substr(e, 5)
+                if (name in genv) v = genv[name]
+                else if (name in jenv) v = expr(jenv[name])
+                else v = "{unresolved:" e "}"
+            } else if (e ~ /^steps\.[A-Za-z0-9_-]+\.outputs\.cache-primary-key$/) {
+                name = e; sub(/^steps\./, "", name); sub(/\..*/, "", name)
+                v = (name in key_of) ? key_of[name] : "{unresolved:" e "}"
+            } else if (e ~ /^steps\.[A-Za-z0-9_-]+\.outputs\.tag$/) {
+                name = e; sub(/^steps\./, "", name); sub(/\..*/, "", name)
+                v = (name in tag_of) ? tag_of[name] : "{unresolved:" e "}"
+            }
+            out = out v
+        }
+        return out s
+    }
+    function cut_tag(v) {
+        if (v ~ /^<tag:[^>]*>$/) return "<tagid:" substr(v, 6)
+        if (v ~ /[<{$]/) return "{" v "##*:}"
+        sub(/^.*:/, "", v); return v
+    }
+    function shell(s,   out, m, name, cut, v) {
+        out = ""
+        while (match(s, /\$(\{[A-Za-z_][A-Za-z0-9_]*(##\*:)?\}|[A-Za-z_][A-Za-z0-9_]*)/)) {
+            out = out substr(s, 1, RSTART - 1)
+            m = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+            name = m; sub(/^\$\{?/, "", name); sub(/\}$/, "", name)
+            cut = sub(/##\*:$/, "", name)
+            if (name in sh) v = sh[name]
+            else if (name in senv) v = expr(senv[name])
+            else if (name in jenv) v = expr(jenv[name])
+            else if (name in genv) v = genv[name]
+            else if (name ~ /^(GITHUB|RUNNER)_/) v = "$" name
+            else v = "{unresolved:" name "}"
+            out = out (cut ? cut_tag(v) : v)
+        }
+        return out s
+    }
+    function run_line(t,   name, v) {
+        t = trim(t)
+        if (t ~ /^echo "[A-Za-z_][A-Za-z0-9_]*=.*" >> "\$GITHUB_ENV"$/) {
+            t = substr(t, 7); sub(/" >> "\$GITHUB_ENV"$/, "", t)
+            name = t; sub(/=.*/, "", name)
+            pend[name] = shell(substr(t, length(name) + 2))
+        } else if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+            name = t; sub(/=.*/, "", name)
+            sh[name] = shell(substr(t, length(name) + 2))
+        }
+    }
+    function out(f, v) { printf "C\t%s\t%d\t%s\t%s\n", job, n, f, v }
+    function end_step(   i, k) {
+        if (!instep) return
+        if (uses ~ /yacoin-build-image$/ && sid != "") tag_of[sid] = "<tag:" expr(w["image"]) ">"
+        if (uses ~ /^actions\/cache/) {
+            n++
+            out("uses", uses); out("id", sid); out("if", sif); out("keyraw", w["key"])
+            k = expr(w["key"]); out("key", k)
+            if (sid != "") key_of[sid] = k
+            if ("path" in w) out("path", expr(w["path"]))
+            for (i = 1; i <= npath; i++) out("path", expr(paths[i]))
+            if ("restore-keys" in w) out("rkey", expr(w["restore-keys"]))
+            for (i = 1; i <= nrkey; i++) out("rkey", expr(rkeys[i]))
+        }
+        for (k in pend) genv[k] = pend[k]
+        split("", pend); split("", sh); split("", senv); split("", w)
+        npath = nrkey = 0; uses = sid = sif = ""; instep = 0
+    }
+    function new_job(name) {
+        end_step()
+        job = name; n = 0; jsec = ""
+        split("", jenv); split("", genv); split("", key_of); split("", tag_of)
+        printf "J\t%s\tname\t%s\n", job, job
+    }
+    /^jobs:[ ]*$/ { injobs = 1; next }
+    !injobs {
+        if ($0 ~ /^permissions:/) wperm = 1
+        else if ($0 ~ /^[^ ]/) wperm = 0
+        else if (wperm && trim($0) != "") printf "W\tperm\t%s\n", trim($0)
+        next
+    }
+    /^  [A-Za-z0-9_-]+:[ ]*$/ { new_job(keyname($0)); next }
+    {
+        line = $0; ind = indent_of(line)
+        if (blk != "") {
+            if (trim(line) == "" || ind > blkind) {
+                if (blk == "run") run_line(line)
+                else if (blk == "path") paths[++npath] = trim(line)
+                else if (blk == "restore-keys") rkeys[++nrkey] = trim(line)
+                next
+            }
+            blk = ""
+        }
+        if (trim(line) == "" || trim(line) ~ /^#/) next
+        if (ind == 4) {
+            end_step()
+            jsec = keyname(line)
+            if (jsec == "if") printf "J\t%s\tif\t%s\n", job, value(line)
+            next
+        }
+        if (jsec == "env" && ind == 6) { jenv[keyname(line)] = value(line); printf "J\t%s\tenv\t%s\t%s\n", job, keyname(line), value(line); next }
+        if (jsec == "permissions" && ind == 6) { printf "J\t%s\tperm\t%s\n", job, trim(line); next }
+        if (jsec != "steps") next
+        if (line ~ /^      - /) { end_step(); instep = 1; line = "        " substr(line, 9); ind = 8 }
+        if (ind == 8) {
+            k = keyname(line); v = value(line); ssec = k
+            if (v ~ /^[|>]/) { blk = (k == "run") ? "run" : "other"; blkind = 8; if (k == "if") sif = "{multiline}"; next }
+            if (k == "uses") uses = v
+            else if (k == "id") sid = v
+            else if (k == "if") sif = v
+            else if (k == "run") run_line(v)
+            next
+        }
+        if (ind == 10 && ssec == "with") {
+            k = keyname(line); v = value(line)
+            if (v ~ /^[|>]/) { blk = k; blkind = 10 } else w[k] = v
+            next
+        }
+        if (ind == 10 && ssec == "env") { senv[keyname(line)] = value(line); next }
+    }
+    END { end_step() }
+    ' "$1"
+}
+
+# The hashFiles call of the depends key: every depends build input.
+depends_hash="\${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}"
+# The event that saves caches.
+master_push="github.event_name == 'push' && github.ref == 'refs/heads/master'"
+
+# cache_checks <workflow>: the checks of the workflow's caches.
+cache_checks() {
+    local recs job n m i id ok key kind image dir want fs_key fs_paths saves combined restores
+    local -A dkind=([build-ubuntu-1604]=release [build-ubuntu-1604-low-difficulty]=release [build-ubuntu-2204]=release
+                    [build-windows]=release [build-macos]=release [unit-tests]=unit-tests [functional-tests]=functional-tests)
+    local -A ckind=([build-ubuntu-1604]=release [build-ubuntu-1604-low-difficulty]=low-difficulty [build-ubuntu-2204]=release
+                    [build-windows]=release [build-macos]=release [unit-tests]=unit-tests [functional-tests]=functional-tests)
+    local build_jobs=(build-ubuntu-1604 build-ubuntu-1604-low-difficulty build-ubuntu-2204 build-windows build-macos)
+    local restore_jobs=(fuzz-corpus functional-tests-asan unit-tests-asan unit-tests-tsan coverage-unit coverage-functional-1
+                        coverage-functional-2)
+    recs=$(cache_records "$1")
+    # field <job> <n> <field>: the values of a field of the job's n-th cache step.
+    field() { awk -F'\t' -v j="$1" -v n="$2" -v f="$3" '$1 == "C" && $2 == j && $3 == n && $4 == f { print $5 }' <<< "$recs"; }
+    # steps_of <job> <uses regex>: the numbers of the job's cache steps.
+    steps_of() { awk -F'\t' -v j="$1" -v u="$2" '$1 == "C" && $2 == j && $4 == "uses" && $5 ~ u { print $3 }' <<< "$recs"; }
+    # step_id <job> <id>: the number of the job's cache step with that id.
+    step_id() { awk -F'\t' -v j="$1" -v i="$2" '$1 == "C" && $2 == j && $4 == "id" && $5 == i { print $3 }' <<< "$recs"; }
+    # saves_of <job> <id>: the job's save steps that save the key of step <id>.
+    saves_of() {
+        awk -F'\t' -v j="$1" -v k="\${{ steps.$2.outputs.cache-primary-key }}" \
+            '$1 == "C" && $2 == j && $4 == "keyraw" && $5 == k { print $3 }' <<< "$recs"
+    }
+    job_env() { awk -F'\t' -v j="$1" -v v="$2" '$1 == "J" && $2 == j && $3 == "env" && $4 == v { print $5 }' <<< "$recs"; }
+    jobs_of() { awk -F'\t' '$1 == "J" && $3 == "name" { print $2 }' <<< "$recs"; }
+
+    # Saves: only on a push to master, keys without the run.
+    for job in $(jobs_of); do
+        mapfile -t saves < <(steps_of "$job" '^actions/cache/save@')
+        mapfile -t combined < <(steps_of "$job" '^actions/cache@')
+        (( ${#saves[@]} + ${#combined[@]} )) || continue
+        ok=1
+        (( ${#combined[@]} == 0 )) || ok=0
+        for n in "${saves[@]}"; do
+            key=$(field "$job" "$n" keyraw)
+            id=$(sed -n 's/^\${{ steps\.\([A-Za-z0-9_-]*\)\.outputs\.cache-primary-key }}$/\1/p' <<< "$key")
+            want="\${{ success() && $master_push && steps.$id.outputs.cache-hit != 'true' }}"
+            if [[ "$id" == ccache && ( "$job" == unit-tests || "$job" == functional-tests ) ]]; then
+                [[ "$(field "$job" "$n" if)" == "$want" || "$(field "$job" "$n" if)" == "${want/success()/!cancelled()}" ]] || ok=0
+            else
+                [[ -n "$id" && "$(field "$job" "$n" if)" == "$want" ]] || ok=0
+            fi
+        done
+        check "$job: the cache save runs only on a push to master" test "$ok" = 1
+        ok=1
+        for n in "${saves[@]}" "${combined[@]}"; do
+            key=$(field "$job" "$n" key)
+            [[ -n "$key" && ! "$key" =~ run_id|run_attempt|run_number|GITHUB_RUN_|\{unresolved ]] || ok=0
+        done
+        check "$job: the saved key holds no run id or attempt" test "$ok" = 1
+    done
+
+    # The jobs that save: a depends entry and a ccache entry, each saved
+    # under the key its restore looked up, when that restore had no exact hit.
+    for job in "${!dkind[@]}"; do
+        image=$(job_env "$job" IMAGE)
+        dir=depends-built; [[ "${dkind[$job]}" == release ]] || dir=depends-built-tests
+        for id in depends ccache; do
+            n=$(step_id "$job" "$id"); ok=1
+            mapfile -t saves < <(saves_of "$job" "$id")
+            if [[ -z "$n" || "$(field "$job" "$n" uses)" != actions/cache/restore@* || ${#saves[@]} != 1 ]]; then
+                ok=0
+            else
+                [[ "$(field "$job" "${saves[0]}" if)" == *" && steps.$id.outputs.cache-hit != 'true' }}" ]] || ok=0
+                [[ "$(field "$job" "${saves[0]}" path)" == "$(field "$job" "$n" path)" ]] || ok=0
+            fi
+            check "$job: the $id save is skipped on an exact restore" test "$ok" = 1
+        done
+        n=$(step_id "$job" depends)
+        check "$job: the depends entry holds $image/$dir and depends-sources" \
+            test "$(field "$job" "${n:-0}" path)" = "\$RUNNER_TEMP/yacoin-cache/$image/$dir"$'\n'"\$RUNNER_TEMP/yacoin-cache/depends-sources"
+        n=$(step_id "$job" ccache)
+        kind=${ckind[$job]}
+        check "$job: the ccache entry holds $image/ccache" \
+            test "$(field "$job" "${n:-0}" path)" = "\$RUNNER_TEMP/yacoin-cache/$image/ccache"
+        check "$job: the ccache key holds the image tag and the commit" \
+            test "$(field "$job" "${n:-0}" key)|$(field "$job" "${n:-0}" rkey)" = \
+                 "$kind-ccache-<tagid:$image>-\$GITHUB_SHA|$kind-ccache-<tagid:$image>-"
+    done
+
+    # Every depends restore: the image tag and the depends inputs, exact key only.
+    for job in "${!dkind[@]}" "${restore_jobs[@]}"; do
+        kind=${dkind[$job]:-functional-tests}
+        image=$(job_env "$job" IMAGE)
+        n=$(step_id "$job" depends)
+        check "$job: the depends key holds the image tag" \
+            test "$(field "$job" "${n:-0}" key)|$(field "$job" "${n:-0}" rkey)" = "$kind-depends-<tagid:$image>-$depends_hash|"
+    done
+
+    # The build jobs restore nothing on a tag push.
+    for job in "${build_jobs[@]}"; do
+        mapfile -t restores < <(steps_of "$job" '^actions/cache/restore@')
+        ok=1; (( ${#restores[@]} == 2 )) || ok=0
+        for n in "${restores[@]}"; do
+            [[ "$(field "$job" "$n" if)" == "\${{ !startsWith(github.ref, 'refs/tags/') }}" ]] || ok=0
+        done
+        check "$job: the cache restore is skipped on a tag push" test "$ok" = 1
+    done
+
+    # The sanitizer and coverage jobs restore the functional-tests depends
+    # entry, with its paths, and save none.
+    n=$(saves_of functional-tests depends)
+    fs_key=$(field functional-tests "${n:-0}" key); fs_paths=$(field functional-tests "${n:-0}" path)
+    for job in "${restore_jobs[@]}"; do
+        check "$job: runs the ubuntu.22.04 image" test "$(job_env "$job" IMAGE)" = ubuntu.22.04
+        mapfile -t restores < <(steps_of "$job" '^actions/cache')
+        ok=0
+        if (( ${#restores[@]} == 1 )); then
+            n=${restores[0]}
+            [[ "$(field "$job" "$n" uses)" != actions/cache/restore@* || -z "$fs_key" ||
+               "$(field "$job" "$n" key)" != "$fs_key" || "$(field "$job" "$n" path)" != "$fs_paths" ]] || ok=1
+        fi
+        check "$job: restores the functional-tests depends entry and nothing else" test "$ok" = 1
+        check "$job: saves no cache" test -z "$(steps_of "$job" '^actions/cache(/save)?@')"
+    done
+
+    # One key, one path list (the paths are part of the entry's version).
+    ok=$(awk -F'\t' '$1 == "C" && $4 == "key" { key[$2 SUBSEP $3] = $5 }
+                     $1 == "C" && $4 == "path" { p[$2 SUBSEP $3] = p[$2 SUBSEP $3] "|" $5 }
+                     END { r = 1
+                           for (s in key) { if (key[s] in seen && seen[key[s]] != p[s]) r = 0; seen[key[s]] = p[s] }
+                           print r }' <<< "$recs")
+    check "the cache steps of one key have one path list" test "$ok" = 1
+    ok=1
+    # The depends restore and the depends save of both jobs.
+    for i in step_id saves_of; do
+        n=$("$i" build-ubuntu-1604 depends); m=$("$i" build-ubuntu-1604-low-difficulty depends)
+        [[ -n "$n" && -n "$m" &&
+           "$(field build-ubuntu-1604 "$n" key)" == "$(field build-ubuntu-1604-low-difficulty "$m" key)" &&
+           "$(field build-ubuntu-1604 "$n" path)" == "$(field build-ubuntu-1604-low-difficulty "$m" path)" ]] || ok=0
+    done
+    check "build-ubuntu-1604-low-difficulty: the depends entry is that of build-ubuntu-1604" test "$ok" = 1
+
+    # prune-caches: the job that deletes cache entries.
+    job=$(job_text_of "$1" prune-caches)
+    ok=0
+    if [[ -n "$job" && "$(awk -F'\t' '$1 == "J" && $2 == "prune-caches" && $3 == "if" { print $4 }' <<< "$recs")" == \
+          "\${{ !cancelled() && $master_push }}" ]]; then
+        grep -qE 'docker|actions/checkout' <<< "$job" || ok=1
+    fi
+    check "prune-caches runs only on a push to master and runs no docker" test "$ok" = 1
+    check "prune-caches is the one job with actions: write" test \
+        "$(awk -F'\t' '($1 == "J" && $3 == "perm" && $4 ~ /^actions: *write/) { print $2 }
+                       ($1 == "W" && $3 ~ /^actions: *write/) { print "(workflow)" }' <<< "$recs" | sort -u)" = prune-caches
+}
+
+cache_checks "$wf"
+
+# plant <check> <job> <sed script>: a copy of the workflow with the script
+# applied to one job's lines must fail <check>.
+plant() {
+    local want="$1" job="$2" script="$3" range copy="$work/planted.yml" out
+    range=$(awk -v name="  $job:" '$0 == name { s = NR; next }
+                                   s && /^  [A-Za-z0-9_-]+:$/ { print s "," NR - 1; done = 1; exit }
+                                   END { if (s && !done) print s ",$" }' "$wf")
+    if [[ -z "$range" ]]; then fail "planted ($want): the workflow has no job $job"; return; fi
+    sed -e "$range{" -e "$script" -e "}" "$wf" > "$copy"
+    if cmp -s "$wf" "$copy"; then fail "planted ($want): the copy is unchanged"; return; fi
+    out=$(cache_checks "$copy") || true
+    check "planted copy of $job fails: $want" grep -qxF "FAIL  $want" <<< "$out"
+}
+plant "build-windows: the cache save runs only on a push to master" build-windows \
+    "/steps\.ccache\.outputs\.cache-hit/s/ && github\.event_name == 'push' && [^&]* && / \&\& /"
+plant "unit-tests: the cache save runs only on a push to master" unit-tests \
+    "/if: .*steps\.depends\.outputs\.cache-hit/d"
+plant "build-ubuntu-2204: the cache save runs only on a push to master" build-ubuntu-2204 \
+    "/steps\.depends\.outputs\.cache-hit/s/&& \(github\.event_name == 'push' && [^&]*\) &&/\&\& !(\1) \&\&/"
+plant "functional-tests-asan: the cache save runs only on a push to master" functional-tests-asan \
+    "s|actions/cache/restore@|actions/cache@|"
+plant "functional-tests: the cache save runs only on a push to master" functional-tests \
+    "/steps\.depends\.outputs\.cache-hit/s/success()/!cancelled()/"
+plant "unit-tests: the saved key holds no run id or attempt" unit-tests \
+    "/KEY_CCACHE=/s/\" >> /-\${{ github.run_id }}\" >> /"
+plant "functional-tests: the depends save is skipped on an exact restore" functional-tests \
+    "s/ && steps\.depends\.outputs\.cache-hit != 'true'//"
+plant "build-macos: the depends key holds the image tag" build-macos \
+    "/KEY_DEPENDS=/s/\$image_key/\$IMAGE/"
+plant "build-ubuntu-1604: the depends key holds the image tag" build-ubuntu-1604 \
+    "s/^\( *\)image_key=\(.*\)$/\1echo \"KEY_IMAGE=\2\" >> \"\$GITHUB_ENV\"/; /KEY_DEPENDS=/s/\$image_key/\$KEY_IMAGE/"
+plant "build-ubuntu-1604-low-difficulty: the cache restore is skipped on a tag push" build-ubuntu-1604-low-difficulty \
+    "/^        id: ccache$/{n;d}"
+plant "fuzz-corpus: restores the functional-tests depends entry and nothing else" fuzz-corpus \
+    "s|/depends-built-tests$|/depends-built|"
+plant "build-ubuntu-1604-low-difficulty: the depends entry is that of build-ubuntu-1604" build-ubuntu-1604-low-difficulty \
+    "s|/depends-built$|/depends-built-tests|"
+plant "build-ubuntu-1604-low-difficulty: the depends entry is that of build-ubuntu-1604" build-ubuntu-1604-low-difficulty \
+    "s/release-depends-/low-difficulty-depends-/"
+plant "prune-caches is the one job with actions: write" build-ubuntu-1604 \
+    "/^      contents: read$/a\      actions: write"
+plant "prune-caches runs only on a push to master and runs no docker" prune-caches \
+    "s/^    if: .*/    if: \${{ !cancelled() }}/"
+
 # A job added or removed is a deliberate change of this number.
 jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^[^ ]/ { exit } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
-check "${wf#"$ROOT"/}: 15 jobs ($jobs)" test "$jobs" = 15
+check "${wf#"$ROOT"/}: 16 jobs ($jobs)" test "$jobs" = 16
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do
