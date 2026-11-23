@@ -70,7 +70,8 @@ Usage: ./dev.sh <command> [args]
 
   depends [qt]            Build the pinned dependencies (NO_QT unless "qt")
   configure <variant>     (Re)configure build/<variant>
-  build <variant> [tgt]   Build build/<variant> (optionally one make target)
+  build <variant> [tgt]   Build build/<variant>, or only the make target tgt
+                          (relative to src/, e.g. test/test_bitcoin)
   unit [suite...]         Build test_bitcoin (dev) and run unit test suites;
                           no suites = all suites, in parallel (UNIT_JOBS)
   check                   Full "make check" on build/dev (serial, as upstream)
@@ -265,7 +266,14 @@ cmd_build() {
     # test/config.ini.in would otherwise only reach it on a reconfigure.
     make -s -C "$dir" test/config.ini
     if [[ -n "${2:-}" ]]; then
-        make -C "$dir/src" -j"$JOBS" "$2"
+        # Make targets are relative to src/; one written as src/<path> is
+        # built as <path>.
+        local target="$2"
+        if [[ "$target" == src/?* ]]; then
+            target="${target#src/}"
+            echo "dev.sh: make targets are relative to src/; building $target" >&2
+        fi
+        make -C "$dir/src" -j"$JOBS" "$target"
     else
         make -C "$dir" -j"$JOBS"
     fi
