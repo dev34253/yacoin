@@ -7,8 +7,9 @@
 # default):
 #   lint    bash -n and shellcheck --severity=warning on the scripts here, and
 #           no grep -q at the end of a pipe in them (pipefail and SIGPIPE)
-#   tag     test-image-tag.sh: the image tags (image-tag.sh) and the CI
-#           workflow's use of them
+#   tag     test-image-tag.sh: the image tags (image-tag.sh), the CI
+#           workflow's use of them, its jobs and caches, and
+#           all-jobs-passed.sh (needs jq)
 #   static  every Dockerfile pins its base image by digest and sets
 #           YACOIN_BUILD_IMAGE to its own name
 #   devsh   dev.sh's shared cache, on copies of dev.sh and depends/ (no
@@ -138,7 +139,7 @@ shellcheck_cmd() {
 
 step_lint() {
     local f scripts=(entrypoint.sh entrypoint.windows.sh entrypoint.macos.sh run.sh parity.sh check.sh
-                     image-tag.sh test-image-tag.sh)
+                     image-tag.sh test-image-tag.sh all-jobs-passed.sh)
     for f in "${scripts[@]}"; do
         bash -n "$HERE/$f" && pass "lint: bash -n $f" || fail "lint: bash -n $f"
     done

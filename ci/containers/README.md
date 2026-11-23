@@ -9,7 +9,8 @@ the entrypoints create the ccache config before the build.
 | `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.22.04`, `windows`, `macos` |
 | `entrypoint.sh`, `entrypoint.windows.sh`, `entrypoint.macos.sh` | What the images run: the Linux modes, and the Windows and macOS release builds |
 | `image-tag.sh` | Prints an image's tag, or with `--inputs` the files its hash covers |
-| `test-image-tag.sh` | Tests of `image-tag.sh` and of the workflow's use of the tags |
+| `test-image-tag.sh` | Tests of `image-tag.sh`, of the workflow's use of the tags, of the workflow's jobs and caches, and of `all-jobs-passed.sh` |
+| `all-jobs-passed.sh` | The result of the CI job `all-jobs-passed`: passes only when every job it needs passed |
 | `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
 | `check.sh` | The image checks: lint, image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
 | `parity.sh` | Compares an image built from here with the one on Docker Hub (`dev34253/yacoin-build:<image>-2`) and runs its modes on a clean clone |
@@ -149,7 +150,7 @@ against the hash of the one in that image.
 
 ## GitHub Actions
 
-Every job of `.github/workflows/yacoinbuildmultiplatform.yml` runs an image built from this directory. The local action
+Every job of `.github/workflows/yacoinbuildmultiplatform.yml` that runs docker runs an image built from this directory. The local action
 `.github/actions/yacoin-build-image` provides it. The workflow runs on every pull request commit, and on pushes only to `master`,
 to `scratch/` branches and to tags; `.github/workflows/depends-sources.yml` runs the same way, without tags, when the depends recipes
 change, and on demand. A branch without a pull request therefore gets CI only as a `scratch/` branch.
@@ -202,7 +203,7 @@ sanitizer report files, kept 14 days). `test-image-tag.sh` also checks that the 
 The `fuzz-corpus` job runs the mode of the same name of the Ubuntu 22.04 image: every input of the fuzz corpus once through its target
 under AddressSanitizer, LeakSanitizer and UBSan. It replays the committed corpus only and never fuzzes, and uploads its logs when it
 fails (`fuzz-corpus-logs`, kept 14 days). `test-image-tag.sh` checks that it runs with ccache off, restores the `functional-tests`
-depends entry and saves none, and that the workflow has 16 jobs.
+depends entry and saves none, and that the workflow has 17 jobs.
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache: a ccache entry per job kind and
 image, and a depends entry per depends kind and image (the low-difficulty job shares the 16.04 release job's); the kinds are
@@ -225,3 +226,13 @@ build jobs' restores set `lookup-only`, and that `prune-caches` runs only on a p
 run shard 1/2 and 2/2 of the functional tests (`FTEST_SHARD`), each with its own artifact per attempt and its own outputs.
 `coverage-report` downloads the artifact of the attempt each coverage job last ran in, merges the unit tracefile with both shards'
 tracefiles, and runs `contrib/devtools/coverage-check.py` with every function extents file.
+
+The last job, `all-jobs-passed`, needs every other job of the workflow and runs whatever their results are (`if: ${{ always() }}`).
+It passes only when every needed job's result is `success`; `prune-caches` may also be `skipped` when the run is not a push to `master`.
+Any other result (`failure`, `cancelled`, `skipped` or any other value) fails it, so it is the one check that says whether the whole
+run passed. `all-jobs-passed.sh` here gets the needed jobs' results (`toJSON(needs)`) and whether the run is a push to `master`
+through `env:`, prints each job's result and decides, using jq; it fails on empty or malformed input too. `test-image-tag.sh` tests
+the script with planted results (so running it locally needs jq), and checks that the workflow's jobs are plain keys at two spaces
+with `jobs:` as the last top-level key, that the workflow uses no `continue-on-error`, and that `all-jobs-passed` needs every other
+job, runs always and is written as the check expects; planted copies of the workflow (a job left out of `needs`, a job added without
+an entry, a misspelt entry, another `if:`, a commented or quoted job key, among others) must fail.
