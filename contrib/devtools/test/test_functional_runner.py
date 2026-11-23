@@ -7,7 +7,8 @@ script starts writes its reports to DIR/<test directory name>.<exe>.<pid>
 instead of its stderr. A script with such a file fails, whatever its exit
 status, and the report is printed with its output; a file that belongs to no
 script fails the run. The scripts here are fakes that record their
-environment and write report files as a sanitizer runtime would.
+environment and write report files as a sanitizer runtime would. A relative
+DIR is taken from the runner's working directory.
 
 With --exclude-file FILE, the runner leaves out the scripts listed in FILE,
 and with the option more than once, those of every FILE; a listed name that
@@ -1022,6 +1023,80 @@ class FunctionalRunnerEmptySelectionTests(unittest.TestCase):
         self.assertIsNone(status, out)
         self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)
         self.assertEqual(self.ran, [["wallet_a.py"]])
+
+
+# A fake test script or create_cache.py: changes into its --tmpdir (created if
+# needed), then writes a report file for every name in REPORTS to the
+# log_path of its ASAN_OPTIONS, as the runtime does with log_path:
+# <log_path>.<exe>.<pid>, taken from the working directory if relative.
+FAKE_ELSEWHERE_SCRIPT = r'''
+import os, sys
+tmpdir = [a for a in sys.argv if a.startswith("--tmpdir=")][0].split("=", 1)[1]
+os.makedirs(tmpdir, exist_ok=True)
+os.chdir(tmpdir)
+log_path = [o for o in os.environ.get("ASAN_OPTIONS", "").split(":") if o.startswith("log_path=")]
+for i, exe in enumerate(REPORTS):
+    with open("%s.%s.%d" % (log_path[-1].split("=", 1)[1], exe, 100 + i), "w") as f:
+        f.write("==%d==ERROR: a report from %s\n" % (100 + i, exe))
+'''
+
+
+class FunctionalRunnerRelativeSanitizerLogsTests(unittest.TestCase):
+    """A relative --sanitizer-logs DIR is taken from the runner's working
+    directory, also for processes that run in another directory (as the
+    nodes run in their script's test directory). The fake create_cache.py
+    and scripts change into their --tmpdir before they write their reports
+    to the relative log_path."""
+
+    def setUp(self):
+        FunctionalRunnerSanitizerTests.setUp(self)
+        self.cwd = os.path.join(self.dir, "cwd")
+        os.makedirs(self.cwd)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.cwd)
+
+    restore_environ = staticmethod(FunctionalRunnerSanitizerTests.restore_environ)
+
+    def fake(self, name, reports=()):
+        with open(os.path.join(self.tests_dir, name), "w") as f:
+            f.write("REPORTS = %r\n" % list(reports) + FAKE_ELSEWHERE_SCRIPT)
+
+    def run_all(self, test_list, sanitizer_logs):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as e:
+            test_runner.run_tests(test_list=list(test_list), src_dir=os.path.join(self.dir, "src"),
+                                  build_dir=self.dir, tmpdir=self.tmpdir, jobs=2, runs_ci=False,
+                                  use_term_control=False, sanitizer_logs=sanitizer_logs)
+        return e.exception.code, re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue())
+
+    def test_the_reports_land_in_the_directory_under_the_runners_working_directory(self):
+        self.fake("create_cache.py", reports=["yacoind"])
+        self.fake("a_clean.py")
+        self.fake("a_report.py", reports=["yacoind"])
+        status, out = self.run_all(["a_clean.py", "a_report.py"], "logs")
+        logs = os.path.join(self.cwd, "logs")
+        files = sorted(os.listdir(logs)) if os.path.isdir(logs) else []
+        self.assertEqual(len(files), 2, out)
+        self.assertEqual(files[0], "a_report_0.yacoind.100")
+        self.assertEqual(files[1], "create_cache.yacoind.100")
+        self.assertEqual(status, True)
+        # The script with the report fails and its report is printed with it.
+        self.assertIn("a_report.py failed (exit code 0), Duration:", out)
+        self.assertIn("Sanitizer report %s:\n==100==ERROR: a report from yacoind\n"
+                      % os.path.join(logs, "a_report_0.yacoind.100"), out)
+        self.assertNotIn("a_clean.py failed", out)
+        # The cache script's report belongs to no script.
+        self.assertIn("Sanitizer reports of no test script:", out)
+        self.assertIn("Sanitizer report %s:\n" % os.path.join(logs, "create_cache.yacoind.100"), out)
+
+    def test_a_relative_directory_with_files_is_refused(self):
+        self.fake("a_clean.py")
+        os.makedirs(os.path.join(self.cwd, "logs"))
+        with open(os.path.join(self.cwd, "logs", "a_clean_0.yacoind.5"), "w") as f:
+            f.write("old\n")
+        status, out = self.run_all(["a_clean.py"], "logs")
+        self.assertEqual(status, 1)
+        self.assertIn("The sanitizer log directory %s is not empty." % os.path.join(self.cwd, "logs"), out)
 
 
 class TreeExcludedScriptsTests(unittest.TestCase):

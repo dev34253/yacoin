@@ -250,7 +250,7 @@ def main():
     parser.add_argument('--include-file', metavar='FILE', help='run only the scripts listed in FILE (the format of --exclude-file), every run of each, in place of the base or extended scripts; the other selections apply after it. A listed name that is not a test script of this runner, a FILE without a script, and script names on the command line fail the run')
     parser.add_argument('--shard', metavar='K/N', help='run shard K of N (1 <= K <= N): the selected scripts whose position in the list of all scripts of this runner, counted from 0, modulo N is K-1. Applied after every other selection, so the N shards together run what the run without --shard runs, each script once. A shard without scripts is no error. A named script that is not in the list fails the run')
     parser.add_argument('--chain', choices=RUNNER_CHAINS, help='run only the selected scripts whose nodes run on CHAIN: those that set self.chain = \'CHAIN\' (a script without that line runs on regtest). Applied before --shard; a selection without such a script fails the run, and so does a script whose line names another chain than main or regtest. The block cache is built for CHAIN only')
-    parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty')
+    parser.add_argument('--sanitizer-logs', metavar='DIR', help='for a sanitizer build: every process a script starts writes its sanitizer reports to DIR/<test directory name>.<executable>.<pid> instead of its stderr; a script with a report fails and the report is printed with it, and a report of no script fails the run. DIR must be empty; a relative DIR is taken from the current directory')
 
     args, unknown_args = parser.parse_known_args()
     if not args.ansi:
@@ -499,6 +499,9 @@ def run_tests(*, test_list, src_dir, build_dir, tmpdir, jobs=1, enable_coverage=
     args = args or []
 
     if sanitizer_logs:
+        # A process takes a relative log_path from its working directory; the
+        # nodes run in their script's test directory.
+        sanitizer_logs = os.path.abspath(sanitizer_logs)
         # Test directory names repeat from run to run, so an old report would
         # be taken for one of this run.
         os.makedirs(sanitizer_logs, exist_ok=True)

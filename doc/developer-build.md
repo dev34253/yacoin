@@ -307,7 +307,8 @@ too, `FTEST_JOBS` at a time, with
 the runtime options above plus `print_suppressions=0` and `handle_segv=0` (a
 segmentation fault ends the process with the signal, as in the other
 functional runs). The runner's
-`--sanitizer-logs <dir>` option sets the sanitizers' `log_path` for each
+`--sanitizer-logs <dir>` option (a relative `<dir>` is taken from the
+runner's working directory) sets the sanitizers' `log_path` for each
 script, so every process a script starts (nodes, `yacoin-cli`, processes the
 script runs directly) writes its reports to
 `<dir>/<script's test directory>.<executable>.<pid>` instead of its stderr. A
