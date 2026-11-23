@@ -177,6 +177,57 @@ std::vector<StakeModifierEntry> ComputeModifiers(SyntheticChain& chain, const st
     return entries;
 }
 
+/** The stake-modifier checksum of main's genesis block in this build, and in the other build */
+#ifndef LOW_DIFFICULTY_FOR_DEVELOPMENT
+const ::uint32_t MAIN_GENESIS_CHECKSUM = 0x0e00670b;
+const ::uint32_t OTHER_BUILD_GENESIS_CHECKSUM = 0xfd11f4e7;
+#else // the low-difficulty build has another genesis block
+const ::uint32_t MAIN_GENESIS_CHECKSUM = 0xfd11f4e7;
+const ::uint32_t OTHER_BUILD_GENESIS_CHECKSUM = 0x0e00670b;
+#endif
+
+/** Main's stake-modifier checkpoints: height and checksum */
+const std::vector<std::pair<int, ::uint32_t>> MAIN_MODIFIER_CHECKPOINTS = {
+    {0, MAIN_GENESIS_CHECKSUM},
+    {15000, 0x085e9caf},
+    {30000, 0x3f123e2c},
+    {45000, 0x3e2ecf4f},
+    {60000, 0x1e8458ea},
+    {75000, 0xd72d1395},
+    {90000, 0x7dce92ff},
+    {105000, 0x57cc71e0},
+    {120000, 0x4442fccb},
+    {135000, 0x4cea240f},
+    {150000, 0xd06bea80},
+    {165000, 0x697caae6},
+    {180000, 0x5d6f2627},
+    {195000, 0x054b2756},
+    {214998, 0xcbb62f73},
+    {236895, 0x05ee6bd6},
+    {259405, 0xb31abd61},
+    {281002, 0x95174906},
+    {303953, 0x4ba15dbc},
+    {388314, 0x97f8e820},
+    {420000, 0x9b6c9d80},
+    {465000, 0x1b1a219c},
+    {487658, 0xe7d5a3bc},
+    {550177, 0x8a1e3994},
+    {612177, 0x949c4dc0},
+    {712177, 0xad692cc0},
+};
+
+/** Main's checkpoints: height 0 passes with this build's genesis checksum only, a listed height
+ * fails with another checksum, an unlisted height passes with any */
+void CheckMainModifierCheckpoints()
+{
+    BOOST_CHECK(CheckStakeModifierCheckpoints(0, MAIN_GENESIS_CHECKSUM));
+    BOOST_CHECK(!CheckStakeModifierCheckpoints(0, OTHER_BUILD_GENESIS_CHECKSUM));
+    BOOST_CHECK(CheckStakeModifierCheckpoints(15000, 0x085e9caf));
+    BOOST_CHECK(!CheckStakeModifierCheckpoints(15000, 0));
+    BOOST_CHECK(CheckStakeModifierCheckpoints(15001, 0));
+    BOOST_CHECK(CheckStakeModifierCheckpoints(15001, 0x12345678));
+}
+
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(kernel_tests, KernelSetup)
@@ -417,6 +468,42 @@ BOOST_AUTO_TEST_CASE(modifier_checkpoints)
     BOOST_CHECK(CheckStakeModifierCheckpoints(0, 0x0e00670b));
     BOOST_CHECK(!CheckStakeModifierCheckpoints(0, 0xfd11f4e7));
     BOOST_CHECK(CheckStakeModifierCheckpoints(15000, 0));
+}
+
+/* Main's checkpoints in this build */
+BOOST_AUTO_TEST_CASE(modifier_checkpoints_main)
+{
+    CheckMainModifierCheckpoints();
+}
+
+/* Every checkpoint of main: its checksum passes, the checksum ^ 1 fails */
+BOOST_AUTO_TEST_CASE(modifier_checkpoints_main_table)
+{
+    BOOST_REQUIRE_EQUAL(MAIN_MODIFIER_CHECKPOINTS.size(), 26U);
+    for (const auto& checkpoint : MAIN_MODIFIER_CHECKPOINTS) {
+        BOOST_CHECK_MESSAGE(CheckStakeModifierCheckpoints(checkpoint.first, checkpoint.second),
+                            "height " << checkpoint.first);
+        BOOST_CHECK_MESSAGE(!CheckStakeModifierCheckpoints(checkpoint.first, checkpoint.second ^ 1),
+                            "height " << checkpoint.first);
+    }
+}
+
+/* When the next block (tip height + 1) is at or past the new-logic height, the stake-modifier
+ * checkpoints do not apply; before that the listed checksum must match */
+BOOST_AUTO_TEST_CASE(modifier_checkpoints_new_logic_height)
+{
+    SyntheticChain chain;
+    chain.SetActiveTip(chain.Extend(nullptr, 14999, 60, POW_BITS));
+    BOOST_REQUIRE_EQUAL(chainActive.Height(), 14999);
+    {
+        ValueGuard<::int32_t> fork(nMainnetNewLogicBlockNumber, 15000);
+        BOOST_CHECK(CheckStakeModifierCheckpoints(15000, 0x085e9cae));
+    }
+    {
+        ValueGuard<::int32_t> fork(nMainnetNewLogicBlockNumber, 15001);
+        BOOST_CHECK(!CheckStakeModifierCheckpoints(15000, 0x085e9cae));
+        BOOST_CHECK(CheckStakeModifierCheckpoints(15000, 0x085e9caf));
+    }
 }
 
 /* Modifiers and checksums block by block from (hash, time) rows; here 400 synthetic rows ten
