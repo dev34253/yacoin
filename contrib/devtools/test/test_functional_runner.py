@@ -1,5 +1,5 @@
-"""Tests of the options of test/functional/test_runner.py for the sanitizer
-runs.
+"""Tests of test/functional/test_runner.py: its options, and how it reports
+the scripts it runs.
 
 With --sanitizer-logs DIR, the runner starts every test script with the
 sanitizers' log_path set to DIR/<test directory name>, so every process the
@@ -7,7 +7,8 @@ script starts writes its reports to DIR/<test directory name>.<exe>.<pid>
 instead of its stderr. A script with such a file fails, whatever its exit
 status, and the report is printed with its output; a file that belongs to no
 script fails the run. The scripts here are fakes that record their
-environment and write report files as a sanitizer runtime would.
+environment and write report files as a sanitizer runtime would. A relative
+DIR is taken from the runner's working directory.
 
 With --exclude-file FILE, the runner leaves out the scripts listed in FILE,
 and with the option more than once, those of every FILE; a listed name that
@@ -17,6 +18,16 @@ only the scripts listed in FILE.
 With --chain CHAIN, the runner selects the scripts that set
 self.chain = 'CHAIN' (regtest: also those without such a line), and builds
 the block cache of CHAIN only.
+
+A selection that ends without a script fails the run; an empty shard does
+not.
+
+The block the runner prints for a failed script states its exit code
+(and the name of the signal that ended it) and names its test directory. The
+runner starts every script with --nocleanup and removes the test directory of
+a script that passed or was skipped; a failed script, also one that failed
+only by writing to stderr, keeps it. With --nocleanup, --noshutdown or --perf
+among the caller's options, the runner adds nothing and removes nothing.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -176,6 +187,12 @@ class FunctionalRunnerSanitizerTests(unittest.TestCase):
         self.assertEqual(status, True)
         self.assertIn("a_report.py failed", out)
         self.assertIn("==100==ERROR: a report from yacoind", out)
+
+    def test_a_script_failed_by_its_report_alone_shows_exit_code_0(self):
+        self.fake("a_report.py", reports=["yacoind"])
+        status, out = self.run_all(["a_report.py"], self.logs)
+        self.assertEqual(status, True)
+        self.assertIn("a_report.py failed (exit code 0), Duration:", out)
 
     def test_the_run_passes_without_reports(self):
         self.fake("a_clean.py")
@@ -541,9 +558,9 @@ class FunctionalRunnerShardTests(unittest.TestCase):
         # wallet_a.py is at position 2 of the runner's list.
         self.assertEqual(self.main("--shard=1/2", "wallet_a.py")[2], ["wallet_a.py"])
 
-    def test_without_the_option_an_empty_selection_runs_nothing(self):
+    def test_without_the_option_an_empty_selection_fails(self):
         status, out, ran = self.main("--filter=no_such_script")
-        self.assertEqual(status, 0)
+        self.assertEqual(status, 1)
         self.assertIn("No valid test scripts specified", out)
         self.assertIsNone(ran)
 
@@ -737,6 +754,349 @@ class FunctionalRunnerCacheChainTests(unittest.TestCase):
         args = self.run_tests(None)
         self.assertIsNotNone(args)
         self.assertFalse(any(a.startswith("--cachechain") for a in args))
+
+
+# A fake test script that keeps its test directory as the framework does:
+# it records its arguments in RECORDS/<test directory name>.argv, creates its
+# test directory (--tmpdir) with a log file in it if MAKE_DIR, writes STDERR
+# to its stderr, ends itself with SIGTERM if SIGTERM_SELF, and otherwise exits
+# with EXIT, removing its test directory first on exit 0 or 77 unless one of
+# --nocleanup, --noshutdown, --perf (or an abbreviation) is among its
+# arguments.
+FAKE_CLEANUP_SCRIPT = r'''
+import json, os, shutil, signal, sys
+tmpdir = [a for a in sys.argv if a.startswith("--tmpdir=")][0].split("=", 1)[1]
+with open(os.path.join(RECORDS, os.path.basename(tmpdir) + ".argv"), "w") as f:
+    json.dump(sys.argv[1:], f)
+if MAKE_DIR:
+    os.makedirs(tmpdir)
+    with open(os.path.join(tmpdir, "test_framework.log"), "w") as f:
+        f.write("a log line\n")
+sys.stderr.write(STDERR)
+sys.stderr.flush()
+if SIGTERM_SELF:
+    os.kill(os.getpid(), signal.SIGTERM)
+keep = any(a.startswith("--") and len(a) > 2 and n.startswith(a)
+           for a in sys.argv[1:] for n in ("--nocleanup", "--noshutdown", "--perf"))
+if MAKE_DIR and EXIT in (0, 77) and not keep:
+    shutil.rmtree(tmpdir)
+sys.exit(EXIT)
+'''
+
+# A test script of the framework without nodes: it runs without any binary.
+# It writes STDERR to its stderr in run_test.
+NODELESS_SCRIPT = r'''
+import sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, FUNCTIONAL)
+from test_framework.test_framework import BitcoinTestFramework
+
+class NodelessTest(BitcoinTestFramework):
+    def set_test_params(self):
+        self.num_nodes = 0
+
+    def setup_chain(self):
+        pass
+
+    def setup_network(self):
+        pass
+
+    def run_test(self):
+        sys.stderr.write(STDERR)
+
+if __name__ == '__main__':
+    NodelessTest().main()
+'''
+
+
+class FunctionalRunnerFailureTests(unittest.TestCase):
+    """The block the runner prints for a failed script states its exit code
+    (and the signal that ended it), and names its test directory. The runner
+    starts every script with --nocleanup and removes the test directory of a
+    script that passed or was skipped; a failed script keeps it. With
+    --nocleanup, --noshutdown or --perf among the caller's flags, the runner
+    adds nothing and removes nothing."""
+
+    def setUp(self):
+        self.make_tree()
+
+    def make_tree(self):
+        """A tree of its own: scripts, the runner's directory, records."""
+        self.dir = tempfile.mkdtemp(prefix="test_functional_runner.")
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.tests_dir = os.path.join(self.dir, "src", "test", "functional") + "/"
+        os.makedirs(self.tests_dir)
+        self.tmpdir = os.path.join(self.dir, "tmp")
+        os.makedirs(self.tmpdir)
+        self.records = os.path.join(self.dir, "records")
+        os.makedirs(self.records)
+
+    def fake(self, name, exit_status=0, stderr="", make_dir=True, sigterm_self=False):
+        params = {"RECORDS": self.records, "MAKE_DIR": make_dir, "STDERR": stderr,
+                  "SIGTERM_SELF": sigterm_self, "EXIT": exit_status}
+        with open(self.tests_dir + name, "w") as f:
+            f.write("".join("%s = %r\n" % item for item in sorted(params.items())) + FAKE_CLEANUP_SCRIPT)
+
+    def nodeless(self, name, stderr=""):
+        functional = os.path.abspath(os.path.join(HERE, "..", "..", "..", "test", "functional"))
+        with open(self.tests_dir + name, "w") as f:
+            f.write("FUNCTIONAL = %r\nSTDERR = %r\n" % (functional, stderr) + NODELESS_SCRIPT)
+        config = os.path.join(self.dir, "config.ini")
+        with open(config, "w") as f:
+            f.write("[environment]\nSRCDIR=%s\nBUILDDIR=%s\nEXEEXT=\n[components]\nENABLE_BITCOIND=true\n"
+                    % (os.path.join(self.dir, "src"), self.dir))
+        return "--configfile=%s" % config
+
+    def argv(self, testdir):
+        with open(os.path.join(self.records, os.path.basename(testdir) + ".argv")) as f:
+            return json.load(f)
+
+    def script_dir(self, name, out):
+        """The test directory of name (the runner numbers them by the
+        number of scripts left to start)."""
+        dirs = [d for d in os.listdir(self.records) if d.startswith(name[:-3] + "_")]
+        self.assertEqual(len(dirs), 1, out)
+        return os.path.join(self.tmpdir, dirs[0][:-len(".argv")])
+
+    def run_all(self, test_list, args=None):
+        """Run test_list through run_tests; return (exit status, output)."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as e:
+            test_runner.run_tests(test_list=list(test_list), src_dir=os.path.join(self.dir, "src"),
+                                  build_dir=self.dir, tmpdir=self.tmpdir, jobs=1, runs_ci=False,
+                                  use_term_control=False, args=args)
+        return e.exception.code, re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue())
+
+    def test_the_exit_code_is_in_the_header(self):
+        self.fake("a_three.py", exit_status=3)
+        status, out = self.run_all(["a_three.py"])
+        self.assertEqual(status, True)
+        self.assertIn("a_three.py failed (exit code 3), Duration:", out)
+
+    def test_a_signal_is_named(self):
+        self.fake("a_signal.py", sigterm_self=True)
+        status, out = self.run_all(["a_signal.py"])
+        self.assertEqual(status, True)
+        self.assertIn("a_signal.py failed (exit code -15, signal SIGTERM), Duration:", out)
+
+    def test_exit_0_with_stderr_fails_with_exit_code_0_and_shows_the_stderr(self):
+        self.fake("a_stderr.py", stderr="a line on stderr\n")
+        status, out = self.run_all(["a_stderr.py"])
+        self.assertEqual(status, True)
+        self.assertIn("a_stderr.py failed (exit code 0), Duration:", out)
+        self.assertIn("stderr:\na line on stderr\n", out)
+
+    def test_the_exit_code_as_text(self):
+        self.assertEqual(test_runner.describe_exit_code(3), "3")
+        self.assertEqual(test_runner.describe_exit_code(0), "0")
+        self.assertEqual(test_runner.describe_exit_code(-15), "-15, signal SIGTERM")
+        # A number that names no signal.
+        self.assertEqual(test_runner.describe_exit_code(-1000), "-1000")
+
+    def test_passed_and_skipped_scripts_print_no_block(self):
+        self.fake("a_pass.py")
+        self.fake("a_skip.py", exit_status=77)
+        status, out = self.run_all(["a_pass.py", "a_skip.py"])
+        self.assertEqual(status, False)
+        self.assertNotIn(" failed", out)
+        self.assertNotIn("stdout:", out)
+
+    def test_exit_0_with_stderr_keeps_the_test_directory_and_its_logs(self):
+        self.fake("a_stderr.py", stderr="a line on stderr\n")
+        status, out = self.run_all(["a_stderr.py"])
+        self.assertEqual(status, True)
+        testdir = self.script_dir("a_stderr.py", out)
+        self.assertTrue(os.path.isfile(os.path.join(testdir, "test_framework.log")), out)
+        self.assertIn("test directory: %s\n" % testdir, out)
+
+    def test_passed_and_skipped_scripts_leave_no_directory(self):
+        self.fake("a_pass.py")
+        self.fake("a_skip.py", exit_status=77)
+        status, out = self.run_all(["a_pass.py", "a_skip.py"])
+        self.assertEqual(status, False)
+        # The top directory too, as it is empty.
+        self.assertFalse(os.path.exists(self.tmpdir), out)
+
+    def test_a_failed_script_keeps_its_directory_and_the_top_directory(self):
+        self.fake("a_pass.py")
+        self.fake("a_failed.py", exit_status=1)
+        status, out = self.run_all(["a_pass.py", "a_failed.py"])
+        self.assertEqual(status, True)
+        self.assertEqual(os.listdir(self.tmpdir), [os.path.basename(self.script_dir("a_failed.py", out))])
+        self.assertIn("test directory: %s\n" % self.script_dir("a_failed.py", out), out)
+
+    def test_the_runner_passes_nocleanup(self):
+        self.fake("a_pass.py")
+        status, out = self.run_all(["a_pass.py"], args=["--timeout-factor=2"])
+        self.assertEqual(status, False)
+        argv = self.argv(self.script_dir("a_pass.py", out))
+        self.assertEqual(argv.count("--nocleanup"), 1, argv)
+        self.assertIn("--timeout-factor=2", argv)
+
+    def test_with_a_callers_keep_flag_the_runner_adds_and_removes_nothing(self):
+        for flag in ("--nocleanup", "--noshutdown", "--perf", "--noc", "--nos"):
+            with self.subTest(flag=flag):
+                self.make_tree()
+                self.fake("a_pass.py")
+                status, out = self.run_all(["a_pass.py"], args=[flag])
+                self.assertEqual(status, False, out)
+                testdir = self.script_dir("a_pass.py", out)
+                argv = self.argv(testdir)
+                self.assertEqual(argv.count("--nocleanup"), 1 if flag == "--nocleanup" else 0, argv)
+                self.assertTrue(os.path.isfile(os.path.join(testdir, "test_framework.log")), out)
+
+    def test_a_script_without_a_directory_passes(self):
+        self.fake("a_nodir.py", make_dir=False)
+        status, out = self.run_all(["a_nodir.py"])
+        self.assertEqual(status, False, out)
+        self.assertNotIn(" failed", out)
+
+    def test_a_directory_that_cannot_be_removed_fails_the_script(self):
+        self.fake("a_pass.py")
+        with unittest.mock.patch.object(test_runner.shutil, "rmtree", side_effect=OSError("a removal error")):
+            status, out = self.run_all(["a_pass.py"])
+        self.assertEqual(status, True)
+        self.assertIn("a_pass.py failed (exit code 0), Duration:", out)
+        self.assertIn("a removal error", out)
+
+    def test_a_framework_script_that_passes_leaves_no_directory(self):
+        configfile = self.nodeless("a_nodeless.py")
+        status, out = self.run_all(["a_nodeless.py"], args=[configfile])
+        self.assertEqual(status, False, out)
+        self.assertFalse(os.path.exists(self.tmpdir), out)
+
+    def test_a_framework_script_with_stderr_keeps_its_directory(self):
+        configfile = self.nodeless("a_nodeless.py", stderr="a line on stderr\n")
+        status, out = self.run_all(["a_nodeless.py"], args=[configfile])
+        self.assertEqual(status, True)
+        self.assertIn("a_nodeless.py failed (exit code 0), Duration:", out)
+        dirs = os.listdir(self.tmpdir)
+        self.assertEqual(len(dirs), 1, out)
+        self.assertTrue(os.path.isfile(os.path.join(self.tmpdir, dirs[0], "test_framework.log")), out)
+        self.assertIn("test directory: %s\n" % os.path.join(self.tmpdir, dirs[0]), out)
+
+
+class FunctionalRunnerEmptySelectionTests(unittest.TestCase):
+    """A selection that ends without a script fails the run; an empty shard
+    does not (FunctionalRunnerShardTests).
+
+    main() runs on a tree of its own, as in FunctionalRunnerExcludeFileTests."""
+
+    SCRIPTS = FunctionalRunnerExcludeFileTests.SCRIPTS
+    setUp = FunctionalRunnerExcludeFileTests.setUp
+    write_list = FunctionalRunnerExcludeFileTests.write_list
+    main = FunctionalRunnerExcludeFileTests.main
+    MESSAGE = "No valid test scripts specified."
+
+    def test_including_and_excluding_the_same_list_fails(self):
+        self.write_list("wallet_a.py\nwallet_b.py\nmining_c.py\n")
+        status, out = self.main("--include-file=%s" % self.list, "--exclude-file=%s" % self.list)
+        self.assertEqual(status, 1)
+        self.assertIn(self.MESSAGE, out)
+        self.assertEqual(self.ran, [])
+
+    def test_only_unknown_script_names_fail(self):
+        status, out = self.main("wallet_gone.py", "mining_gone")
+        self.assertEqual(status, 1)
+        self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)
+        self.assertIn("WARNING! Test 'mining_gone' not found in full test list.", out)
+        self.assertIn(self.MESSAGE, out)
+        self.assertEqual(self.ran, [])
+
+    def test_a_filter_or_exclude_that_removes_every_script_fails(self):
+        for args in (["--filter=no_such_script"], ["--exclude=wallet_a,wallet_b"],
+                     ["--extended", "--exclude=wallet_a,wallet_b,mining_c"]):
+            self.ran.clear()
+            status, out = self.main(*args)
+            self.assertEqual(status, 1, args)
+            self.assertIn(self.MESSAGE, out)
+            self.assertEqual(self.ran, [])
+
+    def test_an_empty_selection_with_chain_fails_with_the_message(self):
+        status, out = self.main("--chain=regtest", "wallet_gone.py")
+        self.assertEqual(status, 1)
+        self.assertIn(self.MESSAGE, out)
+        self.assertEqual(self.ran, [])
+
+    def test_known_and_unknown_names_run_the_known_ones(self):
+        status, out = self.main("wallet_a.py", "wallet_gone.py")
+        self.assertIsNone(status, out)
+        self.assertIn("WARNING! Test 'wallet_gone.py' not found in full test list.", out)
+        self.assertEqual(self.ran, [["wallet_a.py"]])
+
+
+# A fake test script or create_cache.py: changes into its --tmpdir (created if
+# needed), then writes a report file for every name in REPORTS to the
+# log_path of its ASAN_OPTIONS, as the runtime does with log_path:
+# <log_path>.<exe>.<pid>, taken from the working directory if relative.
+FAKE_ELSEWHERE_SCRIPT = r'''
+import os, sys
+tmpdir = [a for a in sys.argv if a.startswith("--tmpdir=")][0].split("=", 1)[1]
+os.makedirs(tmpdir, exist_ok=True)
+os.chdir(tmpdir)
+log_path = [o for o in os.environ.get("ASAN_OPTIONS", "").split(":") if o.startswith("log_path=")]
+for i, exe in enumerate(REPORTS):
+    with open("%s.%s.%d" % (log_path[-1].split("=", 1)[1], exe, 100 + i), "w") as f:
+        f.write("==%d==ERROR: a report from %s\n" % (100 + i, exe))
+'''
+
+
+class FunctionalRunnerRelativeSanitizerLogsTests(unittest.TestCase):
+    """A relative --sanitizer-logs DIR is taken from the runner's working
+    directory, also for processes that run in another directory (as the
+    nodes run in their script's test directory). The fake create_cache.py
+    and scripts change into their --tmpdir before they write their reports
+    to the relative log_path."""
+
+    def setUp(self):
+        FunctionalRunnerSanitizerTests.setUp(self)
+        self.cwd = os.path.join(self.dir, "cwd")
+        os.makedirs(self.cwd)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.cwd)
+
+    restore_environ = staticmethod(FunctionalRunnerSanitizerTests.restore_environ)
+
+    def fake(self, name, reports=()):
+        with open(os.path.join(self.tests_dir, name), "w") as f:
+            f.write("REPORTS = %r\n" % list(reports) + FAKE_ELSEWHERE_SCRIPT)
+
+    def run_all(self, test_list, sanitizer_logs):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as e:
+            test_runner.run_tests(test_list=list(test_list), src_dir=os.path.join(self.dir, "src"),
+                                  build_dir=self.dir, tmpdir=self.tmpdir, jobs=2, runs_ci=False,
+                                  use_term_control=False, sanitizer_logs=sanitizer_logs)
+        return e.exception.code, re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue())
+
+    def test_the_reports_land_in_the_directory_under_the_runners_working_directory(self):
+        self.fake("create_cache.py", reports=["yacoind"])
+        self.fake("a_clean.py")
+        self.fake("a_report.py", reports=["yacoind"])
+        status, out = self.run_all(["a_clean.py", "a_report.py"], "logs")
+        logs = os.path.join(self.cwd, "logs")
+        files = sorted(os.listdir(logs)) if os.path.isdir(logs) else []
+        self.assertEqual(len(files), 2, out)
+        self.assertEqual(files[0], "a_report_0.yacoind.100")
+        self.assertEqual(files[1], "create_cache.yacoind.100")
+        self.assertEqual(status, True)
+        # The script with the report fails and its report is printed with it.
+        self.assertIn("a_report.py failed (exit code 0), Duration:", out)
+        self.assertIn("Sanitizer report %s:\n==100==ERROR: a report from yacoind\n"
+                      % os.path.join(logs, "a_report_0.yacoind.100"), out)
+        self.assertNotIn("a_clean.py failed", out)
+        # The cache script's report belongs to no script.
+        self.assertIn("Sanitizer reports of no test script:", out)
+        self.assertIn("Sanitizer report %s:\n" % os.path.join(logs, "create_cache.yacoind.100"), out)
+
+    def test_a_relative_directory_with_files_is_refused(self):
+        self.fake("a_clean.py")
+        os.makedirs(os.path.join(self.cwd, "logs"))
+        with open(os.path.join(self.cwd, "logs", "a_clean_0.yacoind.5"), "w") as f:
+            f.write("old\n")
+        status, out = self.run_all(["a_clean.py"], "logs")
+        self.assertEqual(status, 1)
+        self.assertIn("The sanitizer log directory %s is not empty." % os.path.join(self.cwd, "logs"), out)
 
 
 class TreeExcludedScriptsTests(unittest.TestCase):
