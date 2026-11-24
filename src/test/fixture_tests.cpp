@@ -8,12 +8,16 @@
 #include "test/test_bitcoin.h"
 
 #include "fs.h"
+#include "sync.h"
 #include "ui_interface.h"
 #include "util.h"
+#include "utiltime.h"
 #include "warnings.h"
 
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include <boost/test/unit_test.hpp>
 
@@ -77,6 +81,129 @@ BOOST_AUTO_TEST_CASE(misc_warning_guard_restores)
     } catch (const std::runtime_error&) {
     }
     BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+}
+
+namespace {
+
+/** Whether cs can be taken from elsewhere now */
+bool ProbeTakesLock(CCriticalSection& cs)
+{
+    bool fTaken = false;
+    std::thread probe([&cs, &fTaken] {
+        TRY_LOCK(cs, lock);
+        fTaken = lock;
+    });
+    probe.join();
+    return fTaken;
+}
+
+/** A number whose assignment records whether the probe could take cs at that moment */
+struct ProbedValue {
+    CCriticalSection* cs;
+    std::vector<bool>* pTaken;
+    int n;
+
+    ProbedValue(CCriticalSection* csIn, std::vector<bool>* pTakenIn, int nIn) : cs(csIn), pTaken(pTakenIn), n(nIn) {}
+    ProbedValue(const ProbedValue&) = default;
+    ProbedValue& operator=(const ProbedValue& other)
+    {
+        n = other.n;
+        pTaken->push_back(ProbeTakesLock(*cs));
+        return *this;
+    }
+};
+
+} // namespace
+
+/* ValueGuard sets the variable while it lives and puts back the value it found: at the end of
+ * its scope, when the scope is left by an exception, and for nested guards on one variable */
+BOOST_AUTO_TEST_CASE(value_guard_restores)
+{
+    int n = 1;
+    {
+        ValueGuard<int> guard(n, 2);
+        BOOST_CHECK_EQUAL(n, 2);
+    }
+    BOOST_CHECK_EQUAL(n, 1);
+
+    try {
+        ValueGuard<int> guard(n, 3);
+        BOOST_CHECK_EQUAL(n, 3);
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK_EQUAL(n, 1);
+
+    {
+        ValueGuard<int> outer(n, 4);
+        {
+            ValueGuard<int> inner(n, 5);
+            BOOST_CHECK_EQUAL(n, 5);
+        }
+        BOOST_CHECK_EQUAL(n, 4);
+    }
+    BOOST_CHECK_EQUAL(n, 1);
+
+    int target = 0;
+    int* p = &target;
+    {
+        ValueGuard<int*> guard(p, nullptr);
+        BOOST_CHECK(p == nullptr);
+    }
+    BOOST_CHECK(p == &target);
+}
+
+/* ValueGuard with a lock: the lock is held at set and at restore and free while the guard lives
+ * and afterwards; the value is set and put back */
+BOOST_AUTO_TEST_CASE(value_guard_holds_the_lock)
+{
+    CCriticalSection cs;
+    std::vector<bool> taken;
+    ProbedValue value(&cs, &taken, 1);
+    {
+        ValueGuard<ProbedValue> guard(cs, value, ProbedValue(&cs, &taken, 2));
+        BOOST_CHECK_EQUAL(value.n, 2);
+        BOOST_CHECK(ProbeTakesLock(cs));
+    }
+    BOOST_CHECK_EQUAL(value.n, 1);
+    BOOST_CHECK(taken == std::vector<bool>({false, false})); // at set, at restore
+    BOOST_CHECK(ProbeTakesLock(cs));
+}
+
+/* MockTimeGuard puts back the mock time it found, 0 or another time, also when its scope is left
+ * by an exception; Set() changes the time while it lives; the guard without a time sets nothing */
+BOOST_AUTO_TEST_CASE(mock_time_guard_restores)
+{
+    MockTimeGuard caseGuard;
+    SetMockTime(0);
+    {
+        MockTimeGuard guard(1600000000);
+        BOOST_CHECK_EQUAL(GetMockTime(), 1600000000);
+        guard.Set(1600000060);
+        BOOST_CHECK_EQUAL(GetMockTime(), 1600000060);
+    }
+    BOOST_CHECK_EQUAL(GetMockTime(), 0);
+
+    MockTimeGuard outer(1600000000);
+    {
+        MockTimeGuard inner(1700000000);
+        BOOST_CHECK_EQUAL(GetMockTime(), 1700000000);
+    }
+    BOOST_CHECK_EQUAL(GetMockTime(), 1600000000);
+
+    try {
+        MockTimeGuard guard(1700000000);
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK_EQUAL(GetMockTime(), 1600000000);
+
+    {
+        MockTimeGuard guard;
+        BOOST_CHECK_EQUAL(GetMockTime(), 1600000000);
+        SetMockTime(1700000000);
+    }
+    BOOST_CHECK_EQUAL(GetMockTime(), 1600000000);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

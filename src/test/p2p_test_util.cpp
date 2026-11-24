@@ -136,7 +136,7 @@ void P2PTestPeer::SendVersion()
     // The time in the version message is the node's own, so the time offset sample it adds
     // (AddTimeData) is 0.
     const int64_t nTime = GetTime();
-    P2PTestMockTime now(nTime);
+    MockTimeGuard now(nTime);
     SendMessage(CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::VERSION, m_options.nVersion, (uint64_t)m_options.services, nTime,
                                                        CAddress(CService(), NODE_NONE), CAddress(CService(), m_options.services),
                                                        TestNonce(), std::string("/p2p_test:1.0/"), m_options.nStartingHeight,
@@ -233,21 +233,6 @@ CNodeStateStats P2PTestPeer::Stats() const
     CNodeStateStats stats;
     BOOST_REQUIRE(GetNodeStateStats(m_node->GetId(), stats));
     return stats;
-}
-
-P2PTestMockTime::P2PTestMockTime(int64_t nTime) : m_saved(GetMockTime())
-{
-    SetMockTime(nTime);
-}
-
-P2PTestMockTime::~P2PTestMockTime()
-{
-    SetMockTime(m_saved);
-}
-
-void P2PTestMockTime::Set(int64_t nTime)
-{
-    SetMockTime(nTime);
 }
 
 P2PTestHashWorkers::P2PTestHashWorkers(int nThreads) : m_saved(nHashCalcThreads)

@@ -38,10 +38,10 @@ bool SignaturesValid(const CWallet& wallet, const CTransaction& tx)
 
 /** Restores the fee settings of the wallet at the end of the scope */
 struct FeeSettingsGuard {
-    ScopedValue<CFeeRate> payFee{payTxFee, payTxFee};
-    ScopedValue<CFeeRate> minFee{CWallet::minTxFee, CWallet::minTxFee};
-    ScopedValue<CFeeRate> minRelayFee{::minRelayTxFee, ::minRelayTxFee};
-    ScopedValue<CAmount> maxFee{maxTxFee, maxTxFee};
+    ValueGuard<CFeeRate> payFee{payTxFee, payTxFee};
+    ValueGuard<CFeeRate> minFee{CWallet::minTxFee, CWallet::minTxFee};
+    ValueGuard<CFeeRate> minRelayFee{::minRelayTxFee, ::minRelayTxFee};
+    ValueGuard<CAmount> maxFee{maxTxFee, maxTxFee};
 };
 
 } // namespace
@@ -232,7 +232,7 @@ BOOST_AUTO_TEST_CASE(create_transaction_failures)
     const CTxDestination dest = key.GetPubKey().GetID();
     const CNewToken token;
     {
-        ScopedValue<int32_t> notActive(nTokenSupportBlockNumber, chainActive.Height() + 10);
+        ValueGuard<int32_t> notActive(nTokenSupportBlockNumber, chainActive.Height() + 10);
         BOOST_CHECK(!wallet->CreateTransactionWithTransferToken({CRecipient{other, COIN, false}}, wtx, reservekey, nFee,
                                                                 nChangePos, strFailReason, CCoinControl()));
     }

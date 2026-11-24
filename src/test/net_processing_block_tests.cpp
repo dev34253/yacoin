@@ -212,7 +212,7 @@ P2PTestPeerOptions Client()
  * change nothing. The tip is not recent here, so no block is requested directly. */
 void CheckHeadersOnTip(BlockSyncSetup& setup)
 {
-    P2PTestMockTime later(setup.Tip()->GetBlockTime() + 30 * 60);
+    MockTimeGuard later(setup.Tip()->GetBlockTime() + 30 * 60);
     P2PTestPeer peer(*setup.peerLogic);
     const CBlockIndex* pindexTip = setup.Tip();
     const std::vector<CBlock> blocks = setup.BuildOnTip(3);
@@ -273,7 +273,7 @@ BOOST_AUTO_TEST_CASE(empty_headers_message)
  * after the last one */
 BOOST_AUTO_TEST_CASE(full_headers_message_asks_for_more)
 {
-    P2PTestMockTime later(Tip()->GetBlockTime() + 30 * 60);
+    MockTimeGuard later(Tip()->GetBlockTime() + 30 * 60);
     P2PTestPeer peer(*peerLogic);
     const std::vector<CBlock> blocks = BuildOnTip(2000);
 
@@ -295,7 +295,7 @@ BOOST_AUTO_TEST_CASE(full_headers_message_asks_for_more)
  * the peer, earliest first, and mark them in flight; the same headers again request nothing */
 BOOST_AUTO_TEST_CASE(direct_fetch_requests_missing_blocks)
 {
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     P2PTestPeer peer(*peerLogic);
     const int nHeight = Height();
     const std::vector<CBlock> blocks = BuildOnTip(3);
@@ -314,8 +314,8 @@ BOOST_AUTO_TEST_CASE(direct_fetch_requests_missing_blocks)
 /** Direct fetch requests at most the per-peer limit of blocks in flight */
 BOOST_AUTO_TEST_CASE(direct_fetch_stops_at_per_peer_limit)
 {
-    P2PTestValue<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    ValueGuard<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     P2PTestPeer peer(*peerLogic);
     const int nHeight = Height();
     const std::vector<CBlock> blocks = BuildOnTip(3);
@@ -331,8 +331,8 @@ BOOST_AUTO_TEST_CASE(direct_fetch_stops_at_per_peer_limit)
  * direct fetch requests nothing and leaves the blocks to the block download in SendMessages */
 BOOST_AUTO_TEST_CASE(direct_fetch_leaves_longer_paths_to_block_download)
 {
-    P2PTestValue<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    ValueGuard<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     P2PTestPeer peer(*peerLogic);
     const std::vector<CBlock> blocks = BuildOnTip(4);
 
@@ -346,7 +346,7 @@ BOOST_AUTO_TEST_CASE(direct_fetch_leaves_longer_paths_to_block_download)
  * compact block, which the node cannot process; it should ask for the block itself */
 BOOST_AUTO_TEST_CASE(direct_fetch_of_one_block_after_sendcmpct)
 {
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     P2PTestPeer peer(*peerLogic);
     const std::vector<CBlock> blocks = BuildOnTip(1);
 
@@ -719,7 +719,7 @@ BOOST_AUTO_TEST_CASE(getblocks_limit_and_continuation)
 /** Requested blocks are connected as they arrive and leave flight; the peer is not scored */
 BOOST_AUTO_TEST_CASE(requested_blocks_are_connected)
 {
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     P2PTestPeer peer(*peerLogic);
     const int nHeight = Height();
     const std::vector<CBlock> blocks = BuildOnTip(2);
@@ -798,9 +798,9 @@ BOOST_AUTO_TEST_CASE(headers_requested_from_first_suitable_peer)
  * best block */
 BOOST_AUTO_TEST_CASE(block_download_in_order)
 {
-    P2PTestValue<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
+    ValueGuard<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
     // The tip is not recent, so the headers do not make the node request blocks directly
-    P2PTestMockTime later(Tip()->GetBlockTime() + 30 * 60);
+    MockTimeGuard later(Tip()->GetBlockTime() + 30 * 60);
     P2PTestPeer peer(*peerLogic);
     const std::vector<CBlock> blocks = BuildOnTip(4);
     peer.Send(NetMsgType::HEADERS, P2PTestHeaders(blocks));
@@ -852,8 +852,8 @@ BOOST_AUTO_TEST_CASE(no_block_download_from_peer_behind)
  * the first */
 BOOST_AUTO_TEST_CASE(block_download_from_two_peers_is_disjoint)
 {
-    P2PTestValue<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    ValueGuard<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     const std::vector<CBlock> blocks = BuildOnTip(3);
 
     // The first peer announces the blocks by headers and is asked for the first two directly
@@ -880,7 +880,7 @@ BOOST_AUTO_TEST_CASE(block_download_from_two_peers_is_disjoint)
 BOOST_AUTO_TEST_CASE(headers_peer_asked_for_blocks_when_only_connection)
 {
     const std::vector<CBlock> blocks = BuildOnTip(2);
-    P2PTestMockTime later(blocks.back().GetBlockTime() + 25 * 60 * 60);
+    MockTimeGuard later(blocks.back().GetBlockTime() + 25 * 60 * 60);
     P2PTestPeer peer(*peerLogic);
     {
         P2PTestPeer client(*peerLogic, Client());
@@ -898,7 +898,7 @@ BOOST_AUTO_TEST_CASE(headers_peer_asked_for_blocks_when_only_connection)
  * is not sent getblocks */
 BOOST_AUTO_TEST_CASE(no_getblocks_when_headers_lead_the_tip)
 {
-    P2PTestValue<unsigned int> trigger(HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS, 2);
+    ValueGuard<unsigned int> trigger(HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS, 2);
     const std::vector<CBlock> blocks = BuildOnTip(4);
     AcceptHeaders(blocks);
     const CBlockIndex* pindexBestHeader = BestHeader();
@@ -916,9 +916,9 @@ BOOST_AUTO_TEST_CASE(no_getblocks_when_headers_lead_the_tip)
  * directly. */
 BOOST_AUTO_TEST_CASE(peer_holding_window_start_is_disconnected)
 {
-    P2PTestValue<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
-    P2PTestValue<unsigned int> window(BLOCK_DOWNLOAD_WINDOW, 2);
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    ValueGuard<int> limit(MAX_BLOCKS_IN_TRANSIT_PER_PEER, 2);
+    ValueGuard<unsigned int> window(BLOCK_DOWNLOAD_WINDOW, 2);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     const std::vector<CBlock> blocks = BuildOnTip(3);
 
     P2PTestPeer holder(*peerLogic, Client());

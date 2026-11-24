@@ -5,9 +5,9 @@
 #ifndef YACOIN_TEST_STAKE_TEST_UTIL_H
 #define YACOIN_TEST_STAKE_TEST_UTIL_H
 
-// Helpers of the legacy proof-of-stake tests: guards for globals, arguments and the mock
-// time, real mainnet blocks 644 and 82204 (the coin and the coinstake of the lowest
-// proof-of-stake block) and synthetic block index entries for their kernel.
+// Helpers of the legacy proof-of-stake tests: guards for globals and arguments, real mainnet
+// blocks 644 and 82204 (the coin and the coinstake of the lowest proof-of-stake block) and
+// synthetic block index entries for their kernel.
 
 #include "chainparams.h"
 #include "primitives/block.h"
@@ -42,25 +42,11 @@ struct KernelSetup : public StakeForkHeight, public TestingSetup {
     KernelSetup() : StakeForkHeight(), TestingSetup(CBaseChainParams::MAIN) {}
 };
 
-/** Sets a variable while it lives */
-template <typename T>
-struct ValueGuard {
-    T& m_ref;
-    T m_saved;
-    ValueGuard(T& ref, T value) : m_ref(ref), m_saved(ref) { ref = value; }
-    ~ValueGuard() { m_ref = m_saved; }
-};
-
 /** -debug on, and -printstakemodifier if fPrint, while it lives */
 struct StakeLogGuard {
     ValueGuard<bool> debug{fDebug, true};
     ArgGuard print;
     explicit StakeLogGuard(bool fPrint) : print("-printstakemodifier", fPrint ? "1" : "0") {}
-};
-
-struct MockTimeGuard {
-    explicit MockTimeGuard(::int64_t nTime) { SetMockTime(nTime); }
-    ~MockTimeGuard() { SetMockTime(0); }
 };
 
 /** A registered block index entry on top of pprev (nullptr: genesis) with the given entropy bit */

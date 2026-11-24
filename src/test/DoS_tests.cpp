@@ -85,7 +85,7 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
     int64_t nStartTime = GetTime();
     {
         // Wait 21 minutes
-        P2PTestMockTime mockTime(nStartTime+21*60);
+        MockTimeGuard mockTime(nStartTime+21*60);
         peerLogic->SendMessages(&dummyNode1, interruptDummy); // should result in getheaders
 
         BOOST_CHECK(dummyNode1.vSendMsg.size() > 0);
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
         BOOST_CHECK(node->fDisconnect == false);
     }
 
-    P2PTestMockTime mockTime(GetTime() + 3*consensusParams.nPowTargetSpacing + 1);
+    MockTimeGuard mockTime(GetTime() + 3*consensusParams.nPowTargetSpacing + 1);
 
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer
@@ -254,7 +254,7 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
 
     connman->ClearBanned();
     int64_t nStartTime = GetTime();
-    P2PTestMockTime mockTime(nStartTime); // Overrides future calls to GetTime()
+    MockTimeGuard mockTime(nStartTime); // Overrides future calls to GetTime()
 
     CAddress addr(ip(0xa0b0c001), NODE_NONE);
     CNode dummyNode(id++, NODE_NETWORK, 0, INVALID_SOCKET, addr, 4, 4, CAddress(), "", true);

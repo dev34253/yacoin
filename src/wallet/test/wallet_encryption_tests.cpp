@@ -400,7 +400,7 @@ BOOST_AUTO_TEST_CASE(keypool_of_locked_wallet)
 {
     LockedWallet locked;
     CWallet& wallet = locked.wallet;
-    ScopedMockTime mockTime(1600000000);
+    MockTimeGuard mockTime(1600000000);
 
     // Nothing can be taken from or added to an empty keypool while locked
     CPubKey pubkey;
@@ -484,7 +484,7 @@ BOOST_AUTO_TEST_CASE(send_money_refusals)
     AddWalletTestKey(wallet, NewWalletTestKey());
     CWalletTx wtx;
     {
-        ScopedValue<bool> mintOnly(fWalletUnlockMintOnly, true);
+        ValueGuard<bool> mintOnly(fWalletUnlockMintOnly, true);
         BOOST_CHECK_EQUAL(wallet.SendMoney(CScript() << OP_TRUE, COIN, wtx),
                           "Error: Wallet unlocked for block minting only, unable to create transaction.");
     }
