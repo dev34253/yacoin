@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# Image checks, run locally.
+# Image checks, run locally; CI runs the lint step.
 #
 # Usage: ci/containers/check.sh [--steps LIST] [image...]
 #
 # Steps (default: lint,tag,static,devsh,build,smoke,ccache; all images by
 # default):
-#   lint    bash -n and shellcheck --severity=warning on the scripts here,
-#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE),
-#           and every uses: under .github/ names a local action or a
-#           published action by full commit SHA with its version in a comment
-#           (first on planted copies, each with its expected result)
+#   lint    bash -n and shellcheck --severity=warning on the scripts of
+#           LINT_SCRIPTS (here, dev.sh, contrib/devtools/run-unit-suites.sh
+#           and coverage-capture.sh, ci/depends-sources.sh, the image
+#           action's registry-state.sh), no grep -q at the end of a pipe in
+#           them (pipefail and SIGPIPE), actionlint on .github/workflows/*.yml
+#           (its shellcheck on the run: scripts at the same severity), the
+#           versions of both tools, and every uses: under .github/ names a
+#           local action or a published action by full commit SHA with its
+#           version in a comment (first on planted copies, each with its
+#           expected result: an archive with another SHA-256 refused; a
+#           warning of shellcheck, workflow errors and a grep -q in dev.sh
+#           and run-unit-suites.sh reported; notes passed)
 #   tag     test-image-tag.sh: the image tags (image-tag.sh), the CI
 #           workflow's use of them, its jobs and caches, and
 #           all-jobs-passed.sh (needs jq)
@@ -117,8 +124,11 @@
 #           with at least 90% hits, and take at most half the time ("cross"
 #           job of docker-check.yml, extended)
 #
-# The shellcheck binary comes from the host if installed, otherwise from Ubuntu 22.04's
-# package in a throwaway container. CHECK_WORKDIR keeps the work files.
+# The lint tools come from the release archives of shellcheck and actionlint
+# (SHELLCHECK_URL, ACTIONLINT_URL), kept in $DEV_CACHE/lint (DEV_CACHE as for
+# dev.sh). The tools run in the pinned Ubuntu 22.04 base, so local and CI runs use the same
+# versions; the archives are checked against pinned SHA-256 hashes before use.
+# CHECK_WORKDIR keeps the work files.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -152,18 +162,6 @@ failures=()
 pass() { echo "PASS  $*"; }
 fail() { echo "FAIL  $*"; failures+=("$*"); }
 
-# The pinned base of the 22.04 image, so the fallback is as reproducible as it.
-shellcheck_cmd() {
-    if command -v shellcheck >/dev/null; then
-        shellcheck "$@"
-    else
-        local base
-        base=$(sed -n 's/^FROM //p' "$HERE/Dockerfile.ubuntu.22.04")
-        docker run --rm -v "$HERE:/w:ro" -w /w "$base" bash -c \
-            'apt-get update -qq && apt-get install -y -qq shellcheck >/dev/null 2>&1 && shellcheck "$@"' _ "$@"
-    fi
-}
-
 # The lint tools: release archives of shellcheck and actionlint, checked
 # against these SHA-256 hashes before use.
 SHELLCHECK_VERSION=0.11.0
@@ -184,6 +182,96 @@ LINT_SCRIPTS=(ci/containers/entrypoint.sh ci/containers/entrypoint.windows.sh ci
 # scripts at the same severity.
 LINT_SHELLCHECK=(shellcheck -x -P SCRIPTDIR --severity=warning -f gcc)
 LINT_ACTIONLINT=(env SHELLCHECK_OPTS=--severity=warning actionlint -no-color -oneline -pyflakes=)
+
+# archive_ok <file> <sha256>: succeeds when the file's SHA-256 is <sha256>;
+# otherwise prints "<file>: SHA-256 <hash>, want <sha256>" and fails.
+archive_ok() {
+    local got=""
+    [[ -f "$1" ]] && got=$(sha256sum "$1") && got=${got%% *}
+    [[ "$got" == "$2" ]] && return 0
+    echo "$1: SHA-256 ${got:-none (no such file)}, want $2"
+    return 1
+}
+
+# The archives are kept between runs in lint/ of dev.sh's cache.
+lint_cache_dir() { echo "${DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev}/lint"; }
+
+# lint_fetch <dir>: copies the two archives from the cache into <dir>, each
+# downloaded into the cache first when the cache has no copy with its pinned
+# SHA-256 (a download with another hash is removed). Prints a line for each
+# archive it could not provide and then fails.
+lint_fetch() {
+    local dir="$1" cache name url sha tmp out status=0
+    cache=$(lint_cache_dir)
+    mkdir -p "$dir" "$cache"
+    while read -r name url sha; do
+        if ! archive_ok "$cache/$name" "$sha" > /dev/null; then
+            tmp=$(mktemp "$cache/.$name.XXXXXX")
+            if ! curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 120 --retry 3 \
+                    -o "$tmp" "$url"; then
+                rm -f "$tmp"; echo "cannot download $url (or put $name into $cache)"; status=1; continue
+            fi
+            if ! out=$(archive_ok "$tmp" "$sha"); then
+                rm -f "$tmp"; echo "$url: ${out#"$tmp: "}; not kept"; status=1; continue
+            fi
+            mv -f "$tmp" "$cache/$name"
+        fi
+        cp "$cache/$name" "$dir/$name"
+    done <<EOF
+$SHELLCHECK_ARCHIVE $SHELLCHECK_URL $SHELLCHECK_SHA256
+$ACTIONLINT_ARCHIVE $ACTIONLINT_URL $ACTIONLINT_SHA256
+EOF
+    return "$status"
+}
+
+# The pinned base of the 22.04 image, pulled if missing (up to three tries).
+lint_base() {
+    local base i
+    base=$(sed -n 's/^FROM //p' "$HERE/Dockerfile.ubuntu.22.04")
+    for i in 1 2 3; do
+        if docker image inspect "$base" > /dev/null 2>&1 || docker pull -q --platform linux/amd64 "$base" > /dev/null; then
+            echo "$base"; return 0
+        fi
+        (( i == 3 )) || sleep 5
+    done
+    echo "cannot pull $base" >&2
+    return 1
+}
+
+# lint_tools <archive dir> <tree> <command> [arg...]: runs the command in the
+# pinned Ubuntu 22.04 base with the shellcheck and actionlint of the archives
+# in <archive dir> on PATH, without network, <tree> mounted read-only as the
+# working directory. Both archives are checked against their pinned SHA-256
+# first; when one differs, nothing runs and it returns 2.
+lint_tools() {
+    local archives="$1" tree="$2" base
+    shift 2
+    if ! archive_ok "$archives/$SHELLCHECK_ARCHIVE" "$SHELLCHECK_SHA256" ||
+       ! archive_ok "$archives/$ACTIONLINT_ARCHIVE" "$ACTIONLINT_SHA256"; then
+        return 2
+    fi
+    base=$(lint_base) || return 2
+    # shellcheck disable=SC2016 # expanded inside the container
+    docker run --rm --network none --platform linux/amd64 -v "$archives:/archives:ro" -v "$tree:/w:ro" -w /w "$base" \
+        bash -c 'mkdir /tmp/sc /tmp/al && tar -xzf "/archives/$1" -C /tmp/sc && tar -xzf "/archives/$2" -C /tmp/al &&
+                 PATH="/tmp/sc/shellcheck-v$3:/tmp/al:$PATH" && shift 3 && exec "$@"' \
+        _ "$SHELLCHECK_ARCHIVE" "$ACTIONLINT_ARCHIVE" "$SHELLCHECK_VERSION" "$@"
+}
+
+# lint_pipes <root>: prints "<script>:<line>: <text>" for each grep -q at the
+# end of a pipe in the scripts of LINT_SCRIPTS under <root>. Under pipefail,
+# grep -q may exit on the first match, the command before it gets SIGPIPE and
+# the pipe reads as no match. A pipe continued on the next line counts too;
+# comments do not.
+lint_pipes() {
+    (cd "$1" && awk '
+        FNR == 1 { prev = "" }
+        { line = $0; if (prev ~ /(^|[^|])\|[[:space:]]*$/) line = "|" line; prev = $0 }
+        $0 !~ /^[[:space:]]*#/ &&
+        line ~ /(^|[^|])\|[[:space:]]*grep[[:space:]]+(-[A-Za-z]+[[:space:]]+)*(-[A-Za-z]*q|--quiet|--silent)/ {
+            print FILENAME ":" FNR ": " $0
+        }' "${LINT_SCRIPTS[@]}")
+}
 
 # lint_archive_plant <archive>: a copy of the archives with <archive>
 # replaced by another tar.gz of that name; lint_tools must refuse it with a
@@ -265,6 +353,21 @@ lint_pipe_plant() {
 }
 
 step_lint() {
+    local f out st archives="$work/lint-tools" workflows=()
+    rm -rf "$archives"
+    if out=$(lint_fetch "$archives"); then
+        for f in "$SHELLCHECK_ARCHIVE $SHELLCHECK_SHA256" "$ACTIONLINT_ARCHIVE $ACTIONLINT_SHA256"; do
+            out=$(archive_ok "$archives/${f% *}" "${f#* }") && pass "lint: ${f% *} has its pinned SHA-256" || fail "lint: $out"
+        done
+    else
+        while IFS= read -r f; do fail "lint: $f"; done <<< "$out"
+    fi
+    out=$(lint_tools "$archives" "$ROOT" shellcheck --version 2>&1) || true
+    [[ "$out" == *"version: $SHELLCHECK_VERSION"* ]] && pass "lint: shellcheck version $SHELLCHECK_VERSION" ||
+        fail "lint: shellcheck --version gives '$out', want $SHELLCHECK_VERSION"
+    out=$(lint_tools "$archives" "$ROOT" actionlint -version 2>&1) || true
+    [[ "${out%%$'\n'*}" == "$ACTIONLINT_VERSION" ]] && pass "lint: actionlint version $ACTIONLINT_VERSION" ||
+        fail "lint: actionlint -version gives '$out', want $ACTIONLINT_VERSION"
     lint_archive_plant "$SHELLCHECK_ARCHIVE"
     lint_archive_plant "$ACTIONLINT_ARCHIVE"
     lint_shellcheck_plant SC2034 'x=1'
@@ -277,28 +380,28 @@ step_lint() {
     lint_actionlint_plant 0 '' plain.yml '      - run: echo'
     lint_pipe_plant dev.sh
     lint_pipe_plant contrib/devtools/run-unit-suites.sh
-    local f scripts=(entrypoint.sh entrypoint.windows.sh entrypoint.macos.sh run.sh parity.sh check.sh
-                     image-tag.sh test-image-tag.sh all-jobs-passed.sh)
-    for f in "${scripts[@]}"; do
-        bash -n "$HERE/$f" && pass "lint: bash -n $f" || fail "lint: bash -n $f"
+
+    for f in "${LINT_SCRIPTS[@]}"; do
+        bash -n "$ROOT/$f" && pass "lint: bash -n $f" || fail "lint: bash -n $f"
     done
-    (cd "$HERE" && shellcheck_cmd -x --severity=warning "${scripts[@]}") &&
-        pass "lint: shellcheck ${scripts[*]}" || fail "lint: shellcheck"
-    # Under pipefail, grep -q at the end of a pipe may exit on the first
-    # match, the command before it gets SIGPIPE and the pipe reads as no
-    # match. A pipe continued on the next line counts too; comments do not.
-    local piped
-    piped=$(cd "$HERE" && awk '
-        FNR == 1 { prev = "" }
-        { line = $0; if (prev ~ /(^|[^|])\|[[:space:]]*$/) line = "|" line; prev = $0 }
-        $0 !~ /^[[:space:]]*#/ &&
-        line ~ /(^|[^|])\|[[:space:]]*grep[[:space:]]+(-[A-Za-z]+[[:space:]]+)*(-[A-Za-z]*q|--quiet|--silent)/ {
-            print FILENAME ":" FNR ": " $0
-        }' "${scripts[@]}")
-    if [[ -z "$piped" ]]; then
-        pass "lint: no grep -q at the end of a pipe"
+    out=$(lint_tools "$archives" "$ROOT" "${LINT_SHELLCHECK[@]}" "${LINT_SCRIPTS[@]}" 2>&1) && st=0 || st=$?
+    if [[ "$st" == 0 && -z "$out" ]]; then
+        pass "lint: shellcheck --severity=warning ${LINT_SCRIPTS[*]}"
     else
-        while read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$piped"
+        while IFS= read -r f; do fail "lint: shellcheck (status $st): $f"; done <<< "$out"
+    fi
+    mapfile -t workflows < <(cd "$ROOT" && printf '%s\n' .github/workflows/*.yml)
+    out=$(lint_tools "$archives" "$ROOT" "${LINT_ACTIONLINT[@]}" "${workflows[@]}" 2>&1) && st=0 || st=$?
+    if [[ "$st" == 0 && -z "$out" ]]; then
+        pass "lint: actionlint ${workflows[*]}"
+    else
+        while IFS= read -r f; do fail "lint: actionlint (status $st): $f"; done <<< "$out"
+    fi
+    out=$(lint_pipes "$ROOT" 2>&1) || true
+    if [[ -z "$out" ]]; then
+        pass "lint: no grep -q at the end of a pipe in ${#LINT_SCRIPTS[@]} scripts"
+    else
+        while IFS= read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$out"
     fi
     lint_uses
 }
