@@ -5,10 +5,14 @@
 #
 # Steps (default: lint,tag,static,devsh,build,smoke,ccache; all images by
 # default):
-#   lint    bash -n and shellcheck --severity=warning on the scripts here, and
-#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE)
-#   tag     test-image-tag.sh: the image tags (image-tag.sh) and the CI
-#           workflow's use of them
+#   lint    bash -n and shellcheck --severity=warning on the scripts here,
+#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE),
+#           and every uses: under .github/ names a local action or a
+#           published action by full commit SHA with its version in a comment
+#           (first on planted copies, each with its expected result)
+#   tag     test-image-tag.sh: the image tags (image-tag.sh), the CI
+#           workflow's use of them, its jobs and caches, and
+#           all-jobs-passed.sh (needs jq)
 #   static  every Dockerfile pins its base image by digest and sets
 #           YACOIN_BUILD_IMAGE to its own name
 #   devsh   dev.sh's shared cache, on copies of dev.sh and depends/ (no
@@ -27,7 +31,11 @@
 #           coverage targets in one build and every functional test script
 #           whatever FTEST_SHARD says, ftest running the scripts on regtest
 #           with the regtest list left out, the variants func and cov-func
-#           refused, asan's
+#           refused, build passing its target to make in src/ (src/<path>
+#           as <path>, with one line on stderr; other targets unchanged; none
+#           for the whole build directory) and make's error and exit status
+#           for an unknown target, the help saying the target is relative to
+#           src/, asan's
 #           sanitizer options (the suppression file, the caller's own options
 #           kept) and its list of test cases left out, which unit does not pass
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
@@ -138,7 +146,7 @@ shellcheck_cmd() {
 
 step_lint() {
     local f scripts=(entrypoint.sh entrypoint.windows.sh entrypoint.macos.sh run.sh parity.sh check.sh
-                     image-tag.sh test-image-tag.sh)
+                     image-tag.sh test-image-tag.sh all-jobs-passed.sh)
     for f in "${scripts[@]}"; do
         bash -n "$HERE/$f" && pass "lint: bash -n $f" || fail "lint: bash -n $f"
     done
@@ -159,6 +167,85 @@ step_lint() {
         pass "lint: no grep -q at the end of a pipe"
     else
         while read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$piped"
+    fi
+    lint_uses
+}
+
+# unpinned_uses <dir>: prints every line of the *.yml and *.yaml files under
+# <dir> that holds uses: as a key and names neither a local action
+# (uses: ./<path>) nor a published action by full commit with its version in
+# a comment (uses: <owner>/<repo>[/<path>]@<40 hex>  # v<version>, with an
+# optional "- " before it), as "<file>:<line>: <rule>: <line>", the file
+# relative to the parent of <dir>. Comment lines are skipped; any other form
+# (quoted, flow) is reported. A <dir> without such files is reported too.
+UNPINNED_USES="uses: must be a local action (./...) or owner/repo[/path]@<40-hex commit>  # <version>"
+unpinned_uses() {
+    local base name f n line files=0
+    local comment='^[[:space:]]*#'
+    local key="(^|[^A-Za-z0-9_-])[\"']?uses[\"']?[[:space:]]*:"
+    local item='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+'
+    local local_action="$item"'\./[^[:space:]#]+[[:space:]]*$'
+    local pinned="$item"'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./-]+)?@[0-9a-f]{40}[[:space:]]+# v[0-9][0-9A-Za-z.+-]*[[:space:]]*$'
+    base=$(dirname "$1") name=$(basename "$1")
+    while IFS= read -r -d '' f; do
+        files=$((files + 1)) n=0
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            n=$((n + 1))
+            [[ ! "$line" =~ $comment && "$line" =~ $key ]] || continue
+            [[ "$line" =~ $local_action || "$line" =~ $pinned ]] ||
+                echo "$f:$n: $UNPINNED_USES: ${line#"${line%%[![:space:]]*}"}"
+        done < "$base/$f"
+    done < <(cd "$base" && find "$name" -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 | LC_ALL=C sort -z)
+    (( files > 0 )) || echo "$name: no *.yml or *.yaml files"
+}
+
+# lint_uses_plant <want> <file> <line>...: a copy of .github in $work with one
+# workflow <file> whose steps are the lines; the rule must report line <want>
+# of it (0: nothing).
+lint_uses_plant() {
+    local want="$1" file="$2" dir="$work/uses-plant/.github" out expect=""
+    shift 2
+    rm -rf "$dir"; mkdir -p "$dir/workflows"
+    printf '%s\n' 'on: push' 'jobs:' '  build:' '    runs-on: ubuntu-latest' '    steps:' "$@" > "$dir/workflows/$file"
+    out=$(unpinned_uses "$dir")
+    local label line
+    for line in "$@"; do [[ -n "${label:-}" || "$line" != *uses* ]] || label="${line#"${line%%[![:space:]]*}"}"; done
+    if (( want > 0 )); then
+        expect=$(sed -n "${want}p" "$dir/workflows/$file")
+        expect=".github/workflows/$file:$want: $UNPINNED_USES: ${expect#"${expect%%[![:space:]]*}"}"
+    fi
+    if [[ "$out" != "$expect" ]]; then
+        fail "lint: uses: planted '$label' in $file gives '$out', want '${expect:-nothing}'"
+    elif (( want > 0 )); then
+        pass "lint: uses: planted '$label' in $file fails: $out"
+    else
+        pass "lint: uses: planted '$label' in $file passes"
+    fi
+}
+
+lint_uses() {
+    local sha=d23441a48e516b6c34aea4fa41551a30e30af803 out f
+    lint_uses_plant 6 unpinned.yml '      - uses: actions/checkout@v6'
+    lint_uses_plant 6 short.yml '      - uses: actions/checkout@d23441a  # v6.1.0'
+    lint_uses_plant 6 no-version.yml "      - uses: actions/checkout@$sha"
+    lint_uses_plant 6 branch-comment.yml "      - uses: actions/checkout@$sha  # main"
+    lint_uses_plant 0 pinned.yml "      - uses: actions/checkout@$sha  # v6.1.0"
+    lint_uses_plant 0 pinned-key.yml '      - name: checkout' "        uses: actions/checkout@$sha  # v6.1.0"
+    lint_uses_plant 0 pinned-path.yml '      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0'
+    lint_uses_plant 0 local.yml '      - uses: ./.github/actions/yacoin-build-image'
+    lint_uses_plant 0 comment.yml '      # uses: actions/checkout@v6' '      - run: echo'
+    lint_uses_plant 6 flow.yml '      - { uses: actions/checkout@v6 }'
+    lint_uses_plant 6 quoted.yml "      - uses: \"actions/checkout@$sha\"  # v6.1.0"
+    lint_uses_plant 7 unpinned-key.yaml '      - name: checkout' '        uses: actions/checkout@v6'
+    rm -rf "$work/uses-plant"; mkdir -p "$work/uses-plant/.github"
+    out=$(unpinned_uses "$work/uses-plant/.github")
+    [[ "$out" == ".github: no *.yml or *.yaml files" ]] && pass "lint: uses: a directory without workflows is reported" ||
+        fail "lint: uses: a directory without workflows gives '$out'"
+    out=$(unpinned_uses "$ROOT/.github")
+    if [[ -z "$out" ]]; then
+        pass "lint: every uses: under .github/ names a local action or a published action by full commit SHA with its version in a comment"
+    else
+        while IFS= read -r f; do fail "lint: $f"; done <<< "$out"
     fi
 }
 
@@ -232,13 +319,16 @@ step_devsh() {
     [[ "$pa" != "$pb" && "$pb" =~ $want ]] && pass "devsh: a recipe change gives a new prefix ($pb)" ||
         fail "devsh: a recipe change gave the prefix $pb"
     # A stub make records its arguments and the start and end of its run,
-    # and writes the config.site of the prefix it gets. (b has other
+    # writes the config.site of the prefix it gets, and fails as make does
+    # on the target named by STUB_NO_RULE. (b has other
     # recipes now, so both runs build.)
     local bin="$work/devsh/bin" log="$work/devsh/make.log"
     mkdir -p "$bin"; rm -f "$log"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s
 ' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep 1; echo "end" >> "$STUB_LOG"' \
+        '[[ -z ${STUB_NO_RULE:-} || " $* " != *" $STUB_NO_RULE "* ]] ||' \
+        '    { echo "make: *** No rule to make target '\''$STUB_NO_RULE'\''.  Stop." >&2; exit 2; }' \
         'for x in "$@"; do [[ $x != x86_64_linux_prefix=* ]] || { mkdir -p "${x#*=}/share"; : > "${x#*=}/share/config.site"; }; done' \
         > "$bin/make"
     chmod +x "$bin/make"
@@ -358,6 +448,42 @@ step_devsh() {
     for v in func cov-func; do
         expect_status 2 "devsh: the variant $v is refused" env DEV_CACHE="$c" "$a/dev.sh" build "$v"
     done
+    # build passes a target to make in build/<variant>/src: a target given as
+    # src/<path> is built as <path> with one line on stderr, every other one
+    # goes to make unchanged, and make's error for an unknown target and its
+    # exit status come through.
+    local err="$work/devsh/err.log" tgt what
+    for tgt in src/test/test_bitcoin test/test_bitcoin src/ ""; do
+        rm -f "$log"; what="build dev${tgt:+ $tgt}"
+        PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" build dev ${tgt:+"$tgt"} > "$work/devsh/a.log" 2> "$err" ||
+            fail "devsh: $what in a"
+        got=$(grep "^start -C $a/build/dev[/ ]" "$log" || echo "no make run")
+        out=$(cat "$work/devsh/a.log" "$err")
+        case "$tgt" in
+            src/?*) want="start -C $a/build/dev/src -j[0-9]+ ${tgt#src/}" ;;
+            ?*) want="start -C $a/build/dev/src -j[0-9]+ $tgt" ;;
+            *) want="start -C $a/build/dev -j[0-9]+" ;;
+        esac
+        if [[ ! "$got" =~ ^$want$ ]]; then
+            fail "devsh: $what runs: $got (want $want)"
+        elif [[ $tgt == src/?* ]]; then
+            [[ "$(wc -l < "$err")" == 1 && "$(cat "$err")" == *"relative to src/"*" ${tgt#src/}" &&
+                "$(grep -c -- "$tgt" "$log")" == 0 && "$(grep -c -- "${tgt#src/}" <<< "$out")" == 1 ]] &&
+                pass "devsh: $what runs ${got#start } and says so: $(cat "$err")" ||
+                fail "devsh: $what runs ${got#start }, with the output: $out"
+        else
+            [[ ! -s "$err" ]] && pass "devsh: $what runs ${got#start }" ||
+                fail "devsh: $what runs ${got#start }, with on stderr: $(cat "$err")"
+        fi
+    done
+    expect_status 2 "devsh: build dev with an unknown target fails as make does" \
+        env PATH="$bin:$PATH" STUB_LOG="$log" STUB_NO_RULE=no/such/target DEV_CACHE="$c" "$a/dev.sh" build dev no/such/target
+    grep -q "No rule to make target 'no/such/target'" "$work/out.txt" ||
+        fail "devsh: build dev no/such/target does not name the target: $(cat "$work/out.txt")"
+    out=$(env DEV_CACHE="$c" "$a/dev.sh" 2>&1) || true
+    got=$(awk '/^  build /{p=1; print; next} p && /^      /{print; next} {p=0}' <<< "$out" | tr -s ' \n' '  ')
+    [[ "$got" == *"relative to src/"*"test/test_bitcoin"* ]] && pass "devsh: the help says build's target is relative to src/" ||
+        fail "devsh: the help's build entry: $got"
     # asan runs the suites with the tree's LeakSanitizer suppressions and its
     # default options, and keeps the caller's own (a configured build
     # directory, the stub make, and a runner that records its environment).

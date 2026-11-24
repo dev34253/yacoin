@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "test/fuzz/fuzz_util.h"
+#include "test/activation_test_util.h"
 
 #include "chainparams.h"
 #include "consensus/validation.h"
@@ -62,12 +63,12 @@ void InitFuzzNode()
     fDone = true;
 
     // The consensus values as the node sets them at start (init.cpp), with
-    // the test networks' N-factor
+    // the test networks' N-factor; the fork and token heights from the
+    // selected chain's activation table
     nEpochInterval = 21000;
     nDifficultyInterval = nEpochInterval;
     nFactorAtHardfork = 4;
-    nMainnetNewLogicBlockNumber = 1890000;
-    nTokenSupportBlockNumber = 1911210;
+    SetHeightsFromActivationTable();
     SetMockTime(FUZZ_NODE_TIME);
 
     InitSignatureCache();

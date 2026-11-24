@@ -43,6 +43,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+import warnings
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNNER = os.path.join(HERE, "..", "..", "..", "test", "functional", "test_runner.py")
@@ -286,6 +287,14 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertIsNone(status)
         # Also the run of the script with an argument.
         self.assertEqual(self.ran, [["mining_c.py", "wallet_a.py"]])
+
+    def test_main_leaves_no_file_open(self):
+        self.write_list("wallet_b.py\n")
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            status, _ = self.main("--extended", "--exclude-file=%s" % self.list)
+        self.assertIsNone(status)
+        self.assertEqual([str(w.message) for w in caught if issubclass(w.category, ResourceWarning)], [])
 
     def test_without_the_option_nothing_is_left_out(self):
         status, _ = self.main("--extended")

@@ -30,10 +30,12 @@
 #include "warnings.h"
 
 #include "test/test_bitcoin.h"
+#include "test/token_test_util.h"
 
 #include <functional>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #ifdef __linux__
@@ -45,26 +47,17 @@
 namespace {
 
 /** Regtest chain with mature coinbases, and the token database DisconnectBlock needs */
-struct ValidationSetup : public TestChain100Setup {
+struct ValidationSetup : public TestChain100Setup, public TokenDbGuard {
     CScript scriptPubKey;
     std::vector<CTransaction> matureCoinbases; // spendable
     std::vector<CTransaction> recentCoinbases; // the newest ones aren't mature yet
-    CTokensDB* prevTokensDb;
 
     ValidationSetup()
     {
-        prevTokensDb = ptokensdb;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
         scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
         matureCoinbases = coinbaseTxns;
         for (int i = 0; i < COINBASE_MATURITY_AFTER_HARDFORK; i++)
             recentCoinbases.push_back(CreateAndProcessBlock({}, scriptPubKey).vtx[0]);
-    }
-
-    ~ValidationSetup()
-    {
-        delete ptokensdb;
-        ptokensdb = prevTokensDb;
     }
 
     /** Signed spend of output n of prev; `modify` changes the tx before signing */
@@ -230,16 +223,16 @@ struct UtxoSnapshot {
     }
 };
 
-/** Records shutdown requests while it lives, and clears the misc warning that
- *  AbortNode sets, both now with Reset() and again when it goes out of scope */
+/** Records shutdown requests while it lives, and puts back the misc warning it found (AbortNode
+ *  sets one), both now with Reset() and again when it goes out of scope */
 struct AbortGuard {
     ShutdownRequestRecorder recorder;
-    static void Reset()
+    MiscWarningGuard warning;
+    void Reset()
     {
         ShutdownRequestRecorder::Reset();
-        SetMiscWarning("");
+        warning.Restore();
     }
-    ~AbortGuard() { SetMiscWarning(""); }
 };
 
 /** Points a block's data or undo position elsewhere while it lives, by default past the
@@ -913,6 +906,30 @@ BOOST_AUTO_TEST_CASE(verify_db_failures)
 }
 
 
+/* AbortGuard puts back the misc warning it found: Reset() now, the destructor when it goes out
+ * of scope, also when the guarded block throws */
+BOOST_AUTO_TEST_CASE(abort_guard_restores_the_misc_warning)
+{
+    MiscWarningGuard outer;
+    SetMiscWarning("earlier warning");
+    {
+        AbortGuard abort;
+        SetMiscWarning("later warning");
+        abort.Reset();
+        BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+        SetMiscWarning("later warning");
+    }
+    BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+
+    try {
+        AbortGuard abort;
+        SetMiscWarning("later warning");
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+}
+
 /* The tip's block can't be read: InvalidateBlock fails with an error state (not an
  * invalid one), aborts (shutdown requested, warning set) and changes nothing; once the
  * block can be read again, the same call succeeds */
@@ -938,7 +955,7 @@ BOOST_AUTO_TEST_CASE(disconnect_tip_read_failure)
         BOOST_CHECK(!(pindexTip->nStatus & BLOCK_FAILED_MASK));
         BOOST_CHECK(mempool.exists(spend.GetHash()));
     }
-    AbortGuard::Reset();
+    abort.Reset();
 
     LOCK(cs_main);
     CValidationState state;
@@ -961,7 +978,7 @@ BOOST_AUTO_TEST_CASE(connect_tip_read_failure)
     // Stored without being connected: ActivateBestChain stops at once on a shutdown request
     StartShutdown();
     BOOST_REQUIRE(!Submit(block));
-    AbortGuard::Reset();
+    abort.Reset();
     CBlockIndex* pindex = Index(block);
     BOOST_REQUIRE(pindex->nStatus & BLOCK_HAVE_DATA);
     BOOST_REQUIRE(Tip() == pindexStart);
@@ -978,7 +995,7 @@ BOOST_AUTO_TEST_CASE(connect_tip_read_failure)
         BOOST_CHECK(!Failed(pindex));
         BOOST_CHECK(pindex->nStatus & BLOCK_HAVE_DATA);
     }
-    AbortGuard::Reset();
+    abort.Reset();
 
     CValidationState state;
     BOOST_CHECK(ActivateBestChain(state, Params()));
@@ -1004,7 +1021,7 @@ BOOST_AUTO_TEST_CASE(activate_best_chain_shutdown_requested)
         BOOST_CHECK(state.IsValid());
         BOOST_CHECK(Tip() == pindexStart);
     }
-    AbortGuard::Reset();
+    abort.Reset();
     {
         CValidationState state;
         BOOST_CHECK(ActivateBestChain(state, Params()));

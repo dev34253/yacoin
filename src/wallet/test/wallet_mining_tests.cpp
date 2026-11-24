@@ -17,6 +17,7 @@
 #include "wallet/test/wallet_chain_setup.h"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -25,15 +26,6 @@
 #include <univalue.h>
 
 namespace {
-
-/** Sets vpwallets while it lives */
-struct VpWalletsGuard {
-    std::vector<CWallet*> saved;
-    explicit VpWalletsGuard(const std::vector<CWallet*>& wallets) : saved(vpwallets) { vpwallets = wallets; }
-    ~VpWalletsGuard() { vpwallets = saved; }
-    VpWalletsGuard(const VpWalletsGuard&) = delete;
-    VpWalletsGuard& operator=(const VpWalletsGuard&) = delete;
-};
 
 uint256 TipHash()
 {
@@ -72,7 +64,7 @@ BOOST_FIXTURE_TEST_SUITE(wallet_mining_tests, WalletChainSetup)
 /* Without a wallet getwork is not available; its help is then empty */
 BOOST_AUTO_TEST_CASE(getwork_without_wallet)
 {
-    VpWalletsGuard noWallets({});
+    ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
     CheckRPCError("getwork", UniValue(UniValue::VARR), RPC_METHOD_NOT_FOUND,
                   "Method not found (wallet method is disabled because no wallet is loaded)");
     BOOST_CHECK(CallRPCHandler("getwork", UniValue(UniValue::VARR), true).isNull());
@@ -81,7 +73,7 @@ BOOST_AUTO_TEST_CASE(getwork_without_wallet)
 /* With a wallet: help and the connection check */
 BOOST_AUTO_TEST_CASE(getwork_checks)
 {
-    VpWalletsGuard oneWallet({wallet.get()});
+    ValueGuard<std::vector<CWallet*> > oneWallet(vpwallets, {wallet.get()});
     CheckRPCHelp("getwork", UniValue(UniValue::VARR), true);
     CheckRPCHelp("getwork", RPCParams("00", "00"), false);
 
@@ -130,6 +122,27 @@ BOOST_AUTO_TEST_CASE(checkwork_refuses)
     BOOST_REQUIRE(TipHash() == newTip.GetHash());
     BOOST_CHECK(!CheckWork(&stale, *wallet, reservekey));
     BOOST_CHECK(TipHash() == newTip.GetHash());
+}
+
+/* ValueGuard on vpwallets puts back the wallet list it found, also when its scope is left by an
+ * exception */
+BOOST_AUTO_TEST_CASE(vpwallets_guard_restores)
+{
+    const std::vector<CWallet*> vOne{wallet.get()};
+    ValueGuard<std::vector<CWallet*> > oneWallet(vpwallets, vOne);
+    {
+        ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
+        BOOST_CHECK(vpwallets.empty());
+    }
+    BOOST_CHECK(vpwallets == vOne);
+
+    try {
+        ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
+        BOOST_CHECK(vpwallets.empty());
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK(vpwallets == vOne);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

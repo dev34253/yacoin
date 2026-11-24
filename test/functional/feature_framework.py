@@ -36,7 +36,8 @@ regtest:
 - set_mocktime / mine_with_mocktime keep one forward-only clock on all
   nodes, also across restarts.
 - raw_rpc, rpcauth_value, the wallet fee rule and single_utxo_wallet.
-- known_failure passes while its check fails and fails once it passes.
+- known_failure passes while its check fails and fails once it passes; an
+  unexpected failure is logged at ERROR and raised unchanged.
 - the RPC client resends a request without a trace only when it cannot have
   reached the node, and with a warning when its reply was lost.
 - start_nodes, when one node fails to start, stops the nodes it connected
@@ -44,6 +45,8 @@ regtest:
   wait_for_exit_or_kill kills a node that does not exit in time.
 - --timeout-factor takes a finite number of at least 1; any other value is
   an argument error before a node starts.
+- a passing run writes no ERROR line to test_framework.log: the expected
+  ERROR records of the cases above are captured and checked.
 """
 
 from decimal import Decimal
@@ -74,6 +77,7 @@ from test_framework.util import (
     connect_nodes,
     get_auth_cookie,
     initialize_datadir,
+    known_failure,
     non_loopback_ipv4,
     p2p_port,
     peers,
@@ -192,6 +196,33 @@ class CaptureDebug(logging.Handler):
         logging.getLogger("TestFramework.utils").removeHandler(self)
 
 
+class CaptureLog(logging.Handler):
+    """Collects the records of the logger `name`, debug level included, and
+    keeps them from its parents' handlers (test_framework.log and the
+    console) until the block ends."""
+
+    def __init__(self, name):
+        super().__init__(logging.DEBUG)
+        self.logger = logging.getLogger(name)
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
+
+    def levels_and_messages(self):
+        return [(record.levelname, record.getMessage()) for record in self.records]
+
+    def __enter__(self):
+        self.saved_propagate = self.logger.propagate
+        self.logger.addHandler(self)
+        self.logger.propagate = False
+        return self
+
+    def __exit__(self, *exc):
+        self.logger.propagate = self.saved_propagate
+        self.logger.removeHandler(self)
+
+
 def read_lines(path):
     with open(path, encoding='utf8') as f:
         return f.read().splitlines()
@@ -264,6 +295,7 @@ class FrameworkTest(BitcoinTestFramework):
         self.test_start_nodes_failure()
         self.test_combine_logs()
         self.test_token_height_override()
+        self.test_no_error_lines()
 
     def test_mocktime_at_start(self):
         self.log.info("Nodes added after set_mocktime start on the test's clock")
@@ -548,13 +580,18 @@ class FrameworkTest(BitcoinTestFramework):
             nowhere.listen(8)
             drop_rpc_replies(node, *nowhere.getsockname())
             node.stop_node()
-            self.log.info("Expected: the next wait times out, and wait_until() logs its failure as an ERROR")
-            try:
-                node.wait_until_stopped(timeout=3)
-            except AssertionError as e:
-                assert "not true after 3 seconds" in str(e), str(e)
-            else:
-                raise AssertionError("wait_until_stopped returned for a node that is still running")
+            self.log.info("Expected: the next wait times out; its ERROR record is captured")
+            with CaptureLog("TestFramework.utils") as log:
+                try:
+                    node.wait_until_stopped(timeout=3)
+                except AssertionError as e:
+                    assert "not true after 3 seconds" in str(e), str(e)
+                else:
+                    raise AssertionError("wait_until_stopped returned for a node that is still running")
+            assert_equal([level for level, _ in log.levels_and_messages()], ["ERROR"])
+            message = log.levels_and_messages()[0][1]
+            assert message.startswith("wait_until() failed. Predicate: "), message
+            assert "self.is_node_stopped(" in message, message
         finally:
             nowhere.close()
         assert node.process.poll() is None
@@ -722,26 +759,36 @@ class FrameworkTest(BitcoinTestFramework):
         else:
             raise AssertionError("known_failure did not fail on a passing check")
 
-        self.log.info("known_failure raises an unexpected failure unchanged")
-        try:
-            self.known_failure("example bug", lambda: assert_equal(1, 2), "not(1 == 3)")
-        except AssertionError as e:
-            assert_equal(str(e), "not(1 == 2)")
-        else:
-            raise AssertionError("known_failure accepted the wrong assertion")
-        for expected in ("Method not found", -5):
+        self.log.info("known_failure raises an unexpected failure unchanged; its ERROR record is captured")
+        with CaptureLog("feature_framework.known_failure") as log:
             try:
-                self.known_failure("example bug", out_of_range, expected)
-            except JSONRPCException as e:
-                assert_equal(e.error['code'], -8)
+                known_failure(log.logger, "example bug", lambda: assert_equal(1, 2), "not(1 == 3)")
+            except AssertionError as e:
+                assert_equal(str(e), "not(1 == 2)")
             else:
-                raise AssertionError("known_failure accepted the wrong RPC error")
-        try:
-            self.known_failure("example bug", lambda: assert_equal(1, 2), -8)
-        except AssertionError as e:
-            assert_equal(str(e), "not(1 == 2)")
-        else:
-            raise AssertionError("known_failure matched an error code against an assertion")
+                raise AssertionError("known_failure accepted the wrong assertion")
+        assert_equal(log.levels_and_messages(), [
+            ("ERROR", "example bug: this failure is not the expected known failure (expected 'not(1 == 3)')")])
+        for expected, message in (
+                ("Method not found", "example bug: this failure is not the expected known failure (expected 'Method not found')"),
+                (-5, "example bug: this failure is not the expected known failure (expected -5)")):
+            with CaptureLog("feature_framework.known_failure") as log:
+                try:
+                    known_failure(log.logger, "example bug", out_of_range, expected)
+                except JSONRPCException as e:
+                    assert_equal(e.error['code'], -8)
+                else:
+                    raise AssertionError("known_failure accepted the wrong RPC error")
+            assert_equal(log.levels_and_messages(), [("ERROR", message)])
+        with CaptureLog("feature_framework.known_failure") as log:
+            try:
+                known_failure(log.logger, "example bug", lambda: assert_equal(1, 2), -8)
+            except AssertionError as e:
+                assert_equal(str(e), "not(1 == 2)")
+            else:
+                raise AssertionError("known_failure matched an error code against an assertion")
+        assert_equal(log.levels_and_messages(), [
+            ("ERROR", "example bug: this failure is not the expected known failure (expected -8)")])
 
     def use_connection(self, node, connection_class, **kwargs):
         """Send node's RPC calls through a new connection_class connection."""
@@ -894,6 +941,12 @@ class FrameworkTest(BitcoinTestFramework):
         output, sources = self.combine_logs(main_dir)
         assert_equal(sources, {"test", "node0"})
         assert "Done loading" in output
+
+    def test_no_error_lines(self):
+        self.log.info("The run has written no ERROR line to test_framework.log")
+        errors = [line for line in read_lines(os.path.join(self.options.tmpdir, "test_framework.log"))
+                  if " (ERROR)" in line]
+        assert not errors, "test_framework.log has an ERROR line: %s" % errors[0]
 
     def test_token_height_override(self):
         node = self.nodes[1]

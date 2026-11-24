@@ -11,6 +11,7 @@
 #include <boost/thread.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
 #include <future>
 
 BOOST_AUTO_TEST_SUITE(scheduler_tests)
@@ -124,14 +125,24 @@ BOOST_AUTO_TEST_CASE(idle_thread_runs_a_later_task)
     // serviceQueue holds the scheduler's lock from counting itself until it
     // has found the queue empty, so once it is counted it is in the idle
     // branch, and the task below is scheduled only after that.
-    while (!scheduler.AreThreadsServicingQueue()) {
+    // Both waits have a time limit, and the thread is stopped and joined before
+    // a failed wait ends the case.
+    const std::chrono::system_clock::time_point countedBy = std::chrono::system_clock::now() + std::chrono::seconds(60);
+    while (!scheduler.AreThreadsServicingQueue() && std::chrono::system_clock::now() < countedBy) {
         boost::this_thread::yield();
     }
+    const bool fCounted = scheduler.AreThreadsServicingQueue();
     std::promise<void> ran;
-    scheduler.schedule([&ran] { ran.set_value(); });
-    ran.get_future().wait();
+    bool fRan = false;
+    if (fCounted) {
+        std::future<void> future = ran.get_future();
+        scheduler.schedule([&ran] { ran.set_value(); });
+        fRan = future.wait_until(std::chrono::system_clock::now() + std::chrono::seconds(60)) == std::future_status::ready;
+    }
     scheduler.stop();
     service.join();
+    BOOST_REQUIRE_MESSAGE(fCounted, "the service thread was not counted within 60 s");
+    BOOST_REQUIRE_MESSAGE(fRan, "the task did not run within 60 s");
     BOOST_CHECK(!scheduler.AreThreadsServicingQueue());
 }
 

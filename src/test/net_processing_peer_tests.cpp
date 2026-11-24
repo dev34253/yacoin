@@ -318,7 +318,7 @@ BOOST_FIXTURE_TEST_SUITE(net_processing_peer_tests, PeerSetup)
  * the handshake and is answered with sendheaders. The answer is the same with IP logging off. */
 BOOST_AUTO_TEST_CASE(inbound_version_answered_with_version_and_verack)
 {
-    P2PTestValue<bool> logIPs(fLogIPs, false);
+    ValueGuard<bool> logIPs(fLogIPs, false);
     P2PTestPeerOptions options = NoHandshake(true);
     options.nStartingHeight = 7;
     options.fRelay = false;
@@ -898,7 +898,7 @@ BOOST_AUTO_TEST_CASE(invalid_orphans_score_their_sender_once)
  * whitelisted is disconnected, without a score. */
 BOOST_AUTO_TEST_CASE(mempool_request)
 {
-    P2PTestMockTime now(GetTime());
+    MockTimeGuard now(GetTime());
     const CTransaction tx = NewTransaction();
     AcceptHere(tx);
 
@@ -1084,7 +1084,7 @@ BOOST_AUTO_TEST_CASE(peers_not_banned)
  * manager. A score of 0 changes nothing either. */
 BOOST_AUTO_TEST_CASE(finalize_node)
 {
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     const std::vector<CBlock> blocks = BuildP2PTestChain(ReadP2PTestBlock(Tip()), Height(), 2);
     std::vector<uint256> hashes;
     for (const CBlock& block : blocks)
@@ -1193,7 +1193,7 @@ BOOST_AUTO_TEST_CASE(extra_outbound_peer_evicted)
     // That peer announces a new block by headers and is asked for it; the others announce later
     // still. It is the oldest again, and kept while the block is requested from it.
     {
-        P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+        MockTimeGuard now(Tip()->GetBlockTime() + 60);
         P2PTestPeer& requested = *peers[nFirstUnprotected];
         requested.Send(NetMsgType::HEADERS, P2PTestHeaders(BuildP2PTestChain(ReadP2PTestBlock(Tip()), Height(), 1)));
         BOOST_REQUIRE_EQUAL(requested.Stats().vHeightInFlight.size(), 1U);
@@ -1213,7 +1213,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_check)
     const int64_t nSpacing3 = Params().GetConsensus().nPowTargetSpacing * 3;
     // A start in the past, so that the last tip update this case leaves is old for later cases
     const int64_t nStart = GetTime() - 100000;
-    P2PTestMockTime now(nStart);
+    MockTimeGuard now(nStart);
     const std::shared_ptr<const CBlock> tipBlock = std::make_shared<const CBlock>(ReadP2PTestBlock(Tip()));
     peerLogic->BlockConnected(tipBlock, Tip(), {});
     connman->SetTryNewOutboundPeer(false);
@@ -1278,7 +1278,7 @@ BOOST_AUTO_TEST_CASE(connected_block_drops_conflicting_orphans)
 BOOST_AUTO_TEST_CASE(send_messages_starts_best_header_at_tip)
 {
     P2PTestPeer peer(*peerLogic);
-    P2PTestValue<CBlockIndex*> bestHeader(pindexBestHeader, nullptr);
+    ValueGuard<CBlockIndex*> bestHeader(pindexBestHeader, nullptr);
     peer.RunSendMessages();
     LOCK(cs_main);
     BOOST_CHECK(pindexBestHeader == chainActive.Tip());

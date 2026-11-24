@@ -33,9 +33,16 @@
 #     unit-tests-tsan, coverage-unit, coverage-functional-<n>) restore the
 #     functional-tests depends entry and save none; prune-caches runs only
 #     on a push to master, runs no docker and is the one job with
-#     actions: write. Planted copies of the workflow, each with one change,
-#     must fail their named check;
-#   - the workflow has 16 jobs.
+#     actions: write;
+#   - all-jobs-passed.sh passes only when every needed job succeeded (and
+#     prune-caches succeeded or, outside a push to master, was skipped), and
+#     fails on any other result and on empty, malformed or missing input;
+#   - the workflow's jobs are plain keys at two spaces under jobs:, the last
+#     top-level key; the workflow holds no continue-on-error; all-jobs-passed
+#     needs every other job, runs always and is written as expected. Planted
+#     copies of the workflow, each with one change, must fail their named
+#     check;
+#   - the workflow has 17 jobs.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -266,6 +273,78 @@ for k in 1 2; do
         grep -q "coverage/functional-$k/functional_test_functions.json" <<< "$job"
 done
 
+echo "== all-jobs-passed.sh =="
+passed="$HERE/all-jobs-passed.sh"
+check "all-jobs-passed.sh: jq is installed (the script needs it)" test -n "$(command -v jq)"
+# needs_json <job>=<result>...: the needs context of these jobs as toJSON(needs) gives it.
+needs_json() {
+    local kv sep="" out="{"
+    for kv in "$@"; do out+="$sep\"${kv%%=*}\": {\"result\": \"${kv#*=}\", \"outputs\": {}}"; sep=", "; done
+    echo "$out}"
+}
+# verdict <exit code> <case> <MASTER_PUSH> <NEEDS_JSON> [<line>]: the script
+# exits with <exit code> for these inputs (- leaves a variable unset) and
+# prints <line>; a failure prints an ::error:: line. The output stays in out.
+verdict() {
+    local code="$1" what="$2" master="$3" needs="$4" line="${5:-}" status=0
+    local cmd=(env -i PATH="$PATH")
+    [[ "$master" == - ]] || cmd+=(MASTER_PUSH="$master")
+    [[ "$needs" == - ]] || cmd+=(NEEDS_JSON="$needs")
+    out=$("${cmd[@]}" "$passed" 2>&1) || status=$?
+    check "all-jobs-passed.sh: $what: exit $code" test "$status" = "$code"
+    if [[ -n "$line" ]]; then check "all-jobs-passed.sh: $what: prints '$line'" grep -qxF "$line" <<< "$out"; fi
+    if [[ "$code" != 0 ]]; then check "all-jobs-passed.sh: $what: prints an error" grep -q '^::error::' <<< "$out"; fi
+}
+# input_error <case> <MASTER_PUSH> <NEEDS_JSON> <text>: the script exits 1
+# for these inputs with an ::error:: line that holds <text>.
+input_error() {
+    verdict 1 "$1" "$2" "$3"
+    check "all-jobs-passed.sh: $1: the error says '$4'" \
+        awk -v t="$4" 'index($0, "::error::") == 1 && index($0, t) { f = 1 } END { exit !f }' <<< "$out"
+}
+all_ok=$(needs_json job-a=success job-b=success prune-caches=success)
+verdict 0 "every job success" false "$all_ok" "3 of 3 needed jobs passed"
+verdict 0 "every job success, push to master" true "$all_ok" "ok   job-b: success"
+verdict 0 "every job success, multi-line JSON" false \
+    $'{\n  "job-a": {\n    "result": "success",\n    "outputs": {}\n  },\n  "job-b": {\n    "result": "success",\n    "outputs": {}\n  }\n}' \
+    "2 of 2 needed jobs passed"
+verdict 1 "one job failure" false "$(needs_json job-a=success job-b=failure prune-caches=success)" "FAIL job-b: failure"
+verdict 1 "one job failure, named in the error" false "$(needs_json job-a=success job-b=failure prune-caches=success)" \
+    "::error::1 of 3 needed jobs did not pass: job-b"
+verdict 1 "one job cancelled" false "$(needs_json job-a=success job-b=cancelled prune-caches=success)" "FAIL job-b: cancelled"
+verdict 1 "one job skipped" false "$(needs_json job-a=success job-b=skipped prune-caches=success)" "FAIL job-b: skipped"
+verdict 0 "prune-caches skipped, not a push to master" false "$(needs_json job-a=success job-b=success prune-caches=skipped)" \
+    "ok   prune-caches: skipped (not a push to master)"
+verdict 1 "prune-caches skipped, push to master" true "$(needs_json job-a=success job-b=success prune-caches=skipped)" \
+    "FAIL prune-caches: skipped"
+verdict 1 "prune-caches failure" false "$(needs_json job-a=success job-b=success prune-caches=failure)" \
+    "FAIL prune-caches: failure"
+verdict 1 "prune-caches cancelled" false "$(needs_json job-a=success prune-caches=cancelled)" "FAIL prune-caches: cancelled"
+verdict 0 "matrix job success" false "$(needs_json job-a=success matrix-job=success)" "ok   matrix-job: success"
+verdict 1 "matrix job failure" false "$(needs_json job-a=success matrix-job=failure)" "FAIL matrix-job: failure"
+verdict 1 "unknown result" false "$(needs_json job-a=success job-b=nosuchresult)" "FAIL job-b: nosuchresult"
+verdict 1 "two jobs not passed" false "$(needs_json job-a=failure job-b=cancelled)" \
+    "::error::2 of 2 needed jobs did not pass: job-a, job-b"
+object="not one non-empty JSON object"
+no_result="no result for a needed job"
+input_error "empty object" false '{}' "$object"
+input_error "empty array" false '[]' "$object"
+verdict 1 "malformed JSON" false '{"job-a": {"result": "success"'
+verdict 1 "not JSON" false 'not json'
+input_error "two objects" false "$(needs_json job-a=success) $(needs_json job-b=success)" "$object"
+input_error "a job without result" false '{"job-a": {"outputs": {}}}' "$no_result"
+input_error "a null result" false '{"job-a": {"result": null, "outputs": {}}}' "$no_result"
+input_error "a job that is not an object" false '{"job-a": "success"}' "$no_result"
+input_error "a result with a line break" false '{"job-a": {"result": "success\nFAIL", "outputs": {}}}' "$no_result"
+input_error "a last result ending in a line break" false \
+    '{"job-a": {"result": "success", "outputs": {}}, "job-b": {"result": "success\n", "outputs": {}}}' "$no_result"
+input_error "a job id with a space" false '{"job a": {"result": "success", "outputs": {}}}' "$no_result"
+input_error "a job id ending in a line break" false '{"job-a\n": {"result": "success", "outputs": {}}}' "$no_result"
+input_error "NEEDS_JSON empty" false '' "NEEDS_JSON is empty or unset"
+input_error "NEEDS_JSON unset" false - "NEEDS_JSON is empty or unset"
+input_error "MASTER_PUSH unset" - "$all_ok" "not true or false"
+input_error "MASTER_PUSH not true or false" yes "$all_ok" "not true or false"
+
 echo "== the workflow's caches =="
 # The cache steps of a workflow, read without a YAML parser from the layout
 # the workflow is written in (jobs at two spaces, steps at "      - ", their
@@ -273,6 +352,8 @@ echo "== the workflow's caches =="
 # line per fact:
 #   J <job> env <name> <value>     a variable of the job's env:
 #   J <job> if <condition>         the job's if:
+#   J <job> needs <job>            a job in the job's needs: (a flow list
+#                                  [a, b], a single job or a block list)
 #   J <job> perm <line>            a line of the job's permissions:
 #   W perm <line>                  a line of the workflow's permissions:
 #   C <job> <n> <field> <value>    the n-th actions/cache step of the job:
@@ -400,7 +481,16 @@ cache_records() {
             end_step()
             jsec = keyname(line)
             if (jsec == "if") printf "J\t%s\tif\t%s\n", job, value(line)
+            if (jsec == "needs" && value(line) != "") {
+                v = value(line)
+                if (v ~ /^\[.*\]$/) v = substr(v, 2, length(v) - 2)
+                nn = split(v, items, ",")
+                for (i = 1; i <= nn; i++) printf "J\t%s\tneeds\t%s\n", job, trim(items[i])
+            }
             next
+        }
+        if (jsec == "needs" && ind == 6 && trim(line) ~ /^- /) {
+            printf "J\t%s\tneeds\t%s\n", job, trim(substr(trim(line), 3)); next
         }
         if (jsec == "env" && ind == 6) { jenv[keyname(line)] = value(line); printf "J\t%s\tenv\t%s\t%s\n", job, keyname(line), value(line); next }
         if (jsec == "permissions" && ind == 6) { printf "J\t%s\tperm\t%s\n", job, trim(line); next }
@@ -594,6 +684,54 @@ cache_checks() {
 
 cache_checks "$wf"
 
+# all-jobs-passed as written, without its comments, blank lines and the
+# entries of its needs: block.
+aggregate_job="  all-jobs-passed:
+    needs:
+    if: \${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
+      - name: results of the needed jobs
+        env:
+          NEEDS_JSON: \${{ toJSON(needs) }}
+          MASTER_PUSH: \${{ $master_push }}
+        run: ci/containers/all-jobs-passed.sh"
+layout="the workflow's jobs are plain keys at two spaces"
+
+# aggregate_checks <workflow>: the checks of the workflow's jobs and of
+# all-jobs-passed, the job that needs every other job.
+aggregate_checks() {
+    local recs line bad others needed text
+    recs=$(cache_records "$1")
+    # Every line at two spaces under jobs: is a job key the checks here read,
+    # and jobs: is the last top-level key: no line after it starts in
+    # column 0 but blank lines and comments.
+    bad=$(awk '/^jobs:[ ]*$/ { on = 1; next }
+               on && /^[^ #]/ { print; next }
+               on && /^  [^ ]/ && !/^  #/ && !/^  [A-Za-z0-9_-]+:$/' "$1")
+    if [[ -z "$bad" ]]; then
+        pass "$layout"
+    else
+        while IFS= read -r line; do fail "$layout: $line"; done <<< "$bad"
+    fi
+    check "the workflow holds no continue-on-error" test -z "$(grep -F continue-on-error "$1" || true)"
+    others=$(awk -F'\t' '$1 == "J" && $3 == "name" && $2 != "all-jobs-passed" { print $2 }' <<< "$recs" | LC_ALL=C sort)
+    needed=$(awk -F'\t' '$1 == "J" && $2 == "all-jobs-passed" && $3 == "needs" { print $4 }' <<< "$recs" | LC_ALL=C sort)
+    check "all-jobs-passed needs every other job and nothing else" test "$needed" = "$others"
+    check "all-jobs-passed runs always" \
+        test "$(awk -F'\t' '$1 == "J" && $2 == "all-jobs-passed" && $3 == "if" { print $4 }' <<< "$recs")" = "\${{ always() }}"
+    text=$(job_text_of "$1" all-jobs-passed | awk '{ t = $0; sub(/^[ \t]+/, "", t) } t == "" || t ~ /^#/ { next }
+                                                   inneeds && /^      - / { next } { inneeds = ($0 == "    needs:"); print }')
+    check "all-jobs-passed is written as expected" test "$text" = "$aggregate_job"
+}
+
+echo "== the workflow's jobs and all-jobs-passed =="
+aggregate_checks "$wf"
+
 # plant <check> <job> <sed script>: a copy of the workflow with the script
 # applied to one job's lines must fail <check>.
 plant() {
@@ -604,7 +742,7 @@ plant() {
     if [[ -z "$range" ]]; then fail "planted ($want): the workflow has no job $job"; return; fi
     sed -e "$range{" -e "$script" -e "}" "$wf" > "$copy"
     if cmp -s "$wf" "$copy"; then fail "planted ($want): the copy is unchanged"; return; fi
-    out=$(cache_checks "$copy") || true
+    out=$(cache_checks "$copy"; aggregate_checks "$copy") || true
     check "planted copy of $job fails: $want" grep -qxF "FAIL  $want" <<< "$out"
 }
 plant "build-windows: the cache save runs only on a push to master" build-windows \
@@ -645,10 +783,31 @@ plant "prune-caches is the one job with actions: write" build-ubuntu-1604 \
     "/^      contents: read$/a\      actions: write"
 plant "prune-caches runs only on a push to master and runs no docker" prune-caches \
     "s/^    if: .*/    if: \${{ !cancelled() }}/"
+new_job='  new-job:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo'
+plant "all-jobs-passed needs every other job and nothing else" all-jobs-passed "/^      - unit-tests$/d"
+plant "all-jobs-passed needs every other job and nothing else" fuzz-corpus "/^  fuzz-corpus:$/i\\$new_job"
+plant "all-jobs-passed needs every other job and nothing else" all-jobs-passed \
+    "s/^      - functional-tests$/      - functional-test/"
+plant "all-jobs-passed runs always" all-jobs-passed "s/^    if: .*/    if: \${{ !cancelled() }}/"
+plant "all-jobs-passed runs always" all-jobs-passed "/^    if: /d"
+plant "all-jobs-passed is written as expected" all-jobs-passed "/MASTER_PUSH:/s/ && github\.ref == 'refs\/heads\/master'//"
+plant "all-jobs-passed is written as expected" all-jobs-passed \
+    "/^      - name: results of the needed jobs$/a\        if: \${{ false }}"
+plant "the workflow holds no continue-on-error" build-ubuntu-2204 "/^    timeout-minutes: 60$/a\    continue-on-error: true"
+plant "the workflow holds no continue-on-error" build-ubuntu-2204 "/^    timeout-minutes: 60$/a\    \"continue-on-error\": true"
+plant "the workflow holds no continue-on-error" build-ubuntu-2204 "/^    timeout-minutes: 60$/a\    continue-on-error : true"
+plant "the workflow holds no continue-on-error" build-ubuntu-2204 \
+    "/^      - uses: actions\/checkout@[0-9a-f]\{40\}  # v6\.1\.0$/a\      - { run: echo, continue-on-error: true }"
+plant "$layout:   new-job:  # x" fuzz-corpus "/^  fuzz-corpus:$/i\\${new_job/new-job:/new-job:  # x}"
+plant "$layout:   \"new-job\":" fuzz-corpus "/^  fuzz-corpus:$/i\\${new_job/new-job:/\"new-job\":}"
+# A quoted scalar continued at column 0, then a commented job key.
+continued='  new-job:\n    runs-on: ubuntu-latest\n    steps:\n      - run: "echo\nx"\n  hidden-job:  # x\n    runs-on: ubuntu-latest'
+plant "$layout: x\"" fuzz-corpus "/^  fuzz-corpus:$/i\\$continued"
+plant "$layout:   hidden-job:  # x" fuzz-corpus "/^  fuzz-corpus:$/i\\$continued"
 
 # A job added or removed is a deliberate change of this number.
-jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^[^ ]/ { exit } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
-check "${wf#"$ROOT"/}: 16 jobs ($jobs)" test "$jobs" = 16
+jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
+check "${wf#"$ROOT"/}: 17 jobs ($jobs)" test "$jobs" = 17
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do

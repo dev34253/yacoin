@@ -151,35 +151,6 @@ private:
     bool m_fFinalized;
 };
 
-/** Sets a global while it lives and puts the previous value back */
-template <typename T>
-class P2PTestValue
-{
-public:
-    P2PTestValue(T& ref, T value) : m_ref(ref), m_saved(ref) { m_ref = value; }
-    ~P2PTestValue() { m_ref = m_saved; }
-    P2PTestValue(const P2PTestValue&) = delete;
-    P2PTestValue& operator=(const P2PTestValue&) = delete;
-
-private:
-    T& m_ref;
-    const T m_saved;
-};
-
-/** Sets the mock time while it lives and puts the previous mock time (or none) back */
-class P2PTestMockTime
-{
-public:
-    explicit P2PTestMockTime(int64_t nTime);
-    ~P2PTestMockTime();
-    void Set(int64_t nTime);
-    P2PTestMockTime(const P2PTestMockTime&) = delete;
-    P2PTestMockTime& operator=(const P2PTestMockTime&) = delete;
-
-private:
-    const int64_t m_saved;
-};
-
 /** Sets nHashCalcThreads while it lives and runs nThreads - 1 header hash workers
  * (ThreadHashCalculation), as the node's start does; stops and joins them and puts the previous
  * value back. With nThreads above 1 the headers handler hashes the headers on the queue. */

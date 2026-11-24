@@ -29,9 +29,11 @@ jobs:
     env:
       IMAGE: ubuntu.16.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image tag tests
-        # How every job's image tag is computed (seconds, no Docker).
+        # How every job's image tag is computed, the checks of this
+        # workflow's jobs and caches, and all-jobs-passed.sh (seconds, no
+        # Docker).
         run: ci/containers/test-image-tag.sh
       - name: image
         id: image
@@ -61,7 +63,7 @@ jobs:
           echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -70,7 +72,7 @@ jobs:
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
           lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -96,29 +98,29 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f release-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoind-ubuntu-16.04
           path: ${{ github.workspace }}/release-root/bin/yacoind
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-qt-ubuntu-16.04
           path: ${{ github.workspace }}/release-root/bin/yacoin-qt
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-cli-ubuntu-16.04
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
@@ -136,7 +138,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -154,14 +156,14 @@ jobs:
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=functional-tests-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=functional-tests-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
             ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/depends-built-tests
             ${{ env.FUNC_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         with:
           path: ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/ccache
@@ -186,19 +188,19 @@ jobs:
           # The nodes write their datadirs with umask 077 as root.
           sudo chown -R "$(id -u):$(id -g)" "$FUNC_CACHE"
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/depends-built-tests
             ${{ env.FUNC_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.FUNC_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: functional-test-logs
@@ -231,7 +233,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -245,7 +247,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "ASAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -270,7 +272,7 @@ jobs:
           docker rm -f functional-tests-asan 2>/dev/null || true
           # The nodes write their datadirs with umask 077 as root.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: functional-test-logs-asan-${{ matrix.shard }}
@@ -292,7 +294,7 @@ jobs:
     env:
       IMAGE: ubuntu.16.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -310,14 +312,14 @@ jobs:
           echo "KEY_DEPENDS=unit-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=unit-tests-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=unit-tests-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
             ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/depends-built-tests
             ${{ env.UNIT_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         with:
           path: ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/ccache
@@ -340,19 +342,19 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f unit-tests 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" "$UNIT_CACHE"
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/depends-built-tests
             ${{ env.UNIT_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.UNIT_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: unit-test-logs
@@ -380,7 +382,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -394,7 +396,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "ASAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -419,7 +421,7 @@ jobs:
           docker rm -f unit-tests-asan 2>/dev/null || true
           # The unit test logs, written by root with umask 077.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: unit-test-logs-asan-${{ matrix.sanitize }}
@@ -441,7 +443,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -455,7 +457,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "TSAN_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -479,7 +481,7 @@ jobs:
           docker rm -f unit-tests-tsan 2>/dev/null || true
           # The unit test logs, written by root with umask 077.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: unit-test-logs-tsan
@@ -501,7 +503,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -515,7 +517,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "FUZZ_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -538,7 +540,7 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f fuzz-corpus 2>/dev/null || true
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: fuzz-corpus-logs
@@ -563,7 +565,7 @@ jobs:
     env:
       IMAGE: ubuntu.16.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -580,7 +582,7 @@ jobs:
           echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=low-difficulty-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=low-difficulty-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -589,7 +591,7 @@ jobs:
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
           lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -617,25 +619,25 @@ jobs:
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
           # The test logs, written by root with umask 077.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: unit-test-logs-low-difficulty
           path: build/docker-*/build-low-difficulty/unit-test-logs/
           retention-days: 14
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: functional-test-logs-low-difficulty
@@ -643,7 +645,7 @@ jobs:
             build/docker-*/build-low-difficulty/test/tmp/test_runner_*/**/*.log
             build/docker-*/build-low-difficulty/test/tmp/test_runner_*/**/std*/*
           retention-days: 14
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoind-low-difficulty-16.04
           path: ${{ github.workspace }}/release-root/bin/yacoind
@@ -657,7 +659,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -677,7 +679,7 @@ jobs:
           echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -686,7 +688,7 @@ jobs:
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
           lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -712,29 +714,29 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f release-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoind-ubuntu-22.04
           path: ${{ github.workspace }}/release-root/bin/yacoind
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-qt-ubuntu-22.04-qt4
           path: ${{ github.workspace }}/release-root/bin/yacoin-qt
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-cli-ubuntu-22.04
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
@@ -748,7 +750,7 @@ jobs:
     env:
       IMAGE: windows
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -768,7 +770,7 @@ jobs:
           echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -777,7 +779,7 @@ jobs:
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
           lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -803,29 +805,29 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f windows-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-qt-windows
           path: ${{ github.workspace }}/release-root/bin/yacoin-qt.exe
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoind-windows
           path: ${{ github.workspace }}/release-root/bin/yacoind.exe
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-cli-windows
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli.exe
@@ -839,7 +841,7 @@ jobs:
     env:
       IMAGE: macos
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -859,7 +861,7 @@ jobs:
           echo "KEY_DEPENDS=release-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
           echo "KEY_CCACHE_PREFIX=release-ccache-$image_key-" >> "$GITHUB_ENV"
           echo "KEY_CCACHE=release-ccache-$image_key-$GITHUB_SHA" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -868,7 +870,7 @@ jobs:
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ env.KEY_DEPENDS }}
           lookup-only: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: ccache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
@@ -894,29 +896,29 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f macos-build 2>/dev/null || true
           if [ -d "$REL_CACHE" ]; then sudo chown -R "$(id -u):$(id -g)" "$REL_CACHE"; fi
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.depends.outputs.cache-hit != 'true' }}
         with:
           path: |
             ${{ env.REL_CACHE }}/${{ env.IMAGE }}/depends-built
             ${{ env.REL_CACHE }}/depends-sources
           key: ${{ steps.depends.outputs.cache-primary-key }}
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.ccache.outputs.cache-hit != 'true' }}
         with:
           path: ${{ env.REL_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-qt-macos
           path: ${{ github.workspace }}/release-root/bin/yacoin-qt
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoind-macos
           path: ${{ github.workspace }}/release-root/bin/yacoind
           if-no-files-found: error
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: yacoin-cli-macos
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
@@ -938,7 +940,7 @@ jobs:
       artifact-name: ${{ env.COVERAGE_ARTIFACT }}
       artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -952,7 +954,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -975,7 +977,7 @@ jobs:
           # A step timeout may kill docker run without stopping the container.
           docker rm -f coverage-unit 2>/dev/null || true
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         id: upload-coverage
         # Also when the tests failed: the make targets capture coverage anyway.
         if: ${{ !cancelled() }}
@@ -987,7 +989,7 @@ jobs:
             build/docker-${{ env.IMAGE }}/cov-unit/test_bitcoin.coverage/
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: coverage-unit-logs
@@ -1017,7 +1019,7 @@ jobs:
       artifact-name: ${{ env.COVERAGE_ARTIFACT }}
       artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -1031,7 +1033,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -1055,7 +1057,7 @@ jobs:
           docker rm -f coverage-functional 2>/dev/null || true
           # The nodes write their datadirs with umask 077 as root.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         id: upload-coverage
         # Also when the tests failed: the make targets capture coverage anyway.
         if: ${{ !cancelled() }}
@@ -1067,7 +1069,7 @@ jobs:
             build/docker-${{ env.IMAGE }}/cov-functional/functional_test.coverage/
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: coverage-functional-1-logs
@@ -1097,7 +1099,7 @@ jobs:
       artifact-name: ${{ env.COVERAGE_ARTIFACT }}
       artifact-id: ${{ steps.upload-coverage.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -1111,7 +1113,7 @@ jobs:
           image_key=${IMAGE_TAG##*:}
           echo "COV_CACHE=$RUNNER_TEMP/yacoin-cache" >> "$GITHUB_ENV"
           echo "KEY_DEPENDS=functional-tests-depends-$image_key-${{ hashFiles('depends/packages/*.mk', 'depends/patches/**', 'depends/Makefile', 'depends/funcs.mk', 'depends/hosts/*.mk', 'depends/builders/*.mk') }}" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: depends
         with:
           path: |
@@ -1135,7 +1137,7 @@ jobs:
           docker rm -f coverage-functional 2>/dev/null || true
           # The nodes write their datadirs with umask 077 as root.
           if [ -d build ]; then sudo chown -R "$(id -u):$(id -g)" build; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         id: upload-coverage
         # Also when the tests failed: the make targets capture coverage anyway.
         if: ${{ !cancelled() }}
@@ -1147,7 +1149,7 @@ jobs:
             build/docker-${{ env.IMAGE }}/cov-functional/functional_test.coverage/
           if-no-files-found: warn
           retention-days: 14
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: failure()
         with:
           name: coverage-functional-2-logs
@@ -1173,7 +1175,7 @@ jobs:
     env:
       IMAGE: ubuntu.22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
@@ -1198,15 +1200,15 @@ jobs:
               exit 1
             fi
           done
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           name: ${{ needs.coverage-unit.outputs.artifact-name }}
           path: coverage/unit
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           name: ${{ needs.coverage-functional-1.outputs.artifact-name }}
           path: coverage/functional-1
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           name: ${{ needs.coverage-functional-2.outputs.artifact-name }}
           path: coverage/functional-2
@@ -1237,7 +1239,7 @@ jobs:
         run: |
           docker rm -f coverage-report 2>/dev/null || true
           if [ -d coverage ]; then sudo chown -R "$(id -u):$(id -g)" coverage; fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         if: ${{ !cancelled() }}
         with:
           name: coverage-combined
@@ -1279,3 +1281,40 @@ jobs:
               echo "::warning::could not delete $key (id $id)"
           done < superseded.tsv
           echo "$(wc -l < superseded.tsv) superseded cache entries"
+  all-jobs-passed:
+    # Passes only when every other job of this workflow passed: each job in
+    # needs: ends in success, except that prune-caches may be skipped when the
+    # run is not a push to master (ci/containers/all-jobs-passed.sh prints
+    # each job's result). Runs whatever the needed jobs' results are
+    # (always()); a needed job that failed, was cancelled or was skipped
+    # makes it fail. test-image-tag.sh checks that needs: lists every other
+    # job and that the job is written as here.
+    needs:
+      - build-ubuntu-1604
+      - functional-tests
+      - functional-tests-asan
+      - unit-tests
+      - unit-tests-asan
+      - unit-tests-tsan
+      - fuzz-corpus
+      - build-ubuntu-1604-low-difficulty
+      - build-ubuntu-2204
+      - build-windows
+      - build-macos
+      - coverage-unit
+      - coverage-functional-1
+      - coverage-functional-2
+      - coverage-report
+      - prune-caches
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
+      - name: results of the needed jobs
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          MASTER_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        run: ci/containers/all-jobs-passed.sh

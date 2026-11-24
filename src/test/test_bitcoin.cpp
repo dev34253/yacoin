@@ -23,6 +23,7 @@
 #include "script/sigcache.h"
 #include "sync.h"
 #include "util.h"
+#include "warnings.h"
 
 #include <algorithm>
 #include <chrono>
@@ -115,6 +116,21 @@ public:
 ArgGuard::ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg), m_fHadArg(false), m_fHadMultiArg(false)
 {
     LOCK(ArgsAccess::Lock());
+    Save();
+    gArgs.ForceSetArg(m_arg, value);
+}
+
+ArgGuard::ArgGuard(const std::string& arg) : m_arg(arg), m_fHadArg(false), m_fHadMultiArg(false)
+{
+    LOCK(ArgsAccess::Lock());
+    Save();
+    ArgsAccess::MapArgs().erase(m_arg);
+    ArgsAccess::MapMultiArgs().erase(m_arg);
+}
+
+// Called with gArgs's lock held
+void ArgGuard::Save()
+{
     const auto it = ArgsAccess::MapArgs().find(m_arg);
     if (it != ArgsAccess::MapArgs().end()) {
         m_fHadArg = true;
@@ -125,7 +141,6 @@ ArgGuard::ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg
         m_fHadMultiArg = true;
         m_values = itMulti->second;
     }
-    gArgs.ForceSetArg(m_arg, value);
 }
 
 ArgGuard::~ArgGuard()
@@ -157,8 +172,56 @@ ArgsSnapshot::~ArgsSnapshot()
     ArgsAccess::MapMultiArgs() = m_multiArgs;
 }
 
+extern CCriticalSection cs_warnings;
+extern std::string strMiscWarning;
+
+MiscWarningGuard::MiscWarningGuard()
+{
+    LOCK(cs_warnings);
+    m_saved = strMiscWarning;
+}
+
+MiscWarningGuard::~MiscWarningGuard()
+{
+    Restore();
+}
+
+void MiscWarningGuard::Restore() const
+{
+    SetMiscWarning(m_saved);
+}
+
+MockTimeGuard::MockTimeGuard() : m_saved(GetMockTime())
+{
+}
+
+MockTimeGuard::MockTimeGuard(int64_t nTime) : m_saved(GetMockTime())
+{
+    SetMockTime(nTime);
+}
+
+MockTimeGuard::~MockTimeGuard()
+{
+    SetMockTime(m_saved);
+}
+
+void MockTimeGuard::Set(int64_t nTime)
+{
+    SetMockTime(nTime);
+}
+
 uint256 insecure_rand_seed = GetRandHash();
 FastRandomContext insecure_rand_ctx(insecure_rand_seed);
+
+fs::path TestTempPath(const std::string& prefix)
+{
+#ifdef WIN32
+    const unsigned long nProcessId = GetCurrentProcessId();
+#else
+    const unsigned long nProcessId = getpid();
+#endif
+    return fs::temp_directory_path() / strprintf("%s_%lu_%lu_%i", prefix, nProcessId, (unsigned long)GetTime(), (int)InsecureRandRange(100000));
+}
 
 extern bool fPrintToConsole;
 extern void noui_connect();
@@ -175,7 +238,11 @@ BasicTestingSetup::BasicTestingSetup(const std::string& chainName)
         fPrintToDebugLog = false; // don't want to write to debug.log file
         fCheckBlockIndex = true;
         SelectParams(chainName);
-        noui_connect();
+        // noui_connect() adds its handlers on every call: connect them only while none is connected
+        if (uiInterface.ThreadSafeMessageBox.empty() && uiInterface.ThreadSafeQuestion.empty() &&
+            uiInterface.InitMessage.empty()) {
+            noui_connect();
+        }
 }
 
 BasicTestingSetup::~BasicTestingSetup()
@@ -191,7 +258,7 @@ TestingSetup::TestingSetup(const std::string& chainName) : BasicTestingSetup(cha
 
         RegisterAllCoreRPCCommands(tableRPC);
         ClearDatadirCache();
-        pathTemp = fs::temp_directory_path() / strprintf("test_bitcoin_%lu_%i", (unsigned long)GetTime(), (int)(InsecureRandRange(100000)));
+        pathTemp = TestTempPath("test_bitcoin");
         fs::create_directories(pathTemp);
         gArgs.ForceSetArg("-datadir", pathTemp.string());
 

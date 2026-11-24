@@ -11,8 +11,10 @@
 #include "pubkey.h"
 #include "random.h"
 #include "scheduler.h"
+#include "sync.h"
 #include "txdb.h"
 #include "txmempool.h"
+#include "utiltime.h"
 
 #include <map>
 #include <string>
@@ -39,18 +41,74 @@ static inline uint64_t InsecureRandBits(int bits) { return insecure_rand_ctx.ran
 static inline uint64_t InsecureRandRange(uint64_t range) { return insecure_rand_ctx.randrange(range); }
 static inline bool InsecureRandBool() { return insecure_rand_ctx.randbool(); }
 
-/** Sets an argument of gArgs while it lives. On destruction each of gArgs's two maps gets its
+/** Sets a variable while it lives and puts back the value it found on destruction. The form with a
+ * lock holds the given lock while it sets and while it restores the value. */
+template <typename T>
+class ValueGuard
+{
+public:
+    ValueGuard(T& ref, T value) : m_ref(ref), m_saved(ref), m_cs(nullptr) { m_ref = value; }
+    ValueGuard(CCriticalSection& cs, T& ref, T value) : m_ref(ref), m_saved(Read(cs, ref)), m_cs(&cs)
+    {
+        LOCK(cs);
+        m_ref = value;
+    }
+    ~ValueGuard()
+    {
+        if (m_cs) {
+            LOCK(*m_cs);
+            m_ref = m_saved;
+        } else {
+            m_ref = m_saved;
+        }
+    }
+    ValueGuard(const ValueGuard&) = delete;
+    ValueGuard& operator=(const ValueGuard&) = delete;
+
+private:
+    static T Read(CCriticalSection& cs, const T& ref)
+    {
+        LOCK(cs);
+        return ref;
+    }
+
+    T& m_ref;
+    const T m_saved;
+    CCriticalSection* const m_cs;
+};
+
+/** Puts back on destruction the mock time it found (GetMockTime(), 0 for none). With a time it sets
+ * that time while it lives; Set() sets another. */
+class MockTimeGuard
+{
+public:
+    MockTimeGuard();
+    explicit MockTimeGuard(int64_t nTime);
+    ~MockTimeGuard();
+    void Set(int64_t nTime);
+    MockTimeGuard(const MockTimeGuard&) = delete;
+    MockTimeGuard& operator=(const MockTimeGuard&) = delete;
+
+private:
+    const int64_t m_saved;
+};
+
+/** Sets an argument of gArgs to a value while it lives, or with only the argument given, unsets
+ * it (removes its entry from both maps of gArgs). On destruction each of gArgs's two maps gets its
  * entry for the argument back as it was before, or loses it if there was none, so an argument
  * that was unset is unset again. Both steps hold gArgs's lock. */
 class ArgGuard
 {
 public:
     ArgGuard(const std::string& arg, const std::string& value);
+    explicit ArgGuard(const std::string& arg);
     ~ArgGuard();
     ArgGuard(const ArgGuard&) = delete;
     ArgGuard& operator=(const ArgGuard&) = delete;
 
 private:
+    void Save();
+
     const std::string m_arg;
     bool m_fHadArg;
     std::string m_value;
@@ -86,6 +144,25 @@ public:
     ShutdownRequestRecorder(const ShutdownRequestRecorder&) = delete;
     ShutdownRequestRecorder& operator=(const ShutdownRequestRecorder&) = delete;
 };
+
+/** Saves the misc warning (SetMiscWarning) and puts it back on destruction; Restore() puts it
+ * back earlier. */
+class MiscWarningGuard
+{
+public:
+    MiscWarningGuard();
+    ~MiscWarningGuard();
+    void Restore() const;
+    MiscWarningGuard(const MiscWarningGuard&) = delete;
+    MiscWarningGuard& operator=(const MiscWarningGuard&) = delete;
+
+private:
+    std::string m_saved;
+};
+
+/** A path in the temp directory for a test's own files, named
+ * <prefix>_<process id>_<time>_<random number> */
+fs::path TestTempPath(const std::string& prefix);
 
 /** Basic testing setup.
  * This just configures logging and chain parameters.

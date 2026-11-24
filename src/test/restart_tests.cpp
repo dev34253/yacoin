@@ -415,28 +415,19 @@ void Solve(CBlock& block)
 
 /** Regtest chain with mature coinbases, the token databases init creates, and helpers to
  *  restart the node in-process. */
-struct RestartSetup : public ConsoleLogging, public TestChain100Setup {
+struct RestartSetup : public ConsoleLogging, public TestChain100Setup, public TokenGlobalsGuard {
     CScript scriptPubKey;
     std::vector<CTransaction> coinbases; // coinbases[h - 1] is the coinbase of the block at height h
-    CTokensDB* prevTokensDb;
-    TokenLRU* prevTokensCache;
-    bool prevTokenIndex, prevTxIndex, prevAddressIndex, prevBlockHashIndex, prevReindex;
+    bool prevTxIndex, prevAddressIndex, prevBlockHashIndex, prevReindex;
     std::map<uint256, uint256> prevMapHash;
 
     RestartSetup()
     {
-        prevTokensDb = ptokensdb;
-        prevTokensCache = ptokensCache;
-        prevTokenIndex = fTokenIndex;
         prevTxIndex = fTxIndex;
         prevAddressIndex = fAddressIndex;
         prevBlockHashIndex = fBlockHashIndex;
         prevReindex = fReindex;
         prevMapHash = mapHash;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
-        ptokensCache = new TokenLRU(MAX_CACHE_TOKENS_SIZE);
-        fTokenIndex = true;
-        TokenTestingSetup::ClearTokenGlobals();
         scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
         coinbases = coinbaseTxns;
         for (int i = 0; i < COINBASE_MATURITY_AFTER_HARDFORK; i++) Mine();
@@ -449,12 +440,6 @@ struct RestartSetup : public ConsoleLogging, public TestChain100Setup {
             LOCK(mempool.cs);
             mempool.mapDeltas.clear(); // CTxMemPool::clear() keeps them
         }
-        TokenTestingSetup::ClearTokenGlobals();
-        delete ptokensdb;
-        delete ptokensCache;
-        ptokensdb = prevTokensDb;
-        ptokensCache = prevTokensCache;
-        fTokenIndex = prevTokenIndex;
         fTxIndex = prevTxIndex;
         fAddressIndex = prevAddressIndex;
         fBlockHashIndex = prevBlockHashIndex;
@@ -611,8 +596,7 @@ struct RestartSetup : public ConsoleLogging, public TestChain100Setup {
             pcoinsTip = new CCoinsViewCache(pcoinsdbview);
             delete ptokens;
             ptokens = new CTokensCache();
-            delete ptokensCache;
-            ptokensCache = new TokenLRU(MAX_CACHE_TOKENS_SIZE);
+            ResetTokenCache();
             pblocktree->ReadFlag("tokenindex", fTokenIndex);
             if (!ptokensdb->LoadTokens()) return Failed("LoadTokens");
             ptokensdb->ReadReissuedMempoolState();
@@ -680,10 +664,8 @@ struct RestartSetup : public ConsoleLogging, public TestChain100Setup {
         pcoinsTip = new CCoinsViewCache(pcoinsdbview);
         delete ptokens;
         ptokens = new CTokensCache();
-        delete ptokensdb;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
-        delete ptokensCache;
-        ptokensCache = new TokenLRU(MAX_CACHE_TOKENS_SIZE);
+        ResetTokenDb();
+        ResetTokenCache();
         TokenTestingSetup::ClearTokenGlobals();
         if (fRemoveBlocks) {
             fs::remove_all(GetDataDir() / "blocks");
@@ -2185,28 +2167,33 @@ BOOST_AUTO_TEST_CASE(load_mempool_edge_cases)
     fs::remove(DataFile("mempool.dat.new"));
 
 #ifdef __linux__
-    // Writing the temporary file fails (a full device) once more than the stdio buffer has been
-    // written: the error is logged, and mempool.dat keeps the earlier dump
-    DumpMempool();
-    BOOST_REQUIRE(fs::exists(path));
-    const std::string earlier = ReadFile(path);
-    for (int i = 0; i < 400; i++) mempool.PrioritiseTransaction(InsecureRand256(), 1);
-    fs::create_symlink("/dev/full", DataFile("mempool.dat.new"));
-    std::string log;
-    {
-        LogCapture capture(DataFile("mempool.log"));
+    const fs::path fullDevice("/dev/full");
+    if (!fs::exists(fullDevice)) {
+        BOOST_TEST_MESSAGE(fullDevice.string() + " does not exist; the failed write is not tested");
+    } else {
+        // Writing the temporary file fails (a full device) once more than the stdio buffer has been
+        // written: the error is logged, and mempool.dat keeps the earlier dump
         DumpMempool();
-        log = capture.Stop();
+        BOOST_REQUIRE(fs::exists(path));
+        const std::string earlier = ReadFile(path);
+        for (int i = 0; i < 400; i++) mempool.PrioritiseTransaction(InsecureRand256(), 1);
+        fs::create_symlink(fullDevice, DataFile("mempool.dat.new"));
+        std::string log;
+        {
+            LogCapture capture(DataFile("mempool.log"));
+            DumpMempool();
+            log = capture.Stop();
+        }
+        BOOST_CHECK(Contains(log, "Failed to dump mempool: "));
+        BOOST_CHECK(fs::is_symlink(DataFile("mempool.dat.new")));
+        BOOST_CHECK(!fs::is_symlink(path));
+        BOOST_CHECK(ReadFile(path) == earlier);
+        fs::remove(DataFile("mempool.dat.new"));
+        ResetMempool();
+        BOOST_CHECK(LoadMempool());
+        BOOST_CHECK_EQUAL(mempool.size(), 1U);
+        BOOST_CHECK(mempool.exists(tx1.GetHash()));
     }
-    BOOST_CHECK(Contains(log, "Failed to dump mempool: "));
-    BOOST_CHECK(fs::is_symlink(DataFile("mempool.dat.new")));
-    BOOST_CHECK(!fs::is_symlink(path));
-    BOOST_CHECK(ReadFile(path) == earlier);
-    fs::remove(DataFile("mempool.dat.new"));
-    ResetMempool();
-    BOOST_CHECK(LoadMempool());
-    BOOST_CHECK_EQUAL(mempool.size(), 1U);
-    BOOST_CHECK(mempool.exists(tx1.GetHash()));
 #endif
     ResetMempool();
 }

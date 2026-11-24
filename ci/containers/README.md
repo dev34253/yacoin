@@ -9,10 +9,11 @@ the entrypoints create the ccache config before the build.
 | `Dockerfile.<image>` | One image each: `ubuntu.16.04`, `ubuntu.22.04`, `windows`, `macos` |
 | `entrypoint.sh`, `entrypoint.windows.sh`, `entrypoint.macos.sh` | What the images run: the Linux modes, and the Windows and macOS release builds |
 | `image-tag.sh` | Prints an image's tag, or with `--inputs` the files its hash covers |
-| `test-image-tag.sh` | Tests of `image-tag.sh` and of the workflow's use of the tags |
+| `test-image-tag.sh` | Tests of `image-tag.sh`, of the workflow's use of the tags, of the workflow's jobs and caches, and of `all-jobs-passed.sh` |
+| `all-jobs-passed.sh` | The result of the CI job `all-jobs-passed`: passes only when every job it needs passed |
 | `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
-| `check.sh` | The image checks: lint, image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
-| `parity.sh` | Compares an image built from here with the one on Docker Hub (`dev34253/yacoin-build:<image>-2`) and runs its modes on a clean clone |
+| `check.sh` | The image checks: lint (also: every `uses:` under `.github/` names a local action or a published action by full commit SHA with its version in a comment), image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
+| `parity.sh` | Compares an image built from here with the image CI uses for the same image definition (`image-tag.sh`'s tag, published from `master`) and runs its modes on a clean clone |
 
 ```bash
 ./dev.sh container unit-tests                  # ubuntu.22.04 image, unit-tests mode, on this checkout
@@ -20,7 +21,7 @@ ci/containers/run.sh windows                    # the Windows release build
 ci/containers/check.sh                          # all images: lint, tag, static, devsh, build, smoke, ccache
 ci/containers/image-tag.sh ubuntu.22.04         # the tag CI runs the ubuntu.22.04 image under
 ci/containers/check.sh --steps cache windows    # slow: two builds with one cache
-ci/containers/parity.sh ubuntu.22.04            # image parity, then build, unit-tests and functional-tests
+ci/containers/parity.sh ubuntu.22.04            # parity with the image CI uses, then build, unit-tests and functional-tests
 ```
 
 `run.sh` tags the images `yacoin-build-local:<image>` (`LOCAL_REPO` changes the name) and labels them `org.yacoin.build-local=1`, so
@@ -43,21 +44,15 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 
 ## Usage
 
-To build YaCoin for a specific platform:
+To build YaCoin for a specific platform, or to run a test mode, use `./dev.sh container` or `run.sh`:
 
 ```bash
-# For Ubuntu 22.04
-docker build -f Dockerfile.ubuntu.22.04 -t yacoin-build:ubuntu22.04 .
-docker run -v /path/to/yacoin/source:/src yacoin-build:ubuntu22.04
-
-# For macOS cross-compilation
-docker build -f Dockerfile.macos -t yacoin-build:macos .
-docker run -v /path/to/yacoin/source:/src yacoin-build:macos
-
-# For Windows cross-compilation
-docker build -f Dockerfile.windows -t yacoin-build:windows .
-docker run -v /path/to/yacoin/source:/src yacoin-build:windows
+./dev.sh container [options] [image] [mode]    # this checkout, image ubuntu.22.04 and mode build by default
+ci/containers/run.sh [options] <image> [mode]  # mode build by default; --src <dir> for another tree
+ci/containers/run.sh --help                    # the images, modes and options
 ```
+
+Both build the image and run the mode in it; `--no-image-build` runs the existing local image without building it first.
 
 ## Linux image modes, jobs and cache
 
@@ -144,12 +139,12 @@ release matrix uses it; the Windows and macOS images are based on 18.04.
 ## macOS Build Notes
 
 The macOS build uses the osxcross toolchain to cross-compile from Ubuntu 18.04. It downloads the macOS 10.11 SDK and builds binaries compatible
-with macOS 10.8+. osxcross is pinned to the commit of the published `macos-2` image (`OSXCROSS_COMMIT`), and the SDK tarball is checked
-against the hash of the one in that image.
+with macOS 10.8+. osxcross is pinned to one commit (`OSXCROSS_COMMIT`), and the SDK tarball is checked against its SHA-256
+(`sha256sum -c` in `Dockerfile.macos`).
 
 ## GitHub Actions
 
-Every job of `.github/workflows/yacoinbuildmultiplatform.yml` runs an image built from this directory. The local action
+Every job of `.github/workflows/yacoinbuildmultiplatform.yml` that runs docker runs an image built from this directory. The local action
 `.github/actions/yacoin-build-image` provides it. The workflow runs on every pull request commit, and on pushes only to `master`,
 to `scratch/` branches and to tags; `.github/workflows/depends-sources.yml` runs the same way, without tags, when the depends recipes
 change, and on demand. A branch without a pull request therefore gets CI only as a `scratch/` branch.
@@ -174,7 +169,9 @@ How a job gets its image:
    branches, tags and pull requests never write to the registry and fall back to a local build on a registry error (the log says why),
    so the registry only holds images and caches built from `master`.
 
-The action pins `docker/setup-buildx-action` and `docker/build-push-action` by commit; the registry login is `docker login`.
+The workflows and the action pin every published action they use (`actions/checkout`, `actions/cache`, `actions/upload-artifact`,
+`actions/download-artifact`, `docker/setup-buildx-action`, `docker/build-push-action`) by commit, with its version in a comment;
+`check.sh lint` checks that every `uses:` under `.github/` does. The registry login is `docker login`.
 
 Nothing outside this repository changes what CI builds with: a tag names the files it was built from, and a new image definition is a
 reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own, which `build-ubuntu-1604` runs first) checks the tags
@@ -202,7 +199,7 @@ sanitizer report files, kept 14 days). `test-image-tag.sh` also checks that the 
 The `fuzz-corpus` job runs the mode of the same name of the Ubuntu 22.04 image: every input of the fuzz corpus once through its target
 under AddressSanitizer, LeakSanitizer and UBSan. It replays the committed corpus only and never fuzzes, and uploads its logs when it
 fails (`fuzz-corpus-logs`, kept 14 days). `test-image-tag.sh` checks that it runs with ccache off, restores the `functional-tests`
-depends entry and saves none, and that the workflow has 16 jobs.
+depends entry and saves none, and that the workflow has 17 jobs.
 
 The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache: a ccache entry per job kind and
 image, and a depends entry per depends kind and image (the low-difficulty job shares the 16.04 release job's); the kinds are
@@ -225,3 +222,13 @@ build jobs' restores set `lookup-only`, and that `prune-caches` runs only on a p
 run shard 1/2 and 2/2 of the functional tests (`FTEST_SHARD`), each with its own artifact per attempt and its own outputs.
 `coverage-report` downloads the artifact of the attempt each coverage job last ran in, merges the unit tracefile with both shards'
 tracefiles, and runs `contrib/devtools/coverage-check.py` with every function extents file.
+
+The last job, `all-jobs-passed`, needs every other job of the workflow and runs whatever their results are (`if: ${{ always() }}`).
+It passes only when every needed job's result is `success`; `prune-caches` may also be `skipped` when the run is not a push to `master`.
+Any other result (`failure`, `cancelled`, `skipped` or any other value) fails it, so it is the one check that says whether the whole
+run passed. `all-jobs-passed.sh` here gets the needed jobs' results (`toJSON(needs)`) and whether the run is a push to `master`
+through `env:`, prints each job's result and decides, using jq; it fails on empty or malformed input too. `test-image-tag.sh` tests
+the script with planted results (so running it locally needs jq), and checks that the workflow's jobs are plain keys at two spaces
+with `jobs:` as the last top-level key, that the workflow uses no `continue-on-error`, and that `all-jobs-passed` needs every other
+job, runs always and is written as the check expects; planted copies of the workflow (a job left out of `needs`, a job added without
+an entry, a misspelt entry, another `if:`, a commented or quoted job key, among others) must fail.
