@@ -175,7 +175,9 @@ How a job gets its image:
    branches, tags and pull requests never write to the registry and fall back to a local build on a registry error (the log says why),
    so the registry only holds images and caches built from `master`.
 
-The action pins `docker/setup-buildx-action` and `docker/build-push-action` by commit; the registry login is `docker login`.
+The workflows and the action pin every published action they use (`actions/checkout`, `actions/cache`, `actions/upload-artifact`,
+`actions/download-artifact`, `docker/setup-buildx-action`, `docker/build-push-action`) by commit, with its version in a comment;
+`check.sh lint` checks that every `uses:` under `.github/` does. The registry login is `docker login`.
 
 Nothing outside this repository changes what CI builds with: a tag names the files it was built from, and a new image definition is a
 reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own, which `build-ubuntu-1604` runs first) checks the tags

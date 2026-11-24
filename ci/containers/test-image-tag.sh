@@ -692,7 +692,7 @@ aggregate_job="  all-jobs-passed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
         with:
           persist-credentials: false
       - name: results of the needed jobs
@@ -797,7 +797,7 @@ plant "the workflow holds no continue-on-error" build-ubuntu-2204 "/^    timeout
 plant "the workflow holds no continue-on-error" build-ubuntu-2204 "/^    timeout-minutes: 60$/a\    \"continue-on-error\": true"
 plant "the workflow holds no continue-on-error" build-ubuntu-2204 "/^    timeout-minutes: 60$/a\    continue-on-error : true"
 plant "the workflow holds no continue-on-error" build-ubuntu-2204 \
-    "/^      - uses: actions\/checkout@v6$/a\      - { run: echo, continue-on-error: true }"
+    "/^      - uses: actions\/checkout@[0-9a-f]\{40\}  # v6\.1\.0$/a\      - { run: echo, continue-on-error: true }"
 plant "$layout:   new-job:  # x" fuzz-corpus "/^  fuzz-corpus:$/i\\${new_job/new-job:/new-job:  # x}"
 plant "$layout:   \"new-job\":" fuzz-corpus "/^  fuzz-corpus:$/i\\${new_job/new-job:/\"new-job\":}"
 # A quoted scalar continued at column 0, then a commented job key.
