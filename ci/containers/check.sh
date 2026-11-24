@@ -84,7 +84,9 @@
 #           leaves the test cases of its list out (the other modes do not;
 #           with SANITIZE=address and undefined the same suites, list and
 #           options),
-#           unit-tests then runs bench_yacoin -time=0.01 (the others do not)
+#           unit-tests configures with --enable-bench (unit-tests-asan and
+#           unit-tests-tsan without it) and then runs bench_yacoin
+#           -time=0.01 (the others do not)
 #           and fails when it fails or the build made no bench_yacoin,
 #           the sanitizer modes stop on a tree without their suppression
 #           file (unit-tests-asan and functional-tests-asan also without
@@ -1420,7 +1422,7 @@ step_smoke() {
         # modes set their sanitizers' runtime options (the tree's
         # suppressions), and only they do; unit-tests-tsan runs the suites
         # with address randomisation off.
-        local env_got pers_got want_env bench_got
+        local env_got pers_got want_env bench_got configure_got
         for mode in "${unit_modes[@]}"; do
             opts=()
             [[ $mode != unit-tests-tsan ]] || opts=("${unconfined[@]}")
@@ -1445,6 +1447,17 @@ step_smoke() {
             env_got=$(cat "$stub/suites-env" 2>/dev/null || echo "run-unit-suites.sh did not run")
             [[ "$env_got" == "$want_env" ]] && pass "smoke: $image: $mode runs the suites with: $env_got" ||
                 fail "smoke: $image: $mode runs the suites with: $env_got (want $want_env)"
+            # unit-tests, and only it, configures with --enable-bench.
+            configure_got=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+            if [[ $mode == unit-tests ]]; then
+                [[ " $configure_got " == *" --enable-bench "* ]] &&
+                    pass "smoke: $image: $mode configures with --enable-bench" ||
+                    fail "smoke: $image: $mode configures without --enable-bench: $configure_got"
+            elif [[ "$configure_got" != "configure did not run" && " $configure_got " != *" --enable-bench "* ]]; then
+                pass "smoke: $image: $mode configures without --enable-bench"
+            else
+                fail "smoke: $image: $mode configures with: $configure_got (want no --enable-bench)"
+            fi
             if [[ $mode == unit-tests-tsan ]]; then
                 # ADDR_NO_RANDOMIZE (0x0040000) in the runner's personality.
                 pers_got=$(cat "$stub/suites-personality" 2>/dev/null || echo "run-unit-suites.sh did not run")
@@ -1832,9 +1845,10 @@ make_fuzz_stub() {
 
 # A stub source tree for the out-of-tree unit test modes (unit-tests,
 # unit-tests-asan, unit-tests-tsan): depends, autogen.sh, configure and make
-# are no-ops, configure leaves src/test/test_bitcoin (not with "no-binary")
-# and src/bench/bench_yacoin (not with "no-binary" or "no-bench") in the
-# build directory, and contrib/devtools/run-unit-suites.sh records its
+# are no-ops, configure records its arguments in /src/configure-args and
+# leaves src/test/test_bitcoin (not with "no-binary") and
+# src/bench/bench_yacoin (not with "no-binary" or "no-bench") in the build
+# directory, and contrib/devtools/run-unit-suites.sh records its
 # arguments in /src/suites-args, the sanitizer options it gets in
 # /src/suites-env and its personality in /src/suites-personality, then exits
 # with <status>. bench_yacoin records its arguments in /src/bench-args and
