@@ -14,6 +14,7 @@
 #include "util.h"
 #include "validation.h"
 
+#include "test/p2p_test_util.h"
 #include "test/test_bitcoin.h"
 
 #include <stdint.h>
@@ -82,16 +83,17 @@ BOOST_AUTO_TEST_CASE(outbound_slow_chain_eviction)
     dummyNode1.vSendMsg.clear();
 
     int64_t nStartTime = GetTime();
-    // Wait 21 minutes
-    SetMockTime(nStartTime+21*60);
-    peerLogic->SendMessages(&dummyNode1, interruptDummy); // should result in getheaders
+    {
+        // Wait 21 minutes
+        P2PTestMockTime mockTime(nStartTime+21*60);
+        peerLogic->SendMessages(&dummyNode1, interruptDummy); // should result in getheaders
 
-    BOOST_CHECK(dummyNode1.vSendMsg.size() > 0);
-    // Wait 3 more minutes
-    SetMockTime(nStartTime+24*60);
-    peerLogic->SendMessages(&dummyNode1, interruptDummy); // should result in disconnect
-    BOOST_CHECK(dummyNode1.fDisconnect == true);
-    SetMockTime(0);
+        BOOST_CHECK(dummyNode1.vSendMsg.size() > 0);
+        // Wait 3 more minutes
+        mockTime.Set(nStartTime+24*60);
+        peerLogic->SendMessages(&dummyNode1, interruptDummy); // should result in disconnect
+        BOOST_CHECK(dummyNode1.fDisconnect == true);
+    }
 
     bool dummy;
     peerLogic->FinalizeNode(dummyNode1.GetId(), dummy);
@@ -135,7 +137,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_peer_management)
         BOOST_CHECK(node->fDisconnect == false);
     }
 
-    SetMockTime(GetTime() + 3*consensusParams.nPowTargetSpacing + 1);
+    P2PTestMockTime mockTime(GetTime() + 3*consensusParams.nPowTargetSpacing + 1);
 
     // Now tip should definitely be stale, and we should look for an extra
     // outbound peer
@@ -252,7 +254,7 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
 
     connman->ClearBanned();
     int64_t nStartTime = GetTime();
-    SetMockTime(nStartTime); // Overrides future calls to GetTime()
+    P2PTestMockTime mockTime(nStartTime); // Overrides future calls to GetTime()
 
     CAddress addr(ip(0xa0b0c001), NODE_NONE);
     CNode dummyNode(id++, NODE_NETWORK, 0, INVALID_SOCKET, addr, 4, 4, CAddress(), "", true);
@@ -265,10 +267,10 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     peerLogic->SendMessages(&dummyNode, interruptDummy);
     BOOST_CHECK(connman->IsBanned(addr));
 
-    SetMockTime(nStartTime+60*60);
+    mockTime.Set(nStartTime+60*60);
     BOOST_CHECK(connman->IsBanned(addr));
 
-    SetMockTime(nStartTime+60*60*24+1);
+    mockTime.Set(nStartTime+60*60*24+1);
     BOOST_CHECK(!connman->IsBanned(addr));
 
     bool dummy;
