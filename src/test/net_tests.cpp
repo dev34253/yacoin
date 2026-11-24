@@ -72,7 +72,7 @@ public:
 static int MedianStartingHeightOf(const std::vector<int>& heights)
 {
     // A value no case expects, so the result comes from the loop
-    P2PTestValue<int> median(nMedianStartingHeight, -1000);
+    ValueGuard<int> median(nMedianStartingHeight, -1000);
 
     CClientUIInterface ui;
     CConnman connman(0x1337, 0x1337);

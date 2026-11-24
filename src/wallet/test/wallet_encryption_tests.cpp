@@ -484,7 +484,7 @@ BOOST_AUTO_TEST_CASE(send_money_refusals)
     AddWalletTestKey(wallet, NewWalletTestKey());
     CWalletTx wtx;
     {
-        ScopedValue<bool> mintOnly(fWalletUnlockMintOnly, true);
+        ValueGuard<bool> mintOnly(fWalletUnlockMintOnly, true);
         BOOST_CHECK_EQUAL(wallet.SendMoney(CScript() << OP_TRUE, COIN, wtx),
                           "Error: Wallet unlocked for block minting only, unable to create transaction.");
     }

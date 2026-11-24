@@ -24,17 +24,6 @@
 
 #include <boost/test/unit_test.hpp>
 
-/** Sets a variable while it lives */
-template <typename T>
-struct ScopedValue {
-    T& m_ref;
-    T m_saved;
-    ScopedValue(T& ref, T value) : m_ref(ref), m_saved(ref) { m_ref = value; }
-    ~ScopedValue() { m_ref = m_saved; }
-    ScopedValue(const ScopedValue&) = delete;
-    ScopedValue& operator=(const ScopedValue&) = delete;
-};
-
 /** Sets the mock time while it lives; no mock time afterwards */
 struct ScopedMockTime {
     explicit ScopedMockTime(int64_t nTime) { SetMockTime(nTime); }

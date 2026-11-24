@@ -318,7 +318,7 @@ BOOST_FIXTURE_TEST_SUITE(net_processing_peer_tests, PeerSetup)
  * the handshake and is answered with sendheaders. The answer is the same with IP logging off. */
 BOOST_AUTO_TEST_CASE(inbound_version_answered_with_version_and_verack)
 {
-    P2PTestValue<bool> logIPs(fLogIPs, false);
+    ValueGuard<bool> logIPs(fLogIPs, false);
     P2PTestPeerOptions options = NoHandshake(true);
     options.nStartingHeight = 7;
     options.fRelay = false;
@@ -1278,7 +1278,7 @@ BOOST_AUTO_TEST_CASE(connected_block_drops_conflicting_orphans)
 BOOST_AUTO_TEST_CASE(send_messages_starts_best_header_at_tip)
 {
     P2PTestPeer peer(*peerLogic);
-    P2PTestValue<CBlockIndex*> bestHeader(pindexBestHeader, nullptr);
+    ValueGuard<CBlockIndex*> bestHeader(pindexBestHeader, nullptr);
     peer.RunSendMessages();
     LOCK(cs_main);
     BOOST_CHECK(pindexBestHeader == chainActive.Tip());

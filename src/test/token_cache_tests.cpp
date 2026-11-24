@@ -788,7 +788,7 @@ BOOST_AUTO_TEST_CASE(flush_into_ptokens)
     const std::string addr = TestTokenAddress(8);
     {
         CTokensCache cache;
-        P2PTestValue<CTokensCache*> noTokens(ptokens, nullptr);
+        ValueGuard<CTokensCache*> noTokens(ptokens, nullptr);
         BOOST_CHECK(!cache.Flush());
     }
     const COutPoint outA(InsecureRand256(), 1), outR(InsecureRand256(), 1);

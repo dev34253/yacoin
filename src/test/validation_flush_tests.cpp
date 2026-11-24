@@ -28,28 +28,6 @@
 
 namespace {
 
-/** Sets a global under cs_main while it lives and puts the old value back after */
-template <typename T>
-class GlobalGuard
-{
-    T& m_ref;
-    const T m_saved;
-
-public:
-    GlobalGuard(T& ref, T value) : m_ref(ref), m_saved(ref)
-    {
-        LOCK(cs_main);
-        m_ref = value;
-    }
-    ~GlobalGuard()
-    {
-        LOCK(cs_main);
-        m_ref = m_saved;
-    }
-    GlobalGuard(const GlobalGuard&) = delete;
-    GlobalGuard& operator=(const GlobalGuard&) = delete;
-};
-
 /** Records the coin cache when a block is connected, and the best-chain notifications */
 class FlushListener : public CValidationInterface
 {
@@ -124,7 +102,7 @@ struct FlushSetup : public TestChain100Setup {
         CCoinsViewCache cache(&base);
         ShutdownRequestRecorder recorder;
         {
-            GlobalGuard<CCoinsViewCache*> swap(pcoinsTip, &cache);
+            ValueGuard<CCoinsViewCache*> swap(cs_main, pcoinsTip, &cache);
             FlushStateToDisk();
         }
         BOOST_CHECK(ShutdownRequested());
@@ -194,7 +172,7 @@ BOOST_AUTO_TEST_CASE(flush_if_needed_cache_critical)
     FlushListener listener(pcoinsdbview);
     {
         // A cache over its limit is written when the block is connected
-        GlobalGuard<size_t> limit(nCoinCacheUsage, 0);
+        ValueGuard<size_t> limit(cs_main, nCoinCacheUsage, 0);
         const uint256 hash = Mine();
         BOOST_CHECK(TipHash() == hash);
         BOOST_CHECK_EQUAL(listener.nCacheAtConnect, 0U);
@@ -211,7 +189,7 @@ BOOST_AUTO_TEST_CASE(flush_if_needed_cache_critical)
 BOOST_AUTO_TEST_CASE(flush_periodic_cache_large)
 {
     // Without tokens the cache size is the coin cache's alone
-    GlobalGuard<int32_t> tokens(nTokenSupportBlockNumber, 1000000);
+    ValueGuard<int32_t> tokens(cs_main, nTokenSupportBlockNumber, 1000000);
     FlushStateToDisk(); // a recent full flush, so no time-based one follows
     const uint256 flushed = pcoinsdbview->GetBestBlock();
     const uint256 tip = Mine(); // within the default limit: stays in memory
@@ -220,13 +198,13 @@ BOOST_AUTO_TEST_CASE(flush_periodic_cache_large)
     BOOST_REQUIRE_GT(nUsage, 20U);
     {
         // Below 90 % of the limit: nothing is written
-        GlobalGuard<size_t> limit(nCoinCacheUsage, 2 * nUsage);
+        ValueGuard<size_t> limit(cs_main, nCoinCacheUsage, 2 * nUsage);
         SubmitRefused();
         BOOST_CHECK_GT(CacheEntries(), 0U);
         BOOST_CHECK(pcoinsdbview->GetBestBlock() == flushed);
     }
     // Within 10 % of the limit, not over it: written by the periodic check
-    GlobalGuard<size_t> limit(nCoinCacheUsage, nUsage + nUsage / 20);
+    ValueGuard<size_t> limit(cs_main, nCoinCacheUsage, nUsage + nUsage / 20);
     SubmitRefused();
     BOOST_CHECK_EQUAL(CacheEntries(), 0U);
     BOOST_CHECK(pcoinsdbview->GetBestBlock() == tip);
@@ -265,7 +243,7 @@ BOOST_AUTO_TEST_CASE(flush_without_token_cache)
     // Tokens deployed, but no current token cache: the coins are still written
     Mine();
     {
-        GlobalGuard<CTokensCache*> noTokens(ptokens, nullptr);
+        ValueGuard<CTokensCache*> noTokens(cs_main, ptokens, nullptr);
         FlushStateToDisk();
     }
     BOOST_CHECK_EQUAL(CacheEntries(), 0U);

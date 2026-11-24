@@ -27,15 +27,6 @@
 
 namespace {
 
-/** Sets vpwallets while it lives */
-struct VpWalletsGuard {
-    std::vector<CWallet*> saved;
-    explicit VpWalletsGuard(const std::vector<CWallet*>& wallets) : saved(vpwallets) { vpwallets = wallets; }
-    ~VpWalletsGuard() { vpwallets = saved; }
-    VpWalletsGuard(const VpWalletsGuard&) = delete;
-    VpWalletsGuard& operator=(const VpWalletsGuard&) = delete;
-};
-
 uint256 TipHash()
 {
     LOCK(cs_main);
@@ -73,7 +64,7 @@ BOOST_FIXTURE_TEST_SUITE(wallet_mining_tests, WalletChainSetup)
 /* Without a wallet getwork is not available; its help is then empty */
 BOOST_AUTO_TEST_CASE(getwork_without_wallet)
 {
-    VpWalletsGuard noWallets({});
+    ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
     CheckRPCError("getwork", UniValue(UniValue::VARR), RPC_METHOD_NOT_FOUND,
                   "Method not found (wallet method is disabled because no wallet is loaded)");
     BOOST_CHECK(CallRPCHandler("getwork", UniValue(UniValue::VARR), true).isNull());
@@ -82,7 +73,7 @@ BOOST_AUTO_TEST_CASE(getwork_without_wallet)
 /* With a wallet: help and the connection check */
 BOOST_AUTO_TEST_CASE(getwork_checks)
 {
-    VpWalletsGuard oneWallet({wallet.get()});
+    ValueGuard<std::vector<CWallet*> > oneWallet(vpwallets, {wallet.get()});
     CheckRPCHelp("getwork", UniValue(UniValue::VARR), true);
     CheckRPCHelp("getwork", RPCParams("00", "00"), false);
 

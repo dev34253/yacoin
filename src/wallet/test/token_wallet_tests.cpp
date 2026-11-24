@@ -105,22 +105,6 @@ static void CheckNewToken(const CScript& script, const CNewToken& expected, cons
     BOOST_CHECK_EQUAL(address, expectedAddress);
 }
 
-/** Restores vpwallets at the end of the scope */
-struct VpWalletsGuard {
-    std::vector<CWallet*> saved;
-    explicit VpWalletsGuard(const std::vector<CWallet*>& wallets) : saved(vpwallets) { vpwallets = wallets; }
-    ~VpWalletsGuard() { vpwallets = saved; }
-};
-
-/** Sets a token global to nullptr for the scope */
-template <typename T>
-struct NullGuard {
-    T*& ref;
-    T* saved;
-    explicit NullGuard(T*& r) : ref(r), saved(r) { ref = nullptr; }
-    ~NullGuard() { ref = saved; }
-};
-
 /** Mock wallet database environment for the object's lifetime */
 struct MockWalletDb {
     MockWalletDb() { bitdb.MakeMock(); }
@@ -396,7 +380,7 @@ BOOST_AUTO_TEST_CASE(issue_reissue_and_balances)
 
     // Without a wallet the lookups fail
     {
-        VpWalletsGuard noWallets(std::vector<CWallet*>{});
+        ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
         CAmount balance = 42;
         BOOST_CHECK(!GetMyTokenBalance("TOKENA", balance, 1));
         BOOST_CHECK_EQUAL(balance, 42);
@@ -611,7 +595,7 @@ BOOST_AUTO_TEST_CASE(transfer_tokens)
     CHECK_FAIL(TryTransfer(wallet.get(), {{CTokenTransfer("TOKENA!", OWNER_TOKEN_AMOUNT / 2), addrX}}, cc),
                RPC_INVALID_PARAMS, ownerAmountError);
     {
-        NullGuard<CTokensCache> noTokens(ptokens);
+        ValueGuard<CTokensCache*> noTokens(ptokens, nullptr);
         CHECK_FAIL(TryTransfer(wallet.get(), {{CTokenTransfer("TOKENA", COIN), addrX}}, cc),
                    RPC_DATABASE_ERROR, "ptokens isn't initialized");
     }
@@ -647,7 +631,7 @@ BOOST_AUTO_TEST_CASE(second_wallet_funds_and_ownership)
     {
         // The balance and has-token lookups (also inside the Create* functions) read
         // vpwallets[0], so the second wallet is made the only one there while it acts
-        VpWalletsGuard onlyB({&b});
+        ValueGuard<std::vector<CWallet*> > onlyB(vpwallets, {&b});
         BOOST_CHECK_EQUAL(Balance("TOKENA"), 5 * COIN);
         BOOST_CHECK_EQUAL(Balance("TOKENA!"), OWNER_TOKEN_AMOUNT);
 
@@ -738,11 +722,11 @@ BOOST_AUTO_TEST_CASE(issue_and_reissue_errors)
     CHECK_FAIL(TryReissue(wallet.get(), CReissueToken("abc", COIN, -1, 1, ""), tokenAddress, cc),
                RPC_INVALID_PARAMS, "Invalid token name: abc");
     {
-        NullGuard<CTokensCache> noTokens(ptokens);
+        ValueGuard<CTokensCache*> noTokens(ptokens, nullptr);
         CHECK_FAIL(TryReissue(wallet.get(), reissue, tokenAddress, cc), RPC_DATABASE_ERROR, "ptokens isn't initialized");
     }
     {
-        NullGuard<CLRUCache<std::string, CDatabasedTokenData> > noCache(ptokensCache);
+        ValueGuard<CLRUCache<std::string, CDatabasedTokenData>*> noCache(ptokensCache, nullptr);
         CHECK_FAIL(TryReissue(wallet.get(), reissue, tokenAddress, cc), RPC_DATABASE_ERROR, "ptokensCache isn't initialized");
     }
     CHECK_FAIL(TryReissue(wallet.get(), CReissueToken("NOTEXIST", COIN, -1, 1, ""), tokenAddress, cc), RPC_VERIFY_ERROR,
