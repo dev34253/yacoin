@@ -121,8 +121,7 @@
 #           CCACHE_MAXSIZE=1G, cleaning the tree in between. The first starts
 #           on an empty cache; the second must report the cache, take every
 #           depends package from it, compile src/ through the depends ccache
-#           with at least 90% hits, and take at most half the time ("cross"
-#           job of docker-check.yml, extended)
+#           with at least 90% hits, and take at most half the time
 #
 # The lint tools come from the release archives of shellcheck and actionlint
 # (SHELLCHECK_URL, ACTIONLINT_URL), kept in $DEV_CACHE/lint (DEV_CACHE as for
