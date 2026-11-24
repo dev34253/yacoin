@@ -752,8 +752,7 @@ struct UtilDataDirSetup : public BasicTestingSetup {
     {
         savedArgs = TestArgsManager::MapArgsOf(gArgs);
         savedMultiArgs = TestArgsManager::MapMultiArgsOf(gArgs);
-        pathTemp = fs::system_complete(fs::temp_directory_path() /
-            strprintf("test_bitcoin_util_%lu_%i", (unsigned long)GetTime(), (int)InsecureRandRange(100000)));
+        pathTemp = fs::system_complete(TestTempPath("test_bitcoin_util"));
         fs::create_directories(pathTemp);
         // Earlier suites may leave -conf or -datadir behind
         TestArgsManager::EraseArg(gArgs, "-conf");

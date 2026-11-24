@@ -102,6 +102,10 @@ private:
     std::string m_saved;
 };
 
+/** A path in the temp directory for a test's own files, named
+ * <prefix>_<process id>_<time>_<random number> */
+fs::path TestTempPath(const std::string& prefix);
+
 /** Basic testing setup.
  * This just configures logging and chain parameters.
  */

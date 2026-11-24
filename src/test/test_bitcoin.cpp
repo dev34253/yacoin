@@ -180,6 +180,16 @@ void MiscWarningGuard::Restore() const
 uint256 insecure_rand_seed = GetRandHash();
 FastRandomContext insecure_rand_ctx(insecure_rand_seed);
 
+fs::path TestTempPath(const std::string& prefix)
+{
+#ifdef WIN32
+    const unsigned long nProcessId = GetCurrentProcessId();
+#else
+    const unsigned long nProcessId = getpid();
+#endif
+    return fs::temp_directory_path() / strprintf("%s_%lu_%lu_%i", prefix, nProcessId, (unsigned long)GetTime(), (int)InsecureRandRange(100000));
+}
+
 extern bool fPrintToConsole;
 extern void noui_connect();
 
@@ -215,7 +225,7 @@ TestingSetup::TestingSetup(const std::string& chainName) : BasicTestingSetup(cha
 
         RegisterAllCoreRPCCommands(tableRPC);
         ClearDatadirCache();
-        pathTemp = fs::temp_directory_path() / strprintf("test_bitcoin_%lu_%i", (unsigned long)GetTime(), (int)(InsecureRandRange(100000)));
+        pathTemp = TestTempPath("test_bitcoin");
         fs::create_directories(pathTemp);
         gArgs.ForceSetArg("-datadir", pathTemp.string());
 
