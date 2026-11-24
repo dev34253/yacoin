@@ -93,18 +93,22 @@ private:
     const int64_t m_saved;
 };
 
-/** Sets an argument of gArgs while it lives. On destruction each of gArgs's two maps gets its
+/** Sets an argument of gArgs to a value while it lives, or with only the argument given, unsets
+ * it (removes its entry from both maps of gArgs). On destruction each of gArgs's two maps gets its
  * entry for the argument back as it was before, or loses it if there was none, so an argument
  * that was unset is unset again. Both steps hold gArgs's lock. */
 class ArgGuard
 {
 public:
     ArgGuard(const std::string& arg, const std::string& value);
+    explicit ArgGuard(const std::string& arg);
     ~ArgGuard();
     ArgGuard(const ArgGuard&) = delete;
     ArgGuard& operator=(const ArgGuard&) = delete;
 
 private:
+    void Save();
+
     const std::string m_arg;
     bool m_fHadArg;
     std::string m_value;
