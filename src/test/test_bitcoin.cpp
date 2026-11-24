@@ -195,7 +195,11 @@ BasicTestingSetup::BasicTestingSetup(const std::string& chainName)
         fPrintToDebugLog = false; // don't want to write to debug.log file
         fCheckBlockIndex = true;
         SelectParams(chainName);
-        noui_connect();
+        // noui_connect() adds its handlers on every call: connect them only while none is connected
+        if (uiInterface.ThreadSafeMessageBox.empty() && uiInterface.ThreadSafeQuestion.empty() &&
+            uiInterface.InitMessage.empty()) {
+            noui_connect();
+        }
 }
 
 BasicTestingSetup::~BasicTestingSetup()
