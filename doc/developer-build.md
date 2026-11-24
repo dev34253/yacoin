@@ -13,9 +13,9 @@ Builds, test data and logs stay inside the checkout and are ignored by git:
 | `.devbuild/tmp/` | Temporary data directories of unit and functional tests |
 | `.devbuild/logs/` | Logs, including one log per unit test suite |
 
-The compiler cache, the built dependencies and the caches of the container
-runs are in one cache directory outside the checkout, which all checkouts and
-worktrees of the repository share (see [Shared cache](#shared-cache)): `$DEV_CACHE`, by default
+The compiler cache, the built dependencies, the caches of the container runs
+and the archives of the lint tools are in one cache directory outside the
+checkout, which all checkouts and worktrees of the repository share (see [Shared cache](#shared-cache)): `$DEV_CACHE`, by default
 `${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`.
 
 | Path in the cache | Contents |
@@ -25,6 +25,7 @@ worktrees of the repository share (see [Shared cache](#shared-cache)): `$DEV_CAC
 | `depends/<key>/x86_64-pc-linux-gnu/` | Built dependencies (the install prefix; shared by all variants) |
 | `depends/<key>/built/`, `depends/<key>/work/` | depends' package cache and work area |
 | `container/<key>/` | The cache of `./dev.sh container` (depends packages, depends sources and ccache, per image), one per set of depends inputs |
+| `lint/` | The release archives of shellcheck and actionlint that `ci/containers/check.sh --steps lint` uses |
 
 ## One-time setup
 
