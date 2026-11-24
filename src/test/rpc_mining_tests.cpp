@@ -41,17 +41,6 @@ extern uint64_t nHashesPerSec;
 
 namespace {
 
-/** Sets a variable while it lives */
-template <typename T>
-struct ValueGuard {
-    T& m_ref;
-    const T m_saved;
-    ValueGuard(T& ref, T value) : m_ref(ref), m_saved(ref) { m_ref = value; }
-    ~ValueGuard() { m_ref = m_saved; }
-    ValueGuard(const ValueGuard&) = delete;
-    ValueGuard& operator=(const ValueGuard&) = delete;
-};
-
 /** A coinbase script of a fresh key, so that no two blocks built here are the same */
 CScript FreshScript()
 {

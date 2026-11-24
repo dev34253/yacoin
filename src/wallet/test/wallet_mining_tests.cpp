@@ -17,6 +17,7 @@
 #include "wallet/test/wallet_chain_setup.h"
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -130,6 +131,27 @@ BOOST_AUTO_TEST_CASE(checkwork_refuses)
     BOOST_REQUIRE(TipHash() == newTip.GetHash());
     BOOST_CHECK(!CheckWork(&stale, *wallet, reservekey));
     BOOST_CHECK(TipHash() == newTip.GetHash());
+}
+
+/* ValueGuard on vpwallets puts back the wallet list it found, also when its scope is left by an
+ * exception */
+BOOST_AUTO_TEST_CASE(vpwallets_guard_restores)
+{
+    const std::vector<CWallet*> vOne{wallet.get()};
+    ValueGuard<std::vector<CWallet*> > oneWallet(vpwallets, vOne);
+    {
+        ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
+        BOOST_CHECK(vpwallets.empty());
+    }
+    BOOST_CHECK(vpwallets == vOne);
+
+    try {
+        ValueGuard<std::vector<CWallet*> > noWallets(vpwallets, {});
+        BOOST_CHECK(vpwallets.empty());
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK(vpwallets == vOne);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

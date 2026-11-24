@@ -31,17 +31,6 @@ extern uint64_t nHashesPerSec;
 
 namespace {
 
-/** Sets a variable while it lives */
-template <typename T>
-struct ValueGuard {
-    T& m_ref;
-    const T m_saved;
-    ValueGuard(T& ref, T value) : m_ref(ref), m_saved(ref) { m_ref = value; }
-    ~ValueGuard() { m_ref = m_saved; }
-    ValueGuard(const ValueGuard&) = delete;
-    ValueGuard& operator=(const ValueGuard&) = delete;
-};
-
 /** A fixed header; version 7 and later serialise nTime in 64 bits */
 CBlock FixedBlock(int nVersion, int64_t nTime)
 {

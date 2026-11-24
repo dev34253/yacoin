@@ -177,6 +177,25 @@ void MiscWarningGuard::Restore() const
     SetMiscWarning(m_saved);
 }
 
+MockTimeGuard::MockTimeGuard() : m_saved(GetMockTime())
+{
+}
+
+MockTimeGuard::MockTimeGuard(int64_t nTime) : m_saved(GetMockTime())
+{
+    SetMockTime(nTime);
+}
+
+MockTimeGuard::~MockTimeGuard()
+{
+    SetMockTime(m_saved);
+}
+
+void MockTimeGuard::Set(int64_t nTime)
+{
+    SetMockTime(nTime);
+}
+
 uint256 insecure_rand_seed = GetRandHash();
 FastRandomContext insecure_rand_ctx(insecure_rand_seed);
 

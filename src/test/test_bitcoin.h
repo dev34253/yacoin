@@ -11,8 +11,10 @@
 #include "pubkey.h"
 #include "random.h"
 #include "scheduler.h"
+#include "sync.h"
 #include "txdb.h"
 #include "txmempool.h"
+#include "utiltime.h"
 
 #include <map>
 #include <string>
@@ -38,6 +40,58 @@ static inline uint256 InsecureRand256() { return insecure_rand_ctx.rand256(); }
 static inline uint64_t InsecureRandBits(int bits) { return insecure_rand_ctx.randbits(bits); }
 static inline uint64_t InsecureRandRange(uint64_t range) { return insecure_rand_ctx.randrange(range); }
 static inline bool InsecureRandBool() { return insecure_rand_ctx.randbool(); }
+
+/** Sets a variable while it lives and puts back the value it found on destruction. The form with a
+ * lock holds the given lock while it sets and while it restores the value. */
+template <typename T>
+class ValueGuard
+{
+public:
+    ValueGuard(T& ref, T value) : m_ref(ref), m_saved(ref), m_cs(nullptr) { m_ref = value; }
+    ValueGuard(CCriticalSection& cs, T& ref, T value) : m_ref(ref), m_saved(Read(cs, ref)), m_cs(&cs)
+    {
+        LOCK(cs);
+        m_ref = value;
+    }
+    ~ValueGuard()
+    {
+        if (m_cs) {
+            LOCK(*m_cs);
+            m_ref = m_saved;
+        } else {
+            m_ref = m_saved;
+        }
+    }
+    ValueGuard(const ValueGuard&) = delete;
+    ValueGuard& operator=(const ValueGuard&) = delete;
+
+private:
+    static T Read(CCriticalSection& cs, const T& ref)
+    {
+        LOCK(cs);
+        return ref;
+    }
+
+    T& m_ref;
+    const T m_saved;
+    CCriticalSection* const m_cs;
+};
+
+/** Puts back on destruction the mock time it found (GetMockTime(), 0 for none). With a time it sets
+ * that time while it lives; Set() sets another. */
+class MockTimeGuard
+{
+public:
+    MockTimeGuard();
+    explicit MockTimeGuard(int64_t nTime);
+    ~MockTimeGuard();
+    void Set(int64_t nTime);
+    MockTimeGuard(const MockTimeGuard&) = delete;
+    MockTimeGuard& operator=(const MockTimeGuard&) = delete;
+
+private:
+    const int64_t m_saved;
+};
 
 /** Sets an argument of gArgs while it lives. On destruction each of gArgs's two maps gets its
  * entry for the argument back as it was before, or loses it if there was none, so an argument

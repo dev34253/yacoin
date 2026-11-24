@@ -73,13 +73,6 @@ void RequireActiveAtGenesis()
     BOOST_REQUIRE_EQUAL(chainActive.Height(), 0);
 }
 
-/** Restores the mock time when the test ends. */
-struct MockTimeGuard
-{
-    ::int64_t nSaved = GetMockTime();
-    ~MockTimeGuard() { SetMockTime(nSaved); }
-};
-
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(default_version_tests, TestingSetup)
