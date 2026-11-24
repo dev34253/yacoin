@@ -90,7 +90,8 @@ what fuzzing finds, for example:
 
 ```sh
 mkdir -p "$HOME/yacoin-fuzz"
-docker run --rm -it -v "$PWD":/src -v "$HOME/yacoin-fuzz":/work -w /src --entrypoint bash yacoin-build-local:ubuntu.22.04
+docker run --rm -it -v "$PWD":/src -v "$HOME/yacoin-fuzz":/work -w /src --entrypoint bash \
+    "$(ci/containers/run.sh --print-tag ubuntu.22.04)"
 # in the container:
 export PATH=/usr/lib/llvm-14/bin:$PATH ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1
 fuzz=build/docker-ubuntu.22.04/fuzz-corpus/src/test/fuzz/fuzz
@@ -107,7 +108,7 @@ FUZZ=coins_deserialize $fuzz -merge=1 test/fuzz/corpus/coins_deserialize /work/n
 ```
 
 The container runs as root, so the files it writes (into the checkout too) belong to root; give them back afterwards, for example with
-`docker run --rm -v "$PWD":/src --entrypoint chown yacoin-build-local:ubuntu.22.04 -R "$(id -u):$(id -g)" /src/test/fuzz/corpus`.
+`docker run --rm -v "$PWD":/src --entrypoint chown "$(ci/containers/run.sh --print-tag ubuntu.22.04)" -R "$(id -u):$(id -g)" /src/test/fuzz/corpus`.
 
 The file names are libFuzzer's (the SHA-1 of the content). Keep the corpus small: it is replayed on every pull request commit.
 Every input added must replay without any report (`./dev.sh container fuzz-corpus`).

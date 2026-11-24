@@ -73,7 +73,7 @@ object_script.yacoin-qt.Release
 .settings/
 src/univalue/gen
 
-# Local developer builds (dev.sh; also the container cache .devbuild/container-cache)
+# Local developer builds (dev.sh)
 /.devbuild/
 # make install of the build-image release builds (ci/containers, CI)
 /release-root/

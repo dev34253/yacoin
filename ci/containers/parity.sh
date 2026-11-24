@@ -11,8 +11,8 @@
 #      as a local image or pulled. CI publishes that tag from master once the
 #      image definition is merged there; a tag that is not published stops
 #      the image here, with an error naming the tag;
-#   2. builds yacoin-build-local:<image> (LOCAL_REPO) from this directory
-#      (run.sh);
+#   2. builds this clone's local image of it from this directory (run.sh;
+#      its tag: run.sh --print-tag <image>, LOCAL_REPO);
 #   3. compares the two: image config (entrypoint, env, workdir, user), OS
 #      release, compilers and build tools, the toolchains that are not dpkg
 #      packages (osxcross, macOS SDK), the installed package list, and the

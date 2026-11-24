@@ -57,7 +57,8 @@
 #           the image's line after its depends build, which each entrypoint
 #           prints once, or held to the end without it), and docker run's
 #           output and exit status passed on
-#   build   docker build of each image (tagged yacoin-build-local:<image>)
+#   build   docker build of each image (tagged with this clone's tag,
+#           run.sh --print-tag <image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts,
 #           targets and files they need, the Linux release build modes

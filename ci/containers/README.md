@@ -24,11 +24,19 @@ ci/containers/check.sh --steps cache windows    # slow: two builds with one cach
 ci/containers/parity.sh ubuntu.22.04            # parity with the image CI uses, then build, unit-tests and functional-tests
 ```
 
-`run.sh` tags the images `yacoin-build-local:<image>` (`LOCAL_REPO` changes the name) and labels them `org.yacoin.build-local=1`, so
-leftover images can be removed with `docker image prune -a --filter label=org.yacoin.build-local=1` (`-a` also removes the tagged
-`yacoin-build-local:*` images). It mounts the source tree at `/src` and a
-cache directory at `/cache` (default `<src>/.devbuild/container-cache`), runs the container as root as CI does, and (except under rootless
-Docker or Podman) gives the files it wrote back to the caller afterwards.
+`run.sh` tags the images with a name of the clone's own, `yacoin-build-local-<directory name>-<checksum of its physical path>:<image>`
+(`run.sh --print-tag <image>` prints it; `LOCAL_REPO` sets another name), so clones never retag each other's images. It labels them
+`org.yacoin.build-local=1` and `org.yacoin.build-local.tree=<clone>`:
+
+```bash
+docker image ls --filter label=org.yacoin.build-local=1                                        # the local images of all clones
+docker image rm -f $(docker image ls -q --filter label=org.yacoin.build-local.tree=/path/to/clone) # those of one clone, e.g. a deleted one
+docker image prune -a --filter label=org.yacoin.build-local=1                                  # all of them that no container uses
+```
+
+It mounts the source tree at `/src` and a cache directory at `/cache` (default: `$DEV_CACHE/container/<key>`, see
+[below](#linux-image-modes-jobs-and-cache)), runs the container as root as CI does, and (except under rootless Docker or Podman) gives
+the files it wrote back to the caller afterwards.
 
 ## Available Build Environments
 
@@ -50,6 +58,7 @@ To build YaCoin for a specific platform, or to run a test mode, use `./dev.sh co
 ./dev.sh container [options] [image] [mode]    # this checkout, image ubuntu.22.04 and mode build by default
 ci/containers/run.sh [options] <image> [mode]  # mode build by default; --src <dir> for another tree
 ci/containers/run.sh --help                    # the images, modes and options
+ci/containers/run.sh --print-tag ubuntu.22.04  # this clone's tag of the image
 ```
 
 Both build the image and run the mode in it; `--no-image-build` runs the existing local image without building it first.
@@ -104,9 +113,19 @@ docker run -v /path/to/yacoin:/src -e FTEST_SHARD=2/2 "$image" functional-tests-
 - If a directory is mounted at `/cache`, built depends packages, ccache data
   (per image; separate for the release build and the test modes) and depends
   source tarballs (shared) are kept there between
-  runs. That saves the roughly 12 minutes of rebuilding depends. Use one
-  container per image cache at a time. Cache statistics are printed at the
-  end of every run, also when it fails.
+  runs. That saves the roughly 12 minutes of rebuilding depends. Cache
+  statistics are printed at the end of every run, also when it fails.
+- `run.sh`'s default cache is `$DEV_CACHE/container/<key>` (`DEV_CACHE` as for
+  `dev.sh`, default `${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`; `<key>` a
+  hash of the files under `depends/` of the source tree that git does not
+  ignore, `CONTAINER_CACHE` in `./dev.sh cache`), so clones with the same
+  recipes share it and other recipes get their own. `--cache DIR` mounts
+  another, `--no-cache` none.
+- One container at a time builds depends with a cache: `run.sh` holds a lock
+  on it (`<cache>/run.lock`) from the start of a run until the container
+  prints its first line after the depends build (or to its end), and a second
+  run on that cache waits until then. After that the runs share the cache
+  through ccache only, which handles parallel use itself.
 - Files written to `/src` and `/cache` are owned by root.
 - `run.sh` starts the sanitizer modes (`unit-tests-asan`, `unit-tests-tsan`,
   `fuzz-corpus`, `functional-tests-asan`) with `CCACHE_DISABLE=1`, as the CI
