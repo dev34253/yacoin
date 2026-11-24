@@ -8,6 +8,7 @@
 # archives of the lint tools are in one cache directory that all checkouts
 # share (DEV_CACHE). See doc/developer-build.md for the workflow.
 set -euo pipefail
+unused_plant=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Not HOST: some shells (e.g. tcsh) export HOST as the machine's hostname.
