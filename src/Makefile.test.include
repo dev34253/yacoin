@@ -52,6 +52,7 @@ BITCOIN_TESTS =\
   test/cuckoocache_tests.cpp \
   test/default_version_tests.cpp \
   test/DoS_tests.cpp \
+  test/fixture_tests.cpp \
   test/getarg_tests.cpp \
   test/hash_tests.cpp \
   test/http_test_util.cpp \

@@ -23,6 +23,7 @@
 #include "script/sigcache.h"
 #include "sync.h"
 #include "util.h"
+#include "warnings.h"
 
 #include <algorithm>
 #include <chrono>
@@ -155,6 +156,25 @@ ArgsSnapshot::~ArgsSnapshot()
     LOCK(ArgsAccess::Lock());
     ArgsAccess::MapArgs() = m_args;
     ArgsAccess::MapMultiArgs() = m_multiArgs;
+}
+
+extern CCriticalSection cs_warnings;
+extern std::string strMiscWarning;
+
+MiscWarningGuard::MiscWarningGuard()
+{
+    LOCK(cs_warnings);
+    m_saved = strMiscWarning;
+}
+
+MiscWarningGuard::~MiscWarningGuard()
+{
+    Restore();
+}
+
+void MiscWarningGuard::Restore() const
+{
+    SetMiscWarning(m_saved);
 }
 
 uint256 insecure_rand_seed = GetRandHash();

@@ -244,13 +244,19 @@ BOOST_AUTO_TEST_CASE(flush_signals_best_chain)
 BOOST_AUTO_TEST_CASE(flush_coin_write_failure)
 {
     CCoinsView refusing; // BatchWrite returns false
+    MiscWarningGuard warning;
+    SetMiscWarning("earlier warning");
     BOOST_CHECK_EQUAL(FlushOver(refusing), "Failed to write to coin database");
+    BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
 }
 
 BOOST_AUTO_TEST_CASE(flush_exception)
 {
     ThrowingView throwing;
+    MiscWarningGuard warning;
+    SetMiscWarning("earlier warning");
     BOOST_CHECK_EQUAL(FlushOver(throwing), "System error while flushing: injected write error");
+    BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
 }
 
 BOOST_AUTO_TEST_CASE(flush_without_token_cache)

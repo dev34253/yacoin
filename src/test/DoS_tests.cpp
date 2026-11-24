@@ -42,7 +42,13 @@ static NodeId id = 0;
 
 void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds);
 
-BOOST_FIXTURE_TEST_SUITE(DoS_tests, TestingSetup)
+/** TestingSetup that checks after each case that the mock time is the one it found */
+struct DoSTestingSetup : public TestingSetup {
+    const int64_t nMockTimeBefore{GetMockTime()};
+    ~DoSTestingSetup() { BOOST_CHECK_EQUAL(GetMockTime(), nMockTimeBefore); }
+};
+
+BOOST_FIXTURE_TEST_SUITE(DoS_tests, DoSTestingSetup)
 
 // Test eviction of an outbound peer whose chain never advances
 // Mock a node connection, and use mocktime to simulate a peer

@@ -34,6 +34,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #ifdef __linux__
@@ -912,6 +913,30 @@ BOOST_AUTO_TEST_CASE(verify_db_failures)
     BOOST_CHECK(broken);
 }
 
+
+/* AbortGuard puts back the misc warning it found: Reset() now, the destructor when it goes out
+ * of scope, also when the guarded block throws */
+BOOST_AUTO_TEST_CASE(abort_guard_restores_the_misc_warning)
+{
+    MiscWarningGuard outer;
+    SetMiscWarning("earlier warning");
+    {
+        AbortGuard abort;
+        SetMiscWarning("later warning");
+        abort.Reset();
+        BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+        SetMiscWarning("later warning");
+    }
+    BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+
+    try {
+        AbortGuard abort;
+        SetMiscWarning("later warning");
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK_EQUAL(GetWarnings("statusbar"), "earlier warning");
+}
 
 /* The tip's block can't be read: InvalidateBlock fails with an error state (not an
  * invalid one), aborts (shutdown requested, warning set) and changes nothing; once the

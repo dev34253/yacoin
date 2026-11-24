@@ -87,6 +87,21 @@ public:
     ShutdownRequestRecorder& operator=(const ShutdownRequestRecorder&) = delete;
 };
 
+/** Saves the misc warning (SetMiscWarning) and puts it back on destruction; Restore() puts it
+ * back earlier. */
+class MiscWarningGuard
+{
+public:
+    MiscWarningGuard();
+    ~MiscWarningGuard();
+    void Restore() const;
+    MiscWarningGuard(const MiscWarningGuard&) = delete;
+    MiscWarningGuard& operator=(const MiscWarningGuard&) = delete;
+
+private:
+    std::string m_saved;
+};
+
 /** Basic testing setup.
  * This just configures logging and chain parameters.
  */
