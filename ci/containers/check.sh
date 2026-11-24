@@ -857,7 +857,7 @@ devsh_container() {
 # the image's line after its depends build), or for the whole run without
 # that line; docker run's output and exit status come through.
 devsh_lock() {
-    local bin="$1" ev="$work/devsh/c/events" stubc="$work/devsh/c/container" px status
+    local bin="$1" ev="$work/devsh/c/events" stubc="$work/devsh/c/container" px status got
     local gen="== Generating the build system ==" mac="== Building yacoin for macOS =="
     write_stub_container "$stubc"
     # Two copies with one depends key: the second waits for the first's
@@ -1196,7 +1196,7 @@ expect_status() {
 }
 
 step_smoke() {
-    local image tag mode fake="$work/fake-src"
+    local image tag mode status fake="$work/fake-src"
     rm -rf "$fake"; mkdir -p "$fake"; printf 'all:\n' > "$fake/Makefile.am"
     for image in "${images[@]}"; do
         tag="$LOCAL_REPO:$image"
@@ -1574,7 +1574,7 @@ step_smoke() {
         # runner fails. functional-tests-asan (22.04 image) runs them with
         # the sanitizers' runtime options, a directory for their reports and
         # its list of scripts left out, and only it does.
-        local want ftest_jobs status func_modes=(functional-tests) goals logs want_opts has_opts
+        local want ftest_jobs func_modes=(functional-tests) goals logs want_opts has_opts
         local excluded="/src/test/sanitizer_suppressions/asan-excluded-scripts"
         local regtest_excluded="/src/test/functional/regtest-excluded-scripts"
         [[ "$image" != ubuntu.22.04 ]] || func_modes+=(functional-tests-asan)
@@ -1944,7 +1944,7 @@ make_ccache_stub() {
 # empty cache race for it and fail with "ccache.conf: No such file or
 # directory". The entrypoint must create it before anything runs ccache.
 step_ccache() {
-    local image tag stub="$work/ccache-stub" cache="$work/ccache-cache" state
+    local image tag with_cache stub="$work/ccache-stub" cache="$work/ccache-cache" state
     for image in "${images[@]}"; do
         tag="$LOCAL_REPO:$image"
         for with_cache in yes no; do
