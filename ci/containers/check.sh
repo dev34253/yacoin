@@ -5,8 +5,11 @@
 #
 # Steps (default: lint,tag,static,devsh,build,smoke,ccache; all images by
 # default):
-#   lint    bash -n and shellcheck --severity=warning on the scripts here, and
-#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE)
+#   lint    bash -n and shellcheck --severity=warning on the scripts here,
+#           no grep -q at the end of a pipe in them (pipefail and SIGPIPE),
+#           and every uses: under .github/ names a local action or a
+#           published action by full commit SHA with its version in a comment
+#           (first on planted copies, each with its expected result)
 #   tag     test-image-tag.sh: the image tags (image-tag.sh), the CI
 #           workflow's use of them, its jobs and caches, and
 #           all-jobs-passed.sh (needs jq)
@@ -164,6 +167,85 @@ step_lint() {
         pass "lint: no grep -q at the end of a pipe"
     else
         while read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$piped"
+    fi
+    lint_uses
+}
+
+# unpinned_uses <dir>: prints every line of the *.yml and *.yaml files under
+# <dir> that holds uses: as a key and names neither a local action
+# (uses: ./<path>) nor a published action by full commit with its version in
+# a comment (uses: <owner>/<repo>[/<path>]@<40 hex>  # v<version>, with an
+# optional "- " before it), as "<file>:<line>: <rule>: <line>", the file
+# relative to the parent of <dir>. Comment lines are skipped; any other form
+# (quoted, flow) is reported. A <dir> without such files is reported too.
+UNPINNED_USES="uses: must be a local action (./...) or owner/repo[/path]@<40-hex commit>  # <version>"
+unpinned_uses() {
+    local base name f n line files=0
+    local comment='^[[:space:]]*#'
+    local key="(^|[^A-Za-z0-9_-])[\"']?uses[\"']?[[:space:]]*:"
+    local item='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+'
+    local local_action="$item"'\./[^[:space:]#]+[[:space:]]*$'
+    local pinned="$item"'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./-]+)?@[0-9a-f]{40}[[:space:]]+# v[0-9][0-9A-Za-z.+-]*[[:space:]]*$'
+    base=$(dirname "$1") name=$(basename "$1")
+    while IFS= read -r -d '' f; do
+        files=$((files + 1)) n=0
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            n=$((n + 1))
+            [[ ! "$line" =~ $comment && "$line" =~ $key ]] || continue
+            [[ "$line" =~ $local_action || "$line" =~ $pinned ]] ||
+                echo "$f:$n: $UNPINNED_USES: ${line#"${line%%[![:space:]]*}"}"
+        done < "$base/$f"
+    done < <(cd "$base" && find "$name" -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 | LC_ALL=C sort -z)
+    (( files > 0 )) || echo "$name: no *.yml or *.yaml files"
+}
+
+# lint_uses_plant <want> <file> <line>...: a copy of .github in $work with one
+# workflow <file> whose steps are the lines; the rule must report line <want>
+# of it (0: nothing).
+lint_uses_plant() {
+    local want="$1" file="$2" dir="$work/uses-plant/.github" out expect=""
+    shift 2
+    rm -rf "$dir"; mkdir -p "$dir/workflows"
+    printf '%s\n' 'on: push' 'jobs:' '  build:' '    runs-on: ubuntu-latest' '    steps:' "$@" > "$dir/workflows/$file"
+    out=$(unpinned_uses "$dir")
+    local label line
+    for line in "$@"; do [[ -n "${label:-}" || "$line" != *uses* ]] || label="${line#"${line%%[![:space:]]*}"}"; done
+    if (( want > 0 )); then
+        expect=$(sed -n "${want}p" "$dir/workflows/$file")
+        expect=".github/workflows/$file:$want: $UNPINNED_USES: ${expect#"${expect%%[![:space:]]*}"}"
+    fi
+    if [[ "$out" != "$expect" ]]; then
+        fail "lint: uses: planted '$label' in $file gives '$out', want '${expect:-nothing}'"
+    elif (( want > 0 )); then
+        pass "lint: uses: planted '$label' in $file fails: $out"
+    else
+        pass "lint: uses: planted '$label' in $file passes"
+    fi
+}
+
+lint_uses() {
+    local sha=d23441a48e516b6c34aea4fa41551a30e30af803 out f
+    lint_uses_plant 6 unpinned.yml '      - uses: actions/checkout@v6'
+    lint_uses_plant 6 short.yml '      - uses: actions/checkout@d23441a  # v6.1.0'
+    lint_uses_plant 6 no-version.yml "      - uses: actions/checkout@$sha"
+    lint_uses_plant 6 branch-comment.yml "      - uses: actions/checkout@$sha  # main"
+    lint_uses_plant 0 pinned.yml "      - uses: actions/checkout@$sha  # v6.1.0"
+    lint_uses_plant 0 pinned-key.yml '      - name: checkout' "        uses: actions/checkout@$sha  # v6.1.0"
+    lint_uses_plant 0 pinned-path.yml '      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0'
+    lint_uses_plant 0 local.yml '      - uses: ./.github/actions/yacoin-build-image'
+    lint_uses_plant 0 comment.yml '      # uses: actions/checkout@v6' '      - run: echo'
+    lint_uses_plant 6 flow.yml '      - { uses: actions/checkout@v6 }'
+    lint_uses_plant 6 quoted.yml "      - uses: \"actions/checkout@$sha\"  # v6.1.0"
+    lint_uses_plant 7 unpinned-key.yaml '      - name: checkout' '        uses: actions/checkout@v6'
+    rm -rf "$work/uses-plant"; mkdir -p "$work/uses-plant/.github"
+    out=$(unpinned_uses "$work/uses-plant/.github")
+    [[ "$out" == ".github: no *.yml or *.yaml files" ]] && pass "lint: uses: a directory without workflows is reported" ||
+        fail "lint: uses: a directory without workflows gives '$out'"
+    out=$(unpinned_uses "$ROOT/.github")
+    if [[ -z "$out" ]]; then
+        pass "lint: every uses: under .github/ names a local action or a published action by full commit SHA with its version in a comment"
+    else
+        while IFS= read -r f; do fail "lint: $f"; done <<< "$out"
     fi
 }
 

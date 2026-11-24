@@ -112,7 +112,7 @@ and `cov-functional`; `windows` and
   published under it, so `docker pull "$(ci/containers/image-tag.sh ubuntu.22.04)"` gets the image CI uses for this checkout once
   `master` has it; `./dev.sh container` builds it locally instead.
 - `ci/containers/README.md` describes the images, how CI builds and publishes them, the image checks (`check.sh`) and the comparison
-  with the images on Docker Hub (`parity.sh`).
+  with the images CI uses (`parity.sh`).
 
 ## Build variants
 

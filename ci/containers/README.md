@@ -12,8 +12,8 @@ the entrypoints create the ccache config before the build.
 | `test-image-tag.sh` | Tests of `image-tag.sh`, of the workflow's use of the tags, of the workflow's jobs and caches, and of `all-jobs-passed.sh` |
 | `all-jobs-passed.sh` | The result of the CI job `all-jobs-passed`: passes only when every job it needs passed |
 | `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
-| `check.sh` | The image checks: lint, image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
-| `parity.sh` | Compares an image built from here with the one on Docker Hub (`dev34253/yacoin-build:<image>-2`) and runs its modes on a clean clone |
+| `check.sh` | The image checks: lint (also: every `uses:` under `.github/` names a local action or a published action by full commit SHA with its version in a comment), image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
+| `parity.sh` | Compares an image built from here with the image CI uses for the same image definition (`image-tag.sh`'s tag, published from `master`) and runs its modes on a clean clone |
 
 ```bash
 ./dev.sh container unit-tests                  # ubuntu.22.04 image, unit-tests mode, on this checkout
@@ -21,7 +21,7 @@ ci/containers/run.sh windows                    # the Windows release build
 ci/containers/check.sh                          # all images: lint, tag, static, devsh, build, smoke, ccache
 ci/containers/image-tag.sh ubuntu.22.04         # the tag CI runs the ubuntu.22.04 image under
 ci/containers/check.sh --steps cache windows    # slow: two builds with one cache
-ci/containers/parity.sh ubuntu.22.04            # image parity, then build, unit-tests and functional-tests
+ci/containers/parity.sh ubuntu.22.04            # parity with the image CI uses, then build, unit-tests and functional-tests
 ```
 
 `run.sh` tags the images `yacoin-build-local:<image>` (`LOCAL_REPO` changes the name) and labels them `org.yacoin.build-local=1`, so
@@ -145,8 +145,8 @@ release matrix uses it; the Windows and macOS images are based on 18.04.
 ## macOS Build Notes
 
 The macOS build uses the osxcross toolchain to cross-compile from Ubuntu 18.04. It downloads the macOS 10.11 SDK and builds binaries compatible
-with macOS 10.8+. osxcross is pinned to the commit of the published `macos-2` image (`OSXCROSS_COMMIT`), and the SDK tarball is checked
-against the hash of the one in that image.
+with macOS 10.8+. osxcross is pinned to one commit (`OSXCROSS_COMMIT`), and the SDK tarball is checked against its SHA-256
+(`sha256sum -c` in `Dockerfile.macos`).
 
 ## GitHub Actions
 
@@ -175,7 +175,9 @@ How a job gets its image:
    branches, tags and pull requests never write to the registry and fall back to a local build on a registry error (the log says why),
    so the registry only holds images and caches built from `master`.
 
-The action pins `docker/setup-buildx-action` and `docker/build-push-action` by commit; the registry login is `docker login`.
+The workflows and the action pin every published action they use (`actions/checkout`, `actions/cache`, `actions/upload-artifact`,
+`actions/download-artifact`, `docker/setup-buildx-action`, `docker/build-push-action`) by commit, with its version in a comment;
+`check.sh lint` checks that every `uses:` under `.github/` does. The registry login is `docker login`.
 
 Nothing outside this repository changes what CI builds with: a tag names the files it was built from, and a new image definition is a
 reviewed change here. `check.sh` (step `tag`, also `test-image-tag.sh` on its own, which `build-ubuntu-1604` runs first) checks the tags
