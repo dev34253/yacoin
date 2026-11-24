@@ -116,6 +116,21 @@ public:
 ArgGuard::ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg), m_fHadArg(false), m_fHadMultiArg(false)
 {
     LOCK(ArgsAccess::Lock());
+    Save();
+    gArgs.ForceSetArg(m_arg, value);
+}
+
+ArgGuard::ArgGuard(const std::string& arg) : m_arg(arg), m_fHadArg(false), m_fHadMultiArg(false)
+{
+    LOCK(ArgsAccess::Lock());
+    Save();
+    ArgsAccess::MapArgs().erase(m_arg);
+    ArgsAccess::MapMultiArgs().erase(m_arg);
+}
+
+// Called with gArgs's lock held
+void ArgGuard::Save()
+{
     const auto it = ArgsAccess::MapArgs().find(m_arg);
     if (it != ArgsAccess::MapArgs().end()) {
         m_fHadArg = true;
@@ -126,7 +141,6 @@ ArgGuard::ArgGuard(const std::string& arg, const std::string& value) : m_arg(arg
         m_fHadMultiArg = true;
         m_values = itMulti->second;
     }
-    gArgs.ForceSetArg(m_arg, value);
 }
 
 ArgGuard::~ArgGuard()

@@ -30,6 +30,7 @@
 #include "warnings.h"
 
 #include "test/test_bitcoin.h"
+#include "test/token_test_util.h"
 
 #include <functional>
 #include <map>
@@ -46,26 +47,17 @@
 namespace {
 
 /** Regtest chain with mature coinbases, and the token database DisconnectBlock needs */
-struct ValidationSetup : public TestChain100Setup {
+struct ValidationSetup : public TestChain100Setup, public TokenDbGuard {
     CScript scriptPubKey;
     std::vector<CTransaction> matureCoinbases; // spendable
     std::vector<CTransaction> recentCoinbases; // the newest ones aren't mature yet
-    CTokensDB* prevTokensDb;
 
     ValidationSetup()
     {
-        prevTokensDb = ptokensdb;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
         scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
         matureCoinbases = coinbaseTxns;
         for (int i = 0; i < COINBASE_MATURITY_AFTER_HARDFORK; i++)
             recentCoinbases.push_back(CreateAndProcessBlock({}, scriptPubKey).vtx[0]);
-    }
-
-    ~ValidationSetup()
-    {
-        delete ptokensdb;
-        ptokensdb = prevTokensDb;
     }
 
     /** Signed spend of output n of prev; `modify` changes the tx before signing */

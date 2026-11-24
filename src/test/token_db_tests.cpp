@@ -257,4 +257,73 @@ BOOST_AUTO_TEST_CASE(holder_listings_from_the_end)
     TOKEN_CHECK_LIST(TokenHoldings(a1, 10, -2), {"ABC=1000000", "XYZ=3000000"});
 }
 
+/** A fixture whose constructor throws after its TokenDbGuard base was built */
+struct ThrowingTokenDbSetup : public TokenDbGuard {
+    ThrowingTokenDbSetup() { throw std::runtime_error("fixture constructor"); }
+};
+
+/* TokenDbGuard (token_test_util.h) sets ptokensdb to an empty database of its own while it lives
+ * and puts back the previous pointer: at the end of its scope, when the scope is left by an
+ * exception and when the constructor of a fixture derived from it throws. ResetTokenDb gives a
+ * new empty database the guard owns. */
+BOOST_AUTO_TEST_CASE(token_db_guard_restores)
+{
+    CTokensDB* const pSuiteDb = ptokensdb;
+    BOOST_REQUIRE(pSuiteDb != nullptr);
+    const std::string address = TestTokenAddress(1);
+    CAmount nQuantity = 0;
+    BOOST_REQUIRE(ptokensdb->WriteTokenAddressQuantity("GUARD", address, COIN));
+    {
+        TokenDbGuard guard;
+        BOOST_CHECK(guard.prevTokensDb == pSuiteDb);
+        BOOST_CHECK(ptokensdb == guard.tokensDb.get());
+        BOOST_CHECK(ptokensdb != pSuiteDb);
+        BOOST_CHECK(!ptokensdb->ReadTokenAddressQuantity("GUARD", address, nQuantity));
+        BOOST_REQUIRE(ptokensdb->WriteTokenAddressQuantity("GUARD", address, 2 * COIN));
+        guard.ResetTokenDb();
+        BOOST_CHECK(ptokensdb == guard.tokensDb.get());
+        BOOST_CHECK(!ptokensdb->ReadTokenAddressQuantity("GUARD", address, nQuantity));
+    }
+    BOOST_CHECK(ptokensdb == pSuiteDb);
+    BOOST_CHECK(ptokensdb->ReadTokenAddressQuantity("GUARD", address, nQuantity));
+    BOOST_CHECK_EQUAL(nQuantity, COIN);
+
+    try {
+        TokenDbGuard guard;
+        BOOST_CHECK(ptokensdb == guard.tokensDb.get());
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK(ptokensdb == pSuiteDb);
+
+    BOOST_CHECK_THROW(ThrowingTokenDbSetup(), std::runtime_error);
+    BOOST_CHECK(ptokensdb == pSuiteDb);
+}
+
+/* TokenGlobalsGuard inside the suite's own: ResetTokenCache gives a new empty cache the guard
+ * owns, and the guard's end check stays quiet; afterwards the suite's globals are back. */
+BOOST_AUTO_TEST_CASE(token_globals_guard_reset_cache)
+{
+    CTokensDB* const pSuiteDb = ptokensdb;
+    CLRUCache<std::string, CDatabasedTokenData>* const pSuiteCache = ptokensCache;
+    BOOST_REQUIRE(pSuiteCache != nullptr);
+    const CDatabasedTokenData data(DbToken("CACHED", 1), 1, DbBlockHash(1));
+    pSuiteCache->Put("CACHED", data);
+    {
+        TokenGlobalsGuard guard;
+        BOOST_CHECK(ptokensdb == guard.tokensDb.get());
+        BOOST_CHECK(ptokensCache == guard.tokensCache.get());
+        BOOST_CHECK(ptokensCache != pSuiteCache);
+        BOOST_CHECK(!ptokensCache->Exists("CACHED"));
+        ptokensCache->Put("CACHED", data);
+        BOOST_CHECK(ptokensCache->Exists("CACHED"));
+        guard.ResetTokenCache();
+        BOOST_CHECK(ptokensCache == guard.tokensCache.get());
+        BOOST_CHECK_EQUAL(ptokensCache->Size(), 0U);
+    }
+    BOOST_CHECK(ptokensdb == pSuiteDb);
+    BOOST_CHECK(ptokensCache == pSuiteCache);
+    BOOST_CHECK(ptokensCache->Exists("CACHED"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

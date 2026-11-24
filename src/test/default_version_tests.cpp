@@ -27,9 +27,6 @@
 
 namespace {
 
-const unsigned int TEST_BITS = 0x1e0fffff;
-const ::int64_t TEST_SPACING = 60;
-
 // Local copies: the class constants are declared without a definition, and
 // BOOST_CHECK_EQUAL takes its arguments by reference.
 const int TX_VERSION_OLD = CTransaction::CURRENT_VERSION_of_Tx_for_yac_old;
@@ -54,23 +51,6 @@ void CheckDefaults(bool fNew, const std::string& strWhat)
         strWhat << ": CTransaction().nVersion is " << nTxGot << ", expected " << nTxVersion);
     BOOST_CHECK_MESSAGE(nMutableTxGot == nTxVersion,
         strWhat << ": CMutableTransaction().nVersion is " << nMutableTxGot << ", expected " << nTxVersion);
-}
-
-/** Entries at heights 1 to nTop on top of genesis; element h is at height h, element 0 is genesis. */
-std::vector<CBlockIndex*> BuildChain(SyntheticChain& chain, int nTop)
-{
-    std::vector<CBlockIndex*> v{chain.Genesis()};
-    for (int h = 1; h <= nTop; h++) {
-        v.push_back(chain.Add(v.back(), v.back()->GetBlockTime() + TEST_SPACING, TEST_BITS));
-    }
-    return v;
-}
-
-void RequireActiveAtGenesis()
-{
-    LOCK(cs_main);
-    BOOST_REQUIRE(chainActive.Genesis() != nullptr);
-    BOOST_REQUIRE_EQUAL(chainActive.Height(), 0);
 }
 
 } // namespace

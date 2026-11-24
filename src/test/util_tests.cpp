@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <algorithm>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
@@ -114,7 +115,7 @@ public:
     };
 
     // Reach the protected maps of any ArgsManager (gArgs included) through a pointer to
-    // member formed in this derived class, so fixtures can save and restore gArgs.
+    // member formed in this derived class, so the tests can read the maps of gArgs.
     static std::map<std::string, std::string>& MapArgsOf(ArgsManager& a)
     {
         return a.*(&TestArgsManager::mapArgs);
@@ -122,11 +123,6 @@ public:
     static std::map<std::string, std::vector<std::string> >& MapMultiArgsOf(ArgsManager& a)
     {
         return a.*(&TestArgsManager::mapMultiArgs);
-    }
-    static void EraseArg(ArgsManager& a, const std::string& strArg)
-    {
-        MapArgsOf(a).erase(strArg);
-        MapMultiArgsOf(a).erase(strArg);
     }
 };
 
@@ -138,6 +134,15 @@ static const std::string ARG_GUARD_TEST = "-argguardtest";
 static bool ArgAbsent(const std::string& strArg)
 {
     return TestArgsManager::MapArgsOf(gArgs).count(strArg) == 0 && TestArgsManager::MapMultiArgsOf(gArgs).count(strArg) == 0;
+}
+
+/** Gives gArgs only -argguardtest, given twice (-argguardtest=a -argguardtest=b): ParseParameters
+ * leaves "b" in the single-value map and {"a", "b"} in the multi-value map, and removes every other
+ * argument, so callers hold an ArgsSnapshot. */
+static void ParseArgGuardTestTwice()
+{
+    const char* const argv[] = {"test_bitcoin", "-argguardtest=a", "-argguardtest=b"};
+    gArgs.ParseParameters(3, argv);
 }
 
 BOOST_AUTO_TEST_CASE(argguard_unset_before)
@@ -157,6 +162,7 @@ BOOST_AUTO_TEST_CASE(argguard_unset_before)
 
 BOOST_AUTO_TEST_CASE(argguard_set_before)
 {
+    ArgsSnapshot args;
     BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
     gArgs.ForceSetArg(ARG_GUARD_TEST, "old");
     {
@@ -167,16 +173,13 @@ BOOST_AUTO_TEST_CASE(argguard_set_before)
     BOOST_CHECK(gArgs.IsArgSet(ARG_GUARD_TEST));
     BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "old");
     BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"old"});
-    TestArgsManager::EraseArg(gArgs, ARG_GUARD_TEST);
 }
 
 BOOST_AUTO_TEST_CASE(argguard_multi_value)
 {
-    // Planted as ParseParameters leaves an argument given twice (-argguardtest=a
-    // -argguardtest=b): ParseParameters on gArgs would replace all of its arguments
+    ArgsSnapshot args;
     BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
-    TestArgsManager::MapArgsOf(gArgs)[ARG_GUARD_TEST] = "b";
-    TestArgsManager::MapMultiArgsOf(gArgs)[ARG_GUARD_TEST] = {"a", "b"};
+    ParseArgGuardTestTwice();
     const std::vector<std::string> vBefore{"a", "b"};
     BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "b");
     BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == vBefore);
@@ -187,7 +190,6 @@ BOOST_AUTO_TEST_CASE(argguard_multi_value)
     }
     BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "b");
     BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == vBefore);
-    TestArgsManager::EraseArg(gArgs, ARG_GUARD_TEST);
 }
 
 BOOST_AUTO_TEST_CASE(argguard_nested)
@@ -205,6 +207,65 @@ BOOST_AUTO_TEST_CASE(argguard_nested)
     }
     BOOST_CHECK(!gArgs.IsArgSet(ARG_GUARD_TEST));
     BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+}
+
+// ArgGuard with only the argument: no entry in either map while it lives
+
+BOOST_AUTO_TEST_CASE(argguard_unset_when_unset)
+{
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    {
+        ArgGuard guard(ARG_GUARD_TEST);
+        BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+        BOOST_CHECK(!gArgs.IsArgSet(ARG_GUARD_TEST));
+    }
+    BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+}
+
+BOOST_AUTO_TEST_CASE(argguard_unset_when_set)
+{
+    ArgsSnapshot args;
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    gArgs.ForceSetArg(ARG_GUARD_TEST, "old");
+    {
+        ArgGuard guard(ARG_GUARD_TEST);
+        BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+        BOOST_CHECK(!gArgs.IsArgSet(ARG_GUARD_TEST));
+        BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "default");
+        BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST).empty());
+    }
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "old");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"old"});
+}
+
+BOOST_AUTO_TEST_CASE(argguard_unset_multi_value)
+{
+    ArgsSnapshot args;
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    ParseArgGuardTestTwice();
+    const std::vector<std::string> vBefore{"a", "b"};
+    BOOST_REQUIRE(gArgs.GetArgs(ARG_GUARD_TEST) == vBefore);
+    {
+        ArgGuard guard(ARG_GUARD_TEST);
+        BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+    }
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "b");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == vBefore);
+}
+
+BOOST_AUTO_TEST_CASE(argguard_unset_by_exception)
+{
+    ArgsSnapshot args;
+    BOOST_REQUIRE(ArgAbsent(ARG_GUARD_TEST));
+    gArgs.ForceSetArg(ARG_GUARD_TEST, "old");
+    try {
+        ArgGuard guard(ARG_GUARD_TEST);
+        BOOST_CHECK(ArgAbsent(ARG_GUARD_TEST));
+        throw std::runtime_error("thrown in the guarded block");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_CHECK_EQUAL(gArgs.GetArg(ARG_GUARD_TEST, "default"), "old");
+    BOOST_CHECK(gArgs.GetArgs(ARG_GUARD_TEST) == std::vector<std::string>{"old"});
 }
 
 BOOST_AUTO_TEST_CASE(util_ParseParameters)
@@ -745,17 +806,13 @@ static std::string ReadFile(const fs::path& p)
 /** Gives a test case its own datadir (gArgs -datadir) and restores gArgs afterwards. */
 struct UtilDataDirSetup : public BasicTestingSetup {
     fs::path pathTemp;
-    std::map<std::string, std::string> savedArgs;
-    std::map<std::string, std::vector<std::string> > savedMultiArgs;
+    ArgsSnapshot args;
+    ArgGuard noConf{"-conf"}; // earlier suites may leave -conf or -datadir behind
 
     UtilDataDirSetup()
     {
-        savedArgs = TestArgsManager::MapArgsOf(gArgs);
-        savedMultiArgs = TestArgsManager::MapMultiArgsOf(gArgs);
         pathTemp = fs::system_complete(TestTempPath("test_bitcoin_util"));
         fs::create_directories(pathTemp);
-        // Earlier suites may leave -conf or -datadir behind
-        TestArgsManager::EraseArg(gArgs, "-conf");
         gArgs.ForceSetArg("-datadir", pathTemp.string());
         ClearDatadirCache();
     }
@@ -767,8 +824,6 @@ struct UtilDataDirSetup : public BasicTestingSetup {
         gArgs.ForceSetArg("-datadir", pathTemp.string());
         GetDataDir(false);
         GetDataDir(true);
-        TestArgsManager::MapArgsOf(gArgs) = savedArgs;
-        TestArgsManager::MapMultiArgsOf(gArgs) = savedMultiArgs;
         boost::system::error_code ec;
         fs::remove_all(pathTemp, ec);
     }
@@ -973,7 +1028,7 @@ BOOST_FIXTURE_TEST_CASE(util_ReadConfigFile_datadir, UtilDataDirSetup)
     // cached datadir (read by absolute path, so the old datadir isn't consulted). Without
     // -datadir only the cache keeps GetDataDir() away from the real default datadir, so it
     // is checked right before each read.
-    TestArgsManager::EraseArg(gArgs, "-datadir");
+    ArgGuard noDatadir("-datadir");
     BOOST_REQUIRE(GetDataDir(false) == pathTemp); // still cached
     gArgs.ReadConfigFile(conf.string());
     BOOST_CHECK(GetDataDir(false) == dir2);
@@ -981,7 +1036,7 @@ BOOST_FIXTURE_TEST_CASE(util_ReadConfigFile_datadir, UtilDataDirSetup)
 
     // A datadir that doesn't exist gives an empty path
     WriteFile(conf, "datadir=" + (pathTemp / "missing").string() + "\n");
-    TestArgsManager::EraseArg(gArgs, "-datadir");
+    ArgGuard noDatadirAgain("-datadir");
     BOOST_REQUIRE(GetDataDir(false) == dir2);
     gArgs.ReadConfigFile(conf.string());
     BOOST_CHECK(GetDataDir(false).empty());

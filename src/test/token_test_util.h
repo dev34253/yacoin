@@ -25,40 +25,20 @@
 #include <boost/test/unit_test.hpp>
 
 /**
- * What init.cpp creates for tokens, for the guard's lifetime: an in-memory
- * token database and the LRU metadata cache, with the token index enabled.
- * The previous globals are restored, and the token maps cleared, when the
- * guard is destroyed, so no token state leaks into other suites. As a base or
+ * An in-memory token database as ptokensdb for the guard's lifetime; the
+ * previous pointer is restored when the guard is destroyed. As a base or
  * member of a fixture this also holds when the fixture's constructor throws.
  */
-struct TokenGlobalsGuard {
+struct TokenDbGuard {
     CTokensDB* const prevTokensDb;
-    CLRUCache<std::string, CDatabasedTokenData>* const prevTokensCache;
-    const bool prevTokenIndex;
     std::unique_ptr<CTokensDB> tokensDb;
-    std::unique_ptr<CLRUCache<std::string, CDatabasedTokenData> > tokensCache;
 
-    TokenGlobalsGuard()
-        : prevTokensDb(ptokensdb), prevTokensCache(ptokensCache), prevTokenIndex(fTokenIndex),
-          tokensDb(new CTokensDB(1 << 20, true, true)),
-          tokensCache(new CLRUCache<std::string, CDatabasedTokenData>(MAX_CACHE_TOKENS_SIZE))
+    TokenDbGuard() : prevTokensDb(ptokensdb), tokensDb(new CTokensDB(1 << 20, true, true))
     {
         ptokensdb = tokensDb.get();
-        ptokensCache = tokensCache.get();
-        fTokenIndex = true;
-        ClearTokenGlobals();
     }
 
-    ~TokenGlobalsGuard()
-    {
-        // The guard owns these; a test that replaced them must use ResetTokenDb
-        BOOST_CHECK_MESSAGE(ptokensdb == tokensDb.get() && ptokensCache == tokensCache.get(),
-                            "token globals were replaced behind TokenGlobalsGuard's back");
-        ClearTokenGlobals();
-        ptokensdb = prevTokensDb;
-        ptokensCache = prevTokensCache;
-        fTokenIndex = prevTokenIndex;
-    }
+    ~TokenDbGuard() { ptokensdb = prevTokensDb; }
 
     /** Replace the token database with an empty one; the guard keeps owning it */
     void ResetTokenDb()
@@ -67,6 +47,50 @@ struct TokenGlobalsGuard {
         tokensDb.reset();
         tokensDb.reset(new CTokensDB(1 << 20, true, true));
         ptokensdb = tokensDb.get();
+    }
+
+    TokenDbGuard(const TokenDbGuard&) = delete;
+    TokenDbGuard& operator=(const TokenDbGuard&) = delete;
+};
+
+/**
+ * What init.cpp creates for tokens, for the guard's lifetime: the token
+ * database of TokenDbGuard and the LRU metadata cache, with the token index
+ * enabled. The previous globals are restored, and the token maps cleared, when
+ * the guard is destroyed, so no token state leaks into other suites. As a base
+ * or member of a fixture this also holds when the fixture's constructor throws.
+ */
+struct TokenGlobalsGuard : public TokenDbGuard {
+    CLRUCache<std::string, CDatabasedTokenData>* const prevTokensCache;
+    const bool prevTokenIndex;
+    std::unique_ptr<CLRUCache<std::string, CDatabasedTokenData> > tokensCache;
+
+    TokenGlobalsGuard()
+        : prevTokensCache(ptokensCache), prevTokenIndex(fTokenIndex),
+          tokensCache(new CLRUCache<std::string, CDatabasedTokenData>(MAX_CACHE_TOKENS_SIZE))
+    {
+        ptokensCache = tokensCache.get();
+        fTokenIndex = true;
+        ClearTokenGlobals();
+    }
+
+    ~TokenGlobalsGuard()
+    {
+        // The guard owns these; a test that replaced them must use ResetTokenDb or ResetTokenCache
+        BOOST_CHECK_MESSAGE(ptokensdb == tokensDb.get() && ptokensCache == tokensCache.get(),
+                            "token globals were replaced behind TokenGlobalsGuard's back");
+        ClearTokenGlobals();
+        ptokensCache = prevTokensCache;
+        fTokenIndex = prevTokenIndex;
+    }
+
+    /** Replace the token metadata cache with an empty one; the guard keeps owning it */
+    void ResetTokenCache()
+    {
+        ptokensCache = nullptr;
+        tokensCache.reset();
+        tokensCache.reset(new CLRUCache<std::string, CDatabasedTokenData>(MAX_CACHE_TOKENS_SIZE));
+        ptokensCache = tokensCache.get();
     }
 
     TokenGlobalsGuard(const TokenGlobalsGuard&) = delete;

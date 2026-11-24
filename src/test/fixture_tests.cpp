@@ -2,11 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// The shared test fixtures and guards of test_bitcoin.h. The suite has no fixture of its own,
-// so the cases can construct fixtures one after another.
+// The shared test fixtures and guards of test_bitcoin.h, the chain helpers of
+// consensus_test_util.h and the activation heights of activation_test_util.h. The suite has no
+// fixture of its own, so the cases can construct fixtures one after another.
 
+#include "test/activation_test_util.h"
+#include "test/consensus_test_util.h"
 #include "test/test_bitcoin.h"
 
+#include "chain.h"
+#include "chainparams.h"
+#include "chainparamsbase.h"
 #include "fs.h"
 #include "sync.h"
 #include "ui_interface.h"
@@ -204,6 +210,71 @@ BOOST_AUTO_TEST_CASE(mock_time_guard_restores)
         SetMockTime(1700000000);
     }
     BOOST_CHECK_EQUAL(GetMockTime(), 1600000000);
+}
+
+/** Checks the entries of BuildChain(chain, nTop, nSpacing) */
+static void CheckBuiltChain(const std::vector<CBlockIndex*>& v, const CBlockIndex* pGenesis, int nTop, int64_t nSpacing)
+{
+    BOOST_REQUIRE_EQUAL(v.size(), static_cast<size_t>(nTop) + 1);
+    BOOST_CHECK(v[0] == pGenesis);
+    for (int h = 1; h <= nTop; h++) {
+        BOOST_CHECK_EQUAL(v[h]->nHeight, h);
+        BOOST_CHECK(v[h]->pprev == v[h - 1]);
+        BOOST_CHECK_EQUAL(v[h]->GetBlockTime(), pGenesis->GetBlockTime() + h * nSpacing);
+        BOOST_CHECK_EQUAL(v[h]->nBits, 0x1e0fffffU);
+    }
+}
+
+/* BuildChain: element h at height h on top of the element before it, nSpacing seconds later
+ * (60 by default), all with nBits 0x1e0fffff; element 0 is genesis */
+BOOST_FIXTURE_TEST_CASE(build_chain_entries, TestingSetup)
+{
+    RequireActiveAtGenesis();
+    SyntheticChain chain;
+    const CBlockIndex* const pGenesis = chain.Genesis();
+    for (int nTop : {0, 1, 20}) {
+        CheckBuiltChain(BuildChain(chain, nTop), pGenesis, nTop, 60);
+    }
+    CheckBuiltChain(BuildChain(chain, 20, 30), pGenesis, 20, 30);
+    CheckBuiltChain(BuildChain(chain, 20, 600), pGenesis, 20, 600);
+}
+
+/** Checks that the fork and token heights are the selected chain's activation table entries */
+static void CheckHeightsFromTable(int32_t nFork, int32_t nTokens)
+{
+    const Consensus::Params& consensus = Params().GetConsensus();
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, consensus.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC));
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, consensus.ActivationHeight(Consensus::ACTIVATION_TOKENS));
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, nFork);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, nTokens);
+}
+
+/* SetHeightsFromActivationTable sets the fork and token heights from the selected chain's
+ * activation table, as does ConsensusGlobalsGuard::SetFromActivationTable; the guard puts back the
+ * heights it found */
+BOOST_FIXTURE_TEST_CASE(heights_from_activation_table, BasicTestingSetup)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    const int32_t nForkBefore = nMainnetNewLogicBlockNumber;
+    const int32_t nTokensBefore = nTokenSupportBlockNumber;
+    {
+        ConsensusGlobalsGuard globals;
+        nMainnetNewLogicBlockNumber = -1;
+        nTokenSupportBlockNumber = -1;
+        SetHeightsFromActivationTable();
+        CheckHeightsFromTable(1890000, 1911210);
+        {
+            SelectedParamsGuard regtest(CBaseChainParams::REGTEST);
+            SetHeightsFromActivationTable();
+            CheckHeightsFromTable(0, 0);
+        }
+        nMainnetNewLogicBlockNumber = -1;
+        nTokenSupportBlockNumber = -1;
+        globals.SetFromActivationTable();
+        CheckHeightsFromTable(1890000, 1911210);
+    }
+    BOOST_CHECK_EQUAL(nMainnetNewLogicBlockNumber, nForkBefore);
+    BOOST_CHECK_EQUAL(nTokenSupportBlockNumber, nTokensBefore);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

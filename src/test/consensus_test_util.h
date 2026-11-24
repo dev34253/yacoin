@@ -11,10 +11,13 @@
 #include "uint256.h"
 #include "util.h"
 #include "validation.h"
+#include "test/activation_test_util.h"
 
 #include <deque>
 #include <string>
 #include <vector>
+
+#include <boost/test/unit_test.hpp>
 
 /**
  * Saves the consensus globals that init.cpp normally sets (the unit tests
@@ -39,12 +42,7 @@ struct ConsensusGlobalsGuard
     }
 
     // The fork and token heights from the selected chain's activation table.
-    void SetFromActivationTable()
-    {
-        const Consensus::Params& consensus = Params().GetConsensus();
-        nMainnetNewLogicBlockNumber = consensus.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC);
-        nTokenSupportBlockNumber = consensus.ActivationHeight(Consensus::ACTIVATION_TOKENS);
-    }
+    void SetFromActivationTable() { SetHeightsFromActivationTable(); }
 
     ~ConsensusGlobalsGuard()
     {
@@ -165,5 +163,28 @@ private:
     std::vector<uint256> m_registered;
     ::uint64_t m_hashCounter = 0;
 };
+
+/** nBits and block spacing (seconds) of the entries BuildChain adds */
+const unsigned int TEST_BITS = 0x1e0fffff;
+const ::int64_t TEST_SPACING = 60;
+
+/** Entries at heights 1 to nTop on top of genesis, nSpacing seconds apart, all with TEST_BITS;
+ *  element h is at height h, element 0 is genesis. */
+inline std::vector<CBlockIndex*> BuildChain(SyntheticChain& chain, int nTop, ::int64_t nSpacing = TEST_SPACING)
+{
+    std::vector<CBlockIndex*> v{chain.Genesis()};
+    for (int h = 1; h <= nTop; h++) {
+        v.push_back(chain.Add(v.back(), v.back()->GetBlockTime() + nSpacing, TEST_BITS));
+    }
+    return v;
+}
+
+/** Stops the test unless the active chain has a genesis entry and nothing above it. */
+inline void RequireActiveAtGenesis()
+{
+    LOCK(cs_main);
+    BOOST_REQUIRE(chainActive.Genesis() != nullptr);
+    BOOST_REQUIRE_EQUAL(chainActive.Height(), 0);
+}
 
 #endif // YACOIN_TEST_CONSENSUS_TEST_UTIL_H
