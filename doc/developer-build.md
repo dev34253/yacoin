@@ -13,9 +13,9 @@ Builds, test data and logs stay inside the checkout and are ignored by git:
 | `.devbuild/tmp/` | Temporary data directories of unit and functional tests |
 | `.devbuild/logs/` | Logs, including one log per unit test suite |
 
-The compiler cache and the built dependencies are in one cache directory
-outside the checkout, which all checkouts and worktrees of the repository
-share (see [Shared cache](#shared-cache)): `$DEV_CACHE`, by default
+The compiler cache, the built dependencies and the caches of the container
+runs are in one cache directory outside the checkout, which all checkouts and
+worktrees of the repository share (see [Shared cache](#shared-cache)): `$DEV_CACHE`, by default
 `${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`.
 
 | Path in the cache | Contents |
@@ -24,6 +24,7 @@ share (see [Shared cache](#shared-cache)): `$DEV_CACHE`, by default
 | `depends/sources/` | Downloaded source files of the dependencies |
 | `depends/<key>/x86_64-pc-linux-gnu/` | Built dependencies (the install prefix; shared by all variants) |
 | `depends/<key>/built/`, `depends/<key>/work/` | depends' package cache and work area |
+| `container/<key>/` | The cache of `./dev.sh container` (depends packages, depends sources and ccache, per image), one per set of depends inputs |
 
 ## One-time setup
 
@@ -52,7 +53,7 @@ mirror is `FALLBACK_DOWNLOAD_PATH` in `depends/Makefile`; it stores every file
 under the recipe's file name. For example:
 
 ```sh
-curl -fL -o "${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev/depends/sources/ccache-3.3.4.tar.bz2" \
+curl -fL --create-dirs -o "$(./dev.sh cache | sed -n 's/^SOURCES_PATH=//p')/ccache-3.3.4.tar.bz2" \
     https://github.com/dev34253/yacoin-depends-sources/releases/download/sources/ccache-3.3.4.tar.bz2
 ```
 
@@ -92,9 +93,28 @@ and `cov-functional`; `windows` and
   their logs are in `build/docker-<image>/build-low-difficulty/unit-test-logs/` and `.../build-low-difficulty/test/tmp/`. Because both
   configure in place, out-of-tree builds (`dev.sh` and the test modes) refuse the tree afterwards until `make distclean`. Run release
   builds in a separate clone, for example `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
-- Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
-  builds depends. Measured on 8 CPUs: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine (40 with
-  other builds running), the second 1-2 minutes (all compiles from ccache).
+- Each clone tags its images with a name of its own, `yacoin-build-local-<directory name>-<checksum of its path>:<image>`
+  (`ci/containers/run.sh --print-tag <image>` prints it; `LOCAL_REPO` sets another name), so clones with different Dockerfiles never
+  retag each other's images; Docker shares the layers of equal ones. `ci/containers/README.md` says how to remove old images.
+- Depends packages, depends sources and ccache data are kept per image in `container/<key>/` of the shared cache (`CONTAINER_CACHE` in
+  the output of `./dev.sh cache`): one directory per set of depends inputs, its key computed as for `depends/<key>/`, but without the host (see
+  [Shared cache](#shared-cache)). All clones with the same recipes use it, so only the first run of an image with those recipes builds
+  depends, also in a new clone. Measured on 8 CPUs: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine
+  (40 with other builds running), the second 1-2 minutes (all compiles from ccache). `--cache <dir>` gives a run another cache,
+  `--no-cache` none; a `.devbuild/container-cache/` in a checkout is used only when passed with `--cache` (moved to the checkout's
+  `CONTAINER_CACHE`, it starts that cache warm).
+- One container at a time builds depends with a cache: a run holds a lock on it (`run.lock`) until its depends build is done, and a
+  second run on that cache waits until then ("Waiting for another container's depends build"); after that both run.
+- Each directory holds up to `CCACHE_MAXSIZE` (default 5G) of ccache data per image, plus a few hundred MB of depends packages per
+  image and the sources. Remove the ones of old recipes once no run uses them (`run.sh` gives the files back to you after each run),
+  for example all but this checkout's:
+
+  ```sh
+  cache=$(./dev.sh cache | sed -n 's/^DEV_CACHE=//p'); keep=$(./dev.sh cache | sed -n 's/^CONTAINER_CACHE=//p')
+  du -sh "$cache"/container/*/
+  for d in "$cache"/container/*/; do [ "${d%/}" = "$keep" ] || rm -rf "$d"; done
+  ```
+
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
 - `JOBS` sets the parallelism (default: all CPUs, 4 for `windows` and `macos`); `FTEST_JOBS` (the parallel scripts of
@@ -105,8 +125,8 @@ and `cov-functional`; `windows` and
   defaults for its host builds. Set `FTEST_SHARD` as a prefix of the one command, e.g.
   `FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan`, not exported: `make cov-functional` reads it from the environment
   too. `./dev.sh cov` always runs every script.
-- Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests` or
-  `--src <dir>` for another tree.
+- Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests`,
+  `--cpus 4` (a CPU limit for the container, as on a CI runner; in the Linux images the default `JOBS` follows it) or `--src <dir>` for another tree.
 - CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:
   `ci/containers/image-tag.sh <image>` prints the tag (`ghcr.io/dev34253/yacoin-build:<image>-<hash>`). Images built on `master` are
   published under it, so `docker pull "$(ci/containers/image-tag.sh ubuntu.22.04)"` gets the image CI uses for this checkout once
@@ -176,8 +196,10 @@ All checkouts and worktrees of the repository on a machine share one cache
 directory, so the first build in a new checkout takes its dependencies and
 most of its compiles from the cache. `DEV_CACHE` sets the directory (default
 `${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`); `./dev.sh cache` and the help
-(`./dev.sh` without arguments) print it. To clear the cache, remove the
-directory; the next `./dev.sh depends` and builds start cold.
+(`./dev.sh` without arguments) print it. `dev.sh` resolves the path
+(symlinks, `..`, a trailing slash), so every spelling of one directory gives
+the same paths. To clear the cache, remove the directory; the next
+`./dev.sh depends` and builds start cold.
 
 - The built dependencies contain their install prefix, so checkouts share a
   prefix only when their dependency recipes are the same: the directory
@@ -194,8 +216,11 @@ directory; the next `./dev.sh depends` and builds start cold.
 - depends removes the prefix and unpacks it again on every run, even with
   nothing to build, which would pull it away under another checkout's build.
   So `./dev.sh depends` skips depends when the last successful run for these
-  recipes had the same inputs (the Qt choice and the compiler versions,
-  recorded in `depends/<key>/depends.stamp`). A skipped run does not recheck
+  recipes had the same inputs, recorded in `depends/<key>/depends.stamp`:
+  the make arguments (the Qt choice among them; not the checkout or `JOBS`),
+  `DEBUG`, `HOST_ID_SALT`, `BUILD_ID_SALT`, `NO_WALLET`, `NO_UPNP` and
+  `NO_QT` from the environment, and the full versions of the compilers,
+  `ar`, `ranlib` and `strip`, for the build machine and the host. A skipped run does not recheck
   the cached packages; removing the stamp (or the cache) forces a full run.
   The last `./dev.sh depends` or `./dev.sh depends qt` decides
   whether the prefix holds Qt; switching, or a compiler update, replaces the
@@ -215,8 +240,10 @@ directory; the next `./dev.sh depends` and builds start cold.
   `.gcno` files name the checkout they are built in.
 - A build directory configured against another prefix (after a recipe change,
   or against a prefix inside the checkout, `depends/<host>/`) would mix two
-  sets of libraries. `dev.sh` refuses it with a message; remove the build
-  directory (`rm -rf build/<variant>`) and build again. The host builds of
+  sets of libraries. `dev.sh` refuses it with a message, which also lists
+  the files under `depends/` that git does not track (they count for the
+  key); remove the build directory (`rm -rf build/<variant>`) and build
+  again. The host builds of
   `dev.sh` do not use `depends/<host>/`, `depends/built/`, `depends/sources/`,
   `depends/work/` or `.devbuild/ccache/` in the checkout. The release modes of
   `./dev.sh container` (`build`, `build-low-difficulty`, `windows`, `macos`)
@@ -224,8 +251,9 @@ directory; the next `./dev.sh depends` and builds start cold.
   use `depends/work/`; with `--no-cache` they also use `depends/sources/`,
   and the release modes `depends/built/`. Remove these only when no container
   build needs them.
-- `./dev.sh container` does not use this cache; it keeps its own per image in
-  `.devbuild/container-cache/`.
+- `./dev.sh container` keeps its caches in `container/<key>/` of this cache
+  (see [Building in the CI containers](#building-in-the-ci-containers)); the
+  host builds do not use them.
 
 ### TDD loop
 

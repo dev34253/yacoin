@@ -4,8 +4,9 @@
 # Always builds against the pinned libraries from depends/ (never system
 # libraries), so local builds use the same dependency versions as CI.
 # Build output and test data stay inside .devbuild/ and build/; the compiler
-# cache and the built dependencies are in one cache directory that all
-# checkouts share (DEV_CACHE). See doc/developer-build.md for the workflow.
+# cache, the built dependencies and the caches of the container runs are in
+# one cache directory that all checkouts share (DEV_CACHE). See
+# doc/developer-build.md for the workflow.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,25 +20,30 @@ JOBS="${JOBS:-$(nproc)}"
 
 # The cache shared by all checkouts: ccache, the depends sources, and per set
 # of depends inputs (key) the built packages, depends' work area and the
-# install prefix. Packages contain their install prefix, so checkouts with the
-# same recipes share one prefix at one path, and other recipes get their own.
-DEV_CACHE="${DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev}"
-[[ "$DEV_CACHE" == /* ]] || DEV_CACHE="$PWD/$DEV_CACHE"
+# install prefix, and the cache of the container runs (ci/containers/run.sh).
+# Packages contain their install prefix, so checkouts with the same recipes
+# share one prefix at one path, and other recipes get their own. One path
+# for every spelling of the directory (symlinks, "..", a trailing slash), as
+# the prefix is compared as a string and is part of ccache's key.
+DEV_CACHE="$(realpath -m -- "${DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev}")"
+is_git_checkout() { [[ "$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$ROOT" && pwd -P)" ]]; }
 # The content of the files under depends/ that git does not ignore (tracked
-# or not, so a recipe or patch not yet added counts), and the host. Not a git
-# checkout: a key of its own, nothing shared.
-depends_key() {
-    local inputs
-    if [[ "$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" == "$(cd "$ROOT" && pwd -P)" ]]; then
-        inputs=$(cd "$ROOT" && git ls-files -z -co --exclude-standard -- depends | xargs -0 -r sha256sum -- 2>/dev/null) || true
+# or not, so a recipe or patch not yet added counts). Not a git checkout: its
+# path, a key of its own, nothing shared.
+depends_inputs() {
+    if is_git_checkout; then
+        (cd "$ROOT" && git ls-files -z -co --exclude-standard -- depends | xargs -0 -r sha256sum -- 2>/dev/null) || true
     else
-        inputs="tree $ROOT"
+        echo "tree $(cd "$ROOT" && pwd -P)"
     fi
-    printf '%s\nhost %s\n' "$inputs" "$DEV_HOST" | sha256sum | cut -c1-16
 }
+DEPENDS_INPUTS="$(depends_inputs)"
 # A path component named "depends", so the coverage filter "*/depends/*"
-# removes the dependency headers from reports.
-DEPENDS_DIR="$DEV_CACHE/depends/$(depends_key)"
+# removes the dependency headers from reports. The key also takes the host.
+DEPENDS_DIR="$DEV_CACHE/depends/$(printf '%s\nhost %s\n' "$DEPENDS_INPUTS" "$DEV_HOST" | sha256sum | cut -c1-16)"
+# The cache of the container runs of this checkout: per set of depends
+# inputs, for every image (ci/containers/run.sh computes the same).
+CONTAINER_CACHE="$DEV_CACHE/container/$(printf '%s\n' "$DEPENDS_INPUTS" | sha256sum | cut -c1-16)"
 DEPENDS_PREFIX="$DEPENDS_DIR/$DEV_HOST"
 # Builds for other hosts get their own directories, so a variant is never
 # silently reused for a different host.
@@ -95,15 +101,15 @@ Usage: ./dev.sh <command> [args]
   container [options] [image] [mode]
                           Build a CI image from ci/containers/ and run a mode
                           in it on this checkout (default: ubuntu.22.04 build;
-                          options: ci/containers/run.sh --help)
+                          options, e.g. --cpus N: ci/containers/run.sh --help)
 
 Variants: dev (mainnet consensus, no GUI, -O1 -g),
           release (default optimisation),
           asan (dev + AddressSanitizer/UndefinedBehaviorSanitizer),
           cov (coverage build used by "cov")
 
-Cache shared by all checkouts (ccache and the built dependencies; DEV_CACHE
-sets it, removing the directory clears it):
+Cache shared by all checkouts (ccache, the built dependencies and the
+container caches; DEV_CACHE sets it, removing the directory clears it):
   $DEV_CACHE
 EOF
 }
@@ -126,7 +132,7 @@ ensure_dirs() {
 
 cmd_cache() {
     printf '%s=%s\n' DEV_CACHE "$DEV_CACHE" CCACHE_DIR "$CCACHE_DIR" SOURCES_PATH "$DEV_CACHE/depends/sources" \
-        DEPENDS_DIR "$DEPENDS_DIR" DEPENDS_PREFIX "$DEPENDS_PREFIX"
+        DEPENDS_DIR "$DEPENDS_DIR" DEPENDS_PREFIX "$DEPENDS_PREFIX" CONTAINER_CACHE "$CONTAINER_CACHE"
 }
 
 cmd_depends() {
@@ -138,10 +144,10 @@ cmd_depends() {
         *linux*) os=linux ;; *darwin*) os=darwin ;; *mingw32*) os=mingw32 ;; *) os="${canon#*-*-}" ;;
     esac
     local w="$DEPENDS_DIR/work"
-    local args=(-C "$ROOT/depends" -j"$JOBS" HOST="$DEV_HOST" "${canon%%-*}_${os}_prefix=$DEPENDS_PREFIX"
-                BASE_CACHE="$DEPENDS_DIR/built" SOURCES_PATH="$DEV_CACHE/depends/sources"
-                base_build_dir="$w/build" base_staging_dir="$w/staging" base_download_dir="$w/download")
-    [[ "${1:-}" == qt ]] || args+=(NO_QT=1)
+    local margs=(HOST="$DEV_HOST" "${canon%%-*}_${os}_prefix=$DEPENDS_PREFIX"
+                 BASE_CACHE="$DEPENDS_DIR/built" SOURCES_PATH="$DEV_CACHE/depends/sources"
+                 base_build_dir="$w/build" base_staging_dir="$w/staging" base_download_dir="$w/download")
+    [[ "${1:-}" == qt ]] || margs+=(NO_QT=1)
     # One depends build at a time in the cache: the prefix is depends' work
     # area while it builds, and the sources are shared by all keys.
     local lock="$DEV_CACHE/depends.lock" fd
@@ -149,15 +155,22 @@ cmd_depends() {
     flock -n "$fd" || { log "Waiting for another depends build ($lock)"; flock "$fd"; }
     # Even with nothing to build, depends removes the prefix and unpacks it
     # again, under the builds of other checkouts with the same recipes. So
-    # make is skipped when the last successful run had the same inputs: the
-    # Qt choice and the compilers whose versions are in depends' build ids
-    # (the recipes are in the key). A skipped run does not recheck the cached
-    # packages; removing the stamp (or the cache) forces a full run.
-    local stamp="$DEPENDS_DIR/depends.stamp" inputs t v
-    inputs="qt: ${1:-}"$'\n'
-    for t in gcc g++ "$DEV_HOST-gcc" "$DEV_HOST-g++"; do
-        v=$("$t" --version 2>/dev/null) || v=""
-        inputs+="$t: ${v%%$'\n'*}"$'\n'
+    # make is skipped when the last successful run had the same inputs (the
+    # recipes are in the key): the make arguments (not the checkout and the
+    # job count), DEBUG, HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET, NO_UPNP and
+    # NO_QT from the environment (set, empty or unset), and the full --version
+    # output of the build and host tools in depends' build ids (all of it,
+    # as depends takes it; a missing tool gives an empty one). A skipped run
+    # does not recheck the cached packages; removing the stamp (or the cache)
+    # forces a full run.
+    local stamp="$DEPENDS_DIR/depends.stamp" inputs="" t v
+    for v in "${margs[@]}"; do inputs+="make $v"$'\n'; done
+    for v in DEBUG HOST_ID_SALT BUILD_ID_SALT NO_WALLET NO_UPNP NO_QT; do
+        inputs+="env $v=${!v+set:}${!v-}"$'\n'
+    done
+    for t in gcc g++ ar ranlib strip "$DEV_HOST"-{gcc,g++,ar,ranlib,strip}; do
+        v=$("$t" --version 2>/dev/null) || true
+        inputs+="$t: $v"$'\n'
     done
     if [[ -f "$DEPENDS_PREFIX/share/config.site" && "$(cat "$stamp" 2>/dev/null)"$'\n' == "$inputs" ]]; then
         log "Dependencies up to date in $DEPENDS_PREFIX"
@@ -166,15 +179,23 @@ cmd_depends() {
     rm -f "$stamp"
     # The depends packages run their own configure scripts with their own
     # settings; they must not read the config.site meant for yacoind.
-    env -u CONFIG_SITE make "${args[@]}"
+    env -u CONFIG_SITE make -C "$ROOT/depends" -j"$JOBS" "${margs[@]}"
     printf '%s' "$inputs" > "$stamp"
 }
 
 # A build directory configured against another prefix (other recipes, or
-# the prefix inside the checkout) would mix two sets of libraries.
+# the prefix inside the checkout) would mix two sets of libraries. The files
+# under depends/ that git does not track count for the key, so the refusal
+# names them.
 check_prefix() {
     [[ ! -f "$1/config.status" ]] || grep -qF -- "$DEPENDS_PREFIX/" "$1/config.status" || {
         echo "${1#"$ROOT"/} was configured against other dependencies than $DEPENDS_PREFIX." >&2
+        local untracked=""
+        ! is_git_checkout || untracked=$(cd "$ROOT" && git ls-files -o --exclude-standard -- depends)
+        if [[ -n "$untracked" ]]; then
+            echo "These files under depends/ are not tracked by git and count for the dependencies' key:" >&2
+            sed 's/^/  /' <<< "$untracked" >&2
+        fi
         echo "Remove it (rm -rf ${1#"$ROOT"/}) to build it again." >&2
         exit 1
     }
@@ -415,15 +436,15 @@ cmd_cov_check() {
 }
 
 # Builds a CI image from ci/containers/ and runs one of its modes on this
-# checkout, with the cache in .devbuild/container-cache (ci/containers/run.sh).
-# Options go to run.sh. The image can be left out: a first argument that is
-# a mode is a mode. JOBS and CCACHE_MAXSIZE are passed on only if the caller
-# set them, not dev.sh's own defaults.
+# checkout, with the container cache under DEV_CACHE (CONTAINER_CACHE;
+# ci/containers/run.sh). Options go to run.sh. The image can be left out: a
+# first argument that is a mode is a mode. JOBS and CCACHE_MAXSIZE are passed
+# on only if the caller set them, not dev.sh's own defaults.
 cmd_container() {
     local opts=() image=ubuntu.22.04
     while [[ "${1:-}" == -* ]]; do
         case "$1" in
-            --src|--cache|--name) opts+=("$1" "${2:?$1 needs a value}"); shift 2 ;;
+            --src|--cache|--name|--cpus) opts+=("$1" "${2:?$1 needs a value}"); shift 2 ;;
             *) opts+=("$1"); shift ;;
         esac
     done
@@ -431,7 +452,7 @@ cmd_container() {
         ""|build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional) ;;
         *) image="$1"; shift ;;
     esac
-    local env_args=(-u JOBS -u CCACHE_MAXSIZE)
+    local env_args=(-u JOBS -u CCACHE_MAXSIZE "DEV_CACHE=$DEV_CACHE")
     [[ -z "$CALLER_JOBS" ]] || env_args+=("JOBS=$CALLER_JOBS")
     [[ -z "$CALLER_CCACHE_MAXSIZE" ]] || env_args+=("CCACHE_MAXSIZE=$CALLER_CCACHE_MAXSIZE")
     env "${env_args[@]}" "$ROOT/ci/containers/run.sh" ${opts[@]+"${opts[@]}"} "$image" "$@"

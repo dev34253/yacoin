@@ -22,12 +22,17 @@
 # line (suite/case, suite/inner_suite/case); "#" starts a comment, blank lines
 # are ignored. Every entry must name a test case of BIN (--list_content):
 # otherwise the run fails before any selector runs, so an entry cannot outlive
-# its test case unnoticed.
+# its test case unnoticed. A selector that is a test unit path (suite,
+# suite/case) and of whose test cases the list leaves none, or without
+# selectors such a suite, fails the run the same way, with a message naming
+# it and the cases. A selector that runs no test case at all (Boost.Test's
+# setup error, e.g. a filter such as suite/* of whose cases the list leaves
+# none) fails with that reason on its FAIL line.
 set -euo pipefail
 
 exclude_list=""
 if [[ "${1:-}" == --exclude-cases ]]; then
-    [[ $# -ge 2 ]] || { echo "$0: --exclude-cases needs a file" >&2; exit 2; }
+    [[ $# -ge 2 && -n "$2" ]] || { echo "$0: --exclude-cases needs a file" >&2; exit 2; }
     exclude_list="$2"
     shift 2
 fi
@@ -92,6 +97,19 @@ if [[ ${#excluded[@]} -gt 0 ]]; then
     done
     [[ $missing -eq 0 ]] || exit 1
     echo "Left out of every selector ($exclude_list): ${excluded[*]}"
+    # Per test unit (every prefix of a test case path): its test cases, and
+    # how many of them the list leaves out.
+    declare -A total=() left=() is_excluded=()
+    for case in "${excluded[@]}"; do is_excluded[$case]=1; done
+    for case in "${!is_case[@]}"; do
+        unit=""
+        IFS=/ read -ra parts <<< "$case"
+        for part in "${parts[@]}"; do
+            unit+="${unit:+/}$part"
+            total[$unit]=$(( ${total[$unit]:-0} + 1 ))
+            [[ -z "${is_excluded[$case]:-}" ]] || left[$unit]=$(( ${left[$unit]:-0} + 1 ))
+        done
+    done
 fi
 if [[ $# -gt 0 ]]; then
     suites=("$@")
@@ -110,6 +128,22 @@ else
     for t in "${listed[@]}"; do
         if [[ " ${slow[*]} " != *" $t "* ]]; then suites+=("$t"); fi
     done
+fi
+
+# A selector that is a test unit path, of whose test cases the list leaves
+# none, would only fail with Boost.Test's setup error: say why before any
+# selector runs.
+if [[ ${#excluded[@]} -gt 0 ]]; then
+    bad=0
+    for s in "${suites[@]}"; do
+        [[ "$s" =~ ^[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*$ && ${total[$s]:-0} -gt 0 &&
+           ${left[$s]:-0} -eq ${total[$s]} ]] || continue
+        names=""
+        for case in "${excluded[@]}"; do [[ "$case" != "$s" && "$case" != "$s"/* ]] || names+=" $case"; done
+        echo "$exclude_list: leaves no test case of '$s' to run (left out:$names)" >&2
+        bad=1
+    done
+    [[ $bad -eq 0 ]] || exit 1
 fi
 
 tmproot="${TMPDIR:-/tmp}/unit-suites.$$"
@@ -133,7 +167,12 @@ for i in "${!suites[@]}"; do printf '%s\0%s\0' "$i" "${suites[$i]}"; done |
         if ! TMPDIR="$dir" "$bin" --run_test="$2" "${skip[@]}" --log_level=test_suite \
                 --report_level=confirm --report_format=HRF --report_sink=stderr \
                 --color_output=no >"$log" 2>&1; then
-            echo "FAIL $2"
+            # Boost.Test found no test case to run in the selection.
+            if grep -q "^Test setup error: no test cases matching filter" "$log"; then
+                echo "FAIL $2 (no test case to run${disablers:+ once the list is applied})"
+            else
+                echo "FAIL $2"
+            fi
         elif grep -qx "\*\*\* No errors detected" "$log"; then
             echo "PASS $2"
         else
