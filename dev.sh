@@ -6,8 +6,7 @@
 # Build output and test data stay inside .devbuild/ and build/; the compiler
 # cache, the built dependencies, the caches of the container runs and the
 # archives of the lint tools are in one cache directory that all checkouts
-# share (DEV_CACHE). See
-# doc/developer-build.md for the workflow.
+# share (DEV_CACHE). See doc/developer-build.md for the workflow.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

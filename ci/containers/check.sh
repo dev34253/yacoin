@@ -126,9 +126,9 @@
 #
 # The lint tools come from the release archives of shellcheck and actionlint
 # (SHELLCHECK_URL, ACTIONLINT_URL), kept in $DEV_CACHE/lint (DEV_CACHE as for
-# dev.sh). The tools run in the pinned Ubuntu 22.04 base, so local and CI runs use the same
-# versions; the archives are checked against pinned SHA-256 hashes before use.
-# CHECK_WORKDIR keeps the work files.
+# dev.sh). The tools run in the pinned Ubuntu 22.04 base, so local and CI
+# runs use the same versions; the archives are checked against pinned
+# SHA-256 hashes before use. CHECK_WORKDIR keeps the work files.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -198,8 +198,9 @@ lint_cache_dir() { echo "${DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev
 
 # lint_fetch <dir>: copies the two archives from the cache into <dir>, each
 # downloaded into the cache first when the cache has no copy with its pinned
-# SHA-256 (a download with another hash is removed). Prints a line for each
-# archive it could not provide and then fails.
+# SHA-256 (a download with another hash is removed). A download gets two
+# tries of at most 40 s each, so both fit in the CI step's timeout. Prints a
+# line for each archive it could not provide and then fails.
 lint_fetch() {
     local dir="$1" cache name url sha tmp out status=0
     cache=$(lint_cache_dir)
@@ -207,7 +208,7 @@ lint_fetch() {
     while read -r name url sha; do
         if ! archive_ok "$cache/$name" "$sha" > /dev/null; then
             tmp=$(mktemp "$cache/.$name.XXXXXX")
-            if ! curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 120 --retry 3 \
+            if ! curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 40 --retry 1 \
                     -o "$tmp" "$url"; then
                 rm -f "$tmp"; echo "cannot download $url (or put $name into $cache)"; status=1; continue
             fi
@@ -320,7 +321,8 @@ lint_shellcheck_plant() {
 # lint_actionlint_plant <line> <want> <file> <line>...: a workflow <file>
 # whose job's steps are the lines (later lines may add a job), through the
 # step's actionlint; it must report one finding on line <line> holding
-# <want>, or nothing for line 0.
+# <want>. For line 0 it must report nothing, and with a <want>, actionlint
+# without SHELLCHECK_OPTS must report a finding holding <want> (a note).
 lint_actionlint_plant() {
     local n="$1" want="$2" file="$3" dir="$work/lint-plant/actionlint" out st
     shift 3
@@ -328,8 +330,19 @@ lint_actionlint_plant() {
     printf '%s\n' 'on: push' 'jobs:' '  build:' '    runs-on: ubuntu-latest' '    steps:' "$@" > "$dir/.github/workflows/$file"
     out=$(lint_tools "$work/lint-tools" "$dir" "${LINT_ACTIONLINT[@]}" ".github/workflows/$file" 2>&1) && st=0 || st=$?
     if (( n == 0 )); then
-        [[ "$st" == 0 && -z "$out" ]] && pass "lint: actionlint: planted $file passes" ||
+        local note=""
+        if [[ "$st" == 0 && -z "$out" && -n "$want" ]]; then
+            note=$(lint_tools "$work/lint-tools" "$dir" "${LINT_ACTIONLINT[@]:2}" ".github/workflows/$file" 2>&1) || true
+        fi
+        if [[ "$st" != 0 || -n "$out" ]]; then
             fail "lint: actionlint: planted $file gives status $st, '$out', want nothing"
+        elif [[ -z "$want" ]]; then
+            pass "lint: actionlint: planted $file passes"
+        elif [[ "$note" == *"$want"* ]]; then
+            pass "lint: actionlint: planted $file passes at --severity=warning and reports $want without it"
+        else
+            fail "lint: actionlint: planted $file gives '$note' without --severity=warning, want '$want'"
+        fi
     elif [[ "$st" == 1 && "$out" == ".github/workflows/$file:$n:"*"$want"* && "$(wc -l <<< "$out")" == 1 ]]; then
         pass "lint: actionlint: planted $file fails: $out"
     else
@@ -343,7 +356,10 @@ lint_actionlint_plant() {
 lint_pipe_plant() {
     local dir="$work/lint-plant/pipe" bar='|' line out want
     rm -rf "$dir"; mkdir -p "$dir"
-    (cd "$ROOT" && tar -c "${LINT_SCRIPTS[@]}") | tar -x -C "$dir"
+    if ! (cd "$ROOT" && tar -c "${LINT_SCRIPTS[@]}") | tar -x -C "$dir"; then
+        fail "lint: the pipe check on a planted grep -q in $1: cannot copy the listed scripts"
+        return
+    fi
     line="printf 'x\\n' $bar grep -q x"
     echo "$line" >> "$dir/$1"
     want="$1:$(wc -l < "$dir/$1"): $line"
@@ -353,7 +369,15 @@ lint_pipe_plant() {
 }
 
 step_lint() {
-    local f out st archives="$work/lint-tools" workflows=()
+    local f out archives="$work/lint-tools" missing=0 tools=1
+    for f in "${LINT_SCRIPTS[@]}"; do
+        [[ -f "$ROOT/$f" ]] || { fail "lint: $f of LINT_SCRIPTS is missing"; missing=1; }
+    done
+    (( missing )) || pass "lint: the ${#LINT_SCRIPTS[@]} scripts of LINT_SCRIPTS exist"
+    if ! docker info > /dev/null 2>&1; then
+        fail "lint: docker info fails; shellcheck and actionlint run in a container"
+        tools=0
+    fi
     rm -rf "$archives"
     if out=$(lint_fetch "$archives"); then
         for f in "$SHELLCHECK_ARCHIVE $SHELLCHECK_SHA256" "$ACTIONLINT_ARCHIVE $ACTIONLINT_SHA256"; do
@@ -362,28 +386,53 @@ step_lint() {
     else
         while IFS= read -r f; do fail "lint: $f"; done <<< "$out"
     fi
-    out=$(lint_tools "$archives" "$ROOT" shellcheck --version 2>&1) || true
-    [[ "$out" == *"version: $SHELLCHECK_VERSION"* ]] && pass "lint: shellcheck version $SHELLCHECK_VERSION" ||
-        fail "lint: shellcheck --version gives '$out', want $SHELLCHECK_VERSION"
-    out=$(lint_tools "$archives" "$ROOT" actionlint -version 2>&1) || true
-    [[ "${out%%$'\n'*}" == "$ACTIONLINT_VERSION" ]] && pass "lint: actionlint version $ACTIONLINT_VERSION" ||
-        fail "lint: actionlint -version gives '$out', want $ACTIONLINT_VERSION"
     lint_archive_plant "$SHELLCHECK_ARCHIVE"
     lint_archive_plant "$ACTIONLINT_ARCHIVE"
-    lint_shellcheck_plant SC2034 'x=1'
-    lint_shellcheck_plant '' "printf '%s\n' \$1"
-    lint_actionlint_plant 6 '[expression]' step-id.yml '      - run: echo "${{ steps.no-such-step.outputs.value }}"'
-    lint_actionlint_plant 7 '[job-needs]' needs.yml '      - run: echo' '  second:' '    needs: [no-such-job]' \
-        '    runs-on: ubuntu-latest' '    steps:' '      - run: echo'
-    lint_actionlint_plant 6 'SC2034:warning' run-unused-variable.yml '      - run: x=1'
-    lint_actionlint_plant 0 '' run-note.yml '      - run: printf "%s\n" $HOME'
-    lint_actionlint_plant 0 '' plain.yml '      - run: echo'
+    if (( tools )); then
+        lint_tool_cases "$archives"
+    fi
     lint_pipe_plant dev.sh
     lint_pipe_plant contrib/devtools/run-unit-suites.sh
 
     for f in "${LINT_SCRIPTS[@]}"; do
         bash -n "$ROOT/$f" && pass "lint: bash -n $f" || fail "lint: bash -n $f"
     done
+    if (( tools )); then
+        lint_tools_on_tree "$archives"
+    fi
+    out=$(lint_pipes "$ROOT" 2>&1) || true
+    if [[ -z "$out" ]]; then
+        pass "lint: no grep -q at the end of a pipe in ${#LINT_SCRIPTS[@]} scripts"
+    else
+        while IFS= read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$out"
+    fi
+    lint_uses
+}
+
+# lint_tool_cases <archive dir>: the versions of the tools and the planted
+# cases that run them.
+lint_tool_cases() {
+    local out
+    out=$(lint_tools "$1" "$ROOT" shellcheck --version 2>&1) || true
+    [[ "$out" == *"version: $SHELLCHECK_VERSION"* ]] && pass "lint: shellcheck version $SHELLCHECK_VERSION" ||
+        fail "lint: shellcheck --version gives '$out', want $SHELLCHECK_VERSION"
+    out=$(lint_tools "$1" "$ROOT" actionlint -version 2>&1) || true
+    [[ "${out%%$'\n'*}" == "$ACTIONLINT_VERSION" ]] && pass "lint: actionlint version $ACTIONLINT_VERSION" ||
+        fail "lint: actionlint -version gives '$out', want $ACTIONLINT_VERSION"
+    lint_shellcheck_plant SC2034 'x=1'
+    lint_shellcheck_plant '' "printf '%s\n' \$1"
+    lint_actionlint_plant 6 '[expression]' step-id.yml '      - run: echo "${{ steps.no-such-step.outputs.value }}"'
+    lint_actionlint_plant 7 '[job-needs]' needs.yml '      - run: echo' '  second:' '    needs: [no-such-job]' \
+        '    runs-on: ubuntu-latest' '    steps:' '      - run: echo'
+    lint_actionlint_plant 6 'SC2034:warning' run-unused-variable.yml '      - run: x=1'
+    lint_actionlint_plant 0 'SC2086:info' run-note.yml '      - run: printf "%s\n" $HOME'
+    lint_actionlint_plant 0 '' plain.yml '      - run: echo'
+}
+
+# lint_tools_on_tree <archive dir>: shellcheck on the scripts of LINT_SCRIPTS
+# and actionlint on .github/workflows/*.yml, one FAIL line per finding.
+lint_tools_on_tree() {
+    local archives="$1" f out st workflows=()
     out=$(lint_tools "$archives" "$ROOT" "${LINT_SHELLCHECK[@]}" "${LINT_SCRIPTS[@]}" 2>&1) && st=0 || st=$?
     if [[ "$st" == 0 && -z "$out" ]]; then
         pass "lint: shellcheck --severity=warning ${LINT_SCRIPTS[*]}"
@@ -397,13 +446,6 @@ step_lint() {
     else
         while IFS= read -r f; do fail "lint: actionlint (status $st): $f"; done <<< "$out"
     fi
-    out=$(lint_pipes "$ROOT" 2>&1) || true
-    if [[ -z "$out" ]]; then
-        pass "lint: no grep -q at the end of a pipe in ${#LINT_SCRIPTS[@]} scripts"
-    else
-        while IFS= read -r f; do fail "lint: grep -q at the end of a pipe (capture the output first): $f"; done <<< "$out"
-    fi
-    lint_uses
 }
 
 # unpinned_uses <dir>: prints every line of the *.yml and *.yaml files under
