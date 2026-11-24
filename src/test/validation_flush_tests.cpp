@@ -116,9 +116,11 @@ struct FlushSetup : public TestChain100Setup {
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-vin-empty");
     }
 
-    /** FlushStateToDisk() with pcoinsTip replaced by a cache over base; returns the misc warning */
+    /** FlushStateToDisk() with pcoinsTip replaced by a cache over base; returns the misc warning
+     *  it leaves and puts back the one it found */
     static std::string FlushOver(CCoinsView& base)
     {
+        MiscWarningGuard savedWarning;
         CCoinsViewCache cache(&base);
         ShutdownRequestRecorder recorder;
         {
@@ -126,8 +128,7 @@ struct FlushSetup : public TestChain100Setup {
             FlushStateToDisk();
         }
         BOOST_CHECK(ShutdownRequested());
-        std::string warning = GetWarnings("statusbar");
-        SetMiscWarning("");
+        const std::string warning = GetWarnings("statusbar");
         return warning;
     }
 };
