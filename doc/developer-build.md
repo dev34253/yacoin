@@ -1,7 +1,7 @@
 # Local developer build
 
 `dev.sh` in the repository root wraps a fast build and test loop for regular
-development on Linux (tested on Ubuntu 22.04, 8 cores). It always builds
+development on Linux (tested on Ubuntu 22.04, 8 CPUs). It always builds
 against the pinned libraries from `depends/`, never system libraries, so local
 builds use the same dependency versions as the CI and release builds.
 
@@ -93,7 +93,7 @@ and `cov-functional`; `windows` and
   configure in place, out-of-tree builds (`dev.sh` and the test modes) refuse the tree afterwards until `make distclean`. Run release
   builds in a separate clone, for example `git clone . ../yacoin-release && ../yacoin-release/dev.sh container build`.
 - Depends packages, depends sources and ccache data are kept in `.devbuild/container-cache/` per image, so only the first run of an image
-  builds depends. Measured on 8 cores: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine (40 with
+  builds depends. Measured on 8 CPUs: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine (40 with
   other builds running), the second 1-2 minutes (all compiles from ccache).
 - The container runs as root, as in CI; afterwards `ci/containers/run.sh` gives the files it wrote back to you (with rootless Docker or
   Podman they are yours already). Run one container per checkout at a time.
@@ -423,18 +423,18 @@ The nodes of a script run on regtest; a script that runs on main sets
 `self.chain = 'main'` and says why in a comment, and goes into
 `test/functional/regtest-excluded-scripts` (the runs on the mainnet build
 select `--chain=regtest`; the list may name scripts on either chain, and the
-low-difficulty run of the listed scripts runs them without `--chain`). On regtest a node keeps its
-chain files (`debug.log`, `blocks/`, `chainstate/`, wallets, `mempool.dat`) in
-`<datadir>/regtest`; `TestNode.chain_path(...)` gives their paths on either
-chain. Every test node's `yacoin.conf` has `connect=0` and `listen=1`, so test
-nodes connect only to the nodes of their test (a node started with its own
-`-connect` gets only its own values), and on regtest a `maxtipage` line, so
-regtest test nodes leave initial download whatever the age of their tip. A
-regtest fork height above 1 also moves the Heliopolis height to the fork
-height. A script that sets `self.all_activation_heights_zero = True` starts
-its regtest nodes with every activation height at 0, the token height
-included; it cannot be combined with a `block_fork_1_0` other than 0 or
-with main.
+low-difficulty run of the listed scripts runs them without `--chain`). On
+regtest a node keeps its chain files (`debug.log`, `blocks/`, `chainstate/`,
+wallets, `mempool.dat`) in `<datadir>/regtest`; `TestNode.chain_path(...)`
+gives their paths on either chain. Every test node's `yacoin.conf` has
+`connect=0` and `listen=1`, so test nodes connect only to the nodes of their
+test (a node started with its own `-connect` gets only its own values), and on
+regtest a `maxtipage` line, so regtest test nodes leave initial download
+whatever the age of their tip. A regtest fork height above 1 also moves the
+Heliopolis height to the fork height. A script that sets
+`self.all_activation_heights_zero = True` starts its regtest nodes with every
+activation height at 0, the token height included; it cannot be combined with a
+`block_fork_1_0` other than 0 or with main.
 
 `test_runner.py --chain <chain>` runs only the selected scripts whose nodes
 run on that chain: those with a `self.chain = '<chain>'` line (a script
@@ -508,16 +508,16 @@ Notes:
   `--config-file`), and from no system or user lcovrc.
 - In the build image (`./dev.sh container cov-unit`, `cov-functional`), with
   the depends packages cached and without ccache, `cov-unit` takes about 11
-  minutes on 8 cores (build about 5, tests about 4, captures about 1) and
+  minutes on 8 CPUs (build about 5, tests about 4, captures about 1) and
   `cov-functional` about 15 (build about 7, the scripts in parallel about 8,
-  captures about 1); with 4 cores (`docker run --cpus=4`) about 13 and 17
+  captures about 1); with 4 CPUs (`docker run --cpus=4`) about 13 and 17
   minutes. The unit test time is bounded by
   `transaction_tests/test_big_transaction` (about 4 minutes).
 - To keep that time down, the captures run `geninfo --parallel`
   (`contrib/devtools/coverage-capture.sh`), the baseline is captured while
   the tests run, and the unit test suites run in parallel
   (`contrib/devtools/run-unit-suites.sh`, the runner `./dev.sh unit` uses).
-  `COV_JOBS` sets the number of processes (default: all cores), e.g.
+  `COV_JOBS` sets the number of processes (default: all CPUs), e.g.
   `make cov-unit COV_JOBS=4`.
 - Branch coverage counts the branches of decisions in the code (`if`,
   loops, `switch`, `?:`, `&&`, `||`), not the other branches gcc records at
@@ -600,7 +600,7 @@ the table in the job summary.
 
 ## Reference timings
 
-Ubuntu 22.04, 8 cores, 15 GB RAM.
+Ubuntu 22.04, 8 CPUs, 15 GB RAM.
 
 | Step | Time |
 |---|---|
@@ -623,12 +623,13 @@ The parallel unit test time is bounded by `transaction_tests/test_big_transactio
 
 Each line says when and on which state of `master` it was measured.
 
-- Unit tests (`dev`, 2026-11-02, `master` 06329a8b): 70 of 70 suites, 422
-  test cases pass.
-- Unit tests on the low-difficulty build (2026-11-02, `master`
-  0f8685e2): 70 of 70 suites, 422 test cases pass.
-- Functional tests (CI `functional-tests` job, 2026-11-02, `master` 06329a8b):
-  119 of 119 test runs pass, none skipped (a script run with arguments counts
+- Unit tests (CI `unit-tests` job, 2026-11-24, `master` e7be4d31): 95 of 95
+  suites pass.
+- Unit tests on the low-difficulty build (CI
+  `build-ubuntu-1604-low-difficulty` job, 2026-11-24, `master` e7be4d31): 95
+  of 95 suites pass.
+- Functional tests (CI `functional-tests` job, 2026-11-24, `master` e7be4d31):
+  117 of 117 test runs pass, none skipped (a script run with arguments counts
   separately).
 - Every unit test file in `src/test/` and `src/wallet/test/` is compiled.
 
@@ -645,7 +646,7 @@ Each line says when and on which state of `master` it was measured.
     `${XDG_CACHE_HOME:-$HOME/.cache}/yacoin-dev`.
   - `DEV_HOST`: depends target triplet, default `x86_64-pc-linux-gnu`. Other
     hosts build in `build/<host>/<variant>/`.
-  - `JOBS`: make jobs, default the number of cores.
+  - `JOBS`: make jobs, default the number of CPUs.
   - `UNIT_JOBS`: parallel unit test suites, default `JOBS`.
   - `FTEST_JOBS`: parallel functional test scripts, default 4 (`ftest` and
     `cov`).

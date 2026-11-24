@@ -16,10 +16,12 @@ createcsvaddress), built and signed in Python, against the mempool:
   disconnected, the funding tx returns to the mempool and the spend, whose
   lock now counts from the next block, leaves.
 
-The opcodes are not enforced in blocks on the suite's chain parameters
-(BIP65/BIP68 heights); BIP68 sequence locks in blocks are in
-feature_block.py. Enforcement in blocks at the CLTV and CSV heights is in
-feature_activation_heights.py.
+Each spend is checked when it is submitted to the mempool
+(sendrawtransaction). The script runs on regtest, whose CLTV and CSV
+activation heights are 0 (src/chainparams.cpp); it does not change them.
+Blocks with failing CLTV and CSV spends at the activation heights are tested
+in feature_activation_heights.py, BIP68 sequence locks in blocks in
+feature_block.py.
 """
 
 from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut

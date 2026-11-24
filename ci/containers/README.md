@@ -44,21 +44,15 @@ Docker or Podman) gives the files it wrote back to the caller afterwards.
 
 ## Usage
 
-To build YaCoin for a specific platform:
+To build YaCoin for a specific platform, or to run a test mode, use `./dev.sh container` or `run.sh`:
 
 ```bash
-# For Ubuntu 22.04
-docker build -f Dockerfile.ubuntu.22.04 -t yacoin-build:ubuntu22.04 .
-docker run -v /path/to/yacoin/source:/src yacoin-build:ubuntu22.04
-
-# For macOS cross-compilation
-docker build -f Dockerfile.macos -t yacoin-build:macos .
-docker run -v /path/to/yacoin/source:/src yacoin-build:macos
-
-# For Windows cross-compilation
-docker build -f Dockerfile.windows -t yacoin-build:windows .
-docker run -v /path/to/yacoin/source:/src yacoin-build:windows
+./dev.sh container [options] [image] [mode]    # this checkout, image ubuntu.22.04 and mode build by default
+ci/containers/run.sh [options] <image> [mode]  # mode build by default; --src <dir> for another tree
+ci/containers/run.sh --help                    # the images, modes and options
 ```
+
+Both build the image and run the mode in it; `--no-image-build` runs the existing local image without building it first.
 
 ## Linux image modes, jobs and cache
 
