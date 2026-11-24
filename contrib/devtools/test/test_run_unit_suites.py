@@ -8,8 +8,9 @@ run marked "xml" prints that stderr instead when BOOST_TEST_OUTPUT_FORMAT is
 set, whatever the options say, as Boost 1.64 does. A run with "cases" prints
 an "Entering test case" line for each of its cases that no
 --run_test=!<selector>/<case> option leaves out, as Boost 1.64 applies such
-disabling filters after the selector. Every call also records the
-BOOST_TEST_* variables it was started with.
+disabling filters after the selector; when that leaves none of its cases,
+it prints Boost 1.64's setup error on stderr and exits 200. Every call also
+records the BOOST_TEST_* variables it was started with.
 
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
@@ -34,6 +35,9 @@ XML_REPORT = '<TestResult><TestSuite name="Bitcoin Test Suite" result="passed"/>
 ENTERING = "Entering test module \"Bitcoin Test Suite\"\n" \
            "test/x.cpp(10): Entering test suite \"{0}\"\n" \
            "test/x.cpp(12): Entering test case \"{0}_case\"\n"
+# What Boost 1.64 prints on stderr, exiting with 200, when no test case of
+# the selection is left to run
+SETUP_ERROR = "Test setup error: no test cases matching filter or all test cases were disabled"
 # --list_content of the suites with several cases (the fake prints it on
 # stderr, as Boost.Test does: a "*" after the name of a unit enabled by
 # default, then its description, if any)
@@ -60,7 +64,8 @@ class RunUnitSuitesTest(unittest.TestCase):
         """suites: selector -> {"stdout", "stderr", "status"} and optionally
         "colour": the stderr printed instead unless --color_output=no is given,
         "xml": the stderr printed instead when BOOST_TEST_OUTPUT_FORMAT is set,
-        "cases": the names of the test cases the selector runs.
+        "cases": the names of the test cases the selector runs, below
+        "prefix" (default: the selector).
         listing: the output of --list_content (default: every selector as a
         suite)."""
         if listing is None:
@@ -78,10 +83,14 @@ class RunUnitSuitesTest(unittest.TestCase):
         for selector, run in suites.items():
             lines.append("--run_test=%s)" % shlex.quote(selector))
             lines.append("    printf %s " + shlex.quote(run["stdout"]))
+            lines.append("    ran=no")
             for case in run.get("cases", []):
-                disabler = "--run_test=!%s/%s" % (selector, case)
+                disabler = "--run_test=!%s/%s" % (run.get("prefix", selector), case)
                 lines.append('    run=yes; for a in "$@"; do [ "$a" = %s ] && run=no; done' % shlex.quote(disabler))
-                lines.append('    [ "$run" = no ] || printf "Entering test case \\"%s\\"\\n" ' + shlex.quote(case))
+                lines.append('    [ "$run" = no ] || { ran=yes; printf "Entering test case \\"%s\\"\\n" '
+                             + shlex.quote(case) + "; }")
+            if "cases" in run:
+                lines.append('    [ "$ran" = yes ] || { echo "%s" >&2; exit 200; }' % SETUP_ERROR)
             if "xml" in run:
                 lines.append('    if [ -n "${BOOST_TEST_OUTPUT_FORMAT+set}" ]; then printf %s '
                              + shlex.quote(run["xml"]) + " >&2")
@@ -122,7 +131,7 @@ class RunUnitSuitesTest(unittest.TestCase):
 
     def log_of(self, selector):
         """The log the runner wrote for selector"""
-        name = selector.replace("/", "_")
+        name = re.sub(r"[^A-Za-z0-9_.-]", "_", selector)
         logs = [n for n in os.listdir(self.logdir) if n.partition("-")[2] == name + ".log"]
         self.assertEqual(len(logs), 1, (selector, os.listdir(self.logdir)))
         with open(os.path.join(self.logdir, logs[0])) as f:
@@ -433,6 +442,66 @@ class RunUnitSuitesTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("--list_content' failed", result.stderr)
         self.assertEqual(self.run_calls(), [])
+
+    # Messages for exclude lists
+
+    def test_empty_list_path_exits_2(self):
+        self.write_cases_bin()
+        result = self.run_runner("a_tests", exclude="")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("--exclude-cases", result.stderr)
+        # The binary is never called, not even for its listing.
+        self.assertEqual(os.listdir(self.argsdir), [])
+
+    def test_selector_whose_only_case_is_listed_fails_with_a_message(self):
+        self.write_bin({"a_tests/case_two": dict(passing(), prefix="a_tests", cases=["case_two"])},
+                       listing=CASES_LISTING)
+        result = self.run_runner("a_tests/case_two", exclude=self.write_list("a_tests/case_two\n"))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("leaves no test case of 'a_tests/case_two' to run (left out: a_tests/case_two)", result.stderr)
+        self.assertEqual(self.run_calls(), [])
+
+    def test_selector_whose_cases_are_all_listed_fails_with_a_message(self):
+        self.write_cases_bin()
+        for selector, listed in (("a_tests", ["a_tests/case_one", "a_tests/case_two", "a_tests/case_three"]),
+                                 ("b_tests/nested_tests", ["b_tests/nested_tests/inner_case"])):
+            with self.subTest(selector=selector):
+                shutil.rmtree(self.argsdir); os.mkdir(self.argsdir)
+                result = self.run_runner("b_tests", selector, exclude=self.write_list("\n".join(listed) + "\n"))
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("leaves no test case of '%s' to run (left out: %s)" % (selector, " ".join(listed)),
+                              result.stderr)
+                # No selector runs, also not the one with cases left.
+                self.assertEqual(self.run_calls(), [])
+
+    def test_suite_whose_cases_are_all_listed_fails_without_selectors(self):
+        self.write_cases_bin()
+        result = self.run_runner(exclude=self.write_list("a_tests/case_one\na_tests/case_two\na_tests/case_three\n"))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("leaves no test case of 'a_tests' to run", result.stderr)
+        self.assertNotIn("'b_tests'", result.stderr)
+        self.assertEqual(self.run_calls(), [])
+
+    def test_filter_selector_without_cases_left_fails_with_a_reason(self):
+        self.write_bin({"a_tests/*": dict(passing(), prefix="a_tests", cases=["case_one", "case_two", "case_three"]),
+                        "b_tests": dict(passing(), cases=["b_case", "nested_tests/inner_case"])},
+                       listing=CASES_LISTING)
+        result = self.run_runner("a_tests/*", "b_tests",
+                                 exclude=self.write_list("a_tests/case_one\na_tests/case_two\na_tests/case_three\n"))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.summary(), ["FAIL a_tests/* (no test case to run once the list is applied)",
+                                          "PASS b_tests"])
+        # With a case of it left, the filter runs.
+        result = self.run_runner("a_tests/*", exclude=self.write_list("a_tests/case_two\n"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.entered_cases("a_tests/*"), ["case_one", "case_three"])
+
+    def test_selector_without_cases_fails_with_a_reason_without_a_list(self):
+        self.write_bin({"empty_tests": dict(passing(), cases=[])})
+        result = self.run_runner("empty_tests")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.summary(), ["FAIL empty_tests (no test case to run)"])
+
 
 if __name__ == "__main__":
     unittest.main()

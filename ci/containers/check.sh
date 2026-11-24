@@ -37,7 +37,26 @@
 #           for an unknown target, the help saying the target is relative to
 #           src/, asan's
 #           sanitizer options (the suppression file, the caller's own options
-#           kept) and its list of test cases left out, which unit does not pass
+#           kept) and its list of test cases left out, which unit does not
+#           pass; depends skipping make unless its stamp's inputs changed
+#           (every line of the compilers' versions, ar, ranlib, strip, the
+#           tools of another host, the make arguments, and DEBUG,
+#           HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET, NO_UPNP and NO_QT from
+#           the environment; not JOBS or the copy's path),
+#           one set of paths for every spelling of DEV_CACHE (trailing slash,
+#           symlink, .., not yet created), a refused build directory naming
+#           the untracked files under depends/; container and run.sh (stub
+#           docker): a tag and label of each copy's own (also for one
+#           directory name at two paths; the same through a symlink;
+#           LOCAL_REPO wins), --print-tag, one container cache per set of
+#           depends inputs under DEV_CACHE for two copies (an ignored file
+#           keeps it; an untracked file, a recipe change and a tree outside
+#           git change it), the same for run.sh alone and dev.sh cache,
+#           --cache, --no-cache, --cpus, --no-image-build without the image,
+#           the cache lock (depends phases one after the other; released at
+#           the image's line after its depends build, which each entrypoint
+#           prints once, or held to the end without it), and docker run's
+#           output and exit status passed on
 #   build   docker build of each image (tagged yacoin-build-local:<image>)
 #   smoke   tools present, unknown modes and arguments rejected, the modes
 #           that run tests stop early on a tree without the scripts,
@@ -127,7 +146,7 @@ has_step() { [[ ",$steps," == *",$1,"* ]]; }
 is_cross() { [[ "$1" == windows || "$1" == macos ]]; }
 
 work="${CHECK_WORKDIR:-$(mktemp -d "${TMPDIR:-/tmp}/yacoin-check.XXXXXX")}"
-mkdir -p "$work"; work="$(cd "$work" && pwd)"
+mkdir -p "$work"; work="$(cd "$work" && pwd -P)"
 failures=()
 pass() { echo "PASS  $*"; }
 fail() { echo "FAIL  $*"; failures+=("$*"); }
@@ -285,6 +304,377 @@ dev_cache() {
 # depends_prefix <copy> <cache>: the depends prefix of dev.sh in <copy>.
 depends_prefix() { dev_cache "$1" DEV_CACHE="$2" | sed -n 's/^DEPENDS_PREFIX=//p'; }
 
+# The stub docker of the devsh cases: records "build" and "run" in
+# $STUB_DOCKER, fails "image inspect" when STUB_NO_IMAGE is set, and runs
+# $STUB_RUN as the container of a run with a container id file (not of the
+# chown after it).
+write_stub_docker() {
+    cat > "$1" <<'EOF'
+#!/bin/bash
+case "${1:-}" in
+    build) echo "$*" >> "${STUB_DOCKER:-/dev/null}" ;;
+    image) [[ -z "${STUB_NO_IMAGE:-}" ]] || exit 1 ;;
+    run)
+        echo "$*" >> "${STUB_DOCKER:-/dev/null}"
+        if [[ -n "${STUB_RUN:-}" && " $* " == *" --cidfile "* ]]; then exec "$STUB_RUN"; fi ;;
+esac
+EOF
+    chmod +x "$1"
+}
+
+# The container of the lock cases (STUB_RUN): prints STUB_START_LINE, logs
+# "dstart <STUB_ID>" and "dend <STUB_ID>" to STUB_EVENTS around a depends
+# phase of STUB_DEPENDS_TIME seconds, prints STUB_MARKER, logs "rest <id>";
+# with STUB_WAIT_FOR it then waits up to STUB_WAIT_TENTHS tenths of a second
+# for "dstart <STUB_WAIT_FOR>" and logs "met <id>" if it comes. Then it logs
+# "end <id>", prints the bytes of STUB_TAIL_FILE and exits STUB_STATUS.
+write_stub_container() {
+    cat > "$1" <<'EOF'
+#!/bin/bash
+ev() { echo "$1 ${STUB_ID:-}" >> "${STUB_EVENTS:-/dev/null}"; }
+[[ -z "${STUB_START_LINE:-}" ]] || echo "$STUB_START_LINE"
+ev dstart; sleep "${STUB_DEPENDS_TIME:-0}"; ev dend
+[[ -z "${STUB_MARKER:-}" ]] || echo "$STUB_MARKER"
+ev rest
+if [[ -n "${STUB_WAIT_FOR:-}" ]]; then
+    for (( i = 0; i < ${STUB_WAIT_TENTHS:-0}; i++ )); do
+        if grep -qx "dstart $STUB_WAIT_FOR" "$STUB_EVENTS"; then ev met; break; fi
+        sleep 0.1
+    done
+fi
+ev end
+[[ -z "${STUB_TAIL_FILE:-}" ]] || cat "$STUB_TAIL_FILE"
+exit "${STUB_STATUS:-0}"
+EOF
+    chmod +x "$1"
+}
+
+# wait_for <line> <file>: waits up to 20 s for the line in the file.
+wait_for() {
+    local i
+    for (( i = 0; i < 200; i++ )); do
+        if grep -qx -- "$1" "$2" 2>/dev/null; then return 0; fi
+        sleep 0.1
+    done
+    return 1
+}
+
+# make_container_copy <dir>: a copy as make_devsh_copy, with run.sh and empty
+# Dockerfiles of two images.
+make_container_copy() {
+    make_devsh_copy "$1"
+    mkdir -p "$1/ci/containers"
+    cp "$HERE/run.sh" "$1/ci/containers/"
+    : > "$1/ci/containers/Dockerfile.ubuntu.22.04"; : > "$1/ci/containers/Dockerfile.macos"
+}
+
+# devsh_depends_ran <tree> <depends argument> [NAME=VALUE...]: "yes" if
+# dev.sh depends in <tree> ran make, "no" if it skipped it (stub tools in
+# $tools, the stub make, the cache $cs, the make log $slog of devsh_stamp).
+devsh_depends_ran() {
+    local tree="$1" arg="$2" before; shift 2
+    before=$(grep -c '^start' "$slog" 2>/dev/null) || before=0
+    env -u DEBUG -u HOST_ID_SALT -u BUILD_ID_SALT -u NO_WALLET -u NO_UPNP -u NO_QT -u DEV_HOST \
+        PATH="$tools:$bin:$PATH" STUB_LOG="$slog" STUB_MAKE_SLEEP=0 DEV_CACHE="$cs" "$@" \
+        "$tree/dev.sh" depends ${arg:+"$arg"} > "$work/devsh/s/out.txt" 2>&1 || { echo "failed"; return; }
+    if [[ "$(grep -c '^start' "$slog")" != "$before" ]]; then echo yes; else echo no; fi
+}
+
+# The depends stamp, the spellings of DEV_CACHE and the refusal of a build
+# directory (a copy with stub tools printing the versions in $tools/v).
+devsh_stamp() {
+    local bin="$1" s="$work/devsh/s/s" s2="$work/devsh/s/other/s" cs="$work/devsh/s/cache"
+    local tools="$work/devsh/s/tools" slog="$work/devsh/s/make.log" t v got want spelling out
+    rm -rf "$work/devsh/s"; make_devsh_copy "$s"; make_devsh_copy "$s2"; mkdir -p "$tools/v"
+    for t in gcc g++ ar ranlib strip x86_64-w64-mingw32-{gcc,g++,ar,ranlib,strip}; do
+        # shellcheck disable=SC2016 # expanded by the stub
+        printf '%s\n' '#!/bin/bash' 'cat "${0%/*}/v/${0##*/}"' > "$tools/$t"; chmod +x "$tools/$t"
+        printf '%s (stub) 1.0\nCopyright line 1\n' "$t" > "$tools/v/$t"
+    done
+    got=$(devsh_depends_ran "$s" "")
+    [[ "$got" == yes ]] || fail "devsh: the first depends run in s: $got"
+    # Nothing that changes the packages changed: make is skipped.
+    got="$(devsh_depends_ran "$s" "") $(devsh_depends_ran "$s" "" JOBS=3) $(devsh_depends_ran "$s2" "")"
+    [[ "$got" == "no no no" ]] && pass "devsh: depends skips make when nothing changed, with another JOBS and in another copy" ||
+        fail "devsh: depends ran make (again, with another JOBS, in another copy): $got"
+    got="$(devsh_depends_ran "$s" qt) $(devsh_depends_ran "$s" "")"
+    [[ "$got" == "yes yes" ]] && pass "devsh: depends runs make after another Qt choice" ||
+        fail "devsh: depends with Qt and then without ran make: $got"
+    # Every line of a compiler's version counts; the binutils too.
+    for t in gcc g++ ar ranlib strip; do
+        if [[ $t == g* ]]; then
+            printf '%s (stub) 1.0\nCopyright line 2\n' "$t" > "$tools/v/$t"
+        else
+            printf '%s (stub) 2.0\nCopyright line 1\n' "$t" > "$tools/v/$t"
+        fi
+        got=$(devsh_depends_ran "$s" "")
+        [[ "$got" == yes ]] && pass "devsh: depends runs make after a new $t version" ||
+            fail "devsh: depends after a new $t version ran make: $got"
+    done
+    # The tools of another host.
+    got="$(devsh_depends_ran "$s" "" DEV_HOST=x86_64-w64-mingw32) $(devsh_depends_ran "$s" "" DEV_HOST=x86_64-w64-mingw32)"
+    printf '%s (stub) 2.0\n' x86_64-w64-mingw32-ar > "$tools/v/x86_64-w64-mingw32-ar"
+    got+=" $(devsh_depends_ran "$s" "" DEV_HOST=x86_64-w64-mingw32)"
+    [[ "$got" == "yes no yes" ]] && pass "devsh: depends for another host runs make after a new version of its ar" ||
+        fail "devsh: depends for another host ran make (first, again, after a new ar): $got"
+    # DEBUG, HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET, NO_UPNP and NO_QT from
+    # the environment, set, set empty and unset again.
+    for v in DEBUG HOST_ID_SALT BUILD_ID_SALT NO_WALLET NO_UPNP NO_QT; do
+        got="$(devsh_depends_ran "$s" "" "$v=1") $(devsh_depends_ran "$s" "" "$v=") $(devsh_depends_ran "$s" "")"
+        [[ "$got" == "yes yes yes" ]] && pass "devsh: depends runs make when $v is set, set empty and unset" ||
+            fail "devsh: depends with $v set, set empty and unset ran make: $got"
+    done
+    # A make argument added to dev.sh's list.
+    sed -i 's|base_download_dir="\$w/download")|base_download_dir="$w/download" V=1)|' "$s/dev.sh"
+    if grep -qF 'base_download_dir="$w/download" V=1)' "$s/dev.sh"; then
+        got=$(devsh_depends_ran "$s" "")
+        [[ "$got" == yes ]] && pass "devsh: depends runs make after a new make argument" ||
+            fail "devsh: depends after a new make argument ran make: $got"
+    else
+        fail "devsh: no make argument list to add to in dev.sh"
+    fi
+    cp "$ROOT/dev.sh" "$s/dev.sh"
+    # Spellings of one cache give the same paths.
+    local link="$work/devsh/s/cache-link" new="$work/devsh/s/new/cache"
+    ln -s "$cs" "$link"
+    want=$(dev_cache "$s" DEV_CACHE="$cs")
+    for spelling in "$cs/" "$cs//" "$link" "$link/" "$cs/x/.."; do
+        got=$(dev_cache "$s" DEV_CACHE="$spelling")
+        [[ "$got" == "$want" ]] && pass "devsh: DEV_CACHE=$spelling gives the paths of DEV_CACHE=$cs" ||
+            fail "devsh: DEV_CACHE=$spelling gives: $got (want: $want)"
+    done
+    want=$(dev_cache "$s" DEV_CACHE="$new"); got=$(dev_cache "$s" DEV_CACHE="$new/")
+    [[ "$got" == "$want" && "$want" == *"DEV_CACHE=$new"* && ! -e "$new" ]] &&
+        pass "devsh: DEV_CACHE=$new/ (not yet created) gives the paths of DEV_CACHE=$new" ||
+        fail "devsh: DEV_CACHE=$new/ gives: $got (want: $want)"
+    # A build directory configured against DEV_CACHE=<c> builds with <c>/.
+    local p; p=$(depends_prefix "$s" "$cs")
+    mkdir -p "$s/build/dev"; : > "$s/build/dev/Makefile"; echo "CPPFLAGS=-I$p/include" > "$s/build/dev/config.status"
+    rm -f "$slog"
+    if PATH="$bin:$PATH" STUB_LOG="$slog" STUB_MAKE_SLEEP=0 DEV_CACHE="$cs/" "$s/dev.sh" build dev > "$work/devsh/s/out.txt" 2>&1 &&
+            grep -q "^start -C $s/build/dev " "$slog"; then
+        pass "devsh: a build directory configured with DEV_CACHE=<c> builds with DEV_CACHE=<c>/"
+    else
+        fail "devsh: a build directory configured with DEV_CACHE=<c> with DEV_CACHE=<c>/: $(cat "$work/devsh/s/out.txt")"
+    fi
+    # The refusal names the files under depends/ that git does not track,
+    # but not the ignored ones.
+    echo "CPPFLAGS=-I$cs/depends/0000000000000000/x86_64-pc-linux-gnu/include" > "$s/build/dev/config.status"
+    : > "$s/depends/untracked-example.txt"; mkdir -p "$s/depends/work"; : > "$s/depends/work/ignored-example.txt"
+    expect_status 1 "devsh: a build directory of other dependencies is refused" env DEV_CACHE="$cs" "$s/dev.sh" build dev
+    out=$(cat "$work/out.txt")
+    [[ "$out" == *"depends/untracked-example.txt"* && "$out" != *ignored-example* ]] &&
+        pass "devsh: the refusal names the untracked file under depends/ and not the ignored one" ||
+        fail "devsh: the refusal says: $out"
+}
+
+# devsh_container_run <LOCAL_REPO or ""> <tree> [args...]: dev.sh container
+# <args> in <tree> with the stub docker; sets ct_build (the tag docker build
+# got), ct_line (the docker run), ct_run (its image, the word before the
+# mode unit-tests) and ct_mount (the host directory at /cache).
+devsh_container_run() {
+    local repo_env=(-u LOCAL_REPO) tree="$2"
+    [[ -z "$1" ]] || repo_env=("LOCAL_REPO=$1")
+    shift 2
+    rm -f "$dlog"
+    env "${repo_env[@]}" PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$cache" "$tree/dev.sh" container "$@" \
+        > "$work/devsh/c/out.txt" 2>&1 || true
+    ct_build=$(sed -n 's/^build .* -t \([^ ]*\) .*/\1/p' "$dlog" 2>/dev/null) || ct_build=""
+    ct_line=$(grep -m1 -- '--cidfile' "$dlog" 2>/dev/null) || ct_line="no docker run"
+    ct_run=""
+    if [[ "$ct_line" =~ \ ([^ ]+)\ unit-tests$ ]]; then ct_run="${BASH_REMATCH[1]}"; fi
+    ct_mount=$(sed -n 's/.* -v \([^ ]*\):\/cache .*/\1/p' <<< "$ct_line")
+}
+
+# devsh_lock_run <tree> <id> <image> [NAME=VALUE...]: dev.sh container
+# --no-image-build <image> in <tree>, with the stub container.
+devsh_lock_run() {
+    local tree="$1" id="$2" image="$3"; shift 3
+    env -u LOCAL_REPO PATH="$bin:$PATH" STUB_RUN="$stubc" STUB_EVENTS="$ev" STUB_ID="$id" DEV_CACHE="$cache" "$@" \
+        "$tree/dev.sh" container --no-image-build "$image"
+}
+
+# The image tags, the container cache and its lock, --cpus, --print-tag and
+# --no-image-build (copies of dev.sh, depends/ and run.sh; a stub docker).
+devsh_container() {
+    local bin="$1" d="$work/devsh/c" dlog="$work/devsh/c/docker.log" cache="$work/devsh/c/cache"
+    local x="$work/devsh/c/x/clone" y="$work/devsh/c/y/clone" link="$work/devsh/c/link" z="$work/devsh/c/z"
+    local re='^[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*:ubuntu\.22\.04$' got want bx rx by ry bline mx out
+    local ct_build ct_line ct_run ct_mount
+    rm -rf "$d"; make_container_copy "$x"; make_container_copy "$y"; ln -s "$x" "$link"
+    # Each copy builds and runs a tag of its own, also when the two have
+    # one directory name; the same copy, also through a symlink, keeps it.
+    devsh_container_run "" "$x" unit-tests; bx="$ct_build" rx="$ct_run" mx="$ct_mount"
+    bline=$(grep -m1 '^build ' "$dlog" 2>/dev/null) || bline="no docker build"
+    devsh_container_run "" "$y" unit-tests; by="$ct_build" ry="$ct_run"
+    if [[ "$bx" == "$rx" && "$by" == "$ry" && "$bx" =~ $re && "$by" =~ $re && "$bx" != "$by" &&
+          "${bx%-*}" == "${by%-*}" ]]; then
+        pass "devsh: two copies with one directory name build and run tags of their own ($bx, $by)"
+    else
+        fail "devsh: x built $bx and ran $rx, y built $by and ran $ry"
+    fi
+    [[ " $bline " == *" --label org.yacoin.build-local=1 "* &&
+       " $bline " == *" --label org.yacoin.build-local.tree=$x "* ]] &&
+        pass "devsh: the image is labelled with its copy" || fail "devsh: the image is built with: $bline"
+    got=$(env -u LOCAL_REPO "$x/ci/containers/run.sh" --print-tag ubuntu.22.04 2>&1) || true
+    [[ "$got" == "$bx" ]] && pass "devsh: run.sh --print-tag prints the copy's tag" ||
+        fail "devsh: run.sh --print-tag prints: $got (built: $bx)"
+    devsh_container_run "" "$x" unit-tests; got="$ct_build $ct_run"
+    devsh_container_run "" "$link" unit-tests; got+=" $ct_build $ct_run"
+    [[ "$got" == "$bx $bx $bx $bx" ]] && pass "devsh: a copy keeps its tag, also through a symlink" ||
+        fail "devsh: the copy again and through a symlink built and ran: $got (first: $bx)"
+    devsh_container_run my-images "$x" unit-tests
+    [[ "$ct_build $ct_run" == "my-images:ubuntu.22.04 my-images:ubuntu.22.04" ]] &&
+        pass "devsh: LOCAL_REPO set by the caller names the image" ||
+        fail "devsh: with LOCAL_REPO=my-images the image built and run: $ct_build $ct_run"
+    # One cache per set of depends inputs under DEV_CACHE, the same for
+    # two copies; another one after a change of the inputs.
+    devsh_container_run "" "$y" unit-tests
+    want=$(env DEV_CACHE="$cache" "$x/dev.sh" cache 2>&1 | sed -n 's/^CONTAINER_CACHE=//p')
+    [[ "$mx" =~ ^$cache/container/[0-9a-f]{16}$ && "$ct_mount" == "$mx" && "$want" == "$mx" ]] &&
+        pass "devsh: two copies with one DEV_CACHE mount one container cache, dev.sh cache's CONTAINER_CACHE ($mx)" ||
+        fail "devsh: the copies mount $mx and $ct_mount, dev.sh cache says CONTAINER_CACHE=$want"
+    local m0
+    make_container_copy "$z"
+    devsh_container_run "" "$z" unit-tests; m0="$ct_mount"
+    mkdir -p "$z/depends/work"; : > "$z/depends/work/ignored-example.txt"
+    devsh_container_run "" "$z" unit-tests
+    [[ "$ct_mount" == "$m0" && "$m0" == "$mx" ]] && pass "devsh: an ignored file under depends/ keeps the container cache" ||
+        fail "devsh: an ignored file under depends/ changed the container cache from $m0 to $ct_mount (x: $mx)"
+    : > "$z/depends/untracked-example.txt"
+    devsh_container_run "" "$z" unit-tests
+    [[ "$ct_mount" != "$m0" && "$ct_mount" =~ ^$cache/container/[0-9a-f]{16}$ ]] &&
+        pass "devsh: an untracked file under depends/ gives another container cache" ||
+        fail "devsh: with an untracked file under depends/ the container cache is $ct_mount (before: $m0)"
+    rm "$z/depends/untracked-example.txt"; echo "# changed" >> "$z/depends/packages/zlib.mk"
+    devsh_container_run "" "$z" unit-tests
+    [[ "$ct_mount" != "$m0" && "$ct_mount" =~ ^$cache/container/[0-9a-f]{16}$ ]] &&
+        pass "devsh: a recipe change gives another container cache" ||
+        fail "devsh: after a recipe change the container cache is $ct_mount (before: $m0)"
+    rm -rf "$z/.git"
+    devsh_container_run "" "$z" unit-tests
+    [[ "$ct_mount" != "$m0" && "$ct_mount" =~ ^$cache/container/[0-9a-f]{16}$ ]] &&
+        pass "devsh: a tree that is not a git checkout gets a container cache of its own" ||
+        fail "devsh: a tree that is not a git checkout mounts $ct_mount"
+    # run.sh alone mounts the cache dev.sh names, under DEV_CACHE or its
+    # default.
+    rm -f "$dlog"
+    env -u LOCAL_REPO -u DEV_CACHE PATH="$bin:$PATH" STUB_DOCKER="$dlog" XDG_CACHE_HOME="$d/xdg" \
+        "$x/ci/containers/run.sh" --no-image-build ubuntu.22.04 unit-tests > "$d/out.txt" 2>&1 || true
+    got=$(sed -n 's/.* -v \([^ ]*\):\/cache .*/\1/p' "$dlog" 2>/dev/null | head -n 1)
+    want=$(env -u DEV_CACHE XDG_CACHE_HOME="$d/xdg" "$x/dev.sh" cache 2>&1 | sed -n 's/^CONTAINER_CACHE=//p')
+    [[ -n "$want" && "$got" == "$want" && "$want" == "$d/xdg/yacoin-dev/container/"* ]] &&
+        pass "devsh: run.sh alone mounts dev.sh's container cache ($got)" ||
+        fail "devsh: run.sh alone mounts $got, dev.sh cache says CONTAINER_CACHE=$want"
+    devsh_container_run "" "$x" --cache "$d/own" unit-tests; got="$ct_mount"
+    devsh_container_run "" "$x" --no-cache unit-tests
+    [[ "$got" == "$d/own" && "$ct_run" == "$bx" && "$ct_line" != *":/cache"* ]] &&
+        pass "devsh: --cache DIR mounts DIR, --no-cache no cache" ||
+        fail "devsh: --cache mounts $got; --no-cache runs: $ct_line"
+    # --cpus reaches docker run.
+    devsh_container_run "" "$x" --cpus 4 unit-tests; got="$ct_line"
+    devsh_container_run "" "$x" unit-tests
+    [[ " $got " == *" --cpus 4 "* && "$got" == *" $bx unit-tests" && "$ct_line" != *--cpus* ]] &&
+        pass "devsh: container --cpus 4 runs: $got" || fail "devsh: container --cpus 4 runs: $got; without: $ct_line"
+    expect_status 2 "devsh: run.sh --cpus without a value exits 2" env -u LOCAL_REPO "$x/ci/containers/run.sh" --cpus
+    grep -q -- "--cpus needs a value" "$work/out.txt" || fail "devsh: run.sh --cpus says: $(cat "$work/out.txt")"
+    expect_status 2 "devsh: run.sh --cpus with an empty value exits 2" \
+        env -u LOCAL_REPO "$x/ci/containers/run.sh" --cpus "" ubuntu.22.04
+    grep -q -- "--cpus needs a value" "$work/out.txt" || fail "devsh: run.sh --cpus \"\" says: $(cat "$work/out.txt")"
+    expect_status 2 "devsh: run.sh --print-tag of an unknown image exits 2" \
+        env -u LOCAL_REPO "$x/ci/containers/run.sh" --print-tag no-such-image
+    grep -q "unknown image 'no-such-image'" "$work/out.txt" ||
+        fail "devsh: run.sh --print-tag no-such-image says: $(cat "$work/out.txt")"
+    rm -f "$dlog"
+    expect_status 1 "devsh: container --no-image-build without the image fails" \
+        env -u LOCAL_REPO PATH="$bin:$PATH" STUB_DOCKER="$dlog" STUB_NO_IMAGE=1 DEV_CACHE="$cache" \
+        "$x/dev.sh" container --no-image-build unit-tests
+    out=$(cat "$work/out.txt")
+    [[ "$out" == *"$bx"*"without --no-image-build"* ]] && ! grep -q -- '--cidfile' "$dlog" 2>/dev/null &&
+        pass "devsh: container --no-image-build without the image names it and starts nothing" ||
+        fail "devsh: container --no-image-build without the image says: $out"
+    devsh_lock "$bin"
+}
+
+# The lock of a container cache: held for the depends phase of a run (until
+# the image's line after its depends build), or for the whole run without
+# that line; docker run's output and exit status come through.
+devsh_lock() {
+    local bin="$1" ev="$work/devsh/c/events" stubc="$work/devsh/c/container" px status
+    local gen="== Generating the build system ==" mac="== Building yacoin for macOS =="
+    write_stub_container "$stubc"
+    # Two copies with one depends key: the second waits for the first's
+    # depends phase.
+    rm -f "$ev"
+    devsh_lock_run "$x" x unit-tests STUB_DEPENDS_TIME=2 STUB_MARKER="$gen" > "$d/x.out" 2>&1 & px=$!
+    wait_for "dstart x" "$ev" || fail "devsh: the first locked run did not start"
+    devsh_lock_run "$y" y unit-tests STUB_MARKER="$gen" > "$d/y.out" 2>&1 || fail "devsh: the second locked run failed"
+    wait "$px" || fail "devsh: the first locked run failed"
+    got=$(tr '\n' ' ' < "$ev")
+    [[ "$got" == "dstart x dend x "*"dstart y"* ]] && grep -q "Waiting" "$d/y.out" &&
+        pass "devsh: two runs on one container cache run their depends phases one after the other: $got" ||
+        fail "devsh: two runs on one container cache: $got"
+    # After the line, the next run starts its depends phase while the first
+    # still runs.
+    rm -f "$ev"
+    devsh_lock_run "$x" x unit-tests STUB_MARKER="$gen" STUB_WAIT_FOR=y STUB_WAIT_TENTHS=200 > "$d/x.out" 2>&1 & px=$!
+    wait_for "rest x" "$ev" || fail "devsh: the first run did not get past its depends phase"
+    devsh_lock_run "$y" y unit-tests STUB_MARKER="$gen" > "$d/y.out" 2>&1 || fail "devsh: the second run failed"
+    wait "$px" || fail "devsh: the first run failed"
+    got=$(tr '\n' ' ' < "$ev")
+    [[ " $got " == *" met x "* ]] && pass "devsh: after its depends phase a run lets the next one start: $got" ||
+        fail "devsh: after the depends phase of the first run: $got"
+    # Without the line the lock is held until the run ends.
+    rm -f "$ev"
+    devsh_lock_run "$x" x unit-tests STUB_WAIT_FOR=y STUB_WAIT_TENTHS=25 > "$d/x.out" 2>&1 & px=$!
+    wait_for "rest x" "$ev" || fail "devsh: the first run without the line did not get past its depends phase"
+    devsh_lock_run "$y" y unit-tests > "$d/y.out" 2>&1 || fail "devsh: the second run failed"
+    wait "$px" || fail "devsh: the first run failed"
+    got=$(tr '\n' ' ' < "$ev")
+    [[ "$got" == *"end x dstart y"* && " $got " != *" met x "* ]] &&
+        pass "devsh: a run without the line after its depends build holds the lock to its end: $got" ||
+        fail "devsh: a run without the line after its depends build: $got"
+    # macOS: its start line is not the line after the depends build.
+    rm -f "$ev"
+    devsh_lock_run "$x" x macos STUB_START_LINE="== Building yacoin for macOS in /src with 4 jobs ==" \
+        STUB_DEPENDS_TIME=2 STUB_MARKER="$mac" > "$d/x.out" 2>&1 & px=$!
+    wait_for "dstart x" "$ev" || fail "devsh: the first macos run did not start"
+    devsh_lock_run "$y" y macos STUB_MARKER="$mac" > "$d/y.out" 2>&1 || fail "devsh: the second macos run failed"
+    wait "$px" || fail "devsh: the first macos run failed"
+    got=$(tr '\n' ' ' < "$ev")
+    [[ "$got" == "dstart x dend x "*"dstart y"* ]] &&
+        pass "devsh: the macos start line keeps the lock: $got" || fail "devsh: two macos runs: $got"
+    # The output, byte for byte, and the exit status of docker run.
+    printf 'after \\ -e %%s \r\n\0last line without a newline' > "$d/tail"
+    { printf '%s\n' "== start ==" "$gen"; cat "$d/tail"; } > "$d/want.out"
+    status=0
+    env -u LOCAL_REPO PATH="$bin:$PATH" STUB_RUN="$stubc" STUB_START_LINE="== start ==" STUB_MARKER="$gen" \
+        STUB_TAIL_FILE="$d/tail" STUB_STATUS=3 DEV_CACHE="$cache" \
+        "$x/ci/containers/run.sh" --no-image-build ubuntu.22.04 unit-tests > "$d/run.out" 2> "$d/run.err" || status=$?
+    [[ "$status" == 3 ]] && cmp -s "$d/want.out" "$d/run.out" &&
+        pass "devsh: run.sh passes the output and exit status 3 of docker run on" ||
+        fail "devsh: run.sh exits $status with the output: $(od -c "$d/run.out" | head -n 5)"
+    printf 'after \\ -e %%s \r\nlast line without a newline' > "$d/tail"
+    { printf '%s\n' "== start =="; cat "$d/tail"; } > "$d/want.out"
+    status=0
+    env -u LOCAL_REPO PATH="$bin:$PATH" STUB_RUN="$stubc" STUB_START_LINE="== start ==" STUB_TAIL_FILE="$d/tail" \
+        DEV_CACHE="$cache" "$x/ci/containers/run.sh" --no-image-build ubuntu.22.04 unit-tests \
+        > "$d/run.out" 2> "$d/run.err" || status=$?
+    [[ "$status" == 0 ]] && cmp -s "$d/want.out" "$d/run.out" &&
+        pass "devsh: run.sh passes the output of docker run on without the line after the depends build" ||
+        fail "devsh: run.sh without the line exits $status with the output: $(od -c "$d/run.out" | head -n 5)"
+    # Each entrypoint prints that line once, after its depends build.
+    local f m mk n
+    for f in "entrypoint.sh:$gen" "entrypoint.windows.sh:== Building yacoin ==" "entrypoint.macos.sh:$mac"; do
+        mk=$(grep -n -m1 'make "${depends_args\[@\]}"' "$HERE/${f%%:*}" | cut -d: -f1)
+        m=$(grep -n -- "^ *echo \"${f#*:}\"\$" "$HERE/${f%%:*}" | cut -d: -f1 | tr '\n' ' ')
+        n=$(wc -w <<< "$m")
+        [[ -n "$mk" && "$n" == 1 && "${m% }" -gt "$mk" ]] &&
+            pass "devsh: ${f%%:*} prints '${f#*:}' once, after its depends build" ||
+            fail "devsh: ${f%%:*}: depends build at line ${mk:-none}, '${f#*:}' at line(s) ${m:-none}"
+    done
+}
+
 step_devsh() {
     local a="$work/devsh/a" b="$work/devsh/other/b" c="$work/devsh/cache" out want got pa pb
     make_devsh_copy "$a"; make_devsh_copy "$b"
@@ -326,10 +716,10 @@ step_devsh() {
     mkdir -p "$bin"; rm -f "$log"
     # shellcheck disable=SC2016 # expanded by the stub
     printf '%s
-' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep 1; echo "end" >> "$STUB_LOG"' \
+' '#!/bin/bash' 'echo "start $*" >> "$STUB_LOG"; sleep "${STUB_MAKE_SLEEP:-1}"; echo "end" >> "$STUB_LOG"' \
         '[[ -z ${STUB_NO_RULE:-} || " $* " != *" $STUB_NO_RULE "* ]] ||' \
         '    { echo "make: *** No rule to make target '\''$STUB_NO_RULE'\''.  Stop." >&2; exit 2; }' \
-        'for x in "$@"; do [[ $x != x86_64_linux_prefix=* ]] || { mkdir -p "${x#*=}/share"; : > "${x#*=}/share/config.site"; }; done' \
+        'for x in "$@"; do [[ $x != *_prefix=* ]] || { mkdir -p "${x#*=}/share"; : > "${x#*=}/share/config.site"; }; done' \
         > "$bin/make"
     chmod +x "$bin/make"
     PATH="$bin:$PATH" STUB_LOG="$log" DEV_CACHE="$c" "$a/dev.sh" depends > "$work/devsh/a.log" 2>&1 & local pid=$!
@@ -370,16 +760,15 @@ step_devsh() {
     # into a).
     mkdir -p "$a/ci/containers"
     cp "$HERE/run.sh" "$a/ci/containers/"; : > "$a/ci/containers/Dockerfile.ubuntu.22.04"
-    # shellcheck disable=SC2016 # expanded by the stub
-    printf '%s\n' '#!/bin/bash' '[[ "${1:-}" != run ]] || echo "$*" >> "$STUB_DOCKER"' > "$bin/docker"
-    chmod +x "$bin/docker"
-    local dlog="$work/devsh/docker.log" mode
+    write_stub_docker "$bin/docker"
+    local dlog="$work/devsh/docker.log" mode tag
+    tag=$(env -u LOCAL_REPO "$a/ci/containers/run.sh" --print-tag ubuntu.22.04 2>/dev/null) || tag="(no --print-tag)"
     for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests build-low-difficulty; do
         rm -f "$dlog"
-        PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" "$a/dev.sh" container --no-image-build --no-cache "$mode" \
-            > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
+        PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" env -u LOCAL_REPO "$a/dev.sh" container --no-image-build \
+            --no-cache "$mode" > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
         got=$(grep -m1 -- '--cidfile' "$dlog" 2>/dev/null || echo "no docker run")
-        if [[ "$got" != *" $LOCAL_REPO:ubuntu.22.04 $mode" ]]; then
+        if [[ "$got" != *" $tag $mode" ]]; then
             fail "devsh: container $mode runs: $got"
         elif [[ $mode == unit-tests-tsan && " $got " == *" --security-opt seccomp=unconfined "* &&
                 " $got " == *" -e CCACHE_DISABLE=1 "* ]]; then
@@ -527,6 +916,8 @@ step_devsh() {
     [[ "$got" == "detect_leaks=1:detect_leaks=0 verbosity=1:$supp print_stacktrace=1:halt_on_error=1 " ]] &&
         pass "devsh: asan keeps the caller's options and adds the suppressions" ||
         fail "devsh: asan with the caller's options runs the suites with: $got"
+    devsh_stamp "$bin"
+    devsh_container "$bin"
 }
 
 step_build() {
