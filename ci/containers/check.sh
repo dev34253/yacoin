@@ -99,7 +99,8 @@
 #           its sanitizer flags, runs the corpus replay with JOBS and its
 #           runtime options, fails when the replay fails or the build made no
 #           fuzz binary and stops on a tree without a corpus, the functional
-#           modes build yacoind and yacoin-cli only and run the test runner
+#           modes build yacoind and yacoin-cli only (in either order) and run
+#           the test runner
 #           with --extended and FTEST_JOBS (with FTEST_SHARD also --shard;
 #           a malformed FTEST_SHARD or a runner without --shard stops them
 #           before the build; cov-functional passes FTEST_SHARD to make and
@@ -1587,7 +1588,7 @@ step_smoke() {
         # runner fails. functional-tests-asan (22.04 image) runs them with
         # the sanitizers' runtime options, a directory for their reports and
         # its list of scripts left out, and only it does.
-        local want ftest_jobs func_modes=(functional-tests) goals logs want_opts has_opts
+        local want ftest_jobs func_modes=(functional-tests) goals sorted_goals logs want_opts has_opts
         local excluded="/src/test/sanitizer_suppressions/asan-excluded-scripts"
         local regtest_excluded="/src/test/functional/regtest-excluded-scripts"
         [[ "$image" != ubuntu.22.04 ]] || func_modes+=(functional-tests-asan)
@@ -1600,6 +1601,8 @@ step_smoke() {
                     > "$work/out.txt" 2>&1 && status=0 || status=$?
                 args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
                 goals=$(tr '\n' ' ' < "$stub/make-goals" 2>/dev/null || echo "make did not run")
+                # make -j may build the two goals in either order.
+                sorted_goals=$(LC_ALL=C sort "$stub/make-goals" 2>/dev/null | tr '\n' ' ') || sorted_goals="make did not run"
                 # The regtest options (4 + 8) for both, the sanitizer options
                 # (1 + 2) for functional-tests-asan only.
                 want_opts=12 has_opts=0
@@ -1609,7 +1612,7 @@ step_smoke() {
                 [[ " $args " != *" --chain=regtest "* ]] || has_opts=$(( has_opts + 4 ))
                 [[ " $args " != *" --exclude-file=$regtest_excluded "* ]] || has_opts=$(( has_opts + 8 ))
                 if [[ $status == 0 && " $args " == *" -j $want "* && " $args " == *" --extended "* &&
-                      " $args " != *" --shard"* && $goals == "yacoind yacoin-cli " && $want_opts == "$has_opts" ]]; then
+                      " $args " != *" --shard"* && $sorted_goals == "yacoin-cli yacoind " && $want_opts == "$has_opts" ]]; then
                     pass "smoke: $image: $mode (FTEST_JOBS=${ftest_jobs:-unset}) builds $goals and runs: test_runner.py $args"
                 else
                     tail -n 5 "$work/out.txt"
