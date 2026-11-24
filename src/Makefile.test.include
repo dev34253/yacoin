@@ -47,6 +47,7 @@ BITCOIN_TESTS =\
   test/checkqueue_tests.cpp \
   test/coins_tests.cpp \
   test/compress_tests.cpp \
+  test/activation_test_util.h \
   test/consensus_test_util.h \
   test/crypto_tests.cpp \
   test/cuckoocache_tests.cpp \
@@ -163,6 +164,7 @@ test_test_bitcoin_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) -s
 
 # fuzz binary (configure --enable-fuzz): the fuzz targets, run by libFuzzer #
 test_fuzz_fuzz_SOURCES = \
+  test/activation_test_util.h \
   test/fuzz/addressindex.cpp \
   test/fuzz/block_header_hash.cpp \
   test/fuzz/deserialize.cpp \

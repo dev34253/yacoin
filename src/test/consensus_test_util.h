@@ -11,6 +11,7 @@
 #include "uint256.h"
 #include "util.h"
 #include "validation.h"
+#include "test/activation_test_util.h"
 
 #include <deque>
 #include <string>
@@ -41,12 +42,7 @@ struct ConsensusGlobalsGuard
     }
 
     // The fork and token heights from the selected chain's activation table.
-    void SetFromActivationTable()
-    {
-        const Consensus::Params& consensus = Params().GetConsensus();
-        nMainnetNewLogicBlockNumber = consensus.ActivationHeight(Consensus::ACTIVATION_NEW_LOGIC);
-        nTokenSupportBlockNumber = consensus.ActivationHeight(Consensus::ACTIVATION_TOKENS);
-    }
+    void SetFromActivationTable() { SetHeightsFromActivationTable(); }
 
     ~ConsensusGlobalsGuard()
     {
