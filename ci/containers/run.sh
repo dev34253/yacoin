@@ -22,7 +22,8 @@ Options:
   --src DIR         source tree mounted at /src (default: $ROOT)
   --cache DIR       cache mounted at /cache (default: one per set of depends
                     inputs of the source tree, \$DEV_CACHE/container/<key>;
-                    DEV_CACHE defaults to ~/.cache/yacoin-dev, as for dev.sh)
+                    DEV_CACHE defaults to \${XDG_CACHE_HOME:-\$HOME/.cache}/yacoin-dev,
+                    as for dev.sh)
   --no-cache        mount no cache
   --name NAME       container name (default: yacoin-build-<image>-<mode>-<id>,
                     unique per run)

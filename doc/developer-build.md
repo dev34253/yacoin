@@ -97,7 +97,7 @@ and `cov-functional`; `windows` and
   (`ci/containers/run.sh --print-tag <image>` prints it; `LOCAL_REPO` sets another name), so clones with different Dockerfiles never
   retag each other's images; Docker shares the layers of equal ones. `ci/containers/README.md` says how to remove old images.
 - Depends packages, depends sources and ccache data are kept per image in `container/<key>/` of the shared cache (`CONTAINER_CACHE` in
-  the output of `./dev.sh cache`): one directory per set of depends inputs, named as `depends/<key>/` but without the host (see
+  the output of `./dev.sh cache`): one directory per set of depends inputs, its key computed as for `depends/<key>/`, but without the host (see
   [Shared cache](#shared-cache)). All clones with the same recipes use it, so only the first run of an image with those recipes builds
   depends, also in a new clone. Measured on 8 CPUs: the first `./dev.sh container unit-tests` takes about 13 minutes on an idle machine
   (40 with other builds running), the second 1-2 minutes (all compiles from ccache). `--cache <dir>` gives a run another cache,
@@ -126,7 +126,7 @@ and `cov-functional`; `windows` and
   `FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan`, not exported: `make cov-functional` reads it from the environment
   too. `./dev.sh cov` always runs every script.
 - Options of `ci/containers/run.sh` (`--help`) go before the image, for example `./dev.sh container --no-cache unit-tests`,
-  `--cpus 4` (a CPU limit for the container, as on a CI runner; the default `JOBS` follows it) or `--src <dir>` for another tree.
+  `--cpus 4` (a CPU limit for the container, as on a CI runner; in the Linux images the default `JOBS` follows it) or `--src <dir>` for another tree.
 - CI runs these images, built from `ci/containers/`, under tags that name the files they were built from:
   `ci/containers/image-tag.sh <image>` prints the tag (`ghcr.io/dev34253/yacoin-build:<image>-<hash>`). Images built on `master` are
   published under it, so `docker pull "$(ci/containers/image-tag.sh ubuntu.22.04)"` gets the image CI uses for this checkout once

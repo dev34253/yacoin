@@ -26,11 +26,11 @@ ci/containers/parity.sh ubuntu.22.04            # parity with the image CI uses,
 
 `run.sh` tags the images with a name of the clone's own, `yacoin-build-local-<directory name>-<checksum of its physical path>:<image>`
 (`run.sh --print-tag <image>` prints it; `LOCAL_REPO` sets another name), so clones never retag each other's images. It labels them
-`org.yacoin.build-local=1` and `org.yacoin.build-local.tree=<clone>`:
+`org.yacoin.build-local=1` and `org.yacoin.build-local.tree=<the clone's physical path>` (`pwd -P` in the clone):
 
 ```bash
 docker image ls --filter label=org.yacoin.build-local=1                                        # the local images of all clones
-docker image rm -f $(docker image ls -q --filter label=org.yacoin.build-local.tree=/path/to/clone) # those of one clone, e.g. a deleted one
+docker image rm -f $(docker image ls -q --filter label=org.yacoin.build-local.tree=/physical/path/of/clone) # those of one clone, e.g. a deleted one
 docker image prune -a --filter label=org.yacoin.build-local=1                                  # all of them that no container uses
 ```
 
