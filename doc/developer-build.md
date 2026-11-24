@@ -133,6 +133,12 @@ and `cov-functional`; `windows` and
   `master` has it; `./dev.sh container` builds it locally instead.
 - `ci/containers/README.md` describes the images, how CI builds and publishes them, the image checks (`check.sh`) and the comparison
   with the images CI uses (`parity.sh`).
+- Lint: `ci/containers/check.sh --steps lint` checks the CI and developer shell scripts (`dev.sh` among them) with `bash -n`,
+  shellcheck 0.11.0 at `--severity=warning` and the pipe check, and the workflows with actionlint 1.7.12. The tools run in the pinned
+  Ubuntu 22.04 base, so local and CI runs use the same versions; the archives are checked against pinned SHA-256 hashes before use. It
+  needs Docker and curl; the first run downloads the archives and the Ubuntu 22.04 base image. The lint runs right after the checkout in
+  `unit-tests`, a short job that runs on every pull request commit and push. The scripts and checks are listed in
+  `ci/containers/README.md` (Lint).
 
 ## Build variants
 
@@ -254,6 +260,8 @@ the same paths. To clear the cache, remove the directory; the next
 - `./dev.sh container` keeps its caches in `container/<key>/` of this cache
   (see [Building in the CI containers](#building-in-the-ci-containers)); the
   host builds do not use them.
+- `ci/containers/check.sh --steps lint` keeps the archives of its lint tools
+  in `lint/` of this cache and downloads them again when missing or changed.
 
 ### TDD loop
 

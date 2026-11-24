@@ -4,8 +4,9 @@
 # Always builds against the pinned libraries from depends/ (never system
 # libraries), so local builds use the same dependency versions as CI.
 # Build output and test data stay inside .devbuild/ and build/; the compiler
-# cache, the built dependencies and the caches of the container runs are in
-# one cache directory that all checkouts share (DEV_CACHE). See
+# cache, the built dependencies, the caches of the container runs and the
+# archives of the lint tools are in one cache directory that all checkouts
+# share (DEV_CACHE). See
 # doc/developer-build.md for the workflow.
 set -euo pipefail
 
@@ -20,7 +21,8 @@ JOBS="${JOBS:-$(nproc)}"
 
 # The cache shared by all checkouts: ccache, the depends sources, and per set
 # of depends inputs (key) the built packages, depends' work area and the
-# install prefix, and the cache of the container runs (ci/containers/run.sh).
+# install prefix, and the cache of the container runs (ci/containers/run.sh);
+# lint/ holds the archives of the lint tools (ci/containers/check.sh).
 # Packages contain their install prefix, so checkouts with the same recipes
 # share one prefix at one path, and other recipes get their own. One path
 # for every spelling of the directory (symlinks, "..", a trailing slash), as
@@ -108,8 +110,9 @@ Variants: dev (mainnet consensus, no GUI, -O1 -g),
           asan (dev + AddressSanitizer/UndefinedBehaviorSanitizer),
           cov (coverage build used by "cov")
 
-Cache shared by all checkouts (ccache, the built dependencies and the
-container caches; DEV_CACHE sets it, removing the directory clears it):
+Cache shared by all checkouts (ccache, the built dependencies, the
+container caches and the lint tools of ci/containers/check.sh; DEV_CACHE
+sets it, removing the directory clears it):
   $DEV_CACHE
 EOF
 }
