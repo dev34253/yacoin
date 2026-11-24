@@ -39,7 +39,8 @@ The token database and address index targets read records as `CDBWrapper` does (
 database. `mempool_load` and `p2p_process_messages` run on a node set up once per process (`src/test/fuzz/fuzz_util.cpp`): a temporary data
 directory, removed at exit; the consensus values as the node sets them at start, with the test networks' N-factor; the main network's
 genesis block as the only block, in-memory databases, a fixed mock time, and no threads. After each input the target puts the node's
-state back: the mempool is emptied, and the P2P target gives each input a new peer and empties the node's address and ban lists.
+state back: the mempool is emptied, and the P2P target gives each input a new peer and empties the node's address and ban lists and
+its list of requested transactions.
 
 `PRINT_ALL_FUZZ_TARGETS_AND_ABORT=1 src/test/fuzz/fuzz` prints the names of all targets and exits. A missing or unknown `FUZZ` name
 stops the binary with a message.

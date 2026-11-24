@@ -27,7 +27,9 @@ These rules apply to every contributor, human or coding agent.
   `./dev.sh container unit-tests-asan`, `./dev.sh container unit-tests-tsan` and `./dev.sh container functional-tests-asan`
   run them locally. `SANITIZE=address ./dev.sh container unit-tests-asan` (or `undefined`) runs one leg of
   `unit-tests-asan`, `FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan` (or `2/2`) one shard of
-  `functional-tests-asan`, as CI does.
+  `functional-tests-asan`, as CI does. `unit-tests-asan` and `./dev.sh asan` leave out the test cases listed in
+  `test/sanitizer_suppressions/asan-excluded-cases`, and `functional-tests-asan` the scripts listed in
+  `test/sanitizer_suppressions/asan-excluded-scripts`.
 
 ## Rules
 
