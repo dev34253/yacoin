@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
 # Parity test: an image built from the Dockerfiles in this directory must
-# provide the same build environment as the published reference image, and
-# its modes must pass on a clean checkout.
+# provide the same build environment as the image CI uses for the same image
+# definition, and its modes must pass on a clean checkout.
 #
 # Usage: ci/containers/parity.sh [options] <image>...
 #
 # For each image:
-#   1. builds yacoin-build-local:<image> from this directory (run.sh);
-#   2. compares it with dev34253/yacoin-build:<image>-2 (REFERENCE_REPO,
-#      REFERENCE_SUFFIX): image config (entrypoint, env, workdir, user), OS
+#   1. takes the reference image: the tag image-tag.sh gives this image
+#      definition, in REFERENCE_REPO (default ghcr.io/dev34253/yacoin-build),
+#      as a local image or pulled. CI publishes that tag from master once the
+#      image definition is merged there; a tag that is not published stops
+#      the image here, with an error naming the tag;
+#   2. builds yacoin-build-local:<image> (LOCAL_REPO) from this directory
+#      (run.sh);
+#   3. compares the two: image config (entrypoint, env, workdir, user), OS
 #      release, compilers and build tools, the toolchains that are not dpkg
-#      packages (osxcross, macOS SDK), and the installed package list;
-#   3. runs the modes, each on its own clean clone of HEAD, with one cache
+#      packages (osxcross, macOS SDK), the installed package list, and the
+#      entrypoint file;
+#   4. runs the modes, each on its own clean clone of HEAD, with one cache
 #      directory that starts empty.
 #
 # Exit status 0 only if every image matches and every mode passes. Package
-# names and every tool version must match exactly. Package versions may
-# differ (the Ubuntu archives keep publishing updates); they are listed, and
-# --strict-versions makes a difference fail.
+# names, every tool version and the entrypoint must match exactly. Package
+# versions may differ (the Ubuntu archives keep publishing updates); they are
+# listed, and --strict-versions makes a difference fail.
 #
 # Options:
 #   --modes LIST       comma-separated modes, or "none" (default per image:
@@ -35,8 +41,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 source "$HERE/run.sh"
 # sort and join must agree on the order.
 export LC_ALL=C
-REFERENCE_REPO="${REFERENCE_REPO:-dev34253/yacoin-build}"
-REFERENCE_SUFFIX="${REFERENCE_SUFFIX:--2}"
+REFERENCE_REPO="${REFERENCE_REPO:-ghcr.io/dev34253/yacoin-build}"
 
 modes_opt="" workdir="" keep=0 strict=0 image_build=1
 while [[ $# -gt 0 ]]; do
@@ -125,14 +130,20 @@ compare() {
     fi
 }
 
+# reference_image <image> <ref>: <ref> as a local image or pulled.
+reference_image() {
+    echo "== $1: reference $2 =="
+    if docker image inspect "$2" >/dev/null 2>&1 || docker pull -q "$2" >/dev/null; then return 0; fi
+    echo "  ERROR: cannot pull the reference image $2 (if it is not published: CI publishes it from master once this image definition is merged there)"
+    return 1
+}
+
+# compare_image <image> <dir> <ref>
 compare_image() {
-    local image="$1" ref="$REFERENCE_REPO:$1$REFERENCE_SUFFIX" loc="$LOCAL_REPO:$1" d="$2" ok=0
+    local image="$1" d="$2" ref="$3" loc="$LOCAL_REPO:$1" ok=0
     echo "== $image: $loc against $ref =="
     # Callers run this inside "if", where set -e is off, so check each step:
-    # a failed pull or probe must not show up as a difference.
-    if ! docker image inspect "$ref" >/dev/null 2>&1 && ! docker pull -q "$ref" >/dev/null; then
-        echo "  ERROR: cannot pull the reference image $ref"; return 1
-    fi
+    # a failed probe must not show up as a difference.
     docker image inspect "$loc" >/dev/null 2>&1 || { echo "  ERROR: no local image $loc"; return 1; }
     inspect_into "$ref" "$d" ref && inspect_into "$loc" "$d" local || return 1
     compare config "$d/config.ref" "$d/config.local" || ok=1
@@ -148,14 +159,15 @@ compare_image() {
     else
         echo "  package versions: same"
     fi
-    # Informational: the entrypoint is expected to change in this repository.
-    local e
+    # The entrypoint file is one of the inputs of the tag.
+    local e hr hl
     e=$(docker image inspect "$loc" --format '{{index .Config.Entrypoint 0}}')
-    if [[ "$(docker run --rm --entrypoint sha256sum "$ref" "$e" | cut -d' ' -f1)" == \
-          "$(docker run --rm --entrypoint sha256sum "$loc" "$e" | cut -d' ' -f1)" ]]; then
+    hr=$(docker run --rm --entrypoint sha256sum "$ref" "$e" | cut -d' ' -f1) || hr=""
+    hl=$(docker run --rm --entrypoint sha256sum "$loc" "$e" | cut -d' ' -f1) || hl=""
+    if [[ -n "$hr" && "$hr" == "$hl" ]]; then
         echo "  $e: same as the reference"
     else
-        echo "  $e: differs from the reference (expected where this repository changed it)"
+        echo "  $e: DIFFERENT (reference ${hr:-unreadable}, local ${hl:-unreadable})"; ok=1
     fi
     return "$ok"
 }
@@ -213,10 +225,12 @@ overall=0 summary=()
 for image in "$@"; do
     [[ -f "$HERE/Dockerfile.$image" ]] || { echo "unknown image '$image'" >&2; exit 2; }
     d="$workdir/$image"; mkdir -p "$d"
+    ref=$("$HERE/image-tag.sh" --repo "$REFERENCE_REPO" "$image")
+    reference_image "$image" "$ref" || { overall=1; summary+=("FAIL  $image: no reference image $ref"); continue; }
     (( image_build == 0 )) || build_image "$image" > "$d/image-build.log" 2>&1 ||
         { echo "== $image: docker build failed (log: $d/image-build.log) =="; tail -n 20 "$d/image-build.log"
           overall=1; summary+=("FAIL  $image: docker build"); continue; }
-    if compare_image "$image" "$d"; then summary+=("PASS  $image: image parity"); else summary+=("FAIL  $image: image parity"); overall=1; fi
+    if compare_image "$image" "$d" "$ref"; then summary+=("PASS  $image: image parity"); else summary+=("FAIL  $image: image parity"); overall=1; fi
     modes="${modes_opt:-$(default_modes "$image")}"
     if [[ "$modes" != none ]]; then
         if run_modes "$image" "$d" "$modes"; then summary+=("PASS  $image: modes $modes"); else summary+=("FAIL  $image: modes $modes"); overall=1; fi
