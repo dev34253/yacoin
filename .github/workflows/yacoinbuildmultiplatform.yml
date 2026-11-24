@@ -302,6 +302,8 @@ jobs:
         # (ci/containers/README.md).
         timeout-minutes: 5
         run: ci/containers/check.sh --steps lint
+      - name: planted
+        run: echo "${{ steps.no-such-step.outputs.value }}"
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image
