@@ -151,20 +151,6 @@ private:
     bool m_fFinalized;
 };
 
-/** Sets the mock time while it lives and puts the previous mock time (or none) back */
-class P2PTestMockTime
-{
-public:
-    explicit P2PTestMockTime(int64_t nTime);
-    ~P2PTestMockTime();
-    void Set(int64_t nTime);
-    P2PTestMockTime(const P2PTestMockTime&) = delete;
-    P2PTestMockTime& operator=(const P2PTestMockTime&) = delete;
-
-private:
-    const int64_t m_saved;
-};
-
 /** Sets nHashCalcThreads while it lives and runs nThreads - 1 header hash workers
  * (ThreadHashCalculation), as the node's start does; stops and joins them and puts the previous
  * value back. With nThreads above 1 the headers handler hashes the headers on the queue. */

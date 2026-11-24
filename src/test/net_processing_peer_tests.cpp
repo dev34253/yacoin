@@ -898,7 +898,7 @@ BOOST_AUTO_TEST_CASE(invalid_orphans_score_their_sender_once)
  * whitelisted is disconnected, without a score. */
 BOOST_AUTO_TEST_CASE(mempool_request)
 {
-    P2PTestMockTime now(GetTime());
+    MockTimeGuard now(GetTime());
     const CTransaction tx = NewTransaction();
     AcceptHere(tx);
 
@@ -1084,7 +1084,7 @@ BOOST_AUTO_TEST_CASE(peers_not_banned)
  * manager. A score of 0 changes nothing either. */
 BOOST_AUTO_TEST_CASE(finalize_node)
 {
-    P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+    MockTimeGuard now(Tip()->GetBlockTime() + 60);
     const std::vector<CBlock> blocks = BuildP2PTestChain(ReadP2PTestBlock(Tip()), Height(), 2);
     std::vector<uint256> hashes;
     for (const CBlock& block : blocks)
@@ -1193,7 +1193,7 @@ BOOST_AUTO_TEST_CASE(extra_outbound_peer_evicted)
     // That peer announces a new block by headers and is asked for it; the others announce later
     // still. It is the oldest again, and kept while the block is requested from it.
     {
-        P2PTestMockTime now(Tip()->GetBlockTime() + 60);
+        MockTimeGuard now(Tip()->GetBlockTime() + 60);
         P2PTestPeer& requested = *peers[nFirstUnprotected];
         requested.Send(NetMsgType::HEADERS, P2PTestHeaders(BuildP2PTestChain(ReadP2PTestBlock(Tip()), Height(), 1)));
         BOOST_REQUIRE_EQUAL(requested.Stats().vHeightInFlight.size(), 1U);
@@ -1213,7 +1213,7 @@ BOOST_AUTO_TEST_CASE(stale_tip_check)
     const int64_t nSpacing3 = Params().GetConsensus().nPowTargetSpacing * 3;
     // A start in the past, so that the last tip update this case leaves is old for later cases
     const int64_t nStart = GetTime() - 100000;
-    P2PTestMockTime now(nStart);
+    MockTimeGuard now(nStart);
     const std::shared_ptr<const CBlock> tipBlock = std::make_shared<const CBlock>(ReadP2PTestBlock(Tip()));
     peerLogic->BlockConnected(tipBlock, Tip(), {});
     connman->SetTryNewOutboundPeer(false);

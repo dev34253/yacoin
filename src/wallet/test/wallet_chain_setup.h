@@ -24,14 +24,6 @@
 
 #include <boost/test/unit_test.hpp>
 
-/** Sets the mock time while it lives; no mock time afterwards */
-struct ScopedMockTime {
-    explicit ScopedMockTime(int64_t nTime) { SetMockTime(nTime); }
-    ~ScopedMockTime() { SetMockTime(0); }
-    ScopedMockTime(const ScopedMockTime&) = delete;
-    ScopedMockTime& operator=(const ScopedMockTime&) = delete;
-};
-
 /** The mock wallet database environment for the object's lifetime */
 struct MockWalletEnv {
     MockWalletEnv() { bitdb.MakeMock(); }
