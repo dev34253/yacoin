@@ -13,7 +13,9 @@ DIR is taken from the runner's working directory.
 With --exclude-file FILE, the runner leaves out the scripts listed in FILE,
 and with the option more than once, those of every FILE; a listed name that
 is not one of its scripts fails the run. With --include-file FILE, it runs
-only the scripts listed in FILE.
+only the scripts listed in FILE. The runner creates the run's directory under
+--tmpdirprefix after it has selected its scripts, so a run that fails on a
+list leaves none.
 
 With --chain CHAIN, the runner selects the scripts that set
 self.chain = 'CHAIN' (regtest: also those without such a line), and builds
@@ -243,7 +245,9 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
 
     main() runs on a tree of its own: a config.ini next to a copy of the
     runner's path, test lists of fake names, and run_tests replaced by a
-    recorder of the scripts it would run."""
+    recorder of the scripts it would run and of the run's directory it gets.
+    A run that stops on a list error leaves no directory under
+    --tmpdirprefix."""
 
     SCRIPTS = ["wallet_a.py", "wallet_b.py", "wallet_b.py --opt", "mining_c.py"]
 
@@ -256,10 +260,16 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
             f.write("[environment]\nSRCDIR=%s\nBUILDDIR=%s\n[components]\nENABLE_BITCOIND=true\n" % (src, self.dir))
         self.list = os.path.join(self.dir, "excluded-scripts")
         self.ran = []
+        # (tmpdir, whether it existed) for every call of run_tests.
+        self.run_dirs = []
+
+        def run_tests(**kwargs):
+            self.ran.append(kwargs["test_list"])
+            self.run_dirs.append((kwargs["tmpdir"], os.path.isdir(kwargs["tmpdir"])))
         patches = {"__file__": os.path.join(src, "test", "functional", "test_runner.py"),
                    "BASE_SCRIPTS": self.SCRIPTS[:2], "EXTENDED_SCRIPTS": self.SCRIPTS[2:],
                    "ALL_SCRIPTS": self.SCRIPTS[2:] + self.SCRIPTS[:2],
-                   "run_tests": lambda **kwargs: self.ran.append(kwargs["test_list"])}
+                   "run_tests": run_tests}
         for name, value in patches.items():
             self.addCleanup(setattr, test_runner, name, getattr(test_runner, name))
             setattr(test_runner, name, value)
@@ -269,9 +279,11 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
             f.write(text)
 
     def main(self, *args):
-        """Run main() with args; return (exit status or None, output)."""
-        # The runner's temporary directory is named after the second it starts.
-        argv = ["test_runner.py", "--tmpdirprefix=%s" % tempfile.mkdtemp(dir=self.dir)] + list(args)
+        """Run main() with args; return (exit status or None, output). The
+        --tmpdirprefix it gives is a new directory, kept in self.prefix."""
+        # The runner's temporary directory is named after the second it creates it.
+        self.prefix = tempfile.mkdtemp(dir=self.dir)
+        argv = ["test_runner.py", "--tmpdirprefix=%s" % self.prefix] + list(args)
         out = io.StringIO()
         status = None
         with unittest.mock.patch("sys.argv", argv), contextlib.redirect_stdout(out):
@@ -287,6 +299,17 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertIsNone(status)
         # Also the run of the script with an argument.
         self.assertEqual(self.ran, [["mining_c.py", "wallet_a.py"]])
+
+    def test_the_run_gets_its_directory_under_the_prefix(self):
+        self.write_list("wallet_b.py\n")
+        status, _ = self.main("--extended", "--exclude-file=%s" % self.list)
+        self.assertIsNone(status)
+        self.assertEqual(len(self.run_dirs), 1)
+        tmpdir, existed = self.run_dirs[0]
+        self.assertTrue(existed, tmpdir)
+        self.assertEqual(os.path.dirname(tmpdir), self.prefix)
+        self.assertRegex(os.path.basename(tmpdir), r"^test_runner_[0-9]{8}_[0-9]{6}$")
+        self.assertEqual([d for d in os.listdir(self.prefix) if d.startswith("test_runner_")], [os.path.basename(tmpdir)])
 
     def test_main_leaves_no_file_open(self):
         self.write_list("wallet_b.py\n")
@@ -321,6 +344,7 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("ERROR! %s:2: 'wallet_gone.py' is not a test script of test_runner.py" % self.list, out)
         self.assertEqual(self.ran, [])
+        self.assertEqual(os.listdir(self.prefix), [])
 
     def test_a_name_needs_its_py_suffix(self):
         # As in the test lists of the runner: the file name of the script.
@@ -329,6 +353,7 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("'wallet_a' is not a test script", out)
         self.assertEqual(self.ran, [])
+        self.assertEqual(os.listdir(self.prefix), [])
 
     def test_a_name_with_arguments_fails_the_run(self):
         # One script name per line; the runs of a script are left out together.
@@ -336,6 +361,7 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         status, out = self.main("--extended", "--exclude-file=%s" % self.list)
         self.assertEqual(status, 1)
         self.assertIn("'wallet_b.py --opt' is not a test script", out)
+        self.assertEqual(os.listdir(self.prefix), [])
 
     def test_a_listed_script_that_was_not_selected_is_no_error(self):
         self.write_list("wallet_b.py\n")
@@ -350,6 +376,7 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
         self.assertIn("ERROR! Cannot read the list of scripts to leave out", out)
         self.assertIn(missing, out)
         self.assertEqual(self.ran, [])
+        self.assertEqual(os.listdir(self.prefix), [])
 
     def write_second_list(self, text):
         second = os.path.join(self.dir, "more-excluded-scripts")
@@ -380,6 +407,7 @@ class FunctionalRunnerExcludeFileTests(unittest.TestCase):
             self.assertEqual(status, 1)
             self.assertIn("ERROR! %s:1: 'wallet_gone.py' is not a test script of test_runner.py" % self.list, out)
             self.assertEqual(self.ran, [])
+            self.assertEqual(os.listdir(self.prefix), [])
 
 
 class FunctionalRunnerIncludeFileTests(unittest.TestCase):
@@ -419,6 +447,7 @@ class FunctionalRunnerIncludeFileTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("ERROR! %s:2: 'wallet_gone.py' is not a test script of test_runner.py" % self.list, out)
         self.assertEqual(self.ran, [])
+        self.assertEqual(os.listdir(self.prefix), [])
 
     def test_a_list_without_a_script_fails_the_run(self):
         for text in ("", "# Only a comment.\n\n"):
@@ -428,6 +457,7 @@ class FunctionalRunnerIncludeFileTests(unittest.TestCase):
             self.assertEqual(status, 1)
             self.assertIn("ERROR! %s lists no script to run" % self.list, out)
             self.assertEqual(self.ran, [])
+            self.assertEqual(os.listdir(self.prefix), [])
 
     def test_script_names_on_the_command_line_fail_the_run(self):
         self.write_list("wallet_a.py\n")
@@ -435,6 +465,7 @@ class FunctionalRunnerIncludeFileTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("ERROR! --include-file is not taken with script names", out)
         self.assertEqual(self.ran, [])
+        self.assertEqual(os.listdir(self.prefix), [])
 
     def test_a_file_that_cannot_be_read_fails_the_run(self):
         missing = os.path.join(self.dir, "no-such-list")
@@ -443,6 +474,7 @@ class FunctionalRunnerIncludeFileTests(unittest.TestCase):
         self.assertIn("ERROR! Cannot read the list of scripts to run", out)
         self.assertIn(missing, out)
         self.assertEqual(self.ran, [])
+        self.assertEqual(os.listdir(self.prefix), [])
 
 
 class FunctionalRunnerShardTests(unittest.TestCase):

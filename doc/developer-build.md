@@ -454,7 +454,9 @@ passed or was skipped, and the run's directory when nothing is left in it. With
 `--nocleanup`, `--noshutdown` or `--perf` passed on to the scripts, it adds
 nothing and removes no test directory. With `--failfast`, the directories of
 the scripts that are still running or not yet reported when the run stops
-stay as well.
+stay as well. The runner creates the run's directory after it has selected its
+scripts; a run that stops earlier, for example on an include- or exclude-file
+error, leaves none.
 
 The nodes of a script run on regtest; a script that runs on main sets
 `self.chain = 'main'` and says why in a comment, and goes into
