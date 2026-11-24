@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include "addrman.h"
+#include "test/p2p_test_util.h"
 #include "test/test_bitcoin.h"
 #include <string>
 #include <boost/test/unit_test.hpp>
@@ -70,9 +71,8 @@ public:
  * connections; returns nMedianStartingHeight as the loop left it and restores the global. */
 static int MedianStartingHeightOf(const std::vector<int>& heights)
 {
-    const int nSaved = nMedianStartingHeight;
     // A value no case expects, so the result comes from the loop
-    nMedianStartingHeight = -1000;
+    P2PTestValue<int> median(nMedianStartingHeight, -1000);
 
     CClientUIInterface ui;
     CConnman connman(0x1337, 0x1337);
@@ -96,7 +96,6 @@ static int MedianStartingHeightOf(const std::vector<int>& heights)
     BOOST_CHECK_EQUAL(nConnections, (int)heights.size());
 
     const int nMedian = nMedianStartingHeight;
-    nMedianStartingHeight = nSaved;
     return nMedian;
 }
 
