@@ -2185,28 +2185,33 @@ BOOST_AUTO_TEST_CASE(load_mempool_edge_cases)
     fs::remove(DataFile("mempool.dat.new"));
 
 #ifdef __linux__
-    // Writing the temporary file fails (a full device) once more than the stdio buffer has been
-    // written: the error is logged, and mempool.dat keeps the earlier dump
-    DumpMempool();
-    BOOST_REQUIRE(fs::exists(path));
-    const std::string earlier = ReadFile(path);
-    for (int i = 0; i < 400; i++) mempool.PrioritiseTransaction(InsecureRand256(), 1);
-    fs::create_symlink("/dev/full", DataFile("mempool.dat.new"));
-    std::string log;
-    {
-        LogCapture capture(DataFile("mempool.log"));
+    const fs::path fullDevice("/dev/full");
+    if (!fs::exists(fullDevice)) {
+        BOOST_TEST_MESSAGE(fullDevice.string() + " does not exist; the failed write is not tested");
+    } else {
+        // Writing the temporary file fails (a full device) once more than the stdio buffer has been
+        // written: the error is logged, and mempool.dat keeps the earlier dump
         DumpMempool();
-        log = capture.Stop();
+        BOOST_REQUIRE(fs::exists(path));
+        const std::string earlier = ReadFile(path);
+        for (int i = 0; i < 400; i++) mempool.PrioritiseTransaction(InsecureRand256(), 1);
+        fs::create_symlink(fullDevice, DataFile("mempool.dat.new"));
+        std::string log;
+        {
+            LogCapture capture(DataFile("mempool.log"));
+            DumpMempool();
+            log = capture.Stop();
+        }
+        BOOST_CHECK(Contains(log, "Failed to dump mempool: "));
+        BOOST_CHECK(fs::is_symlink(DataFile("mempool.dat.new")));
+        BOOST_CHECK(!fs::is_symlink(path));
+        BOOST_CHECK(ReadFile(path) == earlier);
+        fs::remove(DataFile("mempool.dat.new"));
+        ResetMempool();
+        BOOST_CHECK(LoadMempool());
+        BOOST_CHECK_EQUAL(mempool.size(), 1U);
+        BOOST_CHECK(mempool.exists(tx1.GetHash()));
     }
-    BOOST_CHECK(Contains(log, "Failed to dump mempool: "));
-    BOOST_CHECK(fs::is_symlink(DataFile("mempool.dat.new")));
-    BOOST_CHECK(!fs::is_symlink(path));
-    BOOST_CHECK(ReadFile(path) == earlier);
-    fs::remove(DataFile("mempool.dat.new"));
-    ResetMempool();
-    BOOST_CHECK(LoadMempool());
-    BOOST_CHECK_EQUAL(mempool.size(), 1U);
-    BOOST_CHECK(mempool.exists(tx1.GetHash()));
 #endif
     ResetMempool();
 }
