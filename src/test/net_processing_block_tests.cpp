@@ -26,6 +26,7 @@
 #include "test/known_failure.h"
 #include "test/p2p_test_util.h"
 #include "test/test_bitcoin.h"
+#include "test/token_test_util.h"
 
 #include <atomic>
 #include <memory>
@@ -38,20 +39,10 @@ namespace {
 
 /** TestChain100Setup's regtest chain (a few blocks on genesis), the CConnman's buffer limits as
  * the node sets them, and the token database that a reorganisation needs */
-struct BlockSyncSetup : public TestChain100Setup {
-    CTokensDB* prevTokensDb;
-
+struct BlockSyncSetup : public TestChain100Setup, public TokenDbGuard {
     BlockSyncSetup()
     {
         InitP2PTestConnman(*connman);
-        prevTokensDb = ptokensdb;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
-    }
-
-    ~BlockSyncSetup()
-    {
-        delete ptokensdb;
-        ptokensdb = prevTokensDb;
     }
 
     const CBlockIndex* Tip() const

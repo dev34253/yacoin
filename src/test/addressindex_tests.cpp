@@ -154,12 +154,9 @@ struct AddressIndexOn {
 };
 
 /** Regtest chain of 12 blocks, all indexed, with the token database DisconnectBlock needs */
-struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
+struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup, public TokenGlobalsGuard {
     CScript scriptA;                 // P2PK coinbase script of coinbaseKey
     std::vector<CTransaction> coinbases; // coinbases[h - 1] is the coinbase at height h
-    CTokensDB* prevTokensDb;
-    CLRUCache<std::string, CDatabasedTokenData>* prevTokensCache;
-    bool prevTokenIndex;
     CKey keyB, keyC, keyU, keyF;
     uint160 idA, idB, idC, idU, idF, idS;
     CScript scriptS, opTrue;
@@ -171,14 +168,6 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
 
     AddressIndexSetup()
     {
-        prevTokensDb = ptokensdb;
-        prevTokensCache = ptokensCache;
-        prevTokenIndex = fTokenIndex;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
-        ptokensCache = new CLRUCache<std::string, CDatabasedTokenData>(MAX_CACHE_TOKENS_SIZE);
-        fTokenIndex = true;
-        TokenTestingSetup::ClearTokenGlobals();
-
         scriptA = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
         coinbases = coinbaseTxns;
         for (int i = 0; i < COINBASE_MATURITY_AFTER_HARDFORK; i++)
@@ -196,16 +185,6 @@ struct AddressIndexSetup : public AddressIndexOn, public TestChain100Setup {
         opTrue = CScript() << OP_TRUE; // a bare output, and the redeem script of scriptS
         idS = CScriptID(opTrue);
         scriptS = GetScriptForDestination(CScriptID(opTrue));
-    }
-
-    ~AddressIndexSetup()
-    {
-        TokenTestingSetup::ClearTokenGlobals();
-        delete ptokensdb;
-        delete ptokensCache;
-        ptokensdb = prevTokensDb;
-        ptokensCache = prevTokensCache;
-        fTokenIndex = prevTokenIndex;
     }
 
     static CScript P2PKH(const uint160& id) { return GetScriptForDestination(CKeyID(id)); }

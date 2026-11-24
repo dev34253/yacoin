@@ -21,6 +21,7 @@
 
 #include "test/consensus_test_util.h"
 #include "test/test_bitcoin.h"
+#include "test/token_test_util.h"
 
 #include <functional>
 
@@ -100,14 +101,11 @@ bool Submit(const CBlock& block)
 
 /** A regtest chain of a few blocks, and blocks built on any of them; with the token
  * database that disconnecting blocks in a reorganisation needs */
-struct HeaderSetup : public TestingSetup {
+struct HeaderSetup : public TestingSetup, public TokenDbGuard {
     std::vector<CBlock> blocks; // blocks[i] is at height i + 1
-    CTokensDB* prevTokensDb;
 
     HeaderSetup() : TestingSetup(CBaseChainParams::REGTEST)
     {
-        prevTokensDb = ptokensdb;
-        ptokensdb = new CTokensDB(1 << 20, true, true);
         for (int i = 0; i < 12; i++) {
             std::unique_ptr<CBlockTemplate> pblocktemplate = BlockAssembler().CreateNewBlock(CScript() << OP_TRUE);
             CBlock block = pblocktemplate->block;
@@ -121,12 +119,6 @@ struct HeaderSetup : public TestingSetup {
             if (!Submit(block)) throw std::runtime_error("HeaderSetup: block not connected");
             blocks.push_back(block);
         }
-    }
-
-    ~HeaderSetup()
-    {
-        delete ptokensdb;
-        ptokensdb = prevTokensDb;
     }
 
     int Height() const { return (int)blocks.size(); }
