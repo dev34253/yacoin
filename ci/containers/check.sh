@@ -164,7 +164,119 @@ shellcheck_cmd() {
     fi
 }
 
+# The lint tools: release archives of shellcheck and actionlint, checked
+# against these SHA-256 hashes before use.
+SHELLCHECK_VERSION=0.11.0
+SHELLCHECK_ARCHIVE=shellcheck-v$SHELLCHECK_VERSION.linux.x86_64.tar.gz
+SHELLCHECK_URL=https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/$SHELLCHECK_ARCHIVE
+SHELLCHECK_SHA256=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
+ACTIONLINT_VERSION=1.7.12
+ACTIONLINT_ARCHIVE=actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz
+ACTIONLINT_URL=https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/$ACTIONLINT_ARCHIVE
+ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+# The scripts the lint step checks, relative to the repository root.
+LINT_SCRIPTS=(ci/containers/entrypoint.sh ci/containers/entrypoint.windows.sh ci/containers/entrypoint.macos.sh
+              ci/containers/run.sh ci/containers/parity.sh ci/containers/check.sh ci/containers/image-tag.sh
+              ci/containers/test-image-tag.sh ci/containers/all-jobs-passed.sh dev.sh contrib/devtools/run-unit-suites.sh
+              .github/actions/yacoin-build-image/registry-state.sh ci/depends-sources.sh
+              contrib/devtools/coverage-capture.sh)
+# The commands of the lint step; actionlint runs shellcheck over the run:
+# scripts at the same severity.
+LINT_SHELLCHECK=(shellcheck -x -P SCRIPTDIR --severity=warning -f gcc)
+LINT_ACTIONLINT=(env SHELLCHECK_OPTS=--severity=warning actionlint -no-color -oneline -pyflakes=)
+
+# lint_archive_plant <archive>: a copy of the archives with <archive>
+# replaced by another tar.gz of that name; lint_tools must refuse it with a
+# message naming it, before any docker command (a stub docker logs each call).
+lint_archive_plant() {
+    local name="$1" dir="$work/lint-plant/archives" bin="$work/lint-plant/bin" log="$work/lint-plant/docker.log" out st
+    rm -rf "$dir" "$bin"; mkdir -p "$dir/content" "$bin"; : > "$log"
+    cp "$work/lint-tools/"*.tar.gz "$dir/" 2>/dev/null || true
+    printf '#!/bin/sh\nexit 0\n' > "$dir/content/tool"
+    tar -czf "$dir/$name" -C "$dir/content" tool
+    printf '#!/bin/sh\necho "$*" >> "%s"\n' "$log" > "$bin/docker"; chmod +x "$bin/docker"
+    out=$(PATH="$bin:$PATH" lint_tools "$dir" "$dir/content" tool 2>&1) && st=0 || st=$?
+    if [[ "$st" == 2 && "$out" == "$dir/$name: SHA-256 "*", want "* && ! -s "$log" ]]; then
+        pass "lint: a planted $name with another SHA-256 is refused before any docker command: ${out#"$dir/"}"
+    else
+        fail "lint: a planted $name gives status $st, '$out', docker calls: '$(cat "$log")'"
+    fi
+}
+
+# lint_shellcheck_plant <code> <line>: a script of a shebang and <line>
+# through the step's shellcheck; <code> is the warning it must report on
+# line 2, or "" for none.
+lint_shellcheck_plant() {
+    local want="$1" dir="$work/lint-plant/shellcheck" out st
+    rm -rf "$dir"; mkdir -p "$dir"
+    printf '%s\n' '#!/usr/bin/env bash' "$2" > "$dir/planted.sh"
+    out=$(lint_tools "$work/lint-tools" "$dir" "${LINT_SHELLCHECK[@]}" planted.sh 2>&1) && st=0 || st=$?
+    if [[ -n "$want" ]]; then
+        [[ "$st" == 1 && "$out" == "planted.sh:2:"*": warning: "*"[$want]" && "$(wc -l <<< "$out")" == 1 ]] &&
+            pass "lint: shellcheck: a planted warning fails: $out" ||
+            fail "lint: shellcheck: planted '$2' gives status $st, '$out', want one $want warning on line 2"
+        return
+    fi
+    # The plant is a note: shellcheck reports it at its default severity.
+    local note=""
+    if [[ "$st" == 0 && -z "$out" ]]; then
+        note=$(lint_tools "$work/lint-tools" "$dir" shellcheck -f gcc planted.sh 2>&1) || true
+    fi
+    if [[ "$note" == "planted.sh:2:"*": note: "*"[SC2086]" ]]; then
+        pass "lint: shellcheck: a note-level finding (SC2086) passes at --severity=warning"
+    else
+        fail "lint: shellcheck: planted '$2' gives status $st, '$out' at --severity=warning, '$note' without; want nothing, then an SC2086 note"
+    fi
+}
+
+# lint_actionlint_plant <line> <want> <file> <line>...: a workflow <file>
+# whose job's steps are the lines (later lines may add a job), through the
+# step's actionlint; it must report one finding on line <line> holding
+# <want>, or nothing for line 0.
+lint_actionlint_plant() {
+    local n="$1" want="$2" file="$3" dir="$work/lint-plant/actionlint" out st
+    shift 3
+    rm -rf "$dir"; mkdir -p "$dir/.github/workflows"
+    printf '%s\n' 'on: push' 'jobs:' '  build:' '    runs-on: ubuntu-latest' '    steps:' "$@" > "$dir/.github/workflows/$file"
+    out=$(lint_tools "$work/lint-tools" "$dir" "${LINT_ACTIONLINT[@]}" ".github/workflows/$file" 2>&1) && st=0 || st=$?
+    if (( n == 0 )); then
+        [[ "$st" == 0 && -z "$out" ]] && pass "lint: actionlint: planted $file passes" ||
+            fail "lint: actionlint: planted $file gives status $st, '$out', want nothing"
+    elif [[ "$st" == 1 && "$out" == ".github/workflows/$file:$n:"*"$want"* && "$(wc -l <<< "$out")" == 1 ]]; then
+        pass "lint: actionlint: planted $file fails: $out"
+    else
+        fail "lint: actionlint: planted $file gives status $st, '$out', want one finding on line $n with '$want'"
+    fi
+}
+
+# lint_pipe_plant <script>: a copy of the listed scripts with a grep -q at
+# the end of a pipe added to <script>; the pipe check must report that line
+# by its path from the repository root, and nothing else.
+lint_pipe_plant() {
+    local dir="$work/lint-plant/pipe" bar='|' line out want
+    rm -rf "$dir"; mkdir -p "$dir"
+    (cd "$ROOT" && tar -c "${LINT_SCRIPTS[@]}") | tar -x -C "$dir"
+    line="printf 'x\\n' $bar grep -q x"
+    echo "$line" >> "$dir/$1"
+    want="$1:$(wc -l < "$dir/$1"): $line"
+    out=$(lint_pipes "$dir" 2>&1) || true
+    [[ "$out" == "$want" ]] && pass "lint: the pipe check reports a planted grep -q in $1: $out" ||
+        fail "lint: the pipe check on a planted grep -q in $1 gives '$out', want '$want'"
+}
+
 step_lint() {
+    lint_archive_plant "$SHELLCHECK_ARCHIVE"
+    lint_archive_plant "$ACTIONLINT_ARCHIVE"
+    lint_shellcheck_plant SC2034 'x=1'
+    lint_shellcheck_plant '' "printf '%s\n' \$1"
+    lint_actionlint_plant 6 '[expression]' step-id.yml '      - run: echo "${{ steps.no-such-step.outputs.value }}"'
+    lint_actionlint_plant 7 '[job-needs]' needs.yml '      - run: echo' '  second:' '    needs: [no-such-job]' \
+        '    runs-on: ubuntu-latest' '    steps:' '      - run: echo'
+    lint_actionlint_plant 6 'SC2034:warning' run-unused-variable.yml '      - run: x=1'
+    lint_actionlint_plant 0 '' run-note.yml '      - run: printf "%s\n" $HOME'
+    lint_actionlint_plant 0 '' plain.yml '      - run: echo'
+    lint_pipe_plant dev.sh
+    lint_pipe_plant contrib/devtools/run-unit-suites.sh
     local f scripts=(entrypoint.sh entrypoint.windows.sh entrypoint.macos.sh run.sh parity.sh check.sh
                      image-tag.sh test-image-tag.sh all-jobs-passed.sh)
     for f in "${scripts[@]}"; do
