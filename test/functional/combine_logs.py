@@ -25,8 +25,15 @@ import tempfile
 # Should match same symbol in `test_framework.test_framework`.
 TMPDIR_PREFIX = "bitcoin_func_test_"
 
-# Matches on the date format at the start of the log event
+# Matches on the date format at the start of an event of the test framework's
+# log (test_framework.log)
 TIMESTAMP_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{6})?Z")
+
+# Matches on the date format at the start of an event of a node's debug.log:
+# date and time, with microseconds under -logtimemicros, then the mock time
+# when one is set
+NODE_TIMESTAMP_PATTERN = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d{6})?(?: \(mocktime: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\))? ")
 
 LogEvent = namedtuple('LogEvent', ['timestamp', 'source', 'event'])
 
@@ -88,7 +95,9 @@ def read_logs(tmp_dir):
         if logfile:
             files.append(("node%d" % i, logfile))
 
-    return heapq.merge(*[get_log_events(source, f) for source, f in files])
+    # By time stamp only: events with the same stamp come in the order of
+    # files, and in file order within a log.
+    return heapq.merge(*[get_log_events(source, f) for source, f in files], key=lambda event: event.timestamp)
 
 
 def node_log_file(node_dir):
@@ -149,7 +158,12 @@ def get_log_events(source, logfile):
     """Generator function that returns individual log events.
 
     Log events may be split over multiple lines. We use the timestamp
-    regex match as the marker for a new log event."""
+    regex match of the source's log (TIMESTAMP_PATTERN for the test
+    framework's, NODE_TIMESTAMP_PATTERN for a node's) as the marker for a new
+    log event. An event's timestamp is its leading stamp in the form
+    YYYY-MM-DDTHH:MM:SS.ffffffZ, whatever the source; a node's mock time
+    is not part of it."""
+    pattern = TIMESTAMP_PATTERN if source == "test" else NODE_TIMESTAMP_PATTERN
     try:
         with open(logfile, 'r', encoding='utf-8') as infile:
             event = ''
@@ -159,23 +173,28 @@ def get_log_events(source, logfile):
                 if line == '\n':
                     continue
                 # if this line has a timestamp, it's the start of a new log event.
-                time_match = TIMESTAMP_PATTERN.match(line)
+                time_match = pattern.match(line)
                 if time_match:
                     if event:
                         yield LogEvent(timestamp=timestamp, source=source, event=event.rstrip())
-                    timestamp = time_match.group()
-                    if time_match.group(1) is None:
-                        # timestamp does not have microseconds. Add zeroes.
-                        timestamp_micro = timestamp.replace("Z", ".000000Z")
-                        line = line.replace(timestamp, timestamp_micro)
-                        timestamp = timestamp_micro
+                    if pattern is NODE_TIMESTAMP_PATTERN:
+                        date, time_of_day, micro = time_match.group(1, 2, 3)
+                        timestamp = "{}T{}{}Z".format(date, time_of_day, micro or ".000000")
+                    else:
+                        timestamp = time_match.group()
+                        if time_match.group(1) is None:
+                            # timestamp does not have microseconds. Add zeroes.
+                            timestamp_micro = timestamp.replace("Z", ".000000Z")
+                            line = line.replace(timestamp, timestamp_micro)
+                            timestamp = timestamp_micro
                     event = line
                 # if it doesn't have a timestamp, it's a continuation line of the previous log.
                 else:
                     # Add the line. Prefix with space equivalent to the source + timestamp so log lines are aligned
                     event += "                                   " + line
-            # Flush the final event
-            yield LogEvent(timestamp=timestamp, source=source, event=event.rstrip())
+            # Flush the final event; an empty log has none.
+            if event:
+                yield LogEvent(timestamp=timestamp, source=source, event=event.rstrip())
     except FileNotFoundError:
         print("File %s could not be opened. Continuing without it." % logfile, file=sys.stderr)
 
