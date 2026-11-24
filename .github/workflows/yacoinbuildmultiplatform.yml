@@ -283,7 +283,8 @@ jobs:
             build/docker-*/functional-tests-asan/config.log
           retention-days: 14
   unit-tests:
-    # Mainnet consensus build of test_bitcoin and bench_yacoin, every unit
+    # The lint of the CI scripts and workflows (check.sh lint), then the
+    # mainnet consensus build of test_bitcoin and bench_yacoin, every unit
     # test suite in parallel, then every benchmark once in a short mode
     # (unit-tests mode of the yacoin-build image). Depends packages,
     # depends sources and ccache are kept in /cache between runs, in a
@@ -295,6 +296,12 @@ jobs:
       IMAGE: ubuntu.16.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - name: lint
+        # bash -n, shellcheck and the pipe check on the CI and developer
+        # scripts and actionlint on the workflows, with the pinned tools
+        # (ci/containers/README.md).
+        timeout-minutes: 5
+        run: ci/containers/check.sh --steps lint
       - name: image
         id: image
         uses: ./.github/actions/yacoin-build-image

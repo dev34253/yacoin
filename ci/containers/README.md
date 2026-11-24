@@ -12,13 +12,14 @@ the entrypoints create the ccache config before the build.
 | `test-image-tag.sh` | Tests of `image-tag.sh`, of the workflow's use of the tags, of the workflow's jobs and caches, and of `all-jobs-passed.sh` |
 | `all-jobs-passed.sh` | The result of the CI job `all-jobs-passed`: passes only when every job it needs passed |
 | `run.sh` | Builds an image from these files and runs a mode on a source tree (`./dev.sh container` calls it) |
-| `check.sh` | The image checks: lint (also: every `uses:` under `.github/` names a local action or a published action by full commit SHA with its version in a comment), image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
+| `check.sh` | The image checks: lint of the CI and developer scripts and the workflows (see [Lint](#lint)), image tags, digest pins, `dev.sh`'s shared cache (no Docker), `docker build`, smoke tests, ccache config, and an opt-in two-build cache test |
 | `parity.sh` | Compares an image built from here with the image CI uses for the same image definition (`image-tag.sh`'s tag, published from `master`) and runs its modes on a clean clone |
 
 ```bash
 ./dev.sh container unit-tests                  # ubuntu.22.04 image, unit-tests mode, on this checkout
 ci/containers/run.sh windows                    # the Windows release build
 ci/containers/check.sh                          # all images: lint, tag, static, devsh, build, smoke, ccache
+ci/containers/check.sh --steps lint             # the lint of the scripts and workflows, as CI runs it
 ci/containers/image-tag.sh ubuntu.22.04         # the tag CI runs the ubuntu.22.04 image under
 ci/containers/check.sh --steps cache windows    # slow: two builds with one cache
 ci/containers/parity.sh ubuntu.22.04            # parity with the image CI uses, then build, unit-tests and functional-tests
@@ -160,6 +161,26 @@ release matrix uses it; the Windows and macOS images are based on 18.04.
 The macOS build uses the osxcross toolchain to cross-compile from Ubuntu 18.04. It downloads the macOS 10.11 SDK and builds binaries compatible
 with macOS 10.8+. osxcross is pinned to one commit (`OSXCROSS_COMMIT`), and the SDK tarball is checked against its SHA-256
 (`sha256sum -c` in `Dockerfile.macos`).
+
+## Lint
+
+`check.sh --steps lint` checks the shell scripts that build and test the tree, and the workflows:
+
+- the scripts of this directory, `dev.sh`, `contrib/devtools/run-unit-suites.sh`, `contrib/devtools/coverage-capture.sh`,
+  `ci/depends-sources.sh` and the image action's `registry-state.sh` (`LINT_SCRIPTS` in `check.sh`): `bash -n`, shellcheck 0.11.0
+  (`-x --severity=warning`), and no `grep -q` at the end of a pipe (under `pipefail` a match can read as no match);
+- `.github/workflows/*.yml`: actionlint 1.7.12, which also runs shellcheck on the `run:` scripts at the same severity;
+- every `uses:` under `.github/`: a local action or a published action by full commit SHA with its version in a comment (see
+  [GitHub Actions](#github-actions)).
+
+The tools run in the pinned Ubuntu 22.04 base, so local and CI runs use the same versions; the archives are checked against pinned
+SHA-256 hashes before use. They are the x86_64 release archives of shellcheck and actionlint (on another architecture Docker needs
+x86_64 emulation), kept in `$DEV_CACHE/lint/` (`DEV_CACHE` as for `dev.sh`). The step needs Docker and curl; the first run downloads
+the archives and the Ubuntu 22.04 base image. It prints both versions, and before the tree it checks planted cases, each with its
+expected result: an archive with another SHA-256, a shellcheck warning and a note, workflow errors, and a `grep -q` at the end of a pipe
+in copies of `dev.sh` and `run-unit-suites.sh`.
+
+The lint runs right after the checkout in `unit-tests`, a short job that runs on every pull request commit and push.
 
 ## GitHub Actions
 
