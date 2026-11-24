@@ -62,7 +62,6 @@ const int TX_VERSION_NEW = CTransaction::CURRENT_VERSION;
 const int BLOCK_VERSION_OLD = CURRENT_VERSION_of_block;
 const int BLOCK_VERSION_NEW = VERSION_of_block_for_yac_05x_new;
 
-const unsigned int TEST_BITS = 0x1e0fffff;
 const unsigned int TEST_BITS_HARDER = 0x1d0fffff;
 
 /**
@@ -207,17 +206,6 @@ struct RegtestChainSetup : public TestChain100Setup {
         return mempool.exists(tx.GetHash());
     }
 };
-
-/** Entries at heights 1 to nTop on top of genesis, nSpacing seconds apart, all with TEST_BITS;
- *  element h is at height h, element 0 is genesis. */
-std::vector<CBlockIndex*> BuildChain(SyntheticChain& chain, int nTop, ::int64_t nSpacing)
-{
-    std::vector<CBlockIndex*> v{chain.Genesis()};
-    for (int h = 1; h <= nTop; h++) {
-        v.push_back(chain.Add(v.back(), v.back()->GetBlockTime() + nSpacing, TEST_BITS));
-    }
-    return v;
-}
 
 CBigNum Target(unsigned int nBits) { return CBigNum().SetCompact(nBits); }
 
