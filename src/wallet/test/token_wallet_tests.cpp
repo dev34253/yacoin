@@ -984,7 +984,8 @@ BOOST_AUTO_TEST_CASE(select_token_coins)
         BOOST_CHECK_EQUAL(nValue, 300 * COIN);
     }
 
-    // Of several larger coins the lowest is taken, whatever their order
+    // Of two larger coins the lower is taken; the loop lists them in both orders, and the
+    // selection shuffles the coins before it picks
     for (const std::pair<CAmount, CAmount>& larger : {std::make_pair(400 * COIN, 500 * COIN), std::make_pair(500 * COIN, 400 * COIN)}) {
         coins = {Token(100 * COIN), Token(larger.first), Token(larger.second)};
         BOOST_CHECK_EQUAL(Select(250 * COIN, coins, nValue), 1U);

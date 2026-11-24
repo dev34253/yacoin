@@ -12,6 +12,7 @@
 #include "tokens/tokendb.h"
 #include "tokens/tokens.h"
 
+#include "test/p2p_test_util.h"
 #include "test/test_bitcoin.h"
 #include "test/token_test_util.h"
 
@@ -787,11 +788,8 @@ BOOST_AUTO_TEST_CASE(flush_into_ptokens)
     const std::string addr = TestTokenAddress(8);
     {
         CTokensCache cache;
-        CTokensCache* saved = ptokens;
-        ptokens = nullptr;
-        const bool fFlushed = cache.Flush();
-        ptokens = saved;
-        BOOST_CHECK(!fFlushed);
+        P2PTestValue<CTokensCache*> noTokens(ptokens, nullptr);
+        BOOST_CHECK(!cache.Flush());
     }
     const COutPoint outA(InsecureRand256(), 1), outR(InsecureRand256(), 1);
     const CTokenCacheNewToken tokenA(CNewToken("FLUSHADD", COIN), addr, 1, BLOCK_HASH), tokenR(CNewToken("FLUSHREM", COIN), addr, 1, BLOCK_HASH);
