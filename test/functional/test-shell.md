@@ -147,8 +147,9 @@ instances and remove all temporary data and logging directories.
 20XX-XX-XXTXX:XX:XX.XXXXXXZ TestFramework (INFO): Cleaning up /path/to/bitcoin_func_test_XXXXXXXX on exit
 20XX-XX-XXTXX:XX:XX.XXXXXXZ TestFramework (INFO): Tests successful
 ```
-To keep the logs and data directories after a shutdown instead, set the
-`TestShell.options.nocleanup` member to `True` before calling `shutdown`.
+To keep the logs and data directories instead, set the
+`TestShell.options.nocleanup` member of a running `TestShell` to `True` before
+calling `shutdown`:
 ```
 >>> test.options.nocleanup = True
 >>> test.shutdown()
@@ -179,14 +180,14 @@ can be called after the TestShell is shut down.
 | `chain`  | `"regtest"` | Sets the chain-type for the underlying test yacoind processes: `"main"` or `"regtest"`. |
 | `configfile` | `"/path/to/yacoin/test/config.ini"` | Sets the location of the test framework config file. |
 | `coveragedir` | `None` | Records yacoind RPC test coverage into this directory if set. |
-| `loglevel` | `INFO` | Logs events at this level and higher. Can be set to `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. |
+| `loglevel` | `INFO` | Logs events at this level and higher to the console; `test_framework.log` in the test directory gets all levels. Can be set to `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. |
 | `nocleanup` | `False` | Keeps the temporary test directory after `shutdown` if set to `True`. |
-| `noshutdown` | `False` | Does not stop yacoind instances after `shutdown` if set to `True`. |
+| `noshutdown` | `False` | Does not stop the yacoind instances at `shutdown` if set to `True`; the test directory is kept as well. |
 | `num_nodes` | `1` | Sets the number of initialized yacoind processes. |
 | `perf` | `False` | Profiles running nodes with `perf` for the duration of the test if set to `True`. |
 | `rpc_timeout` | `600` | Sets how many seconds the framework waits for a node's RPC server to start and to reply. |
 | `setup_clean_chain` | `False` | Starts the nodes from a copy of the cached 40-block chain, on which the first node mines one more block. Each node starts with only the genesis block (block height 0) if set to `True`. |
-| `randomseed` | Random Integer | `TestShell.options.randomseed` is a member of `TestShell` which can be accessed during a test to seed a random generator. User can override default with a constant value for reproducible test runs. |
+| `randomseed` | `None` | Seeds Python's `random` module at `setup`; if not set, `setup` draws a random seed and logs it at `DEBUG` (`PRNG seed is: ...`). Set a constant for reproducible test runs. |
 | `supports_cli` | `True` | Whether the test supports `usecli`; with `usecli` set and `supports_cli` `False`, `setup` raises `SkipTest`. |
 | `tmpdir` | `None` | Sets the test directory for the logs and the nodes' data directories, which must not exist yet. If not set, a new `bitcoin_func_test_XXXXXXXX` directory in the system's temporary directory. `shutdown` deletes it after a successful test run unless `nocleanup`, `noshutdown` or `perf` is set to `True`. |
 | `trace_rpc` | `False` | Logs all RPC calls if set to `True`. |
