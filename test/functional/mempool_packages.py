@@ -169,7 +169,7 @@ class MempoolPackagesTest(BitcoinTestFramework):
             value = sent_value
             vout = 0
             chain.append(txid)
-        self.chain = chain
+        self.chain_txids = chain
         self.chain_tip = (txid, value)
 
         mempool = node.getrawmempool(True)
@@ -274,7 +274,7 @@ class MempoolPackagesTest(BitcoinTestFramework):
 
     def test_block_and_disconnect(self):
         node = self.nodes[0]
-        chain = self.chain
+        chain = self.chain_txids
         self.log.info("A block with the first 10 of the chain: the other 15 are recomputed")
         sizes = [node.getmempoolentry(t)['size'] for t in chain]
         before = node.getmempoolinfo()['size']
@@ -354,7 +354,7 @@ class MempoolPackagesTest(BitcoinTestFramework):
         self.log.info("getmempoolentry/ancestors/descendants errors")
         for rpc in (node.getmempoolentry, node.getmempoolancestors, node.getmempooldescendants):
             assert_raises_rpc_error(-5, "Transaction not in mempool", rpc, "00" * 32)
-            assert_raises_rpc_error(-5, "Transaction not in mempool", rpc, self.chain[0])  # mined
+            assert_raises_rpc_error(-5, "Transaction not in mempool", rpc, self.chain_txids[0])  # mined
             assert_raises_rpc_error(-8, "parameter 1 must be of length 64 (not 4)", rpc, "abcd")
             assert_raises_rpc_error(-8, "parameter 1 must be hexadecimal string (not '%s')" % ("zz" * 32), rpc, "zz" * 32)
             assert_raises_rpc_error(-8, "parameter 1 must be hexadecimal string (not 'abc')", rpc, "abc")
