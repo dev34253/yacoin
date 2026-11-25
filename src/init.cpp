@@ -69,7 +69,6 @@
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 static const bool DEFAULT_DISABLE_SAFEMODE = false;
 static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
-static const ::uint32_t testnetNewLogicBlockNumber = 0;
 
 using namespace boost;
 
