@@ -2,10 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// CWallet's encryption (encrypt, change the passphrase, decrypt), its key, script
+// CWallet's encryption (encrypt, change the passphrase), its key, script
 // and watch-only bookkeeping, and its keypool, on the mock wallet database.
 
-#include "random.h"
 #include "script/standard.h"
 #include "support/allocators/secure.h"
 #include "wallet/crypter.h"
@@ -13,8 +12,6 @@
 
 #include "wallet/test/wallet_chain_setup.h"
 #include "wallet/test/wallet_test_fixture.h"
-
-#include <set>
 
 #include <boost/test/unit_test.hpp>
 
@@ -30,31 +27,6 @@ struct Reloaded {
         : wallet(std::unique_ptr<CWalletDBWrapper>(new CWalletDBWrapper(&bitdb, strFile))),
           result(CWalletDB(wallet.GetDBHandle(), "cr+").LoadWallet(&wallet)) {}
 };
-
-/** A master key record for vMasterKey under passphrase, as EncryptWallet writes it (with the
- *  smallest number of rounds EncryptWallet uses) */
-CMasterKey MasterKeyFor(const CKeyingMaterial& vMasterKey, const SecureString& passphrase)
-{
-    CMasterKey masterKey;
-    masterKey.vchSalt.resize(WALLET_CRYPTO_SALT_SIZE);
-    GetRandBytes(masterKey.vchSalt.data(), WALLET_CRYPTO_SALT_SIZE);
-    masterKey.nDeriveIterations = 25000;
-    CCrypter crypter;
-    BOOST_REQUIRE(crypter.SetKeyFromPassphrase(passphrase, masterKey.vchSalt, masterKey.nDeriveIterations, masterKey.nDerivationMethod));
-    BOOST_REQUIRE(crypter.Encrypt(vMasterKey, masterKey.vchCryptedKey));
-    return masterKey;
-}
-
-/** The secret of key encrypted under vMasterKey, as the key store stores it */
-std::vector<unsigned char> CryptedSecret(const CKeyingMaterial& vMasterKey, const CKey& key)
-{
-    const uint256 hash = key.GetPubKey().GetHash();
-    CCrypter crypter;
-    BOOST_REQUIRE(crypter.SetKey(vMasterKey, std::vector<unsigned char>(hash.begin(), hash.begin() + WALLET_CRYPTO_IV_SIZE)));
-    std::vector<unsigned char> vchCrypted;
-    BOOST_REQUIRE(crypter.Encrypt(CKeyingMaterial(key.begin(), key.end()), vchCrypted));
-    return vchCrypted;
-}
 
 /** The index of the oldest external keypool entry (the entry is given back) */
 int64_t OldestPoolIndex(CWallet& wallet)
@@ -215,96 +187,6 @@ BOOST_AUTO_TEST_CASE(change_wallet_passphrase)
     Reloaded reloaded("wallet_passphrase.dat");
     BOOST_CHECK(!reloaded.wallet.Unlock(second));
     BOOST_CHECK(reloaded.wallet.Unlock(third));
-}
-
-BOOST_AUTO_TEST_CASE(decrypt_wallet)
-{
-    ArgGuard keypool("-keypool", "1");
-    std::unique_ptr<CWallet> wallet = NewMockWallet("wallet_decrypt.dat");
-    const CKey key = NewWalletTestKey();
-    AddWalletTestKey(*wallet, key);
-
-    // A wallet that is not encrypted is not decrypted
-    BOOST_CHECK(!wallet->DecryptWallet(PASSPHRASE));
-
-    BOOST_REQUIRE(wallet->EncryptWallet(PASSPHRASE));
-
-    // A master key whose parameters the key derivation refuses, and a wrong passphrase, fail
-    // before anything changes
-    {
-        LOCK(wallet->cs_wallet);
-        CMasterKey refused = wallet->mapMasterKeys.begin()->second;
-        refused.nDeriveIterations = 0;
-        wallet->mapMasterKeys[0] = refused;
-    }
-    BOOST_CHECK(!wallet->DecryptWallet(PASSPHRASE));
-    {
-        LOCK(wallet->cs_wallet);
-        wallet->mapMasterKeys.erase(0);
-    }
-    BOOST_CHECK(!wallet->DecryptWallet(SecureString("wrong passphrase")));
-    BOOST_CHECK(wallet->IsLocked());
-    BOOST_CHECK(wallet->HaveKey(key.GetPubKey().GetID()));
-}
-
-BOOST_AUTO_TEST_CASE(decrypt_wallet_with_keys_in_memory)
-{
-    // A wallet on the database whose master key is in memory and in the database, and whose
-    // encrypted key is only in memory. With the passphrase DecryptWallet returns true, but the
-    // keys are decrypted through the key store, which is still marked as encrypted: it
-    // encrypts each key again (and writes the encrypted key record) into the map it clears at
-    // the end. The wallet is left marked as encrypted, unlocked and without any key; the
-    // master key record is erased from the database, the encrypted key record is there.
-    std::unique_ptr<CWallet> wallet = NewMockWallet("wallet_decrypt_memory.dat");
-    const CKey key = NewWalletTestKey();
-    CKeyingMaterial vMasterKey(WALLET_CRYPTO_KEY_SIZE);
-    GetRandBytes(vMasterKey.data(), vMasterKey.size());
-    const CMasterKey masterKey = MasterKeyFor(vMasterKey, PASSPHRASE);
-    wallet->mapMasterKeys[1] = masterKey;
-    BOOST_REQUIRE(CWalletDB(wallet->GetDBHandle()).WriteMasterKey(1, masterKey));
-    BOOST_REQUIRE(wallet->LoadCryptedKey(key.GetPubKey(), CryptedSecret(vMasterKey, key)));
-    {
-        Reloaded before("wallet_decrypt_memory.dat");
-        BOOST_REQUIRE_EQUAL(before.wallet.mapMasterKeys.size(), 1U);
-        BOOST_REQUIRE(!before.wallet.HaveKey(key.GetPubKey().GetID()));
-    }
-    int nStatusChanged = 0;
-    boost::signals2::scoped_connection connection(
-        wallet->NotifyStatusChanged.connect([&nStatusChanged](CCryptoKeyStore*) { nStatusChanged++; }));
-
-    BOOST_CHECK(wallet->DecryptWallet(PASSPHRASE));
-    BOOST_CHECK(nStatusChanged > 0);
-    BOOST_CHECK(wallet->IsCrypted());
-    BOOST_CHECK(!wallet->IsLocked());
-    BOOST_CHECK(!wallet->HaveKey(key.GetPubKey().GetID()));
-    std::set<CKeyID> setKeys;
-    wallet->GetKeys(setKeys);
-    BOOST_CHECK(setKeys.empty());
-    BOOST_CHECK_EQUAL(wallet->mapMasterKeys.size(), 1U);
-
-    Reloaded after("wallet_decrypt_memory.dat");
-    BOOST_CHECK(after.wallet.mapMasterKeys.empty());
-    BOOST_CHECK(after.wallet.IsCrypted());
-    BOOST_CHECK(after.wallet.HaveKey(key.GetPubKey().GetID()));
-    CKey keyOut;
-    BOOST_CHECK(!after.wallet.GetKey(key.GetPubKey().GetID(), keyOut));
-}
-
-BOOST_AUTO_TEST_CASE(decrypt_wallet_without_database)
-{
-    // An encrypted wallet object without a database: the transaction cannot begin and
-    // DecryptWallet fails with the keys unchanged.
-    CWallet wallet;
-    const CKey key = NewWalletTestKey();
-    CKeyingMaterial vMasterKey(WALLET_CRYPTO_KEY_SIZE);
-    GetRandBytes(vMasterKey.data(), vMasterKey.size());
-    wallet.mapMasterKeys[1] = MasterKeyFor(vMasterKey, PASSPHRASE);
-    BOOST_REQUIRE(wallet.LoadCryptedKey(key.GetPubKey(), CryptedSecret(vMasterKey, key)));
-    BOOST_CHECK(!wallet.DecryptWallet(PASSPHRASE));
-    BOOST_CHECK(wallet.IsCrypted());
-    CKey keyOut;
-    BOOST_CHECK(wallet.GetKey(key.GetPubKey().GetID(), keyOut));
-    BOOST_CHECK(keyOut == key);
 }
 
 BOOST_AUTO_TEST_CASE(crypted_keys_and_scripts)

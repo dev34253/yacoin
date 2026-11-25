@@ -709,7 +709,7 @@ private:
         std::set<CInputCoin>& setCoinsRet,
         std::map<std::string, CAmount>& mapValueRet) const;
 
-    CWalletDB *pwalletdbEncryption, *pwalletdbDecryption;
+    CWalletDB *pwalletdbEncryption;
 
     //! the current wallet version: clients below this version are not able to load the wallet
     int nWalletVersion;
@@ -1008,7 +1008,6 @@ public:
     bool Unlock(const SecureString& strWalletPassphrase);
     bool ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase);
     bool EncryptWallet(const SecureString& strWalletPassphrase);
-    bool DecryptWallet(const SecureString& strWalletPassphrase);
 
     void GetKeyBirthTimes(std::map<CTxDestination, int64_t> &mapKeyBirth) const;
     unsigned int ComputeTimeSmart(const CWalletTx& wtx) const;

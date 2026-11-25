@@ -244,7 +244,6 @@ namespace {
 class TestCryptoKeyStore : public CCryptoKeyStore
 {
 public:
-    using CCryptoKeyStore::DecryptKeys;
     using CCryptoKeyStore::EncryptKeys;
     using CCryptoKeyStore::SetCrypted;
     using CCryptoKeyStore::Unlock;
@@ -595,65 +594,6 @@ BOOST_AUTO_TEST_CASE(keystore_get_key_decrypt_failures)
         BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
         CKey keyOut;
         BOOST_CHECK(!store.GetKey(key.GetPubKey().GetID(), keyOut));
-    }
-}
-
-BOOST_AUTO_TEST_CASE(keystore_decrypt_keys)
-{
-    // A store that is not encrypted has nothing to decrypt.
-    {
-        TestCryptoKeyStore plain;
-        BOOST_CHECK(plain.AddKey(NewKey(true)));
-        BOOST_CHECK(!plain.DecryptKeys(NewMasterKey()));
-        BOOST_CHECK_EQUAL(plain.PlainKeyCount(), 1U);
-    }
-
-    const CKey key = NewKey(true);
-    CKeyingMaterial vMasterKey = NewMasterKey();
-
-    // A master key of the wrong size, or a secret that decrypts to fewer than 32 bytes, fails.
-    {
-        TestCryptoKeyStore store;
-        BOOST_CHECK(store.AddKey(key));
-        BOOST_CHECK(store.EncryptKeys(vMasterKey));
-        BOOST_CHECK(!store.DecryptKeys(CKeyingMaterial(WALLET_CRYPTO_KEY_SIZE - 1, 0x01)));
-        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
-    }
-    {
-        TestCryptoKeyStore store;
-        BOOST_CHECK(store.SetCrypted());
-        BOOST_CHECK(store.AddCryptedKey(key.GetPubKey(), EncryptFor(vMasterKey, CKeyingMaterial(16, 0x07), key.GetPubKey())));
-        BOOST_CHECK(!store.DecryptKeys(vMasterKey));
-        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
-    }
-
-    // With the right master key the decrypted keys are added through AddKeyPubKey, which on
-    // this store, still marked as encrypted, refuses them while it is locked.
-    {
-        TestCryptoKeyStore store;
-        BOOST_CHECK(store.AddKey(key));
-        BOOST_CHECK(store.EncryptKeys(vMasterKey));
-        BOOST_CHECK(!store.DecryptKeys(vMasterKey));
-        BOOST_CHECK(store.IsCrypted());
-        BOOST_CHECK(store.HaveKey(key.GetPubKey().GetID()));
-        BOOST_CHECK_EQUAL(store.PlainKeyCount(), 0U);
-    }
-    // Unlocked, AddKeyPubKey encrypts each decrypted key again into the encrypted map, which
-    // DecryptKeys then clears: it returns true, and the store, still marked as encrypted and
-    // unlocked, holds no key at all.
-    {
-        TestCryptoKeyStore store;
-        BOOST_CHECK(store.AddKey(key));
-        BOOST_CHECK(store.EncryptKeys(vMasterKey));
-        BOOST_CHECK(store.Unlock(vMasterKey));
-        BOOST_CHECK(store.DecryptKeys(vMasterKey));
-        BOOST_CHECK(store.IsCrypted());
-        BOOST_CHECK(!store.IsLocked());
-        BOOST_CHECK_EQUAL(store.PlainKeyCount(), 0U);
-        BOOST_CHECK(!store.HaveKey(key.GetPubKey().GetID()));
-        std::set<CKeyID> setAddress;
-        store.GetKeys(setAddress);
-        BOOST_CHECK(setAddress.empty());
     }
 }
 
