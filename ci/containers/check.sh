@@ -84,7 +84,9 @@
 #           leaves the test cases of its list out (the other modes do not;
 #           with SANITIZE=address and undefined the same suites, list and
 #           options),
-#           unit-tests then runs bench_yacoin -time=0.01 (the others do not)
+#           unit-tests configures with --enable-bench (unit-tests-asan and
+#           unit-tests-tsan without it) and then runs bench_yacoin
+#           -time=0.01 (the others do not)
 #           and fails when it fails or the build made no bench_yacoin,
 #           the sanitizer modes stop on a tree without their suppression
 #           file (unit-tests-asan and functional-tests-asan also without
@@ -97,7 +99,8 @@
 #           its sanitizer flags, runs the corpus replay with JOBS and its
 #           runtime options, fails when the replay fails or the build made no
 #           fuzz binary and stops on a tree without a corpus, the functional
-#           modes build yacoind and yacoin-cli only and run the test runner
+#           modes build yacoind and yacoin-cli only (in either order) and run
+#           the test runner
 #           with --extended and FTEST_JOBS (with FTEST_SHARD also --shard;
 #           a malformed FTEST_SHARD or a runner without --shard stops them
 #           before the build; cov-functional passes FTEST_SHARD to make and
@@ -121,8 +124,7 @@
 #           CCACHE_MAXSIZE=1G, cleaning the tree in between. The first starts
 #           on an empty cache; the second must report the cache, take every
 #           depends package from it, compile src/ through the depends ccache
-#           with at least 90% hits, and take at most half the time ("cross"
-#           job of docker-check.yml, extended)
+#           with at least 90% hits, and take at most half the time
 #
 # The lint tools come from the release archives of shellcheck and actionlint
 # (SHELLCHECK_URL, ACTIONLINT_URL), kept in $DEV_CACHE/lint (DEV_CACHE as for
@@ -858,7 +860,7 @@ devsh_container() {
 # the image's line after its depends build), or for the whole run without
 # that line; docker run's output and exit status come through.
 devsh_lock() {
-    local bin="$1" ev="$work/devsh/c/events" stubc="$work/devsh/c/container" px status
+    local bin="$1" ev="$work/devsh/c/events" stubc="$work/devsh/c/container" px status got
     local gen="== Generating the build system ==" mac="== Building yacoin for macOS =="
     write_stub_container "$stubc"
     # Two copies with one depends key: the second waits for the first's
@@ -1197,7 +1199,7 @@ expect_status() {
 }
 
 step_smoke() {
-    local image tag mode fake="$work/fake-src"
+    local image tag mode status fake="$work/fake-src"
     rm -rf "$fake"; mkdir -p "$fake"; printf 'all:\n' > "$fake/Makefile.am"
     for image in "${images[@]}"; do
         tag="$LOCAL_REPO:$image"
@@ -1421,7 +1423,7 @@ step_smoke() {
         # modes set their sanitizers' runtime options (the tree's
         # suppressions), and only they do; unit-tests-tsan runs the suites
         # with address randomisation off.
-        local env_got pers_got want_env bench_got
+        local env_got pers_got want_env bench_got configure_got
         for mode in "${unit_modes[@]}"; do
             opts=()
             [[ $mode != unit-tests-tsan ]] || opts=("${unconfined[@]}")
@@ -1446,6 +1448,17 @@ step_smoke() {
             env_got=$(cat "$stub/suites-env" 2>/dev/null || echo "run-unit-suites.sh did not run")
             [[ "$env_got" == "$want_env" ]] && pass "smoke: $image: $mode runs the suites with: $env_got" ||
                 fail "smoke: $image: $mode runs the suites with: $env_got (want $want_env)"
+            # unit-tests, and only it, configures with --enable-bench.
+            configure_got=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+            if [[ $mode == unit-tests ]]; then
+                [[ " $configure_got " == *" --enable-bench "* ]] &&
+                    pass "smoke: $image: $mode configures with --enable-bench" ||
+                    fail "smoke: $image: $mode configures without --enable-bench: $configure_got"
+            elif [[ "$configure_got" != "configure did not run" && " $configure_got " != *" --enable-bench "* ]]; then
+                pass "smoke: $image: $mode configures without --enable-bench"
+            else
+                fail "smoke: $image: $mode configures with: $configure_got (want no --enable-bench)"
+            fi
             if [[ $mode == unit-tests-tsan ]]; then
                 # ADDR_NO_RANDOMIZE (0x0040000) in the runner's personality.
                 pers_got=$(cat "$stub/suites-personality" 2>/dev/null || echo "run-unit-suites.sh did not run")
@@ -1575,7 +1588,7 @@ step_smoke() {
         # runner fails. functional-tests-asan (22.04 image) runs them with
         # the sanitizers' runtime options, a directory for their reports and
         # its list of scripts left out, and only it does.
-        local want ftest_jobs status func_modes=(functional-tests) goals logs want_opts has_opts
+        local want ftest_jobs func_modes=(functional-tests) goals sorted_goals logs want_opts has_opts
         local excluded="/src/test/sanitizer_suppressions/asan-excluded-scripts"
         local regtest_excluded="/src/test/functional/regtest-excluded-scripts"
         [[ "$image" != ubuntu.22.04 ]] || func_modes+=(functional-tests-asan)
@@ -1588,6 +1601,8 @@ step_smoke() {
                     > "$work/out.txt" 2>&1 && status=0 || status=$?
                 args=$(cat "$stub/runner-args" 2>/dev/null || echo "test_runner.py did not run")
                 goals=$(tr '\n' ' ' < "$stub/make-goals" 2>/dev/null || echo "make did not run")
+                # make -j may build the two goals in either order.
+                sorted_goals=$(LC_ALL=C sort "$stub/make-goals" 2>/dev/null | tr '\n' ' ') || sorted_goals="make did not run"
                 # The regtest options (4 + 8) for both, the sanitizer options
                 # (1 + 2) for functional-tests-asan only.
                 want_opts=12 has_opts=0
@@ -1597,7 +1612,7 @@ step_smoke() {
                 [[ " $args " != *" --chain=regtest "* ]] || has_opts=$(( has_opts + 4 ))
                 [[ " $args " != *" --exclude-file=$regtest_excluded "* ]] || has_opts=$(( has_opts + 8 ))
                 if [[ $status == 0 && " $args " == *" -j $want "* && " $args " == *" --extended "* &&
-                      " $args " != *" --shard"* && $goals == "yacoind yacoin-cli " && $want_opts == "$has_opts" ]]; then
+                      " $args " != *" --shard"* && $sorted_goals == "yacoin-cli yacoind " && $want_opts == "$has_opts" ]]; then
                     pass "smoke: $image: $mode (FTEST_JOBS=${ftest_jobs:-unset}) builds $goals and runs: test_runner.py $args"
                 else
                     tail -n 5 "$work/out.txt"
@@ -1833,9 +1848,10 @@ make_fuzz_stub() {
 
 # A stub source tree for the out-of-tree unit test modes (unit-tests,
 # unit-tests-asan, unit-tests-tsan): depends, autogen.sh, configure and make
-# are no-ops, configure leaves src/test/test_bitcoin (not with "no-binary")
-# and src/bench/bench_yacoin (not with "no-binary" or "no-bench") in the
-# build directory, and contrib/devtools/run-unit-suites.sh records its
+# are no-ops, configure records its arguments in /src/configure-args and
+# leaves src/test/test_bitcoin (not with "no-binary") and
+# src/bench/bench_yacoin (not with "no-binary" or "no-bench") in the build
+# directory, and contrib/devtools/run-unit-suites.sh records its
 # arguments in /src/suites-args, the sanitizer options it gets in
 # /src/suites-env and its personality in /src/suites-personality, then exits
 # with <status>. bench_yacoin records its arguments in /src/bench-args and
@@ -1945,7 +1961,7 @@ make_ccache_stub() {
 # empty cache race for it and fail with "ccache.conf: No such file or
 # directory". The entrypoint must create it before anything runs ccache.
 step_ccache() {
-    local image tag stub="$work/ccache-stub" cache="$work/ccache-cache" state
+    local image tag with_cache stub="$work/ccache-stub" cache="$work/ccache-cache" state
     for image in "${images[@]}"; do
         tag="$LOCAL_REPO:$image"
         for with_cache in yes no; do

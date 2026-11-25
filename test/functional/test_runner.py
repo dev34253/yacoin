@@ -280,13 +280,6 @@ def main():
     logging_level = logging.INFO if args.quiet else logging.DEBUG
     logging.basicConfig(format='%(message)s', level=logging_level)
 
-    # Create base test directory
-    tmpdir = "{}/test_runner_{}".format(args.tmpdirprefix, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
-
-    os.makedirs(tmpdir)
-
-    logging.debug("Temporary test directory at %s" % tmpdir)
-
     enable_bitcoind = config["components"].getboolean("ENABLE_BITCOIND")
 
     if not enable_bitcoind:
@@ -389,6 +382,11 @@ def main():
 
     if not args.keepcache:
         shutil.rmtree("%s/test/cache" % config["environment"]["BUILDDIR"], ignore_errors=True)
+
+    # Create the run's directory, after the script selection and its checks.
+    tmpdir = "{}/test_runner_{}".format(args.tmpdirprefix, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    os.makedirs(tmpdir)
+    logging.debug("Temporary test directory at %s" % tmpdir)
 
     run_tests(
         test_list=test_list,
