@@ -81,6 +81,7 @@ optional mode as its argument:
 | `functional-tests-asan` | `functional-tests` under AddressSanitizer, LeakSanitizer and UBSan (`FTEST_SHARD` as there): the mainnet consensus build with the flags of `unit-tests-asan` (both sanitizers; `SANITIZE` does not apply), and both sanitizer runtimes linked into `yacoind` and `yacoin-cli` (`-static-libasan -static-libubsan`; as two shared libraries, UBSan's reports would ignore `log_path`). The scripts run with the runtime options of `unit-tests-asan` plus `print_suppressions=0` and `handle_segv=0` (a segmentation fault ends the process with the signal, as in `functional-tests`), and the runner's `--sanitizer-logs`: every process a script starts writes its reports to `/src/build/docker-<image>/functional-tests-asan/sanitizer-logs/<script's test directory>.<executable>.<pid>` instead of its stderr. A script with a report fails and the runner prints the report with it, whatever the script's own outcome (also for a process whose stderr or exit status the script expects to differ, or that it kills); after the runner the mode prints every report file and fails if there is one. The scripts listed in `/src/test/sanitizer_suppressions/asan-excluded-scripts` are left out as well (a second `test_runner.py --exclude-file`). Ubuntu 22.04 image only; the others refuse it |
 | `cov-unit` | Coverage build (`--enable-lcov`, `-O0`) and `make cov-unit`. Needs lcov 2.6 or newer, so it only works in the Ubuntu 22.04 image |
 | `cov-functional` | The coverage build of `cov-unit` and `make cov-functional`: the functional test scripts of `functional-tests` but the extended ones, `FTEST_JOBS` (default 4) in parallel, with `--timeout-factor` from `FTEST_TIMEOUT_FACTOR`. With `FTEST_SHARD=K/N` (passed to make) the run takes only shard K of N of the scripts. Needs lcov 2.6 or newer (Ubuntu 22.04 image only) |
+| `warnings` | Prints the first line of `g++ --version`, builds the default targets (`yacoind`, `yacoin-cli`, `test_bitcoin`; mainnet consensus) with `-O1 -g -Wall -Wextra` into `/src/build/docker-<image>/warnings/build.log` (`make --output-sync=target`, so the diagnostics of one compile stay together, also those ccache replays), then runs `contrib/devtools/warning-count.py` on that log with the recorded values of `contrib/devtools/warning-counts.json`: it prints the number of emitted lines and of unique locations (a file, line, column and class) of every warning class and every component, and fails when a class has more unique locations than its recorded value or none recorded, listing that class's locations. The mode also fails when the build fails (printing its error lines and the end of the log), makes no `yacoind`, `yacoin-cli` or `test_bitcoin`, or prints no warning while the recorded values total more than 0; a malformed values file stops it before the build. The tables in Markdown go to `/src/build/docker-<image>/warnings/warning-count.md`. Ubuntu 22.04 image only; the others refuse it |
 
 ```bash
 image=$(ci/containers/image-tag.sh ubuntu.22.04)    # pullable once CI on master has published it
@@ -239,15 +240,24 @@ sanitizer report files, kept 14 days). `test-image-tag.sh` also checks that the 
 The `fuzz-corpus` job runs the mode of the same name of the Ubuntu 22.04 image: every input of the fuzz corpus once through its target
 under AddressSanitizer, LeakSanitizer and UBSan. It replays the committed corpus only and never fuzzes, and uploads its logs when it
 fails (`fuzz-corpus-logs`, kept 14 days). `test-image-tag.sh` checks that it runs with ccache off, restores the `functional-tests`
-depends entry and saves none, and that the workflow has 17 jobs.
+depends entry and saves none.
 
-The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache: a ccache entry per job kind and
-image, and a depends entry per depends kind and image (the low-difficulty job shares the 16.04 release job's); the kinds are
-`release`, `low-difficulty`, `unit-tests` and `functional-tests`. The depends entry holds the depends packages and
+The `warnings` job runs the mode of the same name of the Ubuntu 22.04 image. The CI builds compile without `-Wall -Wextra`: depends'
+`config.site` sets `CXXFLAGS`, so configure does not add them (`configure.ac:261-263`). The job log shows the counter's tables and the
+locations of every class above its value or without one, and the tables go to the job summary. A class with more unique locations than its
+value in `contrib/devtools/warning-counts.json`, or with no value there, fails the job; a class with fewer gets a note, and the pull request
+that lowers a count lowers its value in the same change. A value rises only in a pull request of its own for a toolchain change (a compiler
+or library version, or the warning flags) that adds locations without a code change, with the old and the new count of each class in its
+description. `test-image-tag.sh` checks that the job runs its mode with ccache on and its caches (below), and that the workflow has 18 jobs.
+
+The jobs also keep the depends packages, depends sources and ccache in the GitHub Actions cache: a ccache entry per job kind and image, and
+a depends entry per depends kind and image (the low-difficulty job shares the 16.04 release job's); the kinds are `release`,
+`low-difficulty`, `unit-tests`, `functional-tests` and `warnings` (a ccache entry only). The depends entry holds the depends packages and
 sources, keyed `<kind>-depends-<image>-<tag hash>-<depends hash>` (the content hash in the image tag and a hash of the depends definitions,
 `depends/packages/*.mk`, `patches/`, `Makefile`, `funcs.mk`, `hosts/*.mk` and `builders/*.mk`), and is restored by that exact key only.
 The ccache entry is keyed `<kind>-ccache-<image>-<tag hash>-<commit>`; a restoring run takes the newest entry of its kind and image tag. The
-ccache is limited to 250 MB in the build jobs and to 1 GB in `unit-tests` and `functional-tests` (`CCACHE_MAXSIZE`).
+ccache is limited to 250 MB in the build jobs, to 1 GB in `unit-tests` and `functional-tests` and to 500 MB in `warnings`
+(`CCACHE_MAXSIZE`).
 `build-ubuntu-1604-low-difficulty` uses the `release` depends entry of `ubuntu.16.04` (the same packages) and a ccache entry of its own.
 Only pushes to `master` save the entries, each one whose key is missing; after the saving jobs, `prune-caches` keeps the newest entry
 per kind, image, entry type and cache version and deletes the others. On a push to `master` the build jobs (`build-ubuntu-1604`,
@@ -256,8 +266,11 @@ build without a restored cache; they save the entries pull request runs restore.
 jobs with a cache step restore on every run. The coverage jobs (`coverage-unit`, `coverage-functional-1`, `coverage-functional-2`) and
 the sanitizer jobs (`unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`), every leg included, restore the
 `functional-tests-depends-…` entry (the same image, packages and prefix) and never save one; they build with ccache off, since their
-`-O0` or sanitizer objects never match the cached ones. `test-image-tag.sh` checks these keys, paths and conditions, that only the
-build jobs' restores set `lookup-only`, and that `prune-caches` runs only on a push to `master`, runs no docker and is the one job with
+`-O0` or sanitizer objects never match the cached ones. `warnings` restores the newest `warnings` ccache entry on every run, saves it only
+on a push to `master` when the key is missing, restores the `functional-tests` depends entry and saves none; it uploads no artifact. It
+has an entry of its own because it builds with different flags, so its objects never match the other jobs' entries.
+`test-image-tag.sh` checks these keys, paths and conditions, that only the build jobs' restores set `lookup-only`, and that
+`prune-caches` runs only on a push to `master`, runs no docker, needs every job that saves a cache and is the one job with
 `actions: write`; planted copies of the workflow, each with one change, must fail their named check. `coverage-functional-1` and `-2`
 run shard 1/2 and 2/2 of the functional tests (`FTEST_SHARD`), each with its own artifact per attempt and its own outputs.
 `coverage-report` downloads the artifact of the attempt each coverage job last ran in, merges the unit tracefile with both shards'

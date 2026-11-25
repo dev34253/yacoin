@@ -48,6 +48,7 @@ host, build in the CI images.
 ./dev.sh container functional-tests-asan     # the functional tests of functional-tests except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan, LSan and UBSan, as CI's functional-tests-asan job
 SANITIZE=address ./dev.sh container unit-tests-asan      # one leg of CI's unit-tests-asan (address: ASan and LSan; undefined: UBSan)
 FTEST_SHARD=1/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan (1/2 or 2/2)
+./dev.sh container warnings                  # -Wall -Wextra build, its warnings counted per class against contrib/devtools/warning-counts.json, as CI's warnings job
 ```
 
 The build modes (`build`, `build-low-difficulty`, `windows`, `macos`) configure the source tree in place

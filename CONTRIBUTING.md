@@ -19,6 +19,11 @@ These rules apply to every contributor, human or coding agent.
   coverage against the targets in [`contrib/devtools/coverage-targets.json`](contrib/devtools/coverage-targets.json). A file that now meets
   its target is recorded as met, and a recorded value that rises is written there, in the same pull request (see
   [`doc/developer-build.md`](doc/developer-build.md)).
+- Compiler warnings only go down. The CI job `warnings` (`./dev.sh container warnings`) builds with `-Wall -Wextra` and fails when a class
+  of warnings has more unique locations than [`contrib/devtools/warning-counts.json`](contrib/devtools/warning-counts.json) records; a pull
+  request that removes warnings lowers the values there. A value rises only in a pull request of its own for a toolchain change (a
+  compiler or library version, or the warning flags) that adds locations without a code change, with the old and the new count of each
+  class in its description.
 - Before opening a pull request, build and run the unit and functional tests: `./dev.sh all`, or the container modes
   `./dev.sh container unit-tests` and `./dev.sh container functional-tests` (see [`doc/developer-build.md`](doc/developer-build.md)). CI must
   pass; it also runs the unit tests under AddressSanitizer with LeakSanitizer and under UBSan (the two legs of the
