@@ -343,8 +343,6 @@ PaymentServer::~PaymentServer()
 
 //
 // OSX-specific way of handling yacoin: URIs and PaymentRequest mime types.
-// Also used by paymentservertests.cpp and when opening a payment request file
-// via "Open URI..." menu entry.
 //
 bool PaymentServer::eventFilter(QObject *object, QEvent *event)
 {
