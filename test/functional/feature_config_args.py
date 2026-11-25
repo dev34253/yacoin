@@ -23,6 +23,8 @@ the other checks on the framework's regtest node.
   -debugnet/-benchmark.
 - -pid, -rpcbind without -rpcallowip, -rpcworkqueue/-rpcthreads below 1,
   -printtoconsole.
+- -detachdb, -btcyacprovider and -usdbtcprovider, which no code reads: the
+  node starts with them and answers RPC.
 - -conf (relative and absolute), the command line winning over the
   file, the first of two values in a file winning, sections, and a
   negated option in the file and on the command line.
@@ -199,8 +201,14 @@ class ConfArgsTest(BitcoinTestFramework):
         # The default config, for comparison with the files below.
         assert_equal(node.getmininginfo()['Epoch Interval'], 10)
         assert_equal(node.resendwallettransactions(), [])
+        count = node.getblockcount()
         self.stop_node(0)
         assert not os.path.exists(default_pid)
+
+        self.log.info("Options no code reads: -detachdb, -btcyacprovider, -usdbtcprovider")
+        self.start_node(0, ['-detachdb', '-btcyacprovider=a', '-usdbtcprovider=b'])
+        assert_equal(node.getblockcount(), count)
+        self.stop_node(0)
 
         self.log.info("-printtoconsole")
         self.start_node(0, ['-printtoconsole=1'])
