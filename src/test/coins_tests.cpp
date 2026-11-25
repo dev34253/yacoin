@@ -494,36 +494,39 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(cc2.out.nValue, 5162962);
     BOOST_CHECK_EQUAL(HexStr(cc2.out.scriptPubKey), "21037a948767a89dc07499a58fc52a7eb61e928482ae2d3766f51f073d82aacb75f8ac");
 
-    // Smallest possible example
-//    CDataStream ss3(ParseHex("000006"), SER_DISK, CLIENT_VERSION);
-//    Coin cc3;
-//    ss3 >> cc3;
-//    BOOST_CHECK_EQUAL(cc3.fCoinBase, false);
-//    BOOST_CHECK_EQUAL(cc3.nHeight, 0);
-//    BOOST_CHECK_EQUAL(cc3.out.nValue, 0);
-//    BOOST_CHECK_EQUAL(cc3.out.scriptPubKey.size(), 0);
-//
-//    // scriptPubKey that ends beyond the end of the stream
-//    CDataStream ss4(ParseHex("000007"), SER_DISK, CLIENT_VERSION);
-//    try {
-//        Coin cc4;
-//        ss4 >> cc4;
-//        BOOST_CHECK_MESSAGE(false, "We should have thrown");
-//    } catch (const std::ios_base::failure& e) {
-//    }
-//
-//    // Very large scriptPubKey (3*10^9 bytes) past the end of the stream
-//    CDataStream tmp(SER_DISK, CLIENT_VERSION);
-//    uint64_t x = 3000000000ULL;
-//    tmp << VARINT(x);
-//    BOOST_CHECK_EQUAL(HexStr(tmp.begin(), tmp.end()), "8a95c0bb00");
-//    CDataStream ss5(ParseHex("00008a95c0bb00"), SER_DISK, CLIENT_VERSION);
-//    try {
-//        Coin cc5;
-//        ss5 >> cc5;
-//        BOOST_CHECK_MESSAGE(false, "We should have thrown");
-//    } catch (const std::ios_base::failure& e) {
-//    }
+    // Smallest possible example: code, compressed output, time and flags, all zero
+    CDataStream ss3(ParseHex("0000060000"), SER_DISK, CLIENT_VERSION);
+    Coin cc3;
+    ss3 >> cc3;
+    BOOST_CHECK_EQUAL(cc3.fCoinBase, false);
+    BOOST_CHECK_EQUAL(cc3.nHeight, 0);
+    BOOST_CHECK_EQUAL(cc3.out.nValue, 0);
+    BOOST_CHECK_EQUAL(cc3.out.scriptPubKey.size(), 0);
+    BOOST_CHECK_EQUAL(cc3.nTime, 0);
+    BOOST_CHECK_EQUAL(cc3.fCoinStake, false);
+    BOOST_CHECK(ss3.empty());
+
+    // scriptPubKey that ends beyond the end of the stream
+    CDataStream ss4(ParseHex("000007"), SER_DISK, CLIENT_VERSION);
+    try {
+        Coin cc4;
+        ss4 >> cc4;
+        BOOST_CHECK_MESSAGE(false, "We should have thrown");
+    } catch (const std::ios_base::failure& e) {
+    }
+
+    // Very large scriptPubKey (3*10^9 bytes) past the end of the stream, followed by time and flags, both zero
+    CDataStream tmp(SER_DISK, CLIENT_VERSION);
+    uint64_t x = 3000000000ULL;
+    tmp << VARINT(x);
+    BOOST_CHECK_EQUAL(HexStr(tmp.begin(), tmp.end()), "8a95c0bb00");
+    CDataStream ss5(ParseHex("00008a95c0bb000000"), SER_DISK, CLIENT_VERSION);
+    try {
+        Coin cc5;
+        ss5 >> cc5;
+        BOOST_CHECK_MESSAGE(false, "We should have thrown");
+    } catch (const std::ios_base::failure& e) {
+    }
 }
 
 /** A coin paying 8000 YAC to a P2PKH address */
