@@ -86,7 +86,6 @@
 #include <openssl/conf.h>
 
 #include "sync.h"
-#include "strlcpy.h"
 #include "ui_interface.h"
 #include <boost/algorithm/string/join.hpp>
 #include <boost/program_options/parsers.hpp>
