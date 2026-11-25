@@ -125,16 +125,6 @@ bool CWalletDB::WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey)
     return WriteIC(std::make_pair(std::string("mkey"), nID), kMasterKey, true);
 }
 
-bool CWalletDB::EraseMasterKey(unsigned int nID)
-{
-    return EraseIC(std::make_pair(std::string("mkey"), nID));
-}
-
-bool CWalletDB::EraseCryptedKey(const CPubKey& vchPubKey)
-{
-    return EraseIC(std::make_pair(std::string("ckey"), vchPubKey));
-}
-
 bool CWalletDB::WriteCScript(const uint160& hash, const CScript& redeemScript)
 {
     return WriteIC(std::make_pair(std::string("cscript"), hash), redeemScript, false);
