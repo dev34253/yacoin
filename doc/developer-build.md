@@ -74,19 +74,21 @@ with this checkout mounted:
 ./dev.sh container functional-tests-asan     # the functional tests of functional-tests except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
 SANITIZE=undefined ./dev.sh container unit-tests-asan     # one leg of CI's unit-tests-asan: UBSan only (address: ASan and LSan only)
 FTEST_SHARD=2/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan
+./dev.sh container warnings                  # ubuntu.22.04 image: -Wall -Wextra build, its warnings counted per class against contrib/devtools/warning-counts.json
 ./dev.sh container ubuntu.16.04 build-low-difficulty  # low-difficulty release build, its unit tests and the functional tests that need it (see Functional tests below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
 ```
 
 Images: `ubuntu.16.04`, `ubuntu.22.04` (default), `windows`, `macos`. Modes of the Ubuntu images: `build` (default), `build-low-difficulty`,
-`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`
-and `cov-functional`; `windows` and
+`unit-tests`, `functional-tests`, and the 22.04-only `unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functional-tests-asan`, `cov-unit`,
+`cov-functional` and `warnings`; `windows` and
 `macos` only build.
 
 - The test modes build out of tree in `build/docker-<image>/<mode>/`, which is recreated on every run, against their own depends without Qt
   in `build/docker-<image>/depends/`. Unit test logs are in `build/docker-<image>/unit-tests/unit-test-logs/`, functional test data in
-  `build/docker-<image>/functional-tests/test/tmp/`.
+  `build/docker-<image>/functional-tests/test/tmp/`. `warnings` writes the build's output to `build/docker-ubuntu.22.04/warnings/build.log`
+  and prints the counts of `contrib/devtools/warning-count.py` (see `ci/containers/README.md`).
 - The `build` mode does what the CI release jobs do: depends with Qt into `depends/<host>/` in the checkout (not into the
   shared cache of `./dev.sh depends`), configure in the source tree, and `make install` into `release-root/`. `build-low-difficulty` does the same with
   `--enable-low-difficulty-for-development` and then runs all unit test suites of that build's `src/test/test_bitcoin` and the

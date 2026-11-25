@@ -16,7 +16,8 @@
 #   - only the docker runs of the unit-tests-tsan mode turn Docker's seccomp
 #     filter off (the mode needs it, see entrypoint.sh), and they do;
 #   - the sanitizer jobs run their modes (unit-tests-asan, unit-tests-tsan,
-#     fuzz-corpus, functional-tests-asan), with ccache off;
+#     fuzz-corpus, functional-tests-asan), with ccache off; the warnings job
+#     runs its mode with ccache on;
 #   - unit-tests-asan runs one leg per sanitizer (SANITIZE),
 #     functional-tests-asan and the coverage-functional-<n> jobs one shard
 #     each (FTEST_SHARD), and coverage-report merges every shard;
@@ -31,9 +32,12 @@
 #     uses the depends entry of build-ubuntu-1604; the sanitizer and coverage
 #     jobs (fuzz-corpus, functional-tests-asan, unit-tests-asan,
 #     unit-tests-tsan, coverage-unit, coverage-functional-<n>) restore the
-#     functional-tests depends entry and save none; prune-caches runs only
-#     on a push to master, runs no docker and is the one job with
-#     actions: write;
+#     functional-tests depends entry and save none; the warnings job
+#     restores the functional-tests depends entry, saves none and keeps a
+#     ccache entry of its own (warnings-ccache-<image tag>-<commit>, saved
+#     only on a push to master without an exact hit); prune-caches runs only
+#     on a push to master, runs no docker, needs every job that saves a cache
+#     and is the one job with actions: write;
 #   - all-jobs-passed.sh passes only when every needed job succeeded (and
 #     prune-caches succeeded or, outside a push to master, was skipped), and
 #     fails on any other result and on empty, malformed or missing input;
@@ -42,7 +46,7 @@
 #     needs every other job, runs always and is written as expected. Planted
 #     copies of the workflow, each with one change, must fail their named
 #     check;
-#   - the workflow has 17 jobs.
+#   - the workflow has 18 jobs.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -221,12 +225,15 @@ for wf in "$ROOT"/.github/workflows/*.yml; do
             check "$name: $container (${BASH_REMATCH[1]}) runs with ccache off" \
                 test "${run/ -e CCACHE_DISABLE=1 /}" != "$run"
         fi
+        if [[ "$run" =~ \"\$IMAGE_TAG\"[[:space:]]+warnings[[:space:]]*$ ]]; then
+            check "$name: $container (warnings) runs with ccache on" test "${run/CCACHE_DISABLE/}" = "$run"
+        fi
     done < <(grep -E '^[[:space:]]*docker run ' <<< "$joined" || true)
 done
 # The sanitizer jobs run their modes.
 wf="$ROOT/.github/workflows/yacoinbuildmultiplatform.yml"
 joined=$(sed -e ':a' -e '/\\$/N; s/\\\n//; ta' "$wf")
-for mode in unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan; do
+for mode in unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests-asan warnings; do
     check "${wf#"$ROOT"/}: a docker run of the $mode mode" \
         grep -qE '^[[:space:]]*docker run .*"\$IMAGE_TAG"[[:space:]]+'"$mode"'[[:space:]]*$' <<< "$joined"
 done
@@ -523,7 +530,7 @@ master_push="github.event_name == 'push' && github.ref == 'refs/heads/master'"
 
 # cache_checks <workflow>: the checks of the workflow's caches.
 cache_checks() {
-    local recs job n m i id ok key kind image dir want fs_key fs_paths saves combined restores
+    local recs job n m i id ok key kind image dir want fs_key fs_paths saves combined restores savers needed
     local -A dkind=([build-ubuntu-1604]=release [build-ubuntu-1604-low-difficulty]=release [build-ubuntu-2204]=release
                     [build-windows]=release [build-macos]=release [unit-tests]=unit-tests [functional-tests]=functional-tests)
     local -A ckind=([build-ubuntu-1604]=release [build-ubuntu-1604-low-difficulty]=low-difficulty [build-ubuntu-2204]=release
@@ -531,6 +538,9 @@ cache_checks() {
     local build_jobs=(build-ubuntu-1604 build-ubuntu-1604-low-difficulty build-ubuntu-2204 build-windows build-macos)
     local restore_jobs=(fuzz-corpus functional-tests-asan unit-tests-asan unit-tests-tsan coverage-unit coverage-functional-1
                         coverage-functional-2)
+    # Jobs that restore the functional-tests depends entry and keep a ccache
+    # entry of their own kind, named after the job.
+    local own_ccache_jobs=(warnings)
     recs=$(cache_records "$1")
     # field <job> <n> <field>: the values of a field of the job's n-th cache step.
     field() { awk -F'\t' -v j="$1" -v n="$2" -v f="$3" '$1 == "C" && $2 == j && $3 == n && $4 == f { print $5 }' <<< "$recs"; }
@@ -601,7 +611,7 @@ cache_checks() {
     done
 
     # Every depends restore: the image tag and the depends inputs, exact key only.
-    for job in "${!dkind[@]}" "${restore_jobs[@]}"; do
+    for job in "${!dkind[@]}" "${restore_jobs[@]}" "${own_ccache_jobs[@]}"; do
         kind=${dkind[$job]:-functional-tests}
         image=$(job_env "$job" IMAGE)
         n=$(step_id "$job" depends)
@@ -652,6 +662,34 @@ cache_checks() {
         check "$job: saves no cache" test -z "$(steps_of "$job" '^actions/cache(/save)?@')"
     done
 
+    # The jobs with a ccache entry of their own: the functional-tests depends
+    # entry, restored only, and their ccache entry, saved under the key its
+    # restore looked up when that restore had no exact hit.
+    for job in "${own_ccache_jobs[@]}"; do
+        image=$(job_env "$job" IMAGE)
+        check "$job: runs the ubuntu.22.04 image" test "$image" = ubuntu.22.04
+        n=$(step_id "$job" depends); ok=0
+        [[ -z "$n" || "$(field "$job" "$n" uses)" != actions/cache/restore@* || -z "$fs_key" ||
+           "$(field "$job" "$n" key)" != "$fs_key" || "$(field "$job" "$n" path)" != "$fs_paths" ]] || ok=1
+        check "$job: restores the functional-tests depends entry" test "$ok" = 1
+        check "$job: saves no depends entry" test -z "$(saves_of "$job" depends)"
+        n=$(step_id "$job" ccache)
+        check "$job: the ccache entry holds $image/ccache" \
+            test "$(field "$job" "${n:-0}" path)" = "\$RUNNER_TEMP/yacoin-cache/$image/ccache"
+        check "$job: the ccache key holds the image tag and the commit" \
+            test "$(field "$job" "${n:-0}" key)|$(field "$job" "${n:-0}" rkey)" = \
+                 "$job-ccache-<tagid:$image>-\$GITHUB_SHA|$job-ccache-<tagid:$image>-"
+        mapfile -t saves < <(steps_of "$job" '^actions/cache(/save)?@')
+        ok=0
+        if [[ -n "$n" && "$(field "$job" "$n" uses)" == actions/cache/restore@* && ${#saves[@]} == 1 &&
+              "$(field "$job" "${saves[0]}" keyraw)" == "\${{ steps.ccache.outputs.cache-primary-key }}" &&
+              "$(field "$job" "${saves[0]}" if)" == *" && steps.ccache.outputs.cache-hit != 'true' }}" &&
+              "$(field "$job" "${saves[0]}" path)" == "$(field "$job" "$n" path)" ]]; then
+            ok=1
+        fi
+        check "$job: saves the ccache entry only, skipped on an exact restore" test "$ok" = 1
+    done
+
     # One key, one path list (the paths are part of the entry's version).
     ok=$(awk -F'\t' '$1 == "C" && $4 == "key" { key[$2 SUBSEP $3] = $5 }
                      $1 == "C" && $4 == "path" { p[$2 SUBSEP $3] = p[$2 SUBSEP $3] "|" $5 }
@@ -677,6 +715,9 @@ cache_checks() {
         grep -qE 'docker|actions/checkout' <<< "$job" || ok=1
     fi
     check "prune-caches runs only on a push to master and runs no docker" test "$ok" = 1
+    savers=$(awk -F'\t' '$1 == "C" && $4 == "uses" && $5 ~ /^actions\/cache(\/save)?@/ { print $2 }' <<< "$recs" | LC_ALL=C sort -u)
+    needed=$(awk -F'\t' '$1 == "J" && $2 == "prune-caches" && $3 == "needs" { print $4 }' <<< "$recs" | LC_ALL=C sort -u)
+    check "prune-caches needs every job that saves a cache and nothing else" test -n "$savers" -a "$needed" = "$savers"
     check "prune-caches is the one job with actions: write" test \
         "$(awk -F'\t' '($1 == "J" && $3 == "perm" && $4 ~ /^actions: *write/) { print $2 }
                        ($1 == "W" && $3 ~ /^actions: *write/) { print "(workflow)" }' <<< "$recs" | sort -u)" = prune-caches
@@ -783,6 +824,16 @@ plant "prune-caches is the one job with actions: write" build-ubuntu-1604 \
     "/^      contents: read$/a\      actions: write"
 plant "prune-caches runs only on a push to master and runs no docker" prune-caches \
     "s/^    if: .*/    if: \${{ !cancelled() }}/"
+plant "prune-caches needs every job that saves a cache and nothing else" prune-caches "/^    needs: /s/, warnings\]/]/"
+plant "prune-caches needs every job that saves a cache and nothing else" prune-caches "/^    needs: /s/\]/, coverage-unit]/"
+plant "warnings: the cache save runs only on a push to master" warnings \
+    "/steps\.ccache\.outputs\.cache-hit/s/ && github\.event_name == 'push' && [^&]* && / \&\& /"
+plant "warnings: the ccache key holds the image tag and the commit" warnings "s/warnings-ccache-/functional-tests-ccache-/"
+plant "warnings: restores the functional-tests depends entry" warnings "s/functional-tests-depends-/warnings-depends-/"
+plant "warnings: saves no depends entry" warnings \
+    "s/key: \${{ steps\.ccache\.outputs\.cache-primary-key }}/key: \${{ steps.depends.outputs.cache-primary-key }}/"
+plant "warnings: saves the ccache entry only, skipped on an exact restore" warnings \
+    "s/ && steps\.ccache\.outputs\.cache-hit != 'true'//"
 new_job='  new-job:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo'
 plant "all-jobs-passed needs every other job and nothing else" all-jobs-passed "/^      - unit-tests$/d"
 plant "all-jobs-passed needs every other job and nothing else" fuzz-corpus "/^  fuzz-corpus:$/i\\$new_job"
@@ -807,7 +858,7 @@ plant "$layout:   hidden-job:  # x" fuzz-corpus "/^  fuzz-corpus:$/i\\$continued
 
 # A job added or removed is a deliberate change of this number.
 jobs=$(awk '/^jobs:$/ { on = 1; next } on && /^  [A-Za-z0-9_-]+:$/ { n++ } END { print n + 0 }' "$wf")
-check "${wf#"$ROOT"/}: 17 jobs ($jobs)" test "$jobs" = 17
+check "${wf#"$ROOT"/}: 18 jobs ($jobs)" test "$jobs" = 18
 action="$ROOT/.github/actions/yacoin-build-image/action.yml"
 check "the image action computes the tag with image-tag.sh" grep -q 'ci/containers/image-tag.sh' "$action"
 for wf in "$ROOT"/.github/workflows/*.yml; do

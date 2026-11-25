@@ -69,6 +69,13 @@
 #                     (the scripts of functional-tests but the extended ones,
 #                     FTEST_JOBS in parallel; with FTEST_SHARD=K/N only shard
 #                     K of N of them); needs lcov 2.6 or newer
+#   warnings          build the default targets with -O1 -g -Wall -Wextra,
+#                     the output in <builddir>/build.log (make
+#                     --output-sync), then contrib/devtools/warning-count.py
+#                     on it with contrib/devtools/warning-counts.json: fails
+#                     when a class of warnings has more unique locations than
+#                     recorded, or none recorded (Markdown tables in
+#                     <builddir>/warning-count.md). Ubuntu 22.04 image only
 #
 # The test modes build out of tree in /src/build/docker-<image>/<mode>, which
 # is recreated on every run. If a cache dir is mounted at /cache, depends
@@ -119,8 +126,8 @@ available_cpus() {
 JOBS="${JOBS:-$(available_cpus)}"
 
 case "$MODE" in
-    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional) ;;
-    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, cov-unit, cov-functional)" >&2; exit 2 ;;
+    build|build-low-difficulty|unit-tests|unit-tests-asan|unit-tests-tsan|fuzz-corpus|functional-tests|functional-tests-asan|cov-unit|cov-functional|warnings) ;;
+    *) echo "unknown mode '$MODE' (build, build-low-difficulty, unit-tests, unit-tests-asan, unit-tests-tsan, fuzz-corpus, functional-tests, functional-tests-asan, cov-unit, cov-functional, warnings)" >&2; exit 2 ;;
 esac
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "JOBS must be a positive integer"
 [[ "${FTEST_JOBS:-4}" =~ ^[1-9][0-9]*$ ]] || die "FTEST_JOBS must be a positive integer"
@@ -233,6 +240,17 @@ if [[ "$MODE" == cov-unit || "$MODE" == cov-functional ]]; then
     lcov_version=$(lcov --version 2>/dev/null) || lcov_version=""
     grep -Eq 'version (2\.([6-9]|[1-9][0-9])|[3-9]|[1-9][0-9])' <<< "$lcov_version" ||
         die "$MODE needs lcov 2.6 or newer; use the Ubuntu 22.04 image"
+fi
+# The recorded warning counts are this image's compiler's (gcc 11). A
+# malformed values file stops the mode before the build.
+warning_counter=contrib/devtools/warning-count.py
+warning_values=contrib/devtools/warning-counts.json
+if [[ "$MODE" == warnings ]]; then
+    [[ "$IMAGE" == ubuntu.22.04 ]] || die "warnings runs only in the Ubuntu 22.04 image (this is $IMAGE)"
+    [[ -f "$warning_counter" ]] || die "this YaCoin tree has no $warning_counter"
+    [[ -f "$warning_values" ]] || die "this YaCoin tree has no $warning_values"
+    python3 -I -B "$warning_counter" --values "$warning_values" --check-values ||
+        die "$warning_values is not a valid file of recorded warning counts"
 fi
 
 # For genbuild.sh, which runs git on the mounted tree. The list is captured
@@ -383,6 +401,7 @@ else
             export CONFIG_SITE="$builddir/config.site" ;;
         functional-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         cov-unit|cov-functional) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
+        warnings) flags+=("CXXFLAGS=-O1 -g -Wall -Wextra" "CFLAGS=-O1 -g -Wall -Wextra") ;;
     esac
     (cd "$builddir" && "$SRC/configure" "${flags[@]}")
     export TMPDIR="$builddir/test/tmp"; mkdir -p "$TMPDIR"
@@ -486,6 +505,28 @@ else
             make -C "$builddir" -j"$JOBS" COV_JOBS="$JOBS" FTEST_JOBS="${FTEST_JOBS:-4}" FTEST_SHARD="${FTEST_SHARD:-}" \
                 cov-functional
             echo "== Coverage report: $builddir/functional_test.coverage/index.html =="
+            ;;
+        warnings)
+            compiler=$(g++ --version 2>&1) || compiler="(g++ --version failed)"
+            echo "== Compiler: ${compiler%%$'\n'*} =="
+            # --output-sync: a compile's diagnostics, also those ccache
+            # replays, reach the log as one block, never split by the lines
+            # of a compile running in parallel.
+            log="$builddir/build.log"
+            echo "== Building the default targets; the output goes to $log =="
+            status=0
+            make -C "$builddir" -j"$JOBS" --output-sync=target > "$log" 2>&1 || status=$?
+            if (( status != 0 )); then
+                echo "== The build failed (exit status $status); its errors and the end of $log =="
+                grep -m 50 -E 'error: |\*\*\*' "$log" || true
+                echo "-- last 50 lines --"
+                tail -n 50 "$log"
+                exit "$status"
+            fi
+            for target in yacoind yacoin-cli test/test_bitcoin; do
+                [[ -x "$builddir/src/$target" ]] || die "the build made no $builddir/src/$target"
+            done
+            python3 -I -B "$warning_counter" --values "$warning_values" --markdown "$builddir/warning-count.md" "$log"
             ;;
     esac
 fi

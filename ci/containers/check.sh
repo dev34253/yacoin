@@ -115,7 +115,14 @@
 #           build-low-difficulty then runs the scripts of the regtest list
 #           with FTEST_JOBS (test_runner.py --include-file), fails when the
 #           runner fails and stops before the build on a tree without the
-#           list or with a runner without --include-file
+#           list or with a runner without --include-file; warnings (22.04
+#           image, refused by the others) configures with -O1 -g -Wall
+#           -Wextra, builds with JOBS and make's -Otarget, prints the
+#           compiler and the counter's tables and passes with the counts of
+#           the values file, fails naming the class and location when a class
+#           is above its value, fails when the build fails, made no yacoind,
+#           yacoin-cli or test_bitcoin or printed no warning, and stops before
+#           the build on a malformed values file
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -1023,7 +1030,7 @@ step_devsh() {
     write_stub_docker "$bin/docker"
     local dlog="$work/devsh/docker.log" mode tag
     tag=$(env -u LOCAL_REPO "$a/ci/containers/run.sh" --print-tag ubuntu.22.04 2>/dev/null) || tag="(no --print-tag)"
-    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests build-low-difficulty; do
+    for mode in unit-tests-tsan unit-tests-asan fuzz-corpus functional-tests-asan unit-tests functional-tests build-low-difficulty warnings; do
         rm -f "$dlog"
         PATH="$bin:$PATH" STUB_DOCKER="$dlog" DEV_CACHE="$c" env -u LOCAL_REPO "$a/dev.sh" container --no-image-build \
             --no-cache "$mode" > "$work/devsh/a.log" 2>&1 || fail "devsh: container $mode in a"
@@ -1221,9 +1228,10 @@ step_smoke() {
         grep -q 'unit-tests-tsan' "$work/out.txt" || fail "smoke: $image: the mode list does not name unit-tests-tsan"
         grep -q 'fuzz-corpus' "$work/out.txt" || fail "smoke: $image: the mode list does not name fuzz-corpus"
         grep -q 'functional-tests-asan' "$work/out.txt" || fail "smoke: $image: the mode list does not name functional-tests-asan"
+        grep -q 'warnings' "$work/out.txt" || fail "smoke: $image: the mode list does not name warnings"
         # The modes that run tests must stop early, with a clear message, on
         # a tree without the scripts and targets they need.
-        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests functional-tests-asan build-low-difficulty cov-unit cov-functional; do
+        for mode in unit-tests unit-tests-asan unit-tests-tsan fuzz-corpus functional-tests functional-tests-asan build-low-difficulty cov-unit cov-functional warnings; do
             expect_status 1 "smoke: $image: $mode stops on a tree without its scripts" \
                 docker run --rm -v "$fake:/src" "$tag" "$mode"
             grep -q 'error: ' "$work/out.txt" || fail "smoke: $image: $mode gave no 'error: ' message"
@@ -1683,6 +1691,7 @@ step_smoke() {
             [[ -f "$stub/build/docker-$image/functional-tests/sanitizer-logs/a_script_1.yacoind.42" ]] ||
                 fail "smoke: $image: the functional-tests run left no report in its build directory"
         fi
+        smoke_warnings "$image" "$tag" "$stub"
         # The out-of-tree configure left root-owned build directories.
         docker run --rm -v "$work:/w" --entrypoint rm "$tag" -rf "/w/${stub##*/}"
         # The coverage modes configure out of tree with lcov and -O0 (lcov
@@ -1788,6 +1797,95 @@ smoke_fuzz_corpus() {
     grep -q 'error: .*test/fuzz/corpus' "$work/out.txt" ||
         fail "smoke: $image: fuzz-corpus without a corpus gave no 'error: ' message"
     [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: fuzz-corpus configured without a corpus"
+}
+
+# The warnings mode (22.04 image; the others refuse it): configures out of
+# tree with -O1 -g -Wall -Wextra, builds with JOBS and make's -Otarget into a
+# log and runs the tree's counter on it with the values file; fails naming
+# the class and location when a class is above its value, fails when the
+# build fails, made no yacoind, yacoin-cli or test_bitcoin or printed no
+# warning, and stops before the build on a malformed values file.
+# smoke_warnings <image> <tag> <stub dir>
+smoke_warnings() {
+    local image="$1" tag="$2" stub="$3" args flags status
+    local want="--without-gui --disable-man --enable-ccache CXXFLAGS=-O1 -g -Wall -Wextra CFLAGS=-O1 -g -Wall -Wextra"
+    if [[ "$image" != ubuntu.22.04 ]]; then
+        make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 1}'
+        expect_status 1 "smoke: $image: warnings is refused (22.04 image only)" \
+            docker run --rm -v "$stub:/src" "$tag" warnings
+        grep -q "error: warnings .*Ubuntu 22.04 image" "$work/out.txt" ||
+            fail "smoke: $image: the refusal of warnings gave no 'error: ' message naming the 22.04 image"
+        [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: warnings configured in this image"
+        return
+    fi
+    make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 1}'
+    docker run --rm -v "$stub:/src" -e JOBS=3 "$tag" warnings > "$work/out.txt" 2>&1 && status=0 || status=$?
+    args=$(cat "$stub/configure-args" 2>/dev/null || echo "configure did not run")
+    if [[ $status == 0 && "$args" == "$want" ]]; then
+        pass "smoke: $image: warnings configures with: $args"
+    else
+        tail -n 5 "$work/out.txt"; fail "smoke: $image: warnings (exit status $status) configure arguments: $args"
+    fi
+    flags=$(cat "$stub/make-flags" 2>/dev/null || echo "make did not run")
+    [[ " $flags " == *" -Otarget "* && " $flags " == *" -j3 "* ]] &&
+        pass "smoke: $image: warnings builds with make's flags: $flags" ||
+        fail "smoke: $image: warnings builds with make's flags: $flags (want -j3 and -Otarget)"
+    if grep -q '^== Compiler: g++ ' "$work/out.txt" && grep -qxF 'warning count: 0 failure(s), 0 to lower' "$work/out.txt" &&
+       grep -q '^-Wunused-variable  *1  *1  *1  ok$' "$work/out.txt" &&
+       [[ -f "$stub/build/docker-$image/warnings/warning-count.md" ]]; then
+        pass "smoke: $image: warnings prints the compiler and the counts and writes the Markdown table"
+    else
+        tail -n 20 "$work/out.txt"; fail "smoke: $image: warnings did not print the compiler and the counts or write the Markdown table"
+    fi
+    make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 0}'
+    expect_status 1 "smoke: $image: warnings fails when a class is above its value" \
+        docker run --rm -v "$stub:/src" "$tag" warnings
+    grep -qxF 'FAIL  -Wunused-variable: 1 unique location, recorded 0' "$work/out.txt" &&
+        grep -qxF '  src/example.cpp:10:5' "$work/out.txt" ||
+        fail "smoke: $image: the failing warnings run did not name the class and the location"
+    make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 1}' 2
+    expect_status 2 "smoke: $image: warnings fails when the build fails" docker run --rm -v "$stub:/src" "$tag" warnings
+    grep -q 'The build failed' "$work/out.txt" || fail "smoke: $image: the failed build gave no message"
+    make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 1}' 0 no-binary
+    expect_status 1 "smoke: $image: warnings stops when the build made no test_bitcoin" \
+        docker run --rm -v "$stub:/src" "$tag" warnings
+    grep -q 'error: the build made no .*src/test/test_bitcoin' "$work/out.txt" ||
+        fail "smoke: $image: warnings without test_bitcoin gave no 'error: ' message"
+    make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 1}' 0 no-warning
+    expect_status 2 "smoke: $image: warnings fails when the build printed no warning" \
+        docker run --rm -v "$stub:/src" "$tag" warnings
+    grep -q 'error: .*no warnings in the log' "$work/out.txt" ||
+        fail "smoke: $image: warnings without a warning gave no 'error: ' message"
+    make_warnings_stub "$stub" "$tag" '{'
+    expect_status 1 "smoke: $image: warnings stops on a malformed values file" \
+        docker run --rm -v "$stub:/src" "$tag" warnings
+    grep -q 'error: .*warning-counts.json' "$work/out.txt" ||
+        fail "smoke: $image: the malformed values file gave no 'error: ' message naming it"
+    [[ ! -f "$stub/configure-args" ]] || fail "smoke: $image: warnings configured with a malformed values file"
+}
+
+# A stub source tree for warnings: depends and autogen.sh are no-ops, the
+# tree's counter is copied in with <values> as its values file, and
+# configure records its arguments in /src/configure-args and leaves a
+# Makefile whose build records make's flags in /src/make-flags, prints one
+# warning line (with "no-warning" none), leaves src/yacoind, src/yacoin-cli
+# and src/test/test_bitcoin (with "no-binary" no test_bitcoin) and exits
+# with <make status> (default 0).
+# make_warnings_stub <dir> <tag> <values> [make status] [no-warning|no-binary]
+make_warnings_stub() {
+    local d="$1" tag="$2" bins="src/yacoind src/yacoin-cli src/test/test_bitcoin" line
+    line=$'\t@echo "../../../../src/example.cpp:10:5: warning: unused variable \'x\' [-Wunused-variable]"'
+    [[ "${5:-}" != no-warning ]] || line=$'\t@echo "nothing to report"'
+    [[ "${5:-}" != no-binary ]] || bins="src/yacoind src/yacoin-cli"
+    make_configure_stub "$d" "$tag"
+    cp "$ROOT/contrib/devtools/warning-count.py" "$d/contrib/devtools/"
+    printf '%s\n' "$3" > "$d/contrib/devtools/warning-counts.json"
+    # shellcheck disable=SC2016 # expanded by make
+    printf '%s\n' 'all:' $'\t@echo "$(MAKEFLAGS)" > /src/make-flags' "$line" $'\t@mkdir -p src/test' \
+        $'\t@for f in '"$bins"$'; do : > $$f; chmod +x $$f; done' $'\t@exit '"${4:-0}" > "$d/stub.mk"
+    # shellcheck disable=SC2016 # expanded by the stub
+    printf '%s\n' '#!/bin/sh' 'echo "$@" > /src/configure-args' 'cp /src/stub.mk Makefile' > "$d/configure"
+    chmod +x "$d/configure"
 }
 
 # A stub source tree for the release build modes: depends and autogen.sh are
