@@ -105,7 +105,6 @@ BITCOIN_CORE_H = \
   indirectmap.h \
   init.h \
   kernel.h \
-  kernelrecord.h \
   key.h \
   keystore.h \
   dbwrapper.h \
@@ -524,7 +523,3 @@ endif
 if ENABLE_QT
 include Makefile.qt.include
 endif
-
-#if ENABLE_QT_TESTS
-#include Makefile.qttest.include
-#endif
