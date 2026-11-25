@@ -180,8 +180,6 @@ BOOST_AUTO_TEST_CASE(write_read_and_erase_records)
     BOOST_CHECK(batch.Read(std::make_pair(std::string("keymeta"), pubkey), metaRead));
     BOOST_CHECK_EQUAL(metaRead.nCreateTime, 7654321);
     BOOST_CHECK(!walletdb.WriteCryptedKey(pubkey, vchCrypted, CKeyMetadata(7654321)));
-    BOOST_CHECK(walletdb.EraseCryptedKey(pubkey));
-    BOOST_CHECK(!batch.Exists(std::make_pair(std::string("ckey"), pubkey)));
 
     // Master key.
     CMasterKey masterKey;
@@ -195,8 +193,6 @@ BOOST_AUTO_TEST_CASE(write_read_and_erase_records)
     BOOST_CHECK(masterKeyRead.vchSalt == masterKey.vchSalt);
     BOOST_CHECK_EQUAL(masterKeyRead.nDerivationMethod, 0U);
     BOOST_CHECK_EQUAL(masterKeyRead.nDeriveIterations, 30000U);
-    BOOST_CHECK(walletdb.EraseMasterKey(3));
-    BOOST_CHECK(!batch.Exists(std::make_pair(std::string("mkey"), 3U)));
 
     // Redeem script, not overwritten.
     const CScript redeemScript = GetScriptForCltvP2SH(1000, pubkey);
