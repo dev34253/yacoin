@@ -50,7 +50,6 @@ class prevector_tester {
              local_check(&(pre_vector[s]) == &*(pre_vector.begin() + s));
              local_check(&(pre_vector[s]) == &*((pre_vector.end() + s) - real_vector.size()));
         }
-        // local_check(realtype(pre_vector) == real_vector);
         local_check(pretype(real_vector.begin(), real_vector.end()) == pre_vector);
         local_check(pretype(pre_vector.begin(), pre_vector.end()) == pre_vector);
         size_t pos = 0;
