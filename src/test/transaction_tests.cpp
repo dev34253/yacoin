@@ -2,15 +2,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "data/tx_invalid.json.h"
-#include "data/tx_valid.json.h"
 #include "test/test_bitcoin.h"
 
 #include "clientversion.h"
 #include "checkqueue.h"
 #include "consensus/tx_verify.h"
 #include "consensus/validation.h"
-#include "core_io.h"
 #include "key.h"
 #include "keystore.h"
 #include "validation.h"
@@ -28,12 +25,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/test/unit_test.hpp>
 
-#include <univalue.h>
-
 typedef std::vector<unsigned char> valtype;
-
-// In script_tests.cpp
-extern UniValue read_json(const std::string& jsondata);
 
 static std::map<std::string, unsigned int> mapFlagNames = {
     {std::string("NONE"), (unsigned int)SCRIPT_VERIFY_NONE},
@@ -87,173 +79,6 @@ std::string FormatScriptFlags(unsigned int flags)
 }
 
 BOOST_FIXTURE_TEST_SUITE(transaction_tests, BasicTestingSetup)
-
-//BOOST_AUTO_TEST_CASE(tx_valid)
-//{
-//    // Read tests from test/data/tx_valid.json
-//    // Format is an array of arrays
-//    // Inner arrays are either [ "comment" ]
-//    // or [[[prevout hash, prevout index, prevout scriptPubKey], [input 2], ...],"], serializedTransaction, verifyFlags
-//    // ... where all scripts are stringified scripts.
-//    //
-//    // verifyFlags is a comma separated list of script verification flags to apply, or "NONE"
-//    UniValue tests = read_json(std::string(json_tests::tx_valid, json_tests::tx_valid + sizeof(json_tests::tx_valid)));
-//
-//    ScriptError err;
-//    for (unsigned int idx = 0; idx < tests.size(); idx++) {
-//        UniValue test = tests[idx];
-//        std::string strTest = test.write();
-//        if (test[0].isArray())
-//        {
-//            if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
-//            {
-//                BOOST_ERROR("Bad test: " << strTest);
-//                continue;
-//            }
-//
-//            std::map<COutPoint, CScript> mapprevOutScriptPubKeys;
-//            std::map<COutPoint, int64_t> mapprevOutValues;
-//            UniValue inputs = test[0].get_array();
-//            bool fValid = true;
-//	    for (unsigned int inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
-//	        const UniValue& input = inputs[inpIdx];
-//                if (!input.isArray())
-//                {
-//                    fValid = false;
-//                    break;
-//                }
-//                UniValue vinput = input.get_array();
-//                if (vinput.size() < 3 || vinput.size() > 4)
-//                {
-//                    fValid = false;
-//                    break;
-//                }
-//                COutPoint outpoint(uint256S(vinput[0].get_str()), vinput[1].get_int());
-//                mapprevOutScriptPubKeys[outpoint] = ParseScript(vinput[2].get_str());
-//                if (vinput.size() >= 4)
-//                {
-//                    mapprevOutValues[outpoint] = vinput[3].get_int64();
-//                }
-//            }
-//            if (!fValid)
-//            {
-//                BOOST_ERROR("Bad test: " << strTest);
-//                continue;
-//            }
-//
-//            std::string transaction = test[1].get_str();
-//            CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION);
-//            CTransaction tx(deserialize, stream);
-//
-//            CValidationState state;
-//            BOOST_CHECK_MESSAGE(CheckTransaction(tx, state), strTest);
-//            BOOST_CHECK(state.IsValid());
-//
-//            for (unsigned int i = 0; i < tx.vin.size(); i++)
-//            {
-//                if (!mapprevOutScriptPubKeys.count(tx.vin[i].prevout))
-//                {
-//                    BOOST_ERROR("Bad test: " << strTest);
-//                    break;
-//                }
-//
-//                CAmount amount = 0;
-//                if (mapprevOutValues.count(tx.vin[i].prevout)) {
-//                    amount = mapprevOutValues[tx.vin[i].prevout];
-//                }
-//                unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
-//                BOOST_CHECK_MESSAGE(VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout],
-//                                                 verify_flags, TransactionSignatureChecker(&tx, i), &err),
-//                                    strTest);
-//                BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK, ScriptErrorString(err));
-//            }
-//        }
-//    }
-//}
-//
-//BOOST_AUTO_TEST_CASE(tx_invalid)
-//{
-//    // Read tests from test/data/tx_invalid.json
-//    // Format is an array of arrays
-//    // Inner arrays are either [ "comment" ]
-//    // or [[[prevout hash, prevout index, prevout scriptPubKey], [input 2], ...],"], serializedTransaction, verifyFlags
-//    // ... where all scripts are stringified scripts.
-//    //
-//    // verifyFlags is a comma separated list of script verification flags to apply, or "NONE"
-//    UniValue tests = read_json(std::string(json_tests::tx_invalid, json_tests::tx_invalid + sizeof(json_tests::tx_invalid)));
-//
-//    // Initialize to SCRIPT_ERR_OK. The tests expect err to be changed to a
-//    // value other than SCRIPT_ERR_OK.
-//    ScriptError err = SCRIPT_ERR_OK;
-//    for (unsigned int idx = 0; idx < tests.size(); idx++) {
-//        UniValue test = tests[idx];
-//        std::string strTest = test.write();
-//        if (test[0].isArray())
-//        {
-//            if (test.size() != 3 || !test[1].isStr() || !test[2].isStr())
-//            {
-//                BOOST_ERROR("Bad test: " << strTest);
-//                continue;
-//            }
-//
-//            std::map<COutPoint, CScript> mapprevOutScriptPubKeys;
-//            std::map<COutPoint, int64_t> mapprevOutValues;
-//            UniValue inputs = test[0].get_array();
-//            bool fValid = true;
-//	    for (unsigned int inpIdx = 0; inpIdx < inputs.size(); inpIdx++) {
-//	        const UniValue& input = inputs[inpIdx];
-//                if (!input.isArray())
-//                {
-//                    fValid = false;
-//                    break;
-//                }
-//                UniValue vinput = input.get_array();
-//                if (vinput.size() < 3 || vinput.size() > 4)
-//                {
-//                    fValid = false;
-//                    break;
-//                }
-//                COutPoint outpoint(uint256S(vinput[0].get_str()), vinput[1].get_int());
-//                mapprevOutScriptPubKeys[outpoint] = ParseScript(vinput[2].get_str());
-//                if (vinput.size() >= 4)
-//                {
-//                    mapprevOutValues[outpoint] = vinput[3].get_int64();
-//                }
-//            }
-//            if (!fValid)
-//            {
-//                BOOST_ERROR("Bad test: " << strTest);
-//                continue;
-//            }
-//
-//            std::string transaction = test[1].get_str();
-//            CDataStream stream(ParseHex(transaction), SER_NETWORK, PROTOCOL_VERSION );
-//            CTransaction tx(deserialize, stream);
-//
-//            CValidationState state;
-//            fValid = CheckTransaction(tx, state) && state.IsValid();
-//
-//            for (unsigned int i = 0; i < tx.vin.size() && fValid; i++)
-//            {
-//                if (!mapprevOutScriptPubKeys.count(tx.vin[i].prevout))
-//                {
-//                    BOOST_ERROR("Bad test: " << strTest);
-//                    break;
-//                }
-//
-//                unsigned int verify_flags = ParseScriptFlags(test[2].get_str());
-//                CAmount amount = 0;
-//                if (mapprevOutValues.count(tx.vin[i].prevout)) {
-//                    amount = mapprevOutValues[tx.vin[i].prevout];
-//                }
-//                fValid = VerifyScript(tx.vin[i].scriptSig, mapprevOutScriptPubKeys[tx.vin[i].prevout],
-//                                      verify_flags, TransactionSignatureChecker(&tx, i), &err);
-//            }
-//            BOOST_CHECK_MESSAGE(!fValid, strTest);
-//            BOOST_CHECK_MESSAGE(err != SCRIPT_ERR_OK, ScriptErrorString(err));
-//        }
-//    }
-//}
 
 BOOST_AUTO_TEST_CASE(basic_transaction_tests)
 {

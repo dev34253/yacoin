@@ -16,8 +16,6 @@ JSON_TEST_FILES = \
   test/data/base58_keys_valid.json \
   test/data/base58_encode_decode.json \
   test/data/base58_keys_invalid.json \
-  test/data/tx_invalid.json \
-  test/data/tx_valid.json \
   test/data/sighash.json
 
 RAW_TEST_FILES = \
