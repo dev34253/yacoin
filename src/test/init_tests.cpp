@@ -477,9 +477,6 @@ Other options:
        When number of synced headers - number of synced blocks, send getblocks
        message to all peers to download block (default: 10000)
 
-  -detachdb
-       Detach block and address databases. Increases shutdown time (default: 0)
-
   -memorylog
        Use in-memory logging for block index database (default: 1)
 
@@ -488,22 +485,6 @@ Other options:
 
   -testnetnewlogicblocknumber=<number>
        New Logic starting at block = <number>
-
-  -btcyacprovider
-       Add a BTC to YAC price provider, entered as
-       domain,key,argument,offset,port. For example: where the url is
-       http://pubapi2.cryptsy.com/api.php?method=singlemarketdata&marketid=11
-       one would enter
-       pubapi2.cryptsy.com,lasttradeprice,/api.php?method=singlemarketdata&marketid=11,3,80
-       . See https://www.cryptsy.com/pages/publicapi
-
-  -usdbtcprovider
-       Add a USD to BTC price provider, entered as domain,key,argument,offset.
-       For example: where the url is
-       http://pubapi2.cryptsy.com/api.php?method=singlemarketdata&marketid=2
-       one would enter
-       pubapi2.cryptsy.com,lastdata,/api.php?method=singlemarketdata&marketid=2,3,80
-       . See https://www.cryptsy.com/pages/publicapi
 
   -confchange
        Require a confirmations for change (default: 0)
