@@ -459,8 +459,6 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     pblocktemplate.reset(new CBlockTemplate());
 
-    if(!pblocktemplate.get())
-        return nullptr;
     pblock = &pblocktemplate->block; // pointer for convenience
 
     // Create coinbase tx
@@ -783,11 +781,6 @@ static void YacoinMiner() // here fProofOfStake is always false
 
             // Create new block
             std::unique_ptr < CBlockTemplate > pblocktemplate(BlockAssembler().CreateNewBlock(coinbase_script->reserveScript));
-            if (!pblocktemplate.get())
-            {
-                LogPrintf("YacoinMiner -- Keypool ran out, please call keypoolrefill before restarting the mining thread\n");
-                return;
-            }
 
             CBlock * pblock = &pblocktemplate->block;
             IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);

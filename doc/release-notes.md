@@ -34,3 +34,5 @@ Unreleased
   every build. The checkpoints and the token fee lock mainnet uses are unchanged in both builds.
 - Regtest uses its own stake-modifier checkpoint (one, at its genesis block) in every build. The stake-modifier
   checkpoints mainnet uses are unchanged in both builds.
+- The help no longer lists `-detachdb`, `-btcyacprovider` and `-usdbtcprovider`. No code reads these options; a node
+  started with them starts as before.

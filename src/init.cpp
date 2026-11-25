@@ -69,7 +69,6 @@
 static const bool DEFAULT_PROXYRANDOMIZE = true;
 static const bool DEFAULT_DISABLE_SAFEMODE = false;
 static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
-static const ::uint32_t testnetNewLogicBlockNumber = 0;
 
 using namespace boost;
 
@@ -434,28 +433,9 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageOpt("-initSyncMaximumBlocksInDownloadPerPeer=<n>", _("Maximum number of blocks being downloaded at a time from one peer (default: 500)"));
     strUsage += HelpMessageOpt("-initSyncBlockDownloadWindow=<n>", _("Block download windows (default: initSyncMaximumBlocksInDownloadPerPeer * 64)"));
     strUsage += HelpMessageOpt("-initSyncTriggerGetBlocks=<n>", _("When number of synced headers - number of synced blocks, send getblocks message to all peers to download block (default: 10000)"));
-    strUsage += HelpMessageOpt("-detachdb", _("Detach block and address databases. Increases shutdown time (default: 0)"));
     strUsage += HelpMessageOpt("-memorylog", _("Use in-memory logging for block index database (default: 1)"));
     strUsage += HelpMessageOpt("-testnet", _("Use the test network"));
     strUsage += HelpMessageOpt("-testnetnewlogicblocknumber=<number>", _("New Logic starting at block = <number>"));
-    strUsage += HelpMessageOpt(
-        "-btcyacprovider",
-        _("Add a BTC to YAC price provider, entered as "
-          "domain,key,argument,offset,port. For example: where the url is "
-          "http://pubapi2.cryptsy.com/"
-          "api.php?method=singlemarketdata&marketid=11 one would enter "
-          "pubapi2.cryptsy.com,lasttradeprice,/"
-          "api.php?method=singlemarketdata&marketid=11,3,80 . See "
-          "https://www.cryptsy.com/pages/publicapi"));
-    strUsage += HelpMessageOpt(
-        "-usdbtcprovider",
-        _("Add a USD to BTC price provider, entered as "
-          "domain,key,argument,offset. For example: where the url is "
-          "http://pubapi2.cryptsy.com/"
-          "api.php?method=singlemarketdata&marketid=2 one would enter "
-          "pubapi2.cryptsy.com,lastdata,/"
-          "api.php?method=singlemarketdata&marketid=2,3,80 . See "
-          "https://www.cryptsy.com/pages/publicapi"));
     strUsage += HelpMessageOpt("-confchange", _("Require a confirmations for change (default: 0)"));
     strUsage += HelpMessageOpt("-hashcalcthreads=N", strprintf("Set the number of threads which calculate hash (maximum threads = number of cpu cores, default: %d)", (int)boost::thread::hardware_concurrency() - 1));
 
@@ -696,7 +676,7 @@ bool AppInitParameterInteraction()
     if (nMaxConnections < nUserMaxConnections)
         InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), nUserMaxConnections, nMaxConnections));
 
-    // Activation heights of the consensus rules: regtest only
+    // -testactivationheight=name@height sets a rule's activation height; only regtest accepts it
     bool fActivationHeightSet[Consensus::MAX_ACTIVATION_RULES] = {};
     if (gArgs.IsArgSet("-testactivationheight")) {
         if (chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
