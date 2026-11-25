@@ -196,10 +196,8 @@ static bool HTTPReq_JSONRPC(HTTPRequest* req, const std::string &)
             strReply = JSONRPCReply(result, NullUniValue, jreq.id);
 
         // array of requests
-        } else if (valRequest.isArray())
+        } else
             strReply = JSONRPCExecBatch(jreq, valRequest.get_array());
-        else
-            throw JSONRPCError(RPC_PARSE_ERROR, "Top-level object parse error");
 
         req->WriteHeader("Content-Type", "application/json");
         req->WriteReply(HTTP_OK, strReply);
