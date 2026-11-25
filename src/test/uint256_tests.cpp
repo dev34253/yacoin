@@ -138,7 +138,6 @@ BOOST_AUTO_TEST_CASE( comparison ) // <= >= < >
     }
 
     BOOST_CHECK( ZeroL < R1L );
-//    BOOST_CHECK( R2L < R1L );
     // This is different from Bitcoin because, in Bitcoin, uint256 is stored and compared in little-endian order. Bitcoin uses arith_uint256 for consensus-related operations, which are compared in big-endian order.
     // For Yacoin, uint256 is stored in little-endian order but compared in big-endian order
     BOOST_CHECK( R2L > R1L );

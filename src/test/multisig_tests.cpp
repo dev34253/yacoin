@@ -77,7 +77,6 @@ BOOST_AUTO_TEST_CASE(multisig_verify)
     keys.assign(1,key[0]);
     keys.push_back(key[1]);
     s = sign_multisig(a_and_b, keys, txTo[0], 0);
-    // if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&mergedTx, i), &serror)) {
     BOOST_CHECK(VerifyScript(s, a_and_b, flags, TransactionSignatureChecker(&txTo[0], 0), &err));
     BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK, ScriptErrorString(err));
 
