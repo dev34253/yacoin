@@ -169,8 +169,6 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
     while (nHeight < nHeightEnd)
     {
         std::unique_ptr<CBlockTemplate> pblocktemplate(BlockAssembler().CreateNewBlock(coinbaseScript->reserveScript));
-        if (!pblocktemplate.get())
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         CBlock *pblock = &pblocktemplate->block;
         {
             LOCK(cs_main);
@@ -383,8 +381,6 @@ UniValue getwork(const JSONRPCRequest& request)
 
             // Create new block
             auto pblocktemplate = BlockAssembler().CreateNewBlock(coinbase_script->reserveScript);
-            if (!pblocktemplate)
-                throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
             vNewBlockTemplate.push_back(std::shared_ptr<CBlockTemplate>(std::move(pblocktemplate)));
 
             // Need to update only after we know CreateNewBlock succeeded
@@ -813,8 +809,6 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
         // itself, so the daemon needs no wallet here.
         CScript scriptDummy = CScript() << OP_TRUE;
         pblocktemplate = BlockAssembler().CreateNewBlock(scriptDummy);
-        if (!pblocktemplate)
-            throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
 
         // Need to update only after we know CreateNewBlock succeeded
         pindexPrev = pindexPrevNew;
