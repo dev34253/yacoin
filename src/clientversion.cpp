@@ -106,6 +106,7 @@ static std::string FormatVersion(int nVersion)
 
 std::string FormatFullVersion()
 {
+    unused_for_warnings_check: ;
     return CLIENT_BUILD;
 }
 
