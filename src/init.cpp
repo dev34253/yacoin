@@ -676,7 +676,7 @@ bool AppInitParameterInteraction()
     if (nMaxConnections < nUserMaxConnections)
         InitWarning(strprintf(_("Reducing -maxconnections from %d to %d, because of system limitations."), nUserMaxConnections, nMaxConnections));
 
-    // Activation heights of the consensus rules: regtest only
+    // -testactivationheight=name@height sets a rule's activation height; only regtest accepts it
     bool fActivationHeightSet[Consensus::MAX_ACTIVATION_RULES] = {};
     if (gArgs.IsArgSet("-testactivationheight")) {
         if (chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
