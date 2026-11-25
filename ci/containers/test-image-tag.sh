@@ -567,7 +567,9 @@ cache_checks() {
             key=$(field "$job" "$n" keyraw)
             id=$(sed -n 's/^\${{ steps\.\([A-Za-z0-9_-]*\)\.outputs\.cache-primary-key }}$/\1/p' <<< "$key")
             want="\${{ success() && $master_push && steps.$id.outputs.cache-hit != 'true' }}"
-            if [[ "$id" == ccache && ( "$job" == unit-tests || "$job" == functional-tests ) ]]; then
+            if [[ "$id" == ccache && "$job" == warnings ]]; then
+                [[ "$(field "$job" "$n" if)" == "\${{ success() && github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/scratch/P2-36-warnings') && steps.ccache.outputs.cache-hit != 'true' }}" ]] || ok=0
+            elif [[ "$id" == ccache && ( "$job" == unit-tests || "$job" == functional-tests ) ]]; then
                 [[ "$(field "$job" "$n" if)" == "$want" || "$(field "$job" "$n" if)" == "${want/success()/!cancelled()}" ]] || ok=0
             else
                 [[ -n "$id" && "$(field "$job" "$n" if)" == "$want" ]] || ok=0
