@@ -36,3 +36,5 @@ Unreleased
   checkpoints mainnet uses are unchanged in both builds.
 - The help no longer lists `-detachdb`, `-btcyacprovider` and `-usdbtcprovider`. No code reads these options; a node
   started with them starts as before.
+- `configure` looks only for `python3.6`, `python3.5`, `python3.4` and `python3` as the Python interpreter, no
+  longer for `python2.7`, `python2` or `python`.
