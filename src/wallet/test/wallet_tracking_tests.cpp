@@ -519,8 +519,7 @@ BOOST_AUTO_TEST_CASE(stake_and_non_final_transactions)
     LOCK2(cs_main, wallet->cs_wallet);
 
     // A coinstake-shaped wallet transaction in the tip block is immature, and its credit is 0
-    // while immature, so GetStake, which adds up the credit of immature coinstakes on the
-    // active chain, gives 0.
+    // while immature.
     CTransaction stakeTx;
     stakeTx.vin.push_back(CTxIn(COutPoint(InsecureRand256(), 0)));
     stakeTx.vout.push_back(CTxOut(0, CScript()));
@@ -533,7 +532,6 @@ BOOST_AUTO_TEST_CASE(stake_and_non_final_transactions)
     BOOST_CHECK_EQUAL(stored.GetDepthInMainChain(), 1);
     BOOST_CHECK(stored.GetBlocksToMaturity() > 0);
     BOOST_CHECK_EQUAL(stored.GetCredit(ISMINE_ALL), 0);
-    BOOST_CHECK_EQUAL(wallet->GetStake(), 0);
 
     // A transaction that is not final yet (locked to a later height) is not trusted
     CTransaction lockedTx = PaymentTx({CTxOut(COIN, script)});

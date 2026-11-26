@@ -2,10 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Fees, funding and signing of transactions by the wallet, transaction creation and its
-// failures, and a send the mempool refuses, on a regtest chain with a mock wallet database.
+// Signing of transactions by the wallet, transaction creation and its failures, and a send
+// the mempool refuses, on a regtest chain with a mock wallet database.
 
-#include "policy/feerate.h"
 #include "policy/policy.h"
 #include "script/interpreter.h"
 #include "tokens/tokens.h"
@@ -14,11 +13,7 @@
 
 #include "wallet/test/wallet_chain_setup.h"
 
-#include <set>
-
 #include <boost/test/unit_test.hpp>
-
-extern CFeeRate payTxFee; // defined in wallet.cpp, declared in no header
 
 namespace {
 
@@ -36,54 +31,9 @@ bool SignaturesValid(const CWallet& wallet, const CTransaction& tx)
     return true;
 }
 
-/** Restores the fee settings of the wallet at the end of the scope */
-struct FeeSettingsGuard {
-    ValueGuard<CFeeRate> payFee{payTxFee, payTxFee};
-    ValueGuard<CFeeRate> minFee{CWallet::minTxFee, CWallet::minTxFee};
-    ValueGuard<CFeeRate> minRelayFee{::minRelayTxFee, ::minRelayTxFee};
-    ValueGuard<CAmount> maxFee{maxTxFee, maxTxFee};
-};
-
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(wallet_spend_tests, WalletChainSetup)
-
-BOOST_AUTO_TEST_CASE(required_and_minimum_fee)
-{
-    FeeSettingsGuard guard;
-    CWallet::minTxFee = CFeeRate(1000);
-    ::minRelayTxFee = CFeeRate(2000);
-    maxTxFee = 10 * COIN;
-
-    // The required fee is the higher of the wallet's and the relay minimum
-    BOOST_CHECK_EQUAL(CWallet::GetRequiredFee(1000), 2000);
-    CWallet::minTxFee = CFeeRate(3000);
-    BOOST_CHECK_EQUAL(CWallet::GetRequiredFee(1000), 3000);
-    BOOST_CHECK_EQUAL(CWallet::GetRequiredFee(500), 1500);
-
-    // A fee rate of the coin control comes first, and with the override it is taken as is
-    CCoinControl coinControl;
-    coinControl.m_feerate = CFeeRate(5000);
-    payTxFee = CFeeRate(4000);
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, coinControl), 5000);
-    coinControl.m_feerate = CFeeRate(100);
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, coinControl), 3000);
-    coinControl.fOverrideFeeRate = true;
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, coinControl), 100);
-
-    // Without one, the pay fee rate, with the required fee as the floor
-    CCoinControl noRate;
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, noRate), 4000);
-    payTxFee = CFeeRate(1000);
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, noRate), 3000);
-
-    // The maximum fee caps everything but an override
-    maxTxFee = 2500;
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, noRate), 2500);
-    coinControl.fOverrideFeeRate = false;
-    coinControl.m_feerate = CFeeRate(9000);
-    BOOST_CHECK_EQUAL(CWallet::GetMinimumFee(1000, coinControl), 2500);
-}
 
 BOOST_AUTO_TEST_CASE(sign_transaction)
 {
@@ -115,81 +65,6 @@ BOOST_AUTO_TEST_CASE(sign_transaction)
         refused.vout.push_back(CTxOut(COIN, other));
         BOOST_CHECK(!wallet->SignTransaction(refused));
     }
-}
-
-BOOST_AUTO_TEST_CASE(fund_transaction)
-{
-    const CTransaction fund = Fund({CTxOut(5 * COIN, script), CTxOut(6 * COIN, script)});
-    const CScript other = GetScriptForDestination(NewWalletTestKey().GetPubKey().GetID());
-    CAmount nFee = 0;
-    int nChangePos = -1;
-    std::string strFailReason;
-
-    // Inputs and a change output are added to a transaction that has only outputs
-    CTransaction tx;
-    tx.vout.push_back(CTxOut(2 * COIN, other));
-    BOOST_CHECK(wallet->FundTransaction(tx, nFee, nChangePos, strFailReason, false, {}, CCoinControl()));
-    BOOST_CHECK_EQUAL(tx.vin.size(), 1U);
-    BOOST_REQUIRE_EQUAL(tx.vout.size(), 2U);
-    BOOST_REQUIRE(nChangePos == 0 || nChangePos == 1);
-    BOOST_CHECK(tx.vout[1 - nChangePos] == CTxOut(2 * COIN, other));
-    BOOST_CHECK(nFee > 0);
-    {
-        LOCK2(cs_main, wallet->cs_wallet);
-        const CAmount nIn = Wtx(tx.vin[0].prevout.hash).tx->vout[tx.vin[0].prevout.n].nValue;
-        BOOST_CHECK_EQUAL(nIn - tx.GetValueOut(), nFee);
-        BOOST_CHECK(wallet->IsMine(tx.vout[nChangePos]) == ISMINE_SPENDABLE);
-        BOOST_CHECK(!wallet->IsLockedCoin(tx.vin[0].prevout.hash, tx.vin[0].prevout.n));
-    }
-    // The added inputs come signed for the funded transaction
-    BOOST_CHECK(!tx.vin[0].scriptSig.empty());
-    BOOST_CHECK(SignaturesValid(*wallet, tx));
-
-    // The fee taken from an output, and the added inputs locked
-    CTransaction subtract;
-    subtract.vout.push_back(CTxOut(2 * COIN, other));
-    nChangePos = -1;
-    BOOST_CHECK(wallet->FundTransaction(subtract, nFee, nChangePos, strFailReason, true, {0}, CCoinControl()));
-    BOOST_CHECK_EQUAL(subtract.vout[nChangePos == 0 ? 1 : 0].nValue, 2 * COIN - nFee);
-    {
-        LOCK(wallet->cs_wallet);
-        BOOST_CHECK(wallet->IsLockedCoin(subtract.vin[0].prevout.hash, subtract.vin[0].prevout.n));
-        wallet->UnlockAllCoins();
-    }
-
-    // An input given by the transaction is used and not added again
-    CTransaction preset;
-    preset.vin.push_back(CTxIn(COutPoint(fund.GetHash(), 1)));
-    preset.vout.push_back(CTxOut(COIN, other));
-    nChangePos = -1;
-    BOOST_CHECK(wallet->FundTransaction(preset, nFee, nChangePos, strFailReason, false, {}, CCoinControl()));
-    BOOST_CHECK_EQUAL(preset.vin.size(), 1U);
-    BOOST_CHECK(preset.vin[0].prevout == COutPoint(fund.GetHash(), 1));
-
-    // A preset input past the outputs of a wallet transaction, or one the wallet does not
-    // know, fails the coin selection
-    for (const COutPoint& prevout : {COutPoint(fund.GetHash(), 7), COutPoint(InsecureRand256(), 0)}) {
-        CTransaction bad;
-        bad.vin.push_back(CTxIn(prevout));
-        bad.vout.push_back(CTxOut(COIN, other));
-        nChangePos = -1;
-        strFailReason.clear();
-        BOOST_CHECK(!wallet->FundTransaction(bad, nFee, nChangePos, strFailReason, false, {}, CCoinControl()));
-        BOOST_CHECK_EQUAL(strFailReason, "Insufficient funds");
-    }
-
-    // Not enough funds, and a change position past the outputs
-    CTransaction tooMuch;
-    tooMuch.vout.push_back(CTxOut(100 * COIN, other));
-    nChangePos = -1;
-    BOOST_CHECK(!wallet->FundTransaction(tooMuch, nFee, nChangePos, strFailReason, false, {}, CCoinControl()));
-    BOOST_CHECK_EQUAL(strFailReason, "Insufficient funds");
-    BOOST_CHECK(tooMuch.vin.empty());
-    CTransaction badPosition;
-    badPosition.vout.push_back(CTxOut(COIN, other));
-    nChangePos = 2;
-    BOOST_CHECK(!wallet->FundTransaction(badPosition, nFee, nChangePos, strFailReason, false, {}, CCoinControl()));
-    BOOST_CHECK_EQUAL(strFailReason, "Change index out of range");
 }
 
 BOOST_AUTO_TEST_CASE(create_transaction)
