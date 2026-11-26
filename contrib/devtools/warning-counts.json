@@ -10,7 +10,7 @@
   "-Wrange-loop-construct": 21,
   "-Wreorder": 5,
   "-Wsign-compare": 38,
-  "-Wstack-protector": 1,
+  "-Wstack-protector": 0,
   "-Wswitch": 2,
   "-Wunused-but-set-variable": 5,
   "-Wunused-function": 6,
