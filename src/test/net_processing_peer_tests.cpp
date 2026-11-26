@@ -12,7 +12,6 @@
 // the whole test binary.
 
 #include "amount.h"
-#include "bloom.h"
 #include "chain.h"
 #include "chainparams.h"
 #include "coins.h"
@@ -1020,7 +1019,7 @@ BOOST_AUTO_TEST_CASE(bloom_filter_messages_from_peers)
     {
         P2PTestPeer peer(*peerLogic);
         BOOST_REQUIRE(!(peer.Node().GetLocalServices() & NODE_BLOOM));
-        peer.Send(NetMsgType::FILTERLOAD, CBloomFilter());
+        peer.Send(NetMsgType::FILTERLOAD, std::vector<unsigned char>(), uint32_t{0}, uint32_t{0}, uint8_t{0});
         BOOST_CHECK_EQUAL(peer.Stats().nMisbehavior, 100);
         BOOST_CHECK(peer.Node().fDisconnect);
         BOOST_CHECK(IsBanned(*this, peer));
@@ -1038,7 +1037,7 @@ BOOST_AUTO_TEST_CASE(bloom_filter_messages_from_peers)
         if (nFilterAdd)
             old.Send(NetMsgType::FILTERADD, std::vector<unsigned char>{1, 2, 3});
         else
-            old.Send(NetMsgType::FILTERLOAD, CBloomFilter());
+            old.Send(NetMsgType::FILTERLOAD, std::vector<unsigned char>(), uint32_t{0}, uint32_t{0}, uint8_t{0});
         BOOST_CHECK(old.Node().fDisconnect);
         BOOST_CHECK_EQUAL(old.Stats().nMisbehavior, 0);
         BOOST_CHECK(!IsBanned(*this, old));
@@ -1115,7 +1114,7 @@ BOOST_AUTO_TEST_CASE(peers_not_banned)
     BOOST_REQUIRE(local.Node().addr.IsLocal());
 
     for (P2PTestPeer* peer : {&whitelisted, &manual, &local}) {
-        peer->Send(NetMsgType::FILTERLOAD, CBloomFilter());
+        peer->Send(NetMsgType::FILTERLOAD, std::vector<unsigned char>(), uint32_t{0}, uint32_t{0}, uint8_t{0});
         BOOST_CHECK_EQUAL(peer->Stats().nMisbehavior, 100);
         BOOST_CHECK(!IsBanned(*this, *peer));
     }

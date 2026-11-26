@@ -17,13 +17,10 @@ BOOST_AUTO_TEST_CASE(murmurhash3)
 
 #define T(expected, seed, data) BOOST_CHECK_EQUAL(MurmurHash3(seed, ParseHex(data)), expected)
 
-    // Test MurmurHash3 with various inputs. Of course this is retested in the
-    // bloom filter tests - they would fail if MurmurHash3() had any problems -
-    // but is useful for those trying to implement Bitcoin libraries as a
-    // source of test data for their MurmurHash3() primitive during
-    // development.
-    //
-    // The magic number 0xFBA4C795 comes from CBloomFilter::Hash()
+    // Test MurmurHash3 with various inputs. These vectors are also a source of test
+    // data for other implementations of MurmurHash3(). The seed 0xFBA4C795 is what
+    // RollingBloomHash() in bloom.cpp passes to MurmurHash3() for nHashNum 1 and
+    // nTweak 0.
 
     T(0x00000000, 0x00000000, "");
     T(0x6a396f08, 0xFBA4C795, "");
