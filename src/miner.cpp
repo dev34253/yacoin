@@ -618,8 +618,6 @@ void FormatHashBuffers_64bit_nTime(char* pblock, char* pmidstate, char* pdata,
      // if it is 64 bits???????
     ((uint32_t*)&tmp)[i] = ByteReverse(((uint32_t*)&tmp)[i]);
   }
-  // tmp.block.nTime = (tmp.block.nTime & 0x00000000FFFFFFFF) << 32 |
-  // (tmp.block.nTime & 0xFFFFFFFF00000000) >> 32;
   // Precalc the first half of the first hash, which stays constant
   SHA256Transform(pmidstate, &tmp.block, pSHA256InitState);
 

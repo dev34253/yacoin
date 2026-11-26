@@ -60,7 +60,6 @@ std::string TokenValueFromAmount(const CAmount& amount, const std::string token_
         CNewToken tokenData;
         if (!currentActiveTokenCache->GetTokenMetaDataIfExists(token_name, tokenData))
             units = MAX_UNIT;
-            //throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't load token from cache: " + token_name);
         else
             units = tokenData.units;
     }

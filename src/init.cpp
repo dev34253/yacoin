@@ -955,8 +955,6 @@ bool AppInitMain(boost::thread_group& threadGroup, CScheduler& scheduler)
     CreatePidFile(GetPidFile(), getpid());
 #endif
 
-//    if (gArgs.GetBoolArg("-shrinkdebugfile", !fDebug))
-//        ShrinkDebugFile();
     if (gArgs.GetBoolArg("-shrinkdebugfile", logCategories == BCLog::NONE)) {
         // Do this first since it both loads a bunch of debug.log into memory,
         // and because this needs to happen before any other debug.log printing
