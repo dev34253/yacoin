@@ -7,8 +7,9 @@
 #include "base58.h"
 #include "clientversion.h"
 #include "key.h"
-#include "merkleblock.h"
+#include "primitives/transaction.h"
 #include "random.h"
+#include "script/script.h"
 #include "serialize.h"
 #include "streams.h"
 #include "uint256.h"
@@ -221,6 +222,19 @@ BOOST_AUTO_TEST_CASE(bloom_match)
     filter = CBloomFilter(10, 0.000001, 0, BLOOM_UPDATE_ALL);
     filter.insert(COutPoint(uint256S("0x000000d70786e899529d71dbeba91ba216982fb6ba58f3bdaab65e73b7e9260b"), 0));
     BOOST_CHECK_MESSAGE(!filter.IsRelevantAndUpdate(tx), "Simple Bloom filter matched COutPoint for an output we didn't care about");
+}
+
+/** A default-constructed filter is full: it matches every transaction */
+BOOST_AUTO_TEST_CASE(default_filter_matches_transactions)
+{
+    CBloomFilter filter;
+    for (int n = 0; n < 2; n++) {
+        CMutableTransaction mtx;
+        mtx.vin.resize(1);
+        mtx.vin[0].prevout = COutPoint(InsecureRand256(), n);
+        mtx.vout.emplace_back(n + 1, CScript() << n << OP_EQUAL);
+        BOOST_CHECK(filter.IsRelevantAndUpdate(CTransaction(mtx)));
+    }
 }
 
 static std::vector<unsigned char> RandomData()

@@ -14,7 +14,6 @@
 #include "util.h"
 #include "utiltime.h"
 #include "wallet.h"
-#include "merkleblock.h"
 #include "core_io.h"
 
 #include "rpcwallet.h"

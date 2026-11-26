@@ -174,7 +174,6 @@ void Interrupt(boost::thread_group& threadGroup)
     InterruptHTTPServer();
     InterruptHTTPRPC();
     InterruptRPC();
-//    InterruptREST();
     InterruptTorControl();
     if (g_connman)
         g_connman->Interrupt();
@@ -198,7 +197,6 @@ void Shutdown()
     mempool.AddTransactionsUpdated(1);
 
     StopHTTPRPC();
-//    StopREST();
     StopRPC();
     StopHTTPServer();
 
@@ -494,8 +492,6 @@ bool AppInitServers(boost::thread_group& threadGroup)
         return false;
     if (!StartHTTPRPC())
         return false;
-//    if (gArgs.GetBoolArg("-rest", DEFAULT_REST_ENABLE) && !StartREST())
-//        return false;
     if (!StartHTTPServer())
         return false;
     return true;
