@@ -87,7 +87,6 @@ ExplorerPage::ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent, 
     pQTVblocks = ui->tableViewForBlocks;
     pQTVblocks->setShowGrid(false);
     nROWS_OF_DISPLAYED_BLOCKS = 20;
-    // nROWS_OF_DISPLAYED_BLOCKS = 10;
 
     pQTVtransactions = ui->tableViewForTransactions;
     pQTVtransactions->setShowGrid(false);
@@ -100,8 +99,6 @@ ExplorerPage::ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent, 
     pBlockHashLineEdit = ui->BlockHashLineEdit;
     pTxIDLineEdit = ui->TxIDlineEdit;
 
-    // QList< QVector< QString > > qlistOfBlockRows;
-
     ppcArrayOfBlockHeaders = new char *[BLOCK_VIEW_SIZE];
 
     ppcArrayOfBlockHeaders[HEIGHT] = "Height";
@@ -109,7 +106,6 @@ ExplorerPage::ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent, 
     ppcArrayOfBlockHeaders[AGE] = "Age";
     ppcArrayOfBlockHeaders[TRANSACTIONS] = "Txs";
     ppcArrayOfBlockHeaders[TOTAL_SENT] = "Total Sent";
-    // RELAYED_BY  //"Relayed By";
     ppcArrayOfBlockHeaders[SIZE_kB] = "Size (kB)";
 
     pExplorerBlockDialog = new BlockExplorerPage(this);
@@ -262,7 +258,6 @@ void ExplorerPage::showTxIdLineDetails() {
         pTxIDLineEdit->deselect();
 
         pExplorerTransactionDialog->show();
-        // pExplorerTransactionDialog->raise( );
         pExplorerTransactionDialog->setVisible(true);
         pExplorerTransactionDialog->activateWindow();
     } else // hash is no good
@@ -335,7 +330,6 @@ void ExplorerPage::showTxDetails(QModelIndex QMI) {
             sTemp += strprintf("%s", " No information available about transaction");
 
         pExplorerTransactionDialog->show();
-        // pExplorerTransactionDialog->raise( );
         pExplorerTransactionDialog->setVisible(true);
         pExplorerTransactionDialog->activateWindow();
     }
@@ -356,10 +350,8 @@ void ExplorerPage::showTxInfoDetails(QModelIndex QMI) {
                           ->text();
     // what was clicked?
     if (("Tx ID" == QSitem.toStdString()) || ("Coinbase hash" == QSitem.toStdString())) {
-        // pop_a_message_box( "A tx hash " + QSitem.toStdString() );
     }
     if (("Tx's block hash" == QSitem.toStdString())) {
-        // pop_a_message_box( "A block hash " + QSitem.toStdString() );
         uint256 hashOfSelectedItem(QSvalue.toStdString());
 
         CBlockIndex *pblockindex = mapBlockIndex[hashOfSelectedItem];
@@ -473,7 +465,6 @@ void ExplorerPage::showBkInfoDetails(QModelIndex QMI) {
             // it seems one must move the focus in Qt or this selection
             // lingers!?
             pExplorerTransactionDialog->show();
-            // pExplorerTransactionDialog->raise( );
             pExplorerTransactionDialog->setVisible(true);
             pExplorerTransactionDialog->activateWindow();
         }
@@ -986,8 +977,6 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
                             int nAverageBlockPeriod =
                                 nTotalAges / nCounter; // since it's seconds, we
                                                        // are happy with whole seconds
-                            // const int
-                            //    nONE_HOUR_in_seconds = 60 * 60;
 
                             if (nAverageBlockPeriod >= nSECONDsPerHOUR)
                                 pQLaverage->setText(QDateTime::fromTime_t(nAverageBlockPeriod)
@@ -1078,7 +1067,6 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
 
                 if (qlistOfTxRows.isEmpty())
                     qlistOfTxRows.append(vStringTransactionDataRow); // same as for blocks above
-                // qlistOfTxRows.prepend( vStringTransactionDataRow );
                 else // there are rows
                 {
                     int nNumberOfRows = qlistOfTxRows.size();
@@ -1169,8 +1157,6 @@ void ExplorerPage::setNumBlocks(int count, const QDateTime& blockDate, double nV
                     if (!fResizeTxsFields) {
                         fResizeTxsFields = true;
                         for (int column = 0; column < TX_VIEW_SIZE; ++column) {
-                            // pQTVtransactions->resizeColumnToContents( column
-                            // );
                             pQTVtransactions->resizeColumnToContents(TX_ID);
                             pQTVtransactions->resizeColumnToContents(TX_AGE);
                             pQTVtransactions->resizeColumnToContents(TX_TIME);
@@ -1252,10 +1238,7 @@ BlockExplorerPage::BlockExplorerPage(QDialog *parent)
     ui->setupUi(this);
 
     pclientModel = NULL;
-    // this->pExplorerPage = NULL;
 
-    //    pQTBblock = ui->textBrowser;
-    //    pQTBblock->setOpenLinks( false );
     pQTVblockinfo = ui->tableView;
 
     pQISM = pQTVblockinfo->selectionModel();
@@ -1275,7 +1258,6 @@ BlockExplorerPage::BlockExplorerPage(QDialog *parent)
     for (int column = 0; column < BLOCK_INFO_VIEW_SIZE; ++column) {
         pQSIMblockinfo->setHorizontalHeaderItem(
             column, new QStandardItem(QString(pcArrayOfBlockinfoHeaders[column])));
-        // pQTVblockinfo->resizeColumnToContents( column );
     }
     pQTVblockinfo->setModel(pQSIMblockinfo);
     pQTVblockinfo->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1644,11 +1626,6 @@ std::string BuildBlockinfoDetailsFrom(CBlock &block, CBlockIndex *pblockindex,
     sTemp += "<b >" + sStandardItemModelElement + "</b >";
     pQSIMblockinfo->setData(pQSIMblockinfo->index(nRowCount, BLOCK_INFO_ITEM, QModelIndex()),
                             sStandardItemModelElement.c_str());
-    // sStandardItemModelElement = strprintf(
-    //                    " %s"
-    //                    , HexStr(block.vchBlockSig.begin(),
-    //                    block.vchBlockSig.end()).c_str()
-    //                                     );
     sStandardItemModelElement = " " + HexStr(block.vchBlockSig.begin(), block.vchBlockSig.end());
     sTemp += sStandardItemModelElement + "<br />\n";
     pQSIMblockinfo->setData(pQSIMblockinfo->index(nRowCount, BLOCK_INFO_VALUE, QModelIndex()),
@@ -1685,7 +1662,6 @@ std::string BuildBlockinfoDetailsFrom(CBlock &block, CBlockIndex *pblockindex,
     ++nRowCount;
     for (int i = 1; i < nSize; ++i) {
         sStandardItemModelElement = strprintf("vMerkleTree[ %d ]", i);
-        // sTemp += sStandardItemModelElement;
         pQSIMblockinfo->setData(pQSIMblockinfo->index(nRowCount, BLOCK_INFO_ITEM, QModelIndex()),
                                 sStandardItemModelElement.c_str());
         sStandardItemModelElement = strprintf("  %s ", block.vMerkleTree[i].ToString().c_str());
@@ -1728,14 +1704,12 @@ void BlockExplorerPage::fillBlockInfoPage(int currentHeight) {
             BuildBlockinfoDetailsFrom(block, pblockindex, pQSIMblockinfo, pQTVblockinfo);
         this->pQTVblockinfo->clearSelection();
         this->show();
-        // this->raise( );
         this->setVisible(true);
         this->activateWindow();
     }
 }
 
 void BlockExplorerPage::showBkItem() {
-    // pop_a_message_box( "Clicked something!" );
 }
 
 void BlockExplorerPage::setModel(ClientModel *model) {
@@ -1751,8 +1725,6 @@ void BlockExplorerPage::setClientModel(ClientModel *model) {
 }
 
 BlockExplorerPage::~BlockExplorerPage() {
-    // delete pQSIMblockinfo;
-
     delete ui;
 }
 
@@ -1768,9 +1740,7 @@ TransactionExplorerPage::TransactionExplorerPage(QDialog *parent)
     ui->setupUi(this);
 
     pclientModel = NULL;
-    // this->pExplorerPage = NULL;
 
-    //    pQTBtransaction = ui->textBrowser;
     pQTVtxinfo = ui->tableView;
 
     pQTVtxinfo->setShowGrid(false);
@@ -1787,7 +1757,6 @@ TransactionExplorerPage::TransactionExplorerPage(QDialog *parent)
     for (int column = 0; column < TRANSACTION_INFO_VIEW_SIZE; ++column) {
         pQSIMtxinfo->setHorizontalHeaderItem(
             column, new QStandardItem(QString(pcArrayOfTxinfoHeaders[column])));
-        // pQTVTxinfo->resizeColumnToContents( column );
     }
     pQTVtxinfo->setModel(pQSIMtxinfo);
     pQTVtxinfo->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1806,8 +1775,6 @@ void TransactionExplorerPage::setModel(ClientModel *model) {
 }
 
 TransactionExplorerPage::~TransactionExplorerPage() {
-    // delete pQSIMtxinfo;
-
     delete ui;
 }
 

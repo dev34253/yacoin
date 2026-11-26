@@ -182,8 +182,6 @@ enum BlockSource ClientModel::getBlockSource() const
 {
     if (fReindex)
         return BLOCK_SOURCE_REINDEX;
-//    else if (fImporting)
-//        return BLOCK_SOURCE_DISK;
     else if (getNumConnections() > 0)
         return BLOCK_SOURCE_NETWORK;
 
