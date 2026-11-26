@@ -7,9 +7,9 @@ and every push to `master`. CI never fuzzes: new inputs are searched for on a de
 
 ## Targets
 
-The binary has 24 targets.
+The binary has 23 targets.
 
-`src/test/fuzz/deserialize.cpp` holds 18 targets that each deserialise one object from a network stream: the first 4 bytes of an input
+`src/test/fuzz/deserialize.cpp` holds 17 targets that each deserialise one object from a network stream: the first 4 bytes of an input
 are the stream version, the rest is the object. Inputs over 1 MiB and inputs shorter than 4 bytes are ignored, and reading past the end
 of an input ends the run.
 
@@ -22,7 +22,7 @@ of an input ends the run.
 | `diskblockindex_deserialize` | `CDiskBlockIndex` |
 | `addrman_deserialize`, `banentry_deserialize` | `CAddrMan`, `CBanEntry` |
 | `netaddr_deserialize`, `service_deserialize`, `address_deserialize` | `CNetAddr`, `CService`, `CAddress` |
-| `messageheader_deserialize`, `inv_deserialize`, `bloomfilter_deserialize` | `CMessageHeader` (and `IsValid()`), `CInv`, `CBloomFilter` |
+| `messageheader_deserialize`, `inv_deserialize` | `CMessageHeader` (and `IsValid()`), `CInv` |
 
 Six targets, one file each in `src/test/fuzz/`, feed YACoin's own formats:
 
