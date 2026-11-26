@@ -71,11 +71,6 @@ const char * DEFAULT_WALLET_DAT = "wallet.dat";
 const uint32_t BIP32_HARDENED_KEY_LIMIT = 0x80000000;
 
 /**
- * Fees smaller than this (in satoshi) are considered zero fee (for transaction creation)
- * Override with -mintxfee
- */
-CFeeRate CWallet::minTxFee = CFeeRate(DEFAULT_TRANSACTION_MINFEE);
-/**
  * If fee estimation does not have enough data to provide estimates, use this fee instead.
  * Has no effect if not using fee estimation
  * Override with -fallbackfee
@@ -3223,59 +3218,6 @@ bool CWallet::SignTransaction(CTransaction &tx)
     return true;
 }
 
-bool CWallet::FundTransaction(CTransaction& tx, CAmount& nFeeRet, int& nChangePosInOut, std::string& strFailReason, bool lockUnspents, const std::set<int>& setSubtractFeeFromOutputs, CCoinControl coinControl)
-{
-    std::vector<CRecipient> vecSend;
-
-    // Turn the txout set into a CRecipient vector
-    for (size_t idx = 0; idx < tx.vout.size(); idx++)
-    {
-        const CTxOut& txOut = tx.vout[idx];
-        CRecipient recipient = {txOut.scriptPubKey, txOut.nValue, setSubtractFeeFromOutputs.count(idx) == 1};
-        vecSend.push_back(recipient);
-    }
-
-    coinControl.fAllowOtherInputs = true;
-
-    for (const CTxIn& txin : tx.vin)
-        coinControl.Select(txin.prevout);
-
-    CReserveKey reservekey(this);
-    CWalletTx wtx;
-    if (!CreateTransaction(vecSend, wtx, reservekey, nFeeRet, nChangePosInOut, strFailReason, coinControl, nullptr, false)) {
-        return false;
-    }
-
-    if (nChangePosInOut != -1) {
-        tx.vout.insert(tx.vout.begin() + nChangePosInOut, wtx.tx->vout[nChangePosInOut]);
-        // we dont have the normal Create/Commit cycle, and dont want to risk reusing change,
-        // so just remove the key from the keypool here.
-        reservekey.KeepKey();
-    }
-
-    // Copy output sizes from new transaction; they may have had the fee subtracted from them
-    for (unsigned int idx = 0; idx < tx.vout.size(); idx++)
-        tx.vout[idx].nValue = wtx.tx->vout[idx].nValue;
-
-    // Add new txins (keeping original txin scriptSig/order)
-    for (const CTxIn& txin : wtx.tx->vin)
-    {
-        if (!coinControl.IsSelected(txin.prevout))
-        {
-            tx.vin.push_back(txin);
-
-            if (lockUnspents)
-            {
-              LOCK2(cs_main, cs_wallet);
-              LockCoin(txin.prevout);
-            }
-        }
-    }
-
-
-    return true;
-}
-
 /** YAC_TOKEN START */
 bool CWallet::CreateTransactionWithTokens(
         const std::vector<CRecipient>& vecSend, CWalletTx& wtxNew,
@@ -3413,7 +3355,7 @@ bool CWallet::CreateTransactionAll(
         return error("%s : Tried creating a new token transaction and the token was null or the destination was invalid", __func__);
 
     if ((fNewToken && fTransferToken) || (fReissueToken && fTransferToken) || (fReissueToken && fNewToken))
-        return error("%s : Only one type of token transaction allowed per transaction");
+        return error("%s : Only one type of token transaction allowed per transaction", __func__);
 
     if (fReissueToken && (reissueToken.IsNull() || !IsValidDestination(destination)))
         return error("%s : Tried reissuing an token and the reissue data was null or the destination was invalid", __func__);
@@ -3838,42 +3780,6 @@ bool CWallet::AddAccountingEntry(const CAccountingEntry& acentry, CWalletDB *pwa
     wtxOrdered.insert(std::make_pair(entry.nOrderPos, TxPair((CWalletTx*)0, &entry)));
 
     return true;
-}
-
-CAmount CWallet::GetRequiredFee(unsigned int nTxBytes)
-{
-    return std::max(minTxFee.GetFee(nTxBytes), ::minRelayTxFee.GetFee(nTxBytes));
-}
-
-CAmount CWallet::GetMinimumFee(unsigned int nTxBytes, const CCoinControl& coin_control)
-{
-    /* User control of how to calculate fee uses the following parameter precedence:
-       1. coin_control.m_feerate
-       2. coin_control.m_confirm_target
-       3. payTxFee (user-set global variable)
-       4. nTxConfirmTarget (user-set global variable)
-       The first parameter that is set is used.
-    */
-    CAmount fee_needed;
-    if (coin_control.m_feerate) { // 1.
-        fee_needed = coin_control.m_feerate->GetFee(nTxBytes);
-        // Allow to override automatic min/max check over coin control instance
-        if (coin_control.fOverrideFeeRate) return fee_needed;
-    }
-    else if (::payTxFee != CFeeRate(0)) { // 3. TODO: remove magic value of 0 for global payTxFee
-        fee_needed = ::payTxFee.GetFee(nTxBytes);
-    }
-
-    // prevent user from paying a fee below minRelayTxFee or minTxFee
-    CAmount required_fee = GetRequiredFee(nTxBytes);
-    if (required_fee > fee_needed) {
-        fee_needed = required_fee;
-    }
-    // But always obey the maximum
-    if (fee_needed > maxTxFee) {
-        fee_needed = maxTxFee;
-    }
-    return fee_needed;
 }
 
 DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
@@ -5040,19 +4946,6 @@ bool CMerkleTx::AcceptToMemoryPool(CValidationState& state)
 //
 // Actions
 //
-
-CAmount CWallet::GetStake() const
-{
-    CAmount nTotal = 0;
-    LOCK2(cs_main, cs_wallet);
-    for (const auto& entry : mapWallet)
-    {
-        const CWalletTx* pcoin = &entry.second;
-        if (pcoin->IsCoinStake() && pcoin->GetBlocksToMaturity() > 0 && pcoin->GetDepthInMainChain() > 0)
-            nTotal += entry.second.GetCredit(ISMINE_ALL);
-    }
-    return nTotal;
-}
 
 string CWallet::SendMoney(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNew, bool fAskFee, const CScript* fromScriptPubKey, bool useExpiredTimelockUTXO)
 {
