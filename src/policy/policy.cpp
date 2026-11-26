@@ -45,12 +45,6 @@ bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType)
 
     if (whichType == TX_MULTISIG)
     {
-#ifdef _MSC_VER
-        if( vSolutions.empty() )
-            {       // one can't technically access vSolutions[ 0 ]
-            return false;
-            }
-#endif
         unsigned char m = vSolutions.front()[0];
         unsigned char n = vSolutions.back()[0];
         // Support up to x-of-3 multisig txns as standard

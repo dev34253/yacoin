@@ -2,9 +2,7 @@
 #ifndef BITCOIN_TIMESTAMPS_H
 #define BITCOIN_TIMESTAMPS_H
 
-#ifndef _MSC_VER
-    #include <limits.h>
-#endif
+#include <limits.h>
 #include <stdint.h>;
 
 const ::int64_t nSecondsPerMinute = 60, nMinutesPerHour = 60,

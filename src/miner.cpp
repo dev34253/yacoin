@@ -5,14 +5,6 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #include "miner.h"
 
-#ifdef _MSC_VER
-#include <stdint.h>
-
-#include <memory>
-
-#include "msvc_warnings.push.h"
-#endif
-
 #include <openssl/sha.h>
 #include <algorithm>
 #include <queue>

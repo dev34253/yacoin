@@ -43,13 +43,6 @@
 
 #else
 
-#ifdef _MSC_VER
-#pragma warning(disable:4786)
-#pragma warning(disable:4804)
-#pragma warning(disable:4805)
-#pragma warning(disable:4717)
-#endif
-
 #ifdef _WIN32_WINNT
 #undef _WIN32_WINNT
 #endif
@@ -1177,7 +1170,3 @@ unsigned long long getTotalSystemMemory( void )
     return pages * page_size;
 #endif
 }
-
-#ifdef _MSC_VER
-    #include "msvc_warnings.pop.h"
-#endif
