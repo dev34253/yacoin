@@ -3,7 +3,7 @@
 #define BITCOIN_TIMESTAMPS_H
 
 #include <limits.h>
-#include <stdint.h>;
+#include <stdint.h>
 
 const ::int64_t nSecondsPerMinute = 60, nMinutesPerHour = 60,
                 nOneHourInSeconds = nSecondsPerMinute * nMinutesPerHour,
