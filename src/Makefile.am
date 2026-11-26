@@ -111,7 +111,6 @@ BITCOIN_CORE_H = \
   limitedmap.h \
   main.h \
   memusage.h \
-  merkleblock.h \
   miner.h \
   net.h \
   net_processing.h \
@@ -210,7 +209,6 @@ libyacoin_server_a_SOURCES = \
   init.cpp \
   kernel.cpp \
   main.cpp \
-  merkleblock.cpp \
   miner.cpp \
   net.cpp \
   net_processing.cpp \

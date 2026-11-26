@@ -7,7 +7,6 @@
 #include "base58.h"
 #include "clientversion.h"
 #include "key.h"
-#include "merkleblock.h"
 #include "primitives/transaction.h"
 #include "random.h"
 #include "script/script.h"
