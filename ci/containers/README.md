@@ -270,7 +270,7 @@ the sanitizer jobs (`unit-tests-asan`, `unit-tests-tsan`, `fuzz-corpus`, `functi
 `functional-tests-depends-…` entry (the same image, packages and prefix) and never save one; they build with ccache off, since their
 `-O0` or sanitizer objects never match the cached ones. `warnings` restores the newest `warnings` ccache entry on every run, saves it only
 on a push to `master` when the key is missing, restores the `functional-tests` depends entry and saves none; it uploads no artifact. It
-has an entry of its own because it builds with different flags, so its objects never match the other jobs' entries.
+has an entry of its own.
 `test-image-tag.sh` checks these keys, paths and conditions, that only the build jobs' restores set `lookup-only`, and that
 `prune-caches` runs only on a push to `master`, runs no docker, needs every job that saves a cache and is the one job with
 `actions: write`; planted copies of the workflow, each with one change, must fail their named check. `coverage-functional-1` and `-2`

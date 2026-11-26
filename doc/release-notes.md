@@ -48,7 +48,7 @@ Unreleased
   `CXXFLAGS` is set, as in builds with depends' `config.site`; the configure summary lists them in its
   `warning flags` line. The UniValue and libsecp256k1 sub-builds keep their own flags; C files and the macOS
   Objective-C++ files get none of these flags. Flags given in `CXXFLAGS` come after the warning flags on the
-  compile line, so `CXXFLAGS=-w` or a `-Wno-` flag there turns warnings off.
+  compile line, so `CXXFLAGS=-w` turns the warnings off and a `-Wno-` flag there turns off its warning.
 - Windows builds configured without `CXXFLAGS` no longer get `-w`.
 - New `configure` option `--enable-werror` (default no): treats compiler warnings in those C++ compiles as
   errors. `configure` stops if the compiler cannot use `-Werror`. The summary's `werror` line shows the setting.
