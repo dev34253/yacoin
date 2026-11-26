@@ -423,6 +423,24 @@ BOOST_AUTO_TEST_CASE(obsolete_version_is_rejected)
     BOOST_CHECK(!oldest.Node().fDisconnect);
 }
 
+/** A peer with protocol version 10300 is below the minimum protocol version: it gets a reject and is
+ * disconnected, without a verack or a score, and its version is not recorded */
+BOOST_AUTO_TEST_CASE(version_10300_is_rejected_as_obsolete)
+{
+    P2PTestPeerOptions options = NoHandshake(true);
+    options.nVersion = 10300;
+    P2PTestPeer peer(*peerLogic, options);
+
+    peer.SendVersion();
+    const Reject reject = OnlyReject(peer);
+    BOOST_CHECK_EQUAL(reject.strCommand, NetMsgType::VERSION);
+    BOOST_CHECK_EQUAL(reject.nCode, REJECT_OBSOLETE);
+    BOOST_CHECK_EQUAL(reject.strReason, strprintf("Version must be %d or greater", MIN_PEER_PROTO_VERSION));
+    BOOST_CHECK(peer.Node().fDisconnect);
+    BOOST_CHECK_EQUAL(peer.Node().nVersion, 0);
+    BOOST_CHECK_EQUAL(peer.Stats().nMisbehavior, 0);
+}
+
 /** Service bits 5 and 7 marked incompatible peers until August 2018; a peer offering them today
  * completes the handshake */
 BOOST_AUTO_TEST_CASE(service_bits_5_and_7_accepted)
@@ -1043,6 +1061,38 @@ BOOST_AUTO_TEST_CASE(messages_of_features_not_offered_are_ignored)
     BOOST_CHECK_EQUAL(ReceivedCommands(peer), "");
     BOOST_CHECK_EQUAL(peer.Stats().nMisbehavior, 0);
     BOOST_CHECK(!peer.Node().fDisconnect);
+}
+
+/** A peer that asked in its version message for no transaction announcements gets none; filterclear
+ * is accepted without a score and turns them on, and the next transaction is announced to it. The
+ * peer is whitelisted: SendMessages then sends its announcements on every call. */
+BOOST_AUTO_TEST_CASE(filterclear_turns_transaction_relay_on)
+{
+    P2PTestPeer sender(*peerLogic);
+    P2PTestPeerOptions options;
+    options.fRelay = false;
+    options.fWhitelisted = true;
+    P2PTestPeer quiet(*peerLogic, options);
+
+    const CTransaction tx1 = NewTransaction();
+    sender.Send(NetMsgType::TX, tx1);
+    BOOST_REQUIRE(InMempool(tx1));
+    quiet.RunSendMessages();
+    BOOST_CHECK(Inventory(quiet.TakeReceived(), NetMsgType::INV).empty());
+
+    quiet.Send(NetMsgType::FILTERCLEAR);
+    BOOST_CHECK_EQUAL(ReceivedCommands(quiet), "");
+    BOOST_CHECK_EQUAL(quiet.Stats().nMisbehavior, 0);
+    BOOST_CHECK(!quiet.Node().fDisconnect);
+    CNodeStats stats;
+    quiet.Node().copyStats(stats);
+    BOOST_CHECK(stats.fRelayTxes);
+
+    const CTransaction tx2 = NewTransaction();
+    sender.Send(NetMsgType::TX, tx2);
+    BOOST_REQUIRE(InMempool(tx2));
+    quiet.RunSendMessages();
+    BOOST_CHECK(TxHashes(Inventory(quiet.TakeReceived(), NetMsgType::INV)) == std::set<uint256>{tx2.GetHash()});
 }
 
 //
