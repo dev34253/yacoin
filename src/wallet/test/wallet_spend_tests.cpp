@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-// Fees, funding and signing of transactions by the wallet, failures of transaction
-// creation, and a send the mempool refuses, on a regtest chain with a mock wallet database.
+// Fees, funding and signing of transactions by the wallet, transaction creation and its
+// failures, and a send the mempool refuses, on a regtest chain with a mock wallet database.
 
 #include "policy/feerate.h"
 #include "policy/policy.h"
@@ -192,6 +192,38 @@ BOOST_AUTO_TEST_CASE(fund_transaction)
     BOOST_CHECK_EQUAL(strFailReason, "Change index out of range");
 }
 
+BOOST_AUTO_TEST_CASE(create_transaction)
+{
+    const CTransaction fund = Fund({CTxOut(COIN, script), CTxOut(5 * COIN, script)});
+    const CScript other = GetScriptForDestination(NewWalletTestKey().GetPubKey().GetID());
+    CReserveKey reservekey(wallet.get());
+    CWalletTx wtx;
+    CAmount nFee = 0;
+    int nChangePos = -1;
+    std::string strFailReason;
+
+    // With the fee taken from the amount, the output pays the amount less the fee
+    BOOST_CHECK(wallet->CreateTransaction({CRecipient{other, 2 * COIN, true}}, wtx, reservekey, nFee, nChangePos,
+                                          strFailReason, CCoinControl()));
+    BOOST_CHECK(nFee > 0);
+    BOOST_REQUIRE_EQUAL(wtx.tx->vout.size(), 2U);
+    BOOST_REQUIRE(nChangePos == 0 || nChangePos == 1);
+    BOOST_CHECK(wtx.tx->vout[1 - nChangePos] == CTxOut(2 * COIN - nFee, other));
+
+    // A selected input with other inputs allowed is spent together with another input
+    const COutPoint selected(fund.GetHash(), 0);
+    CCoinControl withOthers;
+    withOthers.Select(selected);
+    withOthers.fAllowOtherInputs = true;
+    BOOST_CHECK(withOthers.IsSelected(selected));
+    BOOST_CHECK(!withOthers.IsSelected(COutPoint(fund.GetHash(), 1)));
+    nChangePos = -1;
+    BOOST_CHECK(wallet->CreateTransaction({CRecipient{other, 3 * COIN, false}}, wtx, reservekey, nFee, nChangePos,
+                                          strFailReason, withOthers));
+    BOOST_REQUIRE_EQUAL(wtx.tx->vin.size(), 2U);
+    BOOST_CHECK(wtx.tx->vin[0].prevout == selected || wtx.tx->vin[1].prevout == selected);
+}
+
 BOOST_AUTO_TEST_CASE(create_transaction_failures)
 {
     const CKey watchKey = NewWalletTestKey();
@@ -227,6 +259,25 @@ BOOST_AUTO_TEST_CASE(create_transaction_failures)
     BOOST_CHECK(!wallet->CreateTransaction({CRecipient{other, COIN, false}}, wtx, reservekey, nFee, nChangePos,
                                            strFailReason, notSpendable));
     BOOST_CHECK_EQUAL(strFailReason, "Insufficient funds");
+
+    // A selected input past the outputs of a wallet transaction, or one the wallet does not
+    // know, with other inputs allowed: insufficient funds
+    for (const COutPoint& prevout : {COutPoint(fund.GetHash(), 7), COutPoint(InsecureRand256(), 0)}) {
+        CCoinControl withOthers;
+        withOthers.Select(prevout);
+        withOthers.fAllowOtherInputs = true;
+        strFailReason.clear();
+        BOOST_CHECK(!wallet->CreateTransaction({CRecipient{other, COIN, false}}, wtx, reservekey, nFee, nChangePos,
+                                               strFailReason, withOthers));
+        BOOST_CHECK_EQUAL(strFailReason, "Insufficient funds");
+    }
+
+    // A change position past the outputs
+    nChangePos = 2;
+    BOOST_CHECK(!wallet->CreateTransaction({CRecipient{other, COIN, false}}, wtx, reservekey, nFee, nChangePos,
+                                           strFailReason, CCoinControl()));
+    BOOST_CHECK_EQUAL(strFailReason, "Change index out of range");
+    nChangePos = -1;
 
     // Token flags: refused before tokens are active, and a reissue without data
     const CTxDestination dest = key.GetPubKey().GetID();
