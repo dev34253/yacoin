@@ -79,11 +79,7 @@ TX_nm               = 4,
     int nROWS_OF_DISPLAYED_BLOCKS, nROWS_OF_DISPLAYED_TRANSACTIONS;
 
   public:
-    // ExplorerPage(BitcoinGUI* parent = 0);
     ExplorerPage(const PlatformStyle *platformStyle, QWidget *parent = 0, bool fNoCloseButton = false);
-    // explicit ExplorerPage(QDialog * const parent = 0);
-    // ExplorerPage(QWidget *parent = 0);
-    // virtual ~ExplorerPage();
     ~ExplorerPage();
 
     // the table and transaction views, that like to be fed by "models"
@@ -107,9 +103,6 @@ TX_nm               = 4,
     void showTxIdLineDetails();
 
   Q_SIGNALS:
-    // void transactionClicked(const QModelIndex &index);
-    // void blockClicked(const QModelIndex &index);
-
     void doubleClicked(const QModelIndex); // block #
     // void doubleClicked( const QModelIndex );    // tx ID
 
@@ -177,22 +170,16 @@ class BlockExplorerPage : public QDialog
     QTableView *pQTVblockinfo;
     QItemSelectionModel *pQISM;
 
-    //    QTextBrowser
-    //        *pQTBblock;
     bool fBlkInfoConnected;
 
     void fillBlockInfoPage(int currentHeight
                            //, ExplorerPage * const
     );
     void showBkItem();
-    // void followLink( const QUrl & link );
     QStandardItemModel *pQSIMblockinfo;
 
   private:
     Ui::BlockExplorerPage *ui;
-
-    // ExplorerPage
-    //    *pExplorerPage;
 
     ClientModel *pclientModel;
 
@@ -225,19 +212,10 @@ class TransactionExplorerPage : public QDialog
 
     QStandardItemModel *pQSIMtxinfo;
 
-    //    QTextBrowser
-    //        *pQTBtransaction;
     bool fTxInfoConnected;
-
-    // void fillTxInfoPage( int currentHeight );
-    // void showTxItem();
-    // void followLink( const QUrl & link );
 
   private:
     Ui::TransactionExplorerPage *ui;
-
-    // ExplorerPage
-    //    *pExplorerPage;
 
     ClientModel *pclientModel;
 

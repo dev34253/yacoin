@@ -3728,29 +3728,6 @@ bool CWallet::CreateTransactionAll(
                 }
                 /** YAC_TOKEN END */
 
-//                // Sign (old logic)
-//                int nIn = 0;
-//                for (const auto& coin : setCoins)
-//                {
-//                    if (!SignSignature(*this, coin.txout, wtxNew, nIn++, SIGHASH_ALL))
-//                    {
-//                        strFailReason = _("Signing transaction failed");
-//                        return false;
-//                    }
-//                }
-//                /** YAC_TOKEN START */
-//                if (AreTokensDeployed()) {
-//                    for (const auto& token : setTokens)
-//                    {
-//                        if (!SignSignature(*this, token.txout, wtxNew, nIn++, SIGHASH_ALL))
-//                        {
-//                            strFailReason = _("Signing token transaction failed");
-//                            return false;
-//                        }
-//                    }
-//                }
-//                /** YAC_TOKEN END */
-
                 // Limit size
                 unsigned int nBytes = ::GetSerializeSize(txNew, SER_NETWORK, PROTOCOL_VERSION);
                 if (nBytes >= (2*GetMaxSize(MAX_BLOCK_SIZE_GEN)/3) )
@@ -4689,15 +4666,6 @@ std::string CWallet::GetWalletHelpString(bool showDebug)
     strUsage += HelpMessageOpt("-disablewallet", _("Do not load the wallet and disable wallet RPC calls"));
     strUsage += HelpMessageOpt("-keypool=<n>", strprintf(_("Set key pool size to <n> (default: %u)"), DEFAULT_KEYPOOL_SIZE));
     strUsage += HelpMessageOpt("-paytxfee=<amt>", _("Fee per KB to add to transactions you send"));
-//    strUsage += HelpMessageOpt("-fallbackfee=<amt>", strprintf(_("A fee rate (in %s/kB) that will be used when fee estimation has insufficient data (default: %s)"),
-//                                                               CURRENCY_UNIT, FormatMoney(DEFAULT_FALLBACK_FEE)));
-//    strUsage += HelpMessageOpt("-discardfee=<amt>", strprintf(_("The fee rate (in %s/kB) that indicates your tolerance for discarding change by adding it to the fee (default: %s). "
-//                                                                "Note: An output is discarded if it is dust at this rate, but we will always discard up to the dust relay fee and a discard fee above that is limited by the fee estimate for the longest target"),
-//                                                              CURRENCY_UNIT, FormatMoney(DEFAULT_DISCARD_FEE)));
-//    strUsage += HelpMessageOpt("-mintxfee=<amt>", strprintf(_("Fees (in %s/kB) smaller than this are considered zero fee for transaction creation (default: %s)"),
-//                                                            CURRENCY_UNIT, FormatMoney(DEFAULT_TRANSACTION_MINFEE)));
-//    strUsage += HelpMessageOpt("-paytxfee=<amt>", strprintf(_("Fee (in %s/kB) to add to transactions you send (default: %s)"),
-//                                                            CURRENCY_UNIT, FormatMoney(payTxFee.GetFeePerK())));
     strUsage += HelpMessageOpt("-rescan", _("Rescan the block chain for missing wallet transactions on startup"));
     strUsage += HelpMessageOpt("-salvagewallet", _("Attempt to recover private keys from a corrupt wallet on startup"));
     strUsage += HelpMessageOpt("-spendzeroconfchange", strprintf(_("Allow to spend unconfirmed change when sending transactions (default: %u)"), DEFAULT_SPEND_ZEROCONF_CHANGE));

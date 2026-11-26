@@ -658,12 +658,6 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
     if (wss.fAnyUnordered)
         result = pwallet->ReorderTransactions();
 
-//    pwallet->laccentries.clear();
-//    ListAccountCreditDebit("*", pwallet->laccentries);
-//    for (CAccountingEntry& entry : pwallet->laccentries) {
-//        pwallet->wtxOrdered.insert(make_pair(entry.nOrderPos, CWallet::TxPair((CWalletTx*)0, &entry)));
-//    }
-
     return result;
 }
 
