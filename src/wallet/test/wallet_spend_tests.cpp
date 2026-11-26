@@ -240,6 +240,23 @@ BOOST_AUTO_TEST_CASE(create_transaction_failures)
                                               strFailReason, CCoinControl(), nullptr, false, false, token, dest, false,
                                               true, CReissueToken(), ETokenType::REISSUE));
 
+    // Two token flags at once are refused: new and transfer, reissue and transfer, reissue and new
+    const CReissueToken reissue("TOKEN", COIN, 0, 1, "");
+    const auto createWithFlags = [&](bool fNew, bool fTransfer, bool fReissue) {
+        return wallet->CreateTransactionAll({CRecipient{other, COIN, false}}, wtx, reservekey, nFee, nChangePos,
+                                            strFailReason, CCoinControl(), nullptr, false, fNew, token, dest, fTransfer,
+                                            fReissue, reissue, ETokenType::REISSUE);
+    };
+    bool created = true;
+    BOOST_CHECK_NO_THROW(created = createWithFlags(true, true, false));
+    BOOST_CHECK(!created);
+    created = true;
+    BOOST_CHECK_NO_THROW(created = createWithFlags(false, true, true));
+    BOOST_CHECK(!created);
+    created = true;
+    BOOST_CHECK_NO_THROW(created = createWithFlags(true, false, true));
+    BOOST_CHECK(!created);
+
     // Without a change address and with a locked wallet whose keypool is empty
     CWallet locked;
     BOOST_REQUIRE(locked.LoadCryptedKey(watchKey.GetPubKey(), std::vector<unsigned char>(48, 0x01)));

@@ -3413,7 +3413,7 @@ bool CWallet::CreateTransactionAll(
         return error("%s : Tried creating a new token transaction and the token was null or the destination was invalid", __func__);
 
     if ((fNewToken && fTransferToken) || (fReissueToken && fTransferToken) || (fReissueToken && fNewToken))
-        return error("%s : Only one type of token transaction allowed per transaction");
+        return error("%s : Only one type of token transaction allowed per transaction", __func__);
 
     if (fReissueToken && (reissueToken.IsNull() || !IsValidDestination(destination)))
         return error("%s : Tried reissuing an token and the reissue data was null or the destination was invalid", __func__);
