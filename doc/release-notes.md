@@ -41,3 +41,14 @@ Unreleased
 - Windows: the `modifier` field of `getblock` and `getblockbynumber` is 16 hex digits, and the 64-bit values in the
   `ComputeNextStakeModifier` and `CheckStakeKernelHash` debug-log lines and in the `-printcreation` reward lines
   print as their format says (hex after `0x`), without a trailing `64d`, `64u` or `64x`.
+
+### Build changes
+
+- `configure` adds its compiler warning flags to the C++ compiles of the node's sources and LevelDB also when
+  `CXXFLAGS` is set, as in builds with depends' `config.site`; the configure summary lists them in its
+  `warning flags` line. The UniValue and libsecp256k1 sub-builds keep their own flags; C files and the macOS
+  Objective-C++ files get none of these flags. Flags given in `CXXFLAGS` come after the warning flags on the
+  compile line, so `CXXFLAGS=-w` or a `-Wno-` flag there turns warnings off.
+- Windows builds configured without `CXXFLAGS` no longer get `-w`.
+- New `configure` option `--enable-werror` (default no): treats compiler warnings in those C++ compiles as
+  errors. `configure` stops if the compiler cannot use `-Werror`. The summary's `werror` line shows the setting.
