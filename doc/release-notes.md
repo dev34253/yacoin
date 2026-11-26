@@ -38,3 +38,6 @@ Unreleased
   started with them starts as before.
 - `configure` looks only for `python3.6`, `python3.5`, `python3.4` and `python3` as the Python interpreter, no
   longer for `python2.7`, `python2` or `python`.
+- Windows: the `modifier` field of `getblock` and `getblockbynumber` is 16 hex digits, and the 64-bit values in the
+  `ComputeNextStakeModifier` and `CheckStakeKernelHash` debug-log lines and in the `-printcreation` reward lines
+  print as their format says (hex after `0x`), without a trailing `64d`, `64u` or `64x`.

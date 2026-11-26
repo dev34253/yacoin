@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <algorithm>
 #include <cstdio>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -517,6 +518,37 @@ BOOST_AUTO_TEST_CASE(strprintf_numbers)
 }
 #undef B
 #undef E
+
+BOOST_AUTO_TEST_CASE(strprintf_int64_format_macros)
+{
+    const int64_t s64min = std::numeric_limits<int64_t>::min();
+    const int64_t s64max = std::numeric_limits<int64_t>::max();
+    const uint64_t u64max = std::numeric_limits<uint64_t>::max();
+
+    BOOST_CHECK_EQUAL(strprintf("[%" PRId64 "]", int64_t{0}), "[0]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRId64 "]", s64min), "[-9223372036854775808]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRId64 "]", s64max), "[9223372036854775807]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRIu64 "]", uint64_t{0}), "[0]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRIu64 "]", u64max), "[18446744073709551615]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRIx64 "]", uint64_t{0}), "[0]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRIx64 "]", static_cast<uint64_t>(s64max)), "[7fffffffffffffff]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRIx64 "]", u64max), "[ffffffffffffffff]");
+    BOOST_CHECK_EQUAL(strprintf("[%016" PRIx64 "]", uint64_t{0}), "[0000000000000000]");
+    BOOST_CHECK_EQUAL(strprintf("[%016" PRIx64 "]", uint64_t{0x1234}), "[0000000000001234]");
+    BOOST_CHECK_EQUAL(strprintf("[%016" PRIx64 "]", u64max), "[ffffffffffffffff]");
+
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64d "]", int64_t{0}), "[0]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64d "]", s64min), "[-9223372036854775808]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64d "]", s64max), "[9223372036854775807]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64u "]", uint64_t{0}), "[0]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64u "]", u64max), "[18446744073709551615]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64x "]", uint64_t{0}), "[0]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64x "]", static_cast<uint64_t>(s64max)), "[7fffffffffffffff]");
+    BOOST_CHECK_EQUAL(strprintf("[%" PRI64x "]", u64max), "[ffffffffffffffff]");
+    BOOST_CHECK_EQUAL(strprintf("[%016" PRI64x "]", uint64_t{0}), "[0000000000000000]");
+    BOOST_CHECK_EQUAL(strprintf("[%016" PRI64x "]", uint64_t{0x1234}), "[0000000000001234]");
+    BOOST_CHECK_EQUAL(strprintf("[%016" PRI64x "]", u64max), "[ffffffffffffffff]");
+}
 
 /* Check for mingw/wine issue #3494
  * Remove this test before time.ctime(0xffffffff) == 'Sun Feb  7 07:28:15 2106'

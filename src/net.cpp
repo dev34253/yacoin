@@ -1179,7 +1179,7 @@ void CConnman::ThreadSocketHandler()
 
             if (vNodesCopy.size() > 0)
             {
-                ::int32_t startingHeight[vNodesCopy.size()];
+                std::vector<::int32_t> startingHeight(vNodesCopy.size());
                 ::int32_t nodeCounter = 0;
 
                 for (CNode* pnode : vNodesCopy)
@@ -1187,7 +1187,7 @@ void CConnman::ThreadSocketHandler()
                     startingHeight[nodeCounter] = pnode->nStartingHeight;
                     nodeCounter++;
                 }
-                std::sort(startingHeight, startingHeight + nodeCounter);
+                std::sort(startingHeight.begin(), startingHeight.begin() + nodeCounter);
                 nMedianStartingHeight = startingHeight[nodeCounter/2];
             }
         }
