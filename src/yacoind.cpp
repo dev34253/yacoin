@@ -83,7 +83,6 @@ bool AppInit(int argc, char* argv[])
         if (gArgs.IsArgSet("-version") || gArgs.IsArgSet("-v"))
         {
             // Do nothing
-//            strUsage += FormatParagraph(LicenseInfo());
         }
         else
         {
