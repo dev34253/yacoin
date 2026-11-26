@@ -16,7 +16,6 @@
 
 #include "addrdb.h"
 #include "addrman.h"
-#include "bloom.h"
 #include "chain.h"
 #include "coins.h"
 #include "compressor.h"
@@ -137,11 +136,6 @@ FUZZ_TARGET(address_deserialize)
 FUZZ_TARGET(inv_deserialize)
 {
     DeserializeInput<CInv>(buffer);
-}
-
-FUZZ_TARGET(bloomfilter_deserialize)
-{
-    DeserializeInput<CBloomFilter>(buffer);
 }
 
 FUZZ_TARGET(diskblockindex_deserialize)
