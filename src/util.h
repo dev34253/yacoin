@@ -378,29 +378,18 @@ const int COINdecimalPower = 16;     // i.e. log10( COIN )
     #define PRI64u  "llu"
     #define PRI64x  "llx"
 
-    #define PRId64  "I64d"
-    #define PRIu64  "I64u"
-    #define PRIx64  "I64x"
   //#define PRI64d  "I64d"
   //#define PRI64u  "I64u"
   //#define PRI64x  "I64x"
 #else /* C99 standard */
-    // these seem to be missing?
  #ifdef WIN32
-    #define PRId64  "I64d"
     #define PRI64d  "I64d"
-    #define PRIu64  "I64u"
     #define PRI64x  "I64x"
-    #define PRIx64  "I64x"
     #define PRI64u  "I64u"
  #else
     #define PRI64d  "lld"
     #define PRI64u  "llu"
     #define PRI64x  "llx"
-
-    #define PRId64  "lld"
-    #define PRIu64  "llu"
-    #define PRIx64  "llx"
  #endif
   #define PRIszx    "zx"
   #define PRIszu    "zu"

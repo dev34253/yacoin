@@ -1,5 +1,5 @@
 {
-  "(no flag: \"X\" redefined)": 3,
+  "(no flag: \"X\" redefined)": 0,
   "(no flag: extra tokens at end of #include directive)": 1,
   "-Wclass-memaccess": 2,
   "-Wdeprecated-copy": 351,
