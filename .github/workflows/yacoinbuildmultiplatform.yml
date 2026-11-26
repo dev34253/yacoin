@@ -931,8 +931,9 @@ jobs:
           path: ${{ github.workspace }}/release-root/bin/yacoin-cli
           if-no-files-found: error
   warnings:
-    # Builds the default targets with -O1 -g -Wall -Wextra and counts the
-    # warnings per class against contrib/devtools/warning-counts.json
+    # Builds the default targets with -O1 -g and configure's warning flags
+    # and counts the warnings per class against
+    # contrib/devtools/warning-counts.json
     # (warnings mode of the yacoin-build image; see ci/containers/README.md).
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -969,7 +970,7 @@ jobs:
           path: ${{ env.WARN_CACHE }}/${{ env.IMAGE }}/ccache
           key: ${{ env.KEY_CCACHE }}
           restore-keys: ${{ env.KEY_CCACHE_PREFIX }}
-      - name: build with -Wall -Wextra and count the warnings
+      - name: build with the warning flags and count the warnings
         # Below the job timeout. The build's output stays in
         # build/docker-ubuntu.22.04/warnings/build.log; this log shows the
         # counter's tables and the locations of a class above its value or

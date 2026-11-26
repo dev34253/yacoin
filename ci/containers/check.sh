@@ -116,13 +116,13 @@
 #           with FTEST_JOBS (test_runner.py --include-file), fails when the
 #           runner fails and stops before the build on a tree without the
 #           list or with a runner without --include-file; warnings (22.04
-#           image, refused by the others) configures with -O1 -g -Wall
-#           -Wextra, builds with JOBS and make's -Otarget, prints the
-#           compiler and the counter's tables and passes with the counts of
-#           the values file, fails naming the class and location when a class
-#           is above its value, fails when the build fails, made no yacoind,
-#           yacoin-cli or test_bitcoin or printed no warning, and stops before
-#           the build on a malformed values file
+#           image, refused by the others) configures with -O1 -g (configure
+#           adds its warning flags), builds with JOBS and make's -Otarget,
+#           prints the compiler and the counter's tables and passes with the
+#           counts of the values file, fails naming the class and location
+#           when a class is above its value, fails when the build fails, made
+#           no yacoind, yacoin-cli or test_bitcoin or printed no warning, and
+#           stops before the build on a malformed values file
 #   ccache  the entrypoint creates the ccache config before anything runs
 #           ccache, with an empty /cache and with none (a stub source tree
 #           makes this quick)
@@ -1800,15 +1800,16 @@ smoke_fuzz_corpus() {
 }
 
 # The warnings mode (22.04 image; the others refuse it): configures out of
-# tree with -O1 -g -Wall -Wextra, builds with JOBS and make's -Otarget into a
-# log and runs the tree's counter on it with the values file; fails naming
-# the class and location when a class is above its value, fails when the
-# build fails, made no yacoind, yacoin-cli or test_bitcoin or printed no
-# warning, and stops before the build on a malformed values file.
+# tree with -O1 -g (configure adds its warning flags), builds with JOBS and
+# make's -Otarget into a log and runs the tree's counter on it with the
+# values file; fails naming the class and location when a class is above its
+# value, fails when the build fails, made no yacoind, yacoin-cli or
+# test_bitcoin or printed no warning, and stops before the build on a
+# malformed values file.
 # smoke_warnings <image> <tag> <stub dir>
 smoke_warnings() {
     local image="$1" tag="$2" stub="$3" args flags status
-    local want="--without-gui --disable-man --enable-ccache CXXFLAGS=-O1 -g -Wall -Wextra CFLAGS=-O1 -g -Wall -Wextra"
+    local want="--without-gui --disable-man --enable-ccache CXXFLAGS=-O1 -g CFLAGS=-O1 -g"
     if [[ "$image" != ubuntu.22.04 ]]; then
         make_warnings_stub "$stub" "$tag" '{"-Wunused-variable": 1}'
         expect_status 1 "smoke: $image: warnings is refused (22.04 image only)" \
