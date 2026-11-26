@@ -26,15 +26,6 @@ bool CBasicKeyStore::GetSecret(const CScript& scriptPubKey, CKeyingMaterial& vch
         return false;
 
     CKeyID keyID;
-#ifdef _MSC_VER
-    bool
-        fTest = false;
-    if( vSolutions.empty() )
-        {       // one can't technically access vSolutions[ 0 ]
-        fTest = true;
-        return false;
-        }
-#endif
     switch (whichTypeRet)
     {
     case TX_NONSTANDARD:

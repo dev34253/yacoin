@@ -362,8 +362,7 @@ const int COINdecimalPower = 16;     // i.e. log10( COIN )
 #define CUINTBEGIN(a)        ((const ::uint32_t*)&(a))
 
 /* Format characters for (s)size_t and ptrdiff_t */
-#if defined(_MSC_VER) || defined(__MSVCRT__)
-//#if defined(_MSC_VER)
+#if defined(__MSVCRT__)
   /* (s)size_t and ptrdiff_t have the same size specifier in MSVC:
      http://msdn.microsoft.com/en-us/library/tcxf1dw6%28v=vs.100%29.aspx
    */
