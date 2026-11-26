@@ -2,7 +2,7 @@
   "(no flag: \"X\" redefined)": 0,
   "(no flag: extra tokens at end of #include directive)": 0,
   "-Wclass-memaccess": 2,
-  "-Wdeprecated-copy": 351,
+  "-Wdeprecated-copy": 340,
   "-Wimplicit-fallthrough=": 9,
   "-Wmaybe-uninitialized": 7,
   "-Wnonnull": 3,

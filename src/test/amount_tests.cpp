@@ -100,6 +100,28 @@ BOOST_AUTO_TEST_CASE(BinaryOperatorTest)
     BOOST_CHECK(a == b);
 }
 
+BOOST_AUTO_TEST_CASE(FeeRateCopyTest)
+{
+    // A copied or assigned fee rate keeps the rate.
+    const CAmount rates[] = {0, 1, 123, -123, 1000, 12345678};
+    const size_t sizes[] = {0, 1, 121, 999, 1000, 1001, 100000};
+    for (const CAmount nRate : rates) {
+        const CFeeRate rate(nRate);
+        CFeeRate copy(rate);
+        CFeeRate assigned(777);
+        assigned = rate;
+        for (CFeeRate* other : {&copy, &assigned}) {
+            BOOST_CHECK(*other == rate);
+            BOOST_CHECK_EQUAL(other->GetFeePerK(), rate.GetFeePerK());
+            for (const size_t nBytes : sizes)
+                BOOST_CHECK_EQUAL(other->GetFee(nBytes), rate.GetFee(nBytes));
+            *other += CFeeRate(1);
+            BOOST_CHECK(*other != rate);
+        }
+        BOOST_CHECK_EQUAL(rate.GetFeePerK(), nRate);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(ToStringTest)
 {
     CFeeRate feeRate;

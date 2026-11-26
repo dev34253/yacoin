@@ -1063,6 +1063,63 @@ BOOST_AUTO_TEST_CASE(MempoolIsSpentTest)
     BOOST_CHECK(!pool.isSpent(prevout));
 }
 
+static void CheckEntryCopy(const CTxMemPoolEntry& copy, const CTxMemPoolEntry& original)
+{
+    BOOST_CHECK(copy.GetSharedTx() == original.GetSharedTx());
+    BOOST_CHECK_EQUAL(copy.GetFee(), original.GetFee());
+    BOOST_CHECK_EQUAL(copy.GetTxSize(), original.GetTxSize());
+    BOOST_CHECK_EQUAL(copy.DynamicMemoryUsage(), original.DynamicMemoryUsage());
+    BOOST_CHECK_EQUAL(copy.GetTime(), original.GetTime());
+    BOOST_CHECK_EQUAL(copy.GetHeight(), original.GetHeight());
+    BOOST_CHECK_EQUAL(copy.GetSigOpCost(), original.GetSigOpCost());
+    BOOST_CHECK_EQUAL(copy.GetModifiedFee(), original.GetModifiedFee());
+    BOOST_CHECK_EQUAL(copy.GetSpendsCoinbase(), original.GetSpendsCoinbase());
+    BOOST_CHECK_EQUAL(copy.GetLockPoints().height, original.GetLockPoints().height);
+    BOOST_CHECK_EQUAL(copy.GetLockPoints().time, original.GetLockPoints().time);
+    BOOST_CHECK(copy.GetLockPoints().maxInputBlock == original.GetLockPoints().maxInputBlock);
+    BOOST_CHECK_EQUAL(copy.GetCountWithDescendants(), original.GetCountWithDescendants());
+    BOOST_CHECK_EQUAL(copy.GetSizeWithDescendants(), original.GetSizeWithDescendants());
+    BOOST_CHECK_EQUAL(copy.GetModFeesWithDescendants(), original.GetModFeesWithDescendants());
+    BOOST_CHECK_EQUAL(copy.GetCountWithAncestors(), original.GetCountWithAncestors());
+    BOOST_CHECK_EQUAL(copy.GetSizeWithAncestors(), original.GetSizeWithAncestors());
+    BOOST_CHECK_EQUAL(copy.GetModFeesWithAncestors(), original.GetModFeesWithAncestors());
+    BOOST_CHECK_EQUAL(copy.GetSigOpCostWithAncestors(), original.GetSigOpCostWithAncestors());
+    BOOST_CHECK_EQUAL(copy.vTxHashesIdx, original.vTxHashesIdx);
+}
+
+BOOST_AUTO_TEST_CASE(MempoolEntryCopyTest)
+{
+    // A copy, made by construction or by assignment, keeps every field the entry exposes.
+    TestMemPoolEntryHelper entry;
+    entry.Fee(7000).Time(1234567).Height(4321).SigOpsCost(13).SpendsCoinbase(true);
+    CTxMemPoolEntry original = entry.FromTx(MakeTx({}, 5 * COIN));
+    CBlockIndex index;
+    LockPoints lp;
+    lp.height = 222;
+    lp.time = 333333;
+    lp.maxInputBlock = &index;
+    original.UpdateLockPoints(lp);
+    original.UpdateFeeDelta(250);
+    original.UpdateDescendantState(400, 900, 2);
+    original.UpdateAncestorState(600, 1100, 4, 31);
+    original.vTxHashesIdx = 17;
+
+    CTxMemPoolEntry copy(original);
+    CTxMemPoolEntry assigned = TestMemPoolEntryHelper().FromTx(MakeTx({}, 3 * COIN, 2));
+    assigned.vTxHashesIdx = 3;
+    assigned = original;
+    CheckEntryCopy(copy, original);
+    CheckEntryCopy(assigned, original);
+
+    for (CTxMemPoolEntry* other : {&copy, &assigned}) {
+        other->UpdateFeeDelta(500);
+        BOOST_CHECK_EQUAL(other->GetModifiedFee(), 7500);
+        BOOST_CHECK_EQUAL(original.GetModifiedFee(), 7250);
+        BOOST_CHECK_EQUAL(original.GetModFeesWithAncestors(), 8350);
+        BOOST_CHECK_EQUAL(original.GetModFeesWithDescendants(), 8150);
+    }
+}
+
 /* After a reorg: txs no longer final in the next block of the active chain, sequence-locked
  * txs and coinbase spends immature at the given height leave with their descendants */
 BOOST_FIXTURE_TEST_CASE(MempoolRemoveForReorgTest, TestChain100Setup)
