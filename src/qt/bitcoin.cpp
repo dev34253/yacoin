@@ -476,9 +476,6 @@ void BitcoinApplication::initializeResult(bool success)
     {
         // Log this only after AppInitMain finishes, as then logging setup is guaranteed complete
         qWarning() << "Platform customization:" << platformStyle->getName();
-#ifdef ENABLE_WALLET
-        PaymentServer::LoadRootCAs();
-#endif
 
         clientModel = new ClientModel(optionsModel);
         window->setClientModel(clientModel);
