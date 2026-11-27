@@ -7,6 +7,7 @@
   replay.py run [options] YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
   replay.py run --up-to-height H --chain DATADIR [options] YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
   replay.py run --snapshot SNAPSHOT --chain DATADIR [options] YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
+  replay.py run --kill-at-first-invalid-block [options] YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
   replay.py snapshot RUN_OUT SNAPSHOT
   replay.py digest DATADIR OUT
   replay.py compare [--expected-failures FILE] REPORT_A REPORT_B
@@ -20,11 +21,16 @@ run      copies the block files of SOURCE_BLOCKS into OUT/datadir/blocks,
          databases are copied into OUT/datadir and the node gets the
          main-chain blocks above the snapshot with -loadblock instead;
          with --regtest the node runs on regtest, its chain files in
-         OUT/datadir/regtest
+         OUT/datadir/regtest; with --kill-at-first-invalid-block the node
+         is killed (SIGKILL) at its first "InvalidChainFound: invalid
+         block=" line before "Done loading", the report has no digest and
+         no block-file check, OUT/datadir and OUT/import are deleted and
+         the node's log is kept as OUT/debug.log
 snapshot makes a read-only snapshot of the data directory of a complete run
 digest   writes the report of the state of a stopped node's data directory
 compare  prints "identical" (exit status 0) or where two reports differ
-         (exit status 1)
+         (exit status 1); refuses the report of a run killed at the first
+         invalid block
 
 Exit status 2: the command was refused or its input could not be read.
 See README.md in this directory.
@@ -48,7 +54,7 @@ def cmd_run(args, extra):
         rep = runner.run(args.yacoind, args.source, args.out, port=args.port, rpcport=args.rpcport,
                          dbcache=args.dbcache, stop_at_height=args.stop_at_height, extra=extra, log=log,
                          snapshot=args.snapshot, up_to_height=args.up_to_height, chain=args.chain,
-                         regtest=args.regtest)
+                         regtest=args.regtest, kill_at_first_invalid_block=args.kill_at_first_invalid_block)
     except runner.RunRefused as e:
         log(str(e))
         return 2
@@ -100,6 +106,11 @@ def cmd_compare(args, extra):
     except (compare.ExpectedFailuresError, report.ReportError) as e:
         log(str(e))
         return 2
+    for loaded in (a, b):
+        refusal = compare.refusal(loaded)
+        if refusal:
+            log(refusal)
+            return 2
     lines = compare.compare(a, b, expected)
     if not lines:
         print("identical")
@@ -129,6 +140,10 @@ def parser():
                    help="run the node on regtest (-regtest), with its chain files in OUT/datadir/regtest; "
                         "--snapshot then takes a snapshot of a run with --regtest")
     r.add_argument("--stop-at-height", type=int, metavar="N", help="stop the node at height N (-stopatheight)")
+    r.add_argument("--kill-at-first-invalid-block", action="store_true",
+                   help="kill the node (SIGKILL) at its first 'InvalidChainFound: invalid block=' line before "
+                        "'Done loading'; the report then has no digest and no block-file check, and OUT/datadir "
+                        "and OUT/import are deleted")
     r.add_argument("--dbcache", type=int, metavar="MB", help="-dbcache of the node (default: the node's)")
     r.add_argument("--port", type=int, default=runner.DEFAULT_PORT,
                    help="-port of the node (default: %(default)s)")

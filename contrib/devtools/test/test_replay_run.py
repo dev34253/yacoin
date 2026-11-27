@@ -19,6 +19,11 @@ The fake node is a Python script. Its behaviour comes from FAKE_MODE:
   extra      as normal, with a block in its block files that is not in
              its block index
   index-removed  as normal, without its blocks/index
+  reject     logs two pairs of InvalidChainFound lines (invalid blocks
+             at heights 3 and 4), waits FAKE_REJECT_WAIT seconds (default
+             20), then goes on as normal
+  reject-late  as normal, with the two pairs logged after "Done loading"
+  reject-exit  logs the two pairs and exits 1 at once
 
 Modes of a node started on a snapshot's copy (run --snapshot): first it
 records every file of its data directory in <datadir>/files.json (SHA-256,
@@ -31,6 +36,8 @@ link count, inode), then
   import-missing   the same without the line of the last -loadblock
   import-unopened  logs "Could not open blocks file" for the first one
   import-stop      as import, but exits 1 on its own after "Done loading"
+  import-reject    as import, with the two pairs and the wait of reject
+                   after the "Importing blocks file" lines
 
 Without SIGTERM it exits with status 3 after 20 s. It records its
 arguments in <datadir>/args.json, its process id in
@@ -42,6 +49,9 @@ Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
 
 import errno
+import gzip
+import importlib.util
+import io
 import json
 import os
 import shutil
@@ -51,6 +61,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -90,6 +101,16 @@ deadline = time.time() + 20  # a node that never gets SIGTERM ends a test, not h
 def log(line):
     with open(os.path.join(datadir, "debug.log"), "a") as f:
         f.write("2026-11-08 10:00:00 " + line + "\n")
+def reject(wait):
+    for h in (3, 4):
+        log("InvalidChainFound: invalid block=%%s  height=%%d  trust=%%d  moneysupply=0.00  date=2026-11-08 10:00:00"
+            "  moneysupply=0.00" %% (tu.fake_hash(h, 9)[::-1].hex(), h, h))
+        log("InvalidChainFound:  current best=%%s  height=%%d  trust=%%d  moneysupply=0.00  date=2026-11-08 10:00:00"
+            "  moneysupply=0.00" %% (tu.fake_hash(h - 1)[::-1].hex(), h - 1, h - 1))
+    end = min(deadline, time.time() + wait)
+    while time.time() < end:
+        time.sleep(0.05)
+reject_wait = float(os.environ.get("FAKE_REJECT_WAIT", "20"))
 if mode == "error":
     sys.exit(1)
 log("replayvalidation: mode report")
@@ -106,6 +127,8 @@ if mode.startswith("import"):
             log("Warning: Could not open blocks file %%s" %% path)
         elif mode != "import-missing" or i < len(loads) - 1:
             log("Importing blocks file %%s..." %% path)
+    if mode == "import-reject":
+        reject(reject_wait)
     try:
         with open(os.path.join(datadir, "blocks", "blk00000.dat"), "ab") as f:
             f.write(b"written by the node")
@@ -120,6 +143,11 @@ if mode.startswith("import"):
     while not stop and time.time() < deadline:
         time.sleep(0.05)
     sys.exit(0 if stop else 3)
+if mode == "reject":
+    reject(reject_wait)
+if mode == "reject-exit":
+    reject(0)
+    sys.exit(1)
 if mode != "noreindex":
     log("Reindexing finished")
 if mode == "gate":
@@ -144,12 +172,31 @@ if mode == "extra":
         f.write(tu.block_record({"version": 7, "hash_prev": tu.fake_hash(3), "merkle": tu.fake_hash(4, salt=7),
                                  "time": 1700000300, "bits": 0x1e0fffff, "nonce": 0x4c39}))
 log("Done loading")
+if mode == "reject-late":
+    reject(0)
 if mode == "stop":
     sys.exit(1)
 while not stop and time.time() < deadline:
     time.sleep(0.05)
 sys.exit(0 if stop else 3)
 """
+
+
+# Fixed values of report format 1: the keys of a run's report.json.
+RUN_REPORT_KEYS = [
+    "binary", "block_file_check", "block_files", "blocks_above_snapshot", "chain", "command", "cpu_seconds",
+    "datadir", "digest", "digest_error", "done_loading", "end_time", "exit_signal", "exit_status", "failure_blocks",
+    "failures", "failures_off_main_chain", "format", "incomplete_reasons", "kind", "mode", "peak_rss_kib", "phases",
+    "reindex_finished", "sections", "snapshot", "source", "start_time", "status", "stop_at_height", "system_seconds",
+    "tip", "up_to_height", "user_seconds", "wall_seconds"]
+# The block the fake node of mode reject logs first as invalid.
+REJECTED = tu.fake_hash(3, 9)[::-1].hex()
+KILLED_REASON = "the node marked block %s at height 3 invalid; killed (--kill-at-first-invalid-block)" % REJECTED
+
+
+def heights_text(out):
+    with gzip.open(os.path.join(out, "heights.tsv.gz"), "rt") as f:
+        return f.read()
 
 
 class RunTest(unittest.TestCase):
@@ -178,13 +225,13 @@ class RunTest(unittest.TestCase):
             s.close()
         return ports
 
-    def run_cli(self, mode, *args, out="out", extra=()):
+    def run_cli(self, mode, *args, out="out", extra=(), env=None):
         cmd = [sys.executable, "-I", tu.REPLAY_SCRIPT, "run", "--port", str(self.ports[0]),
                "--rpcport", str(self.ports[1])] + list(args) + [self.bin, self.source, os.path.join(self.tmp, out)]
         if extra:
             cmd += ["--"] + list(extra)
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                           env=dict(os.environ, FAKE_MODE=mode), timeout=60)
+                           env=dict(os.environ, FAKE_MODE=mode, **(env or {})), timeout=60)
         return p.returncode, p.stdout, p.stderr
 
     def report(self, out="out"):
@@ -468,6 +515,190 @@ class RunTest(unittest.TestCase):
         self.assertIsNone(rep["block_file_check"])
         self.assertEqual(rep["incomplete_reasons"], ["no digest"])
 
+    def assert_killed(self, rep, out, stdout=None):
+        """rep is the report of a run killed at the first block of mode
+        reject, written in out."""
+        self.assertEqual(rep["status"], "incomplete")
+        self.assertEqual(rep["incomplete_reasons"][0], KILLED_REASON)
+        self.assertIn("node ended by signal SIGKILL", rep["incomplete_reasons"])
+        self.assertEqual((rep["exit_status"], rep["exit_signal"]), (None, "SIGKILL"))
+        self.assertEqual((rep["kill_at_first_invalid_block"], rep["invalid_block"]),
+                         (True, {"height": 3, "hash": REJECTED}))
+        for key in ("digest", "digest_error", "tip", "block_file_check"):
+            self.assertIsNone(rep[key], key)
+        self.assertEqual(rep["sections"], {})
+        self.assertNotIn("digest_seconds", rep["phases"])
+        self.assertEqual((rep["failures"], rep["failure_blocks"], rep["failures_off_main_chain"]), (2, 2, 2))
+        self.assertFalse(os.path.exists(os.path.join(out, "datadir")))
+        self.assertFalse(os.path.exists(os.path.join(out, "import")))
+        with open(os.path.join(out, "debug.log")) as f:
+            self.assertIn("InvalidChainFound: invalid block=%s  height=3" % REJECTED, f.read())
+        self.assertEqual(heights_text(out), report.HEIGHTS_HEADER)
+        with open(os.path.join(out, "failures.tsv")) as f:
+            self.assertEqual(len(f.read().splitlines()), 3)
+        if stdout is not None:
+            self.assertEqual(stdout, "incomplete: tip None None, digest None, 2 failures in 2 blocks\n" + "".join(
+                "incomplete: %s\n" % reason for reason in rep["incomplete_reasons"]))
+
+    def test_kill_at_first_invalid_block(self):
+        code, stdout, stderr = self.run_cli("reject", "--kill-at-first-invalid-block")
+        self.assertEqual(code, 1, stdout + stderr)
+        rep = self.report()
+        out = os.path.join(self.tmp, "out")
+        self.assert_killed(rep, out, stdout)
+        self.assertFalse(rep["done_loading"])
+        self.assertEqual(sorted(os.listdir(out)), ["debug.log", "failures.tsv", "heights.tsv.gz", "node-stderr.log",
+                                                   "node-stdout.log", "report.json"])
+        self.assertIn("killing the node", stderr)
+
+    def test_rejection_lines_without_the_option(self):
+        code, stdout, stderr = self.run_cli("reject", env={"FAKE_REJECT_WAIT": "0"})
+        self.assertEqual(code, 0, stdout + stderr)
+        rep = self.report()
+        self.assertEqual(sorted(rep), RUN_REPORT_KEYS)
+        self.assertEqual((rep["status"], rep["incomplete_reasons"], rep["exit_status"]), ("complete", [], 0))
+        self.assertTrue(rep["done_loading"])
+        self.assertEqual(rep["tip"]["height"], 3)
+        self.assertEqual(rep["block_file_check"], {"blocks": 4, "not_in_index": 0, "stored_above_tip": None})
+        self.assertTrue(os.path.isdir(os.path.join(self.tmp, "out", "datadir", "chainstate")))
+
+    def test_option_without_a_rejection(self):
+        code, stdout, stderr = self.run_cli("normal", "--kill-at-first-invalid-block")
+        self.assertEqual(code, 0, stdout + stderr)
+        rep = self.report()
+        self.assertEqual(sorted(rep), sorted(RUN_REPORT_KEYS + ["invalid_block", "kill_at_first_invalid_block"]))
+        self.assertEqual((rep["kill_at_first_invalid_block"], rep["invalid_block"]), (True, None))
+        self.assertEqual((rep["status"], rep["incomplete_reasons"]), ("complete", []))
+        self.assertTrue(os.path.isdir(os.path.join(self.tmp, "out", "datadir", "chainstate")))
+
+    def test_rejection_after_done_loading(self):
+        code, stdout, stderr = self.run_cli("reject-late", "--kill-at-first-invalid-block")
+        self.assertEqual(code, 0, stdout + stderr)
+        rep = self.report()
+        self.assertEqual((rep["status"], rep["incomplete_reasons"], rep["exit_status"]), ("complete", [], 0))
+        self.assertEqual((rep["kill_at_first_invalid_block"], rep["invalid_block"]), (True, None))
+        self.assertEqual(rep["tip"]["height"], 3)
+
+    def test_kill_below_the_stop_height(self):
+        code, stdout, stderr = self.run_cli("reject", "--kill-at-first-invalid-block", "--stop-at-height", "5")
+        self.assertEqual(code, 1, stdout + stderr)
+        rep = self.report()
+        self.assert_killed(rep, os.path.join(self.tmp, "out"))
+        self.assertEqual(rep["stop_at_height"], 5)
+        self.assertIn("-stopatheight=5", rep["command"])
+
+    def test_node_that_exits_after_the_rejection(self):
+        code, stdout, stderr = self.run_cli("reject-exit", "--kill-at-first-invalid-block")
+        self.assertEqual(code, 1, stdout + stderr)
+        rep = self.report()
+        self.assertEqual(rep["incomplete_reasons"][0],
+                         "the node marked block %s at height 3 invalid (--kill-at-first-invalid-block)" % REJECTED)
+        self.assertEqual((rep["exit_status"], rep["exit_signal"]), (1, None))
+        self.assertEqual(rep["invalid_block"], {"height": 3, "hash": REJECTED})
+        self.assertIsNone(rep["digest"])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir")))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "out", "debug.log")))
+
+    def test_stop_signal_after_the_kill(self):
+        # The script gets SIGTERM right after it killed the node: it removes
+        # the node's files as after a kill and writes no report.
+        real_kill = os.kill
+
+        def kill(pid, sig):
+            real_kill(pid, sig)
+            if sig == signal.SIGKILL:
+                real_kill(os.getpid(), signal.SIGTERM)
+
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.dict(os.environ, FAKE_MODE="reject"), mock.patch.object(runner.os, "kill", kill):
+            with self.assertRaises(runner.Interrupted) as cm:
+                runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None,
+                           kill_at_first_invalid_block=True)
+        self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        self.assertEqual(sorted(os.listdir(out)), ["debug.log", "node-stderr.log", "node-stdout.log"])
+        self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+
+    def test_nothing_sent_after_the_kill(self):
+        # The kill reaches the node 2 s late, after its "Done loading": the
+        # script sends no SIGTERM meanwhile.
+        real_kill = os.kill
+        sent = []
+
+        def kill(pid, sig):
+            sent.append(sig)
+            if sig == signal.SIGKILL:
+                threading.Timer(2, real_kill, (pid, sig)).start()
+            else:
+                real_kill(pid, sig)
+
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.dict(os.environ, FAKE_MODE="reject", FAKE_REJECT_WAIT="0"), \
+                mock.patch.object(runner.os, "kill", kill):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None,
+                             kill_at_first_invalid_block=True)
+        self.assertEqual(sent, [signal.SIGKILL])
+        self.assertTrue(rep["done_loading"])
+        self.assertEqual(rep["incomplete_reasons"][0], KILLED_REASON)
+
+    def test_stop_signal_during_the_deletion(self):
+        # SIGTERM during the deletion of OUT/datadir is handled when the
+        # deletion is done.
+        out = os.path.join(self.tmp, "out")
+        datadir = os.path.join(out, "datadir")
+        events = []
+        old = signal.signal(signal.SIGTERM, lambda *args: events.append(("signal", os.path.exists(datadir))))
+        self.addCleanup(signal.signal, signal.SIGTERM, old)
+        real_rmtree = shutil.rmtree
+
+        def rmtree(path, *args, **kwargs):
+            os.kill(os.getpid(), signal.SIGTERM)
+            events.append(("rmtree", path))
+            real_rmtree(path, *args, **kwargs)
+
+        with mock.patch.dict(os.environ, FAKE_MODE="reject"), mock.patch.object(runner.shutil, "rmtree", rmtree):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None,
+                             kill_at_first_invalid_block=True)
+        self.assertEqual(events, [("rmtree", datadir), ("signal", False)])
+        self.assertEqual(rep["incomplete_reasons"][0], KILLED_REASON)
+
+    def test_stop_signal_after_the_node_ended(self):
+        # SIGTERM after the killed node was reaped, while the script reads
+        # the rest of its log: handled once OUT/datadir is deleted.
+        out = os.path.join(self.tmp, "out")
+        datadir = os.path.join(out, "datadir")
+        events = []
+        old = signal.signal(signal.SIGTERM, lambda *args: events.append(("signal", os.path.exists(datadir))))
+        self.addCleanup(signal.signal, signal.SIGTERM, old)
+        real_finish = logscan.LogFollower.finish
+
+        def finish(follower):
+            os.kill(os.getpid(), signal.SIGTERM)
+            events.append(("finish", os.path.exists(datadir)))
+            real_finish(follower)
+
+        with mock.patch.dict(os.environ, FAKE_MODE="reject"), mock.patch.object(logscan.LogFollower, "finish", finish):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None,
+                             kill_at_first_invalid_block=True)
+        self.assertEqual(events, [("finish", True), ("signal", False)])
+        self.assertEqual(rep["incomplete_reasons"][0], KILLED_REASON)
+        # No stop signal is left blocked.
+        self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, ()) & set(runner.STOP_SIGNALS), set())
+
+    def test_option_reaches_the_run(self):
+        spec = importlib.util.spec_from_file_location("replay_script", tu.REPLAY_SCRIPT)
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        rep = {"status": "complete", "tip": None, "digest": None, "failures": 0, "failure_blocks": 0,
+               "incomplete_reasons": []}
+        for args, value in (([], False), (["--kill-at-first-invalid-block"], True)):
+            with mock.patch.object(script.runner, "run", return_value=rep) as run, \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                self.assertEqual(script.main(["run"] + args + [self.bin, self.source, "out"]), 0)
+            self.assertIs(run.call_args[1]["kill_at_first_invalid_block"], value)
+        p = subprocess.run([sys.executable, "-I", tu.REPLAY_SCRIPT, "run", "--help"], stdout=subprocess.PIPE,
+                           universal_newlines=True)
+        self.assertIn("--kill-at-first-invalid-block", p.stdout)
+
     def test_output_inside_source_is_refused(self):
         with self.assertRaisesRegex(runner.RunRefused, "inside the source directory"):
             runner.check(self.bin, self.source, os.path.join(self.source, "sub", "out"), *self.ports)
@@ -564,11 +795,11 @@ class UpToHeightTest(unittest.TestCase):
         self.source = os.path.join(self.chain, "blocks")
         self.ports = RunTest.free_ports(self)
 
-    def run_cli(self, mode, *args, out="out"):
+    def run_cli(self, mode, *args, out="out", env=None):
         cmd = [sys.executable, "-I", tu.REPLAY_SCRIPT, "run", "--port", str(self.ports[0]),
                "--rpcport", str(self.ports[1])] + list(args) + [self.bin, self.source, os.path.join(self.tmp, out)]
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                           env=dict(os.environ, FAKE_MODE=mode), timeout=60)
+                           env=dict(os.environ, FAKE_MODE=mode, **(env or {})), timeout=60)
         return p.returncode, p.stdout, p.stderr
 
     def report(self, out="out"):
@@ -609,6 +840,14 @@ class UpToHeightTest(unittest.TestCase):
         with open(os.path.join(copied, "blk00000.dat"), "rb") as f:
             self.assertEqual(f.read(), b"".join(self.records[h] for h in range(4)))
         self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
+
+    def test_kill_at_first_invalid_block(self):
+        code, stdout, stderr = self.run_cli("reject", "--kill-at-first-invalid-block", "--up-to-height", "3",
+                                            "--chain", self.chain)
+        self.assertEqual(code, 1, stdout + stderr)
+        rep = self.report()
+        RunTest.assert_killed(self, rep, os.path.join(self.tmp, "out"))
+        self.assertEqual(rep["up_to_height"], 3)
 
     def test_one_read_of_each_block_index(self):
         out = os.path.join(self.tmp, "out")
@@ -697,7 +936,7 @@ class SnapshotRunTest(unittest.TestCase):
         tu.make_writable(self.tmp)
         shutil.rmtree(self.tmp)
 
-    def run_cli(self, mode, *args, out="out", extra=(), snap=None, chain=None):
+    def run_cli(self, mode, *args, out="out", extra=(), snap=None, chain=None, env=None):
         cmd = [sys.executable, "-I", tu.REPLAY_SCRIPT, "run", "--snapshot", snap or self.snap,
                "--port", str(self.ports[0]), "--rpcport", str(self.ports[1])] + list(args)
         if chain != "":
@@ -706,7 +945,7 @@ class SnapshotRunTest(unittest.TestCase):
         if extra:
             cmd += ["--"] + list(extra)
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-                           env=dict(os.environ, FAKE_MODE=mode), timeout=60)
+                           env=dict(os.environ, FAKE_MODE=mode, **(env or {})), timeout=60)
         return p.returncode, p.stdout, p.stderr
 
     def report(self, out="out"):
@@ -862,6 +1101,17 @@ class SnapshotRunTest(unittest.TestCase):
                                                      "the first at height 5"])
         self.assertIsNone(rep["exit_status"])
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir", "args.json")))
+        self.assertEqual(tu.tree_state(self.snap), self.snap_state)
+
+    def test_kill_at_first_invalid_block(self):
+        code, stdout, stderr = self.run_cli("import-reject", "--kill-at-first-invalid-block")
+        self.assertEqual(code, 1, stdout + stderr)
+        rep = self.report()
+        out = os.path.join(self.tmp, "out")
+        RunTest.assert_killed(self, rep, out)
+        self.assertEqual(rep["mode"], "snapshot")
+        self.assertEqual(sorted(os.listdir(out)), ["debug.log", "failures.tsv", "heights.tsv.gz", "node-stderr.log",
+                                                   "node-stdout.log", "report.json"])
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
 
     def test_one_read_of_each_block_index(self):

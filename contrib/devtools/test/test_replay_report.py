@@ -36,6 +36,15 @@ LOG = """\
 """.format(a=BLOCK_A, b=BLOCK_B, side=BLOCK_SIDE, tx=TX)
 
 
+def invalid_pair(block, height, best, best_height, time="2026-11-08 10:00:09"):
+    """The two InvalidChainFound lines of the node, with generic trust, money
+    supply and date."""
+    return ("{t} InvalidChainFound: invalid block={b}  height={h}  trust=4  moneysupply=0.00  date={t}"
+            "  moneysupply=0.00\n"
+            "{t} InvalidChainFound:  current best={c}  height={n}  trust=3  moneysupply=0.00  date={t}"
+            "  moneysupply=0.00\n").format(t=time, b=block, h=height, c=best, n=best_height)
+
+
 class LogScanTest(unittest.TestCase):
     def test_failures_and_counts(self):
         s = logscan.LogScanner()
@@ -106,6 +115,45 @@ class LogScanTest(unittest.TestCase):
         self.assertEqual(len(s.failures), 4)
         s.finish()
         self.assertEqual(len(s.failures), 5)
+
+    def test_first_invalid_block(self):
+        s = logscan.LogScanner()
+        s.feed(LOG.split("2026-11-08 10:00:07")[0])
+        self.assertIsNone(s.invalid_block)
+        s.feed(invalid_pair(BLOCK_B, 18, BLOCK_A, 17) + invalid_pair(BLOCK_SIDE, 19, BLOCK_A, 17))
+        self.assertEqual(s.invalid_block, logscan.InvalidBlock(18, BLOCK_B))
+        s.feed("2026-11-08 10:00:10 Reindexing finished\n2026-11-08 10:00:11 Done loading\n")
+        self.assertEqual(s.invalid_block, (18, BLOCK_B))
+
+    def test_current_best_line_is_never_taken(self):
+        s = logscan.LogScanner()
+        s.feed(invalid_pair(BLOCK_B, 18, BLOCK_A, 17).splitlines(True)[1])
+        s.finish()
+        self.assertIsNone(s.invalid_block)
+
+    def test_malformed_invalid_block_lines_are_ignored(self):
+        bad = [BLOCK_B[:-1], BLOCK_B.upper(), BLOCK_B + "0"]
+        lines = "".join(invalid_pair(b, 18, BLOCK_A, 17) for b in bad)
+        for height in ("x18", "-18", "18x", ""):
+            lines += "2026-11-08 10:00:09 InvalidChainFound: invalid block=%s  height=%s  trust=4\n" % (BLOCK_B, height)
+        s = logscan.LogScanner()
+        s.feed(lines)
+        self.assertIsNone(s.invalid_block)
+        # The line at the end of the log, with a carriage return, split
+        # across chunks.
+        last = invalid_pair(BLOCK_SIDE, 19, BLOCK_A, 17).splitlines()[0] + "\r"
+        s.feed(last[:40])
+        s.feed(last[40:])
+        self.assertIsNone(s.invalid_block)
+        s.finish()
+        self.assertEqual(s.invalid_block, (19, BLOCK_SIDE))
+
+    def test_invalid_block_after_done_loading_is_ignored(self):
+        s = logscan.LogScanner()
+        s.feed(LOG + invalid_pair(BLOCK_B, 18, BLOCK_A, 17))
+        s.finish()
+        self.assertTrue(s.done_loading)
+        self.assertIsNone(s.invalid_block)
 
     def test_follower_reads_a_growing_file(self):
         tmp = tempfile.mkdtemp(prefix="replay-log-test.")

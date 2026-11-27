@@ -247,6 +247,22 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(self.compare(a, d), ["status: A complete, B incomplete"])
         self.assertEqual(self.cli(a, d), (1, "status: A complete, B incomplete\n", ""))
 
+    def test_report_of_a_run_killed_at_an_invalid_block_is_refused(self):
+        a = self.write(make_rows(10))
+        killed = os.path.join(self.tmp, "killed")
+        os.makedirs(killed)
+        report.write(killed, {"kind": "run", "status": "incomplete", "tip": None, "sections": {}, "digest": None,
+                              "kill_at_first_invalid_block": True, "invalid_block": {"height": 7, "hash": h(7)}},
+                     [], [])
+        for args in ((a, killed), (killed, a), (killed, killed)):
+            code, out, err = self.cli(*args)
+            self.assertEqual((code, out), (2, ""))
+            self.assertIn("%s: killed at the first invalid block; no digest" % killed, err)
+            self.assertNotIn("identical", err)
+        # A run with the option and no invalid block compares as any run.
+        b = self.write(make_rows(10), fields={"kill_at_first_invalid_block": True, "invalid_block": None})
+        self.assertEqual(self.cli(a, b), (0, "identical\n", ""))
+
     def test_missing_report_is_an_error(self):
         a = self.write(make_rows(10))
         code, out, err = self.cli(a, os.path.join(self.tmp, "nothing"))

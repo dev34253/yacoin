@@ -25,8 +25,13 @@ with a full run, also when the tip is stored before its parent in the
 block files; stopped at a height above H it ends there. The snapshot's
 files are unchanged by the runs. A full run on block files with an added
 block that is not valid is incomplete with that block not in the block
-index. run --snapshot refuses a directory without snapshot.json and a run
-without --chain.
+index; the same run with --kill-at-first-invalid-block reports the same
+apart from the option's fields. A full run with
+--kill-at-first-invalid-block on block files with an added block the node
+marks invalid kills the node, reports that block's height and hash
+without a digest, deletes its data directory, and compare refuses its
+report. run --snapshot refuses a directory without snapshot.json and a
+run without --chain.
 """
 
 import hashlib
@@ -35,11 +40,15 @@ import os
 import shutil
 import socket
 import stat
+import struct
 import subprocess
 import sys
 from decimal import Decimal
 
-from test_framework.messages import COIN
+from test_framework.blocktools import create_block_yac, get_template, solve_block
+from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut
+from test_framework.mininode import P2PInterface
+from test_framework.script import CScript, OP_TRUE
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import NFACTOR_AT_HARDFORK, assert_equal, assert_greater_than, p2p_port, rpc_port
 
@@ -296,6 +305,17 @@ class ToolReplayTest(BitcoinTestFramework):
         new_tip_hash = node.getbestblockhash()
         assert_greater_than(new_tip_height, tip_height + 10)
         raw = [bytes.fromhex(node.getblock(node.getblockhash(h), False)) for h in range(new_tip_height + 1)]
+        # A block on top of the tip whose transaction spends an output that
+        # does not exist; not given to the node.
+        node.add_p2p_connection(P2PInterface())
+        tmpl = get_template(node)
+        spend = CTransaction()
+        spend.nTime = tmpl["curtime"]
+        spend.vin = [CTxIn(COutPoint(0x1234, 0))]
+        spend.vout = [CTxOut(COIN, CScript([OP_TRUE]))]
+        bad_block = solve_block(node, create_block_yac(node, [spend], tmpl=tmpl))
+        bad_block.rehash()
+        node.disconnect_p2ps()
         self.stop_node(0)
         self.replay("digest", node.chain_path(), self.out("node2"))
         node2_report = self.report_mod.load(self.out("node2"))
@@ -429,6 +449,44 @@ class ToolReplayTest(BitcoinTestFramework):
         assert_equal(rep6["status"], "incomplete")
         assert_equal(rep6["block_file_check"]["not_in_index"], 1)
         assert "1 blocks of the block files are not in the block index" in rep6["incomplete_reasons"], rep6
+
+        self.log.info("The same run with --kill-at-first-invalid-block")
+        run6k = self.out("run6k")
+        self.replay("run", "--kill-at-first-invalid-block", "--port", str(port), "--rpcport", str(rpcport),
+                    self.binary, bad_blocks, run6k, "--", *node_args, expect=1)
+        rep6k = self.report_mod.load(run6k).report
+        assert_equal((rep6k["kill_at_first_invalid_block"], rep6k["invalid_block"]), (True, None))
+        for key in ("status", "incomplete_reasons", "exit_status", "exit_signal", "tip", "digest", "sections",
+                    "block_file_check", "failures", "failure_blocks"):
+            assert_equal((key, rep6k[key]), (key, rep6[key]))
+
+        self.log.info("A full run with --kill-at-first-invalid-block on block files with an added block the node "
+                      "marks invalid")
+        invalid_blocks = self.out("blocks-invalid")
+        shutil.copytree(blocks, invalid_blocks)
+        with open(os.path.join(invalid_blocks, "blk00000.dat"), "rb") as f:
+            marker = f.read(4)
+        block_data = bad_block.serialize()
+        with open(os.path.join(invalid_blocks, names[-1]), "ab") as f:
+            f.write(marker + struct.pack("<I", len(block_data)) + block_data)
+        run9 = self.out("run9")
+        out, _ = self.replay("run", "--kill-at-first-invalid-block", "--port", str(port), "--rpcport", str(rpcport),
+                             self.binary, invalid_blocks, run9, "--", *node_args, expect=1)
+        rep9 = self.report_mod.load(run9).report
+        invalid = {"height": new_tip_height + 1, "hash": bad_block.hash}
+        assert_equal(rep9["status"], "incomplete")
+        assert_equal(rep9["invalid_block"], invalid)
+        assert_equal(rep9["incomplete_reasons"][0],
+                     "the node marked block %s at height %d invalid; killed (--kill-at-first-invalid-block)"
+                     % (invalid["hash"], invalid["height"]))
+        assert_equal(rep9["exit_signal"], "SIGKILL")
+        assert_equal((rep9["digest"], rep9["tip"], rep9["block_file_check"]), (None, None, None))
+        assert not os.path.exists(os.path.join(run9, "datadir"))
+        assert os.path.isfile(os.path.join(run9, "debug.log"))
+        assert out.startswith("incomplete: tip None None, digest None"), out
+        out, err = self.replay("compare", self.out("node2"), run9, expect=2)
+        assert_equal(out, "")
+        assert "killed at the first invalid block; no digest" in err, err
 
         self.log.info("run --snapshot refuses a directory without snapshot.json and a run without --chain")
         _, err = self.replay("run", "--snapshot", self.out("node2"), "--chain", node.chain_path(), "--port", str(port),
