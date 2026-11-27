@@ -61,6 +61,9 @@ def cmd_run(args, extra):
     except runner.Interrupted as e:
         log(str(e))
         return 128 + e.signum
+    except KeyboardInterrupt:
+        log("interrupted by SIGINT")
+        return 130
     above = ""
     if rep.get("snapshot") and rep.get("blocks_above_snapshot") is not None:
         above = ", %d blocks above the snapshot at height %d" % (rep["blocks_above_snapshot"], rep["snapshot"]["height"])

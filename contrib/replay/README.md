@@ -40,10 +40,10 @@ Without `--snapshot` (a full replay):
    Without `NODE_ARGS`, the replay node makes no network connections and uses its own ports (defaults 17788 and 17789;
    `--port`, `--rpcport`). Every other setting is the node's default; `NODE_ARGS` after `--` are passed on unchanged,
    for example `-- -par=2`. Options in `NODE_ARGS` can make the node connect to other nodes or read and write files
-   outside `OUT` (for example `-addnode`, `-seednode`, `-pid`). The options the script sets itself are refused after
-   `--` (also in their `-no` form): `-datadir`, `-conf`, `-daemon`, `-reindex`, `-replayvalidation`, `-connect`,
-   `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`,
-   `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
+   outside `OUT` (for example `-addnode`, `-pid`). The options the script sets itself are refused after
+   `--` (also in their `-no` form and with more than one leading dash): `-datadir`, `-conf`, `-daemon`, `-reindex`,
+   `-replayvalidation`, `-connect`, `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`,
+   `-disablewallet`, `-printtoconsole`, `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
    exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1. With
    `--kill-at-first-invalid-block` the script kills the node at the first block it marks invalid (see
@@ -67,10 +67,14 @@ with the block index by its header fields (version, previous block, merkle root,
 incomplete run are "N blocks of the block files are not in the block index", "stored blocks above the tip, up to
 height X" and, when the block index holds stored blocks, "no block records found in the block files".
 
-If the script gets SIGINT, SIGTERM or SIGHUP while the node runs, it sends the node SIGTERM, waits for it to exit and
-exits with status 128 plus the signal number, without a report. A signal the script was started with ignored (for
-example SIGHUP under `nohup`) stays ignored. If the script is killed with SIGKILL, the node goes on running; stop it
-by hand, for example with `pkill -TERM -f -- "-datadir=OUT/datadir"`.
+If the script gets SIGINT, SIGTERM or SIGHUP while the node runs (or while it starts the node, once the node has
+started), it sends the node SIGTERM, waits for it to exit and exits with status 128 plus the signal number, without a
+report; further such signals are ignored meanwhile. At any other time, for example after the node has exited or when
+the node cannot be started, these signals end the script: SIGINT with exit status 130 (log line "interrupted by
+SIGINT"), SIGTERM and SIGHUP by their default action; report files the script has not finished writing by then are
+missing or incomplete. A signal the script was started with ignored (for example SIGHUP under `nohup`) stays ignored.
+If the script is killed with SIGKILL, the node goes on running; stop it by hand, for example with
+`pkill -TERM -f -- "-datadir=OUT/datadir"`.
 
 The node's output is in `OUT/node-stdout.log` and `OUT/node-stderr.log`, its log in `OUT/datadir/debug.log` (after a
 kill at the first invalid block, in `OUT/debug.log`).
@@ -96,8 +100,8 @@ reason "the node marked block HASH at height N invalid; killed (--kill-at-first-
 when the node ended before the kill), followed by the other reasons of such a run, for example "node ended by signal
 SIGKILL" and "no digest". The report has
 `kill_at_first_invalid_block` and `invalid_block` (see [Report files](#report-files)); `compare` refuses it. If the
-script gets SIGINT, SIGTERM or SIGHUP after the kill, it finishes moving `debug.log` and deleting these directories
-before it exits, without a report.
+script gets SIGINT, SIGTERM or SIGHUP after the kill, it sends the node nothing more, and it finishes moving `debug.log`
+and deleting these directories before it exits, without a report.
 
 The option is taken with `--up-to-height`, `--snapshot` and `--stop-at-height`. A run with the option in which the node
 marks no block invalid before `Done loading` is reported as without it, apart from the two fields.
@@ -117,17 +121,22 @@ main chain are not written. When the block of a height is not in the source bloc
 with different content, the run ends before the node starts: the report is incomplete and names the height.
 `--up-to-height` is not taken with `--stop-at-height` or `--snapshot`.
 
+#### Snapshot run
+
 With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
 
 1. Checks as above, and that `OUT` is not inside `SNAPSHOT`, that `SNAPSHOT` has a `snapshot.json` of a known format
    and was made from a run on the same chain (with `--regtest` from a run with `--regtest`, without it from one
-   without),
-   that the chain of `DATADIR` holds the snapshot's block at its height H and goes above it, and that
-   `--stop-at-height N`, if given, is above H and not above the chain's tip.
+   without), that `SNAPSHOT/failures.tsv` can be read, has the number of failures of `snapshot.json` and matches its
+   entry in the snapshot's manifest, that the chain of `DATADIR` holds the snapshot's block at its height H and goes
+   above it, and that `--stop-at-height N`, if given, is above H and not above the chain's tip. The manifest lists
+   `failures.tsv`; a snapshot run refuses (exit status 2) a snapshot whose `failures.tsv` differs from that entry, with
+   the same message as for a database file. A snapshot whose manifest has no `failures.tsv` entry is accepted; its
+   `failures.tsv` is checked by its row count only.
 2. Writes the main-chain blocks from H + 1 to the chain's tip into `OUT/import/` (see [The chain](#the-chain)).
-3. Copies the files of the snapshot into `OUT/datadir` (with `--regtest`, `OUT/datadir/regtest`; copies, never links),
-   checking each against the snapshot's manifest. A file that is missing or differs ends the run before the node starts: the report is incomplete and
-   names the file.
+3. Copies the database files of the snapshot's manifest into `OUT/datadir` (with `--regtest`, `OUT/datadir/regtest`;
+   copies, never links), checking each against the manifest. A file that is missing or differs ends the run before
+   the node starts: the report is incomplete and names the file.
 4. Starts
 
    ```
@@ -139,8 +148,9 @@ With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
    ```
 
    The node opens the copied block index, chainstate and token database and imports the blocks of the block files.
-   The block files are given to the node twice: a block stored before its parent is imported in the
-   second pass. Blocks still missing after that show in the block-file check.
+   The block files are given to the node twice. The script writes them in height order, each block after its parent
+   (see [The chain](#the-chain)), so the node imports the blocks in the first pass, and the second pass reads the same
+   files again. Blocks still missing after that show in the block-file check.
 5. Stops the node as above, computes the digest, makes the block-file check on `OUT/import/` and writes the same
    report files; after a kill at the first invalid block, it takes neither and deletes `OUT/datadir` and `OUT/import`.
 
@@ -172,7 +182,8 @@ Makes the snapshot `SNAPSHOT` of the data directory of the full run in `RUN_OUT`
    `command`, `binary` (path and SHA-256), `source`, `up_to_height` and `chain`, its `failures`, `failure_blocks` and
    `failures_off_main_chain`, the run directory (`run`), the time it was made (`made`), the `manifest`, and for a run
    with `--regtest` `"regtest": true`; copies the
-   run's `report.json` and `failures.tsv` beside it; and makes every file and directory of `SNAPSHOT` read-only.
+   run's `report.json` and `failures.tsv` beside it, `failures.tsv` with its size and SHA-256 in the manifest too; and
+   makes every file and directory of `SNAPSHOT` read-only.
 
 ### `digest`
 
@@ -234,7 +245,7 @@ line is an error (exit status 2).
 | `blocks_above_snapshot` | snapshot run: the tip's height minus the snapshot's height H (null for a full run and without a digest); also in the summary line `run` prints |
 | `status`, `incomplete_reasons` | `complete` or `incomplete`, and why |
 | `start_time`, `end_time` | UTC |
-| `datadir` | the data directory the digest was taken from; for a run with `--regtest`, the node's data directory, whose `regtest` subdirectory the digest was taken from |
+| `datadir` | the data directory the digest was taken from; for a run with `--regtest`, the node's data directory, whose `regtest` subdirectory the digest was taken from; null for a run that ended before it created the data directory |
 | `regtest` | run with `--regtest`: `true`; absent otherwise |
 | `tip` | `height` and `hash` of the chainstate's best block |
 | `sections`, `digest`, `digest_error` | `count` and `sha256` per section; the overall digest; the error if there is no digest |
@@ -309,8 +320,9 @@ coins or undo data, and before a release, run a full replay without `--up-to-hei
 as they are. `snapshot` also takes a full run without `--up-to-height`, at its tip.
 
 The `snapshot` command checks the copy against the run's report (tip and digest) and its block files against its
-block index; every snapshot run checks each file against the manifest while copying it. A snapshot is stored
-read-only and never written to: each run works on its own copy. Deleting a snapshot needs write permission first:
+block index; every snapshot run checks the snapshot's `failures.tsv` against the manifest when the manifest lists it,
+before it creates anything, and each database file while copying it. A snapshot is stored read-only and never written
+to: each run works on its own copy. Deleting a snapshot needs write permission first:
 `chmod -R u+w /data/snapshot && rm -rf /data/snapshot`.
 
 Comparing two builds from the same snapshot, on the same block files:

@@ -9,6 +9,7 @@
 import collections
 import datetime
 import gzip
+import io
 import json
 import os
 
@@ -79,11 +80,12 @@ def load(path):
     return Loaded(out, rep, rows, failures)
 
 
-def read_failures(path):
-    """The failures (logscan.Failure) of a failures.tsv file."""
+def read_failures(path, data=None):
+    """The failures (logscan.Failure) of a failures.tsv file; with data, of
+    these bytes, read from path."""
     failures = []
     try:
-        with open(path) as f:
+        with (open(path) if data is None else io.TextIOWrapper(io.BytesIO(data))) as f:
             if f.readline() != FAILURES_HEADER:
                 raise ReportError("%s: unknown header" % path)
             for line in f:

@@ -23,7 +23,8 @@ node's block files gets the main-chain blocks above H in height order,
 reaches the node's tip and digest and compares identical with the node and
 with a full run, also when the tip is stored before its parent in the
 block files; stopped at a height above H it ends there. The snapshot's
-files are unchanged by the runs. A full run on block files with an added
+manifest lists its database files and failures.tsv, and its files are
+unchanged by the runs. A full run on block files with an added
 block that is not valid is incomplete with that block not in the block
 index; the same run with --kill-at-first-invalid-block reports the same
 apart from the option's fields. A full run with
@@ -109,6 +110,9 @@ class ToolReplayTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 1
         self.block_fork_1_0 = 1
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def setup_replay(self):
         src = self.config["environment"]["SRCDIR"]
@@ -348,7 +352,11 @@ class ToolReplayTest(BitcoinTestFramework):
             meta = json.load(f)
         assert_equal((meta["height"], meta["digest"], meta["up_to_height"]), (height, rep_h["digest"], height))
         assert_equal((meta["failures"], meta["failure_blocks"], meta["failures_off_main_chain"]), (0, 0, 0))
-        assert_equal(sorted({p.split(os.sep)[0] for p in meta["manifest"]}), ["blocks", "chainstate", "tokens"])
+        assert_equal(sorted({p.split(os.sep)[0] for p in meta["manifest"]}),
+                     ["blocks", "chainstate", "failures.tsv", "tokens"])
+        with open(os.path.join(snap, "failures.tsv"), "rb") as f:
+            data = f.read()
+        assert_equal(meta["manifest"]["failures.tsv"], {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
         snap_state = tree_state(snap)
         for path, entry in snap_state.items():
             assert_equal((path, entry[0] & 0o222), (path, 0))

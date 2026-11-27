@@ -457,27 +457,225 @@ class RunTest(unittest.TestCase):
         self.assertEqual(self.report()["status"], "complete")
         self.assertEqual(self.report()["exit_status"], 0)
 
+    def assert_no_stop_signal_blocked(self):
+        self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, ()) & set(runner.STOP_SIGNALS), set())
+
+    def restore_default_handlers(self):
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        signal.signal(signal.SIGHUP, signal.SIG_DFL)
+
+    def recording_handlers(self):
+        """Installs a handler for each stop signal that records the signal
+        and whether every stop signal has that handler; returns the list of
+        records and the handler."""
+        events = []
+
+        def handler(signum, frame):
+            events.append((signum, all(signal.getsignal(s) is handler for s in runner.STOP_SIGNALS)))
+
+        for sig in runner.STOP_SIGNALS:
+            signal.signal(sig, handler)
+        self.addCleanup(self.restore_default_handlers)
+        return events, handler
+
+    def reap_node(self, datadir, pid=None):
+        """Whether the run reaped the fake node of datadir, or the node pid
+        (True when it started none); reaps a node the run left behind."""
+        pid_path = os.path.join(datadir, "pid")
+        if pid is None:
+            if not os.path.exists(pid_path):
+                return True
+            with open(pid_path) as f:
+                pid = int(f.read())
+        try:
+            done, _ = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            return True
+        if not done:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        return False
+
     def test_stop_signal_after_the_reap(self):
         # A stop signal that arrives right after the node was reaped: the
-        # script neither signals nor waits for the node again.
+        # script neither signals nor waits for the node again, and the
+        # caller's handler gets the signal once the handlers are restored.
+        events, _ = self.recording_handlers()
         real_wait4 = os.wait4
+        real_kill = os.kill
         calls = []
+        sent = []
 
         def wait4(pid, options):
             calls.append(options)
             result = real_wait4(pid, options)
             if result[0]:
-                os.kill(os.getpid(), signal.SIGTERM)
+                real_kill(os.getpid(), signal.SIGTERM)
             return result
 
+        def kill(pid, sig):
+            sent.append(sig)
+            real_kill(pid, sig)
+
         out = os.path.join(self.tmp, "out")
-        with mock.patch.dict(os.environ, FAKE_MODE="normal"), mock.patch.object(runner.os, "wait4", wait4):
-            with self.assertRaises(runner.Interrupted) as cm:
-                runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
-        self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        with mock.patch.dict(os.environ, FAKE_MODE="normal"), mock.patch.object(runner.os, "wait4", wait4), \
+                mock.patch.object(runner.os, "kill", kill):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
         self.assertEqual(set(calls), {os.WNOHANG})
-        self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
-        self.assertTrue(os.path.exists(os.path.join(out, "datadir", "chainstate")))
+        self.assertEqual(sent, [signal.SIGTERM])
+        self.assertEqual(events, [(signal.SIGTERM, True)])
+        self.assertEqual(rep["status"], "complete")
+        self.assertTrue(os.path.exists(os.path.join(out, "report.json")))
+        self.assert_no_stop_signal_blocked()
+
+    def test_second_stop_signal_while_stopping_the_node(self):
+        # The first SIGTERM arrives while the script waits for the node; a
+        # second stop signal arrives as the script starts to stop the node
+        # (before it ignores the stop signals) or as it sends the node
+        # SIGTERM. The node is stopped and reaped, and the run raises
+        # Interrupted for the first signal.
+        for point in ("ignore", "kill"):
+            for second in runner.STOP_SIGNALS:
+                with self.subTest(point=point, second=second.name):
+                    out = os.path.join(self.tmp, "out-%s-%s" % (point, second.name))
+                    self.second_stop_signal(out, point, second)
+
+    def second_stop_signal(self, out, point, second):
+        datadir = os.path.join(out, "datadir")
+        log_path = os.path.join(datadir, "debug.log")
+        real_signal, real_kill, real_sleep = signal.signal, os.kill, time.sleep
+        state = {"first": False, "second": False}
+
+        def sleep(seconds):
+            if not state["first"] and os.path.exists(log_path):
+                with open(log_path) as f:
+                    if "Reindexing finished" in f.read():
+                        state["first"] = True
+                        real_kill(os.getpid(), signal.SIGTERM)
+            real_sleep(seconds)
+
+        def send_second():
+            if state["first"] and not state["second"]:
+                state["second"] = True
+                real_kill(os.getpid(), second)
+
+        def fake_signal(sig, handler):
+            if point == "ignore" and handler is signal.SIG_IGN:
+                send_second()
+            return real_signal(sig, handler)
+
+        def kill(pid, sig):
+            if point == "kill" and pid != os.getpid() and sig == signal.SIGTERM:
+                send_second()
+            real_kill(pid, sig)
+
+        cm = None
+        try:
+            with mock.patch.dict(os.environ, FAKE_MODE="slow"), \
+                    mock.patch.object(runner.signal, "signal", fake_signal), \
+                    mock.patch.object(runner.os, "kill", kill), mock.patch.object(runner.time, "sleep", sleep):
+                with self.assertRaises(runner.Interrupted) as cm:
+                    runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+        finally:
+            reaped = self.reap_node(datadir)
+            handlers = [signal.getsignal(s) for s in runner.STOP_SIGNALS]
+            self.restore_default_handlers()
+        self.assertTrue(state["second"])
+        self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        self.assertTrue(os.path.exists(os.path.join(datadir, "sigterm")))
+        self.assertTrue(os.path.exists(os.path.join(datadir, "exited")))
+        self.assertTrue(reaped)
+        self.assertEqual(handlers, [signal.default_int_handler, signal.SIG_DFL, signal.SIG_DFL])
+        self.assert_no_stop_signal_blocked()
+        self.assertFalse(os.path.exists(os.path.join(out, "report.json")))
+
+    def test_stop_signal_while_the_handlers_are_restored(self):
+        # A stop signal that arrives after the run restored the first of the
+        # caller's handlers: the run completes, and the caller's handler gets
+        # the signal once, after every handler is restored.
+        for sig in runner.STOP_SIGNALS:
+            with self.subTest(signal=sig.name):
+                events, handler = self.recording_handlers()
+                real_signal = signal.signal
+                sent = []
+
+                def fake_signal(s, h):
+                    result = real_signal(s, h)
+                    if h is handler and not sent:
+                        sent.append(s)
+                        os.kill(os.getpid(), sig)
+                    return result
+
+                out = os.path.join(self.tmp, "out-" + sig.name)
+                with mock.patch.dict(os.environ, FAKE_MODE="normal"), \
+                        mock.patch.object(runner.signal, "signal", fake_signal):
+                    rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+                self.assertEqual(len(sent), 1)
+                self.assertEqual(events, [(sig, True)])
+                self.assertEqual(rep["status"], "complete")
+                with open(os.path.join(out, "report.json")) as f:
+                    self.assertEqual(json.load(f)["status"], "complete")
+                self.assert_no_stop_signal_blocked()
+
+    def test_stop_signal_while_the_handlers_are_installed(self):
+        # SIGTERM arrives while the run installs its handlers: it is handled
+        # once the node is started; the node is stopped and reaped.
+        real_signal = signal.signal
+        sent = []
+
+        def fake_signal(sig, handler):
+            if sig == signal.SIGHUP and getattr(handler, "__name__", None) == "interrupt":
+                sent.append(sig)
+                os.kill(os.getpid(), signal.SIGTERM)
+            return real_signal(sig, handler)
+
+        real_popen = subprocess.Popen
+        started = []
+
+        def popen(*args, **kwargs):
+            started.append(real_popen(*args, **kwargs))
+            return started[-1]
+
+        out = os.path.join(self.tmp, "out")
+        datadir = os.path.join(out, "datadir")
+        cm = None
+        try:
+            with mock.patch.dict(os.environ, FAKE_MODE="normal"), \
+                    mock.patch.object(runner.signal, "signal", fake_signal), \
+                    mock.patch.object(runner.subprocess, "Popen", popen):
+                with self.assertRaises(runner.Interrupted) as cm:
+                    runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+        finally:
+            reaped = [self.reap_node(datadir, p.pid) for p in started]
+            handlers = [signal.getsignal(s) for s in runner.STOP_SIGNALS]
+            self.restore_default_handlers()
+        self.assertEqual(sent, [signal.SIGHUP])
+        self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        self.assertEqual(handlers, [signal.default_int_handler, signal.SIG_DFL, signal.SIG_DFL])
+        self.assert_no_stop_signal_blocked()
+        # The node was started, stopped and reaped.
+        self.assertEqual(reaped, [True])
+        self.assertIsNotNone(started[0].returncode)
+        self.assertFalse(os.path.exists(os.path.join(out, "report.json")))
+
+    def test_stop_signal_when_the_node_cannot_be_started(self):
+        # SIGTERM arrives while the node is started and the start fails: the
+        # run writes the report of a node that cannot be started, and the
+        # caller's handler gets the signal after the handlers are restored.
+        events, _ = self.recording_handlers()
+
+        def popen(*args, **kwargs):
+            os.kill(os.getpid(), signal.SIGTERM)
+            raise OSError(errno.ENOEXEC, "Exec format error")
+
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.object(runner.subprocess, "Popen", popen):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+        self.assertEqual(rep["incomplete_reasons"], ["cannot start the node: [Errno 8] Exec format error"])
+        self.assertTrue(os.path.exists(os.path.join(out, "report.json")))
+        self.assertEqual(events, [(signal.SIGTERM, True)])
+        self.assert_no_stop_signal_blocked()
 
     def test_digest_exception_still_writes_the_report(self):
         out = os.path.join(self.tmp, "out")
@@ -600,11 +798,16 @@ class RunTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, "out", "debug.log")))
 
     def test_stop_signal_after_the_kill(self):
-        # The script gets SIGTERM right after it killed the node: it removes
-        # the node's files as after a kill and writes no report.
+        # The script gets SIGTERM right after it killed the node: it sends the
+        # node nothing more, waits for it, removes the node's files as after
+        # a kill and writes no report.
         real_kill = os.kill
+        sent = []
+        logged = []
 
         def kill(pid, sig):
+            if pid != os.getpid():
+                sent.append(sig)
             real_kill(pid, sig)
             if sig == signal.SIGKILL:
                 real_kill(os.getpid(), signal.SIGTERM)
@@ -612,11 +815,64 @@ class RunTest(unittest.TestCase):
         out = os.path.join(self.tmp, "out")
         with mock.patch.dict(os.environ, FAKE_MODE="reject"), mock.patch.object(runner.os, "kill", kill):
             with self.assertRaises(runner.Interrupted) as cm:
-                runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None,
+                runner.run(self.bin, self.source, out, *self.ports, log=logged.append,
                            kill_at_first_invalid_block=True)
         self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        self.assertEqual(sent, [signal.SIGKILL])
+        self.assertIn("waiting for the node (interrupted by SIGTERM; the node was stopped)", logged)
         self.assertEqual(sorted(os.listdir(out)), ["debug.log", "node-stderr.log", "node-stdout.log"])
         self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+        self.assert_no_stop_signal_blocked()
+
+    def test_stop_signal_as_the_node_is_killed(self):
+        # SIGTERM arrives as the script is about to send the node SIGKILL
+        # (when it looks up os.kill): the node is killed all the same, then
+        # waited for and reaped, and the run raises Interrupted.
+        real_os = os
+        sent = []
+        armed = [True]
+
+        class OsProxy:
+            def __getattr__(self, name):
+                if name != "kill":
+                    return getattr(real_os, name)
+                if armed[0]:
+                    armed[0] = False
+                    real_os.kill(real_os.getpid(), signal.SIGTERM)
+                    time.sleep(0)
+
+                def kill(pid, sig):
+                    sent.append(sig)
+                    real_os.kill(pid, sig)
+                return kill
+
+        real_popen = subprocess.Popen
+        started = []
+
+        def popen(*args, **kwargs):
+            started.append(real_popen(*args, **kwargs))
+            return started[-1]
+
+        out = os.path.join(self.tmp, "out")
+        cm = None
+        try:
+            with mock.patch.dict(os.environ, FAKE_MODE="reject"), mock.patch.object(runner, "os", OsProxy()), \
+                    mock.patch.object(runner.subprocess, "Popen", popen):
+                with self.assertRaises(runner.Interrupted) as cm:
+                    runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None,
+                               kill_at_first_invalid_block=True)
+        finally:
+            reaped = [self.reap_node(os.path.join(out, "datadir"), p.pid) for p in started]
+            handlers = [signal.getsignal(s) for s in runner.STOP_SIGNALS]
+            self.restore_default_handlers()
+        self.assertFalse(armed[0])
+        self.assertEqual(cm.exception.signum, signal.SIGTERM)
+        self.assertEqual(sent, [signal.SIGKILL])
+        self.assertEqual(reaped, [True])
+        self.assertEqual(started[0].returncode, -signal.SIGKILL)
+        self.assertEqual(handlers, [signal.default_int_handler, signal.SIG_DFL, signal.SIG_DFL])
+        self.assert_no_stop_signal_blocked()
+        self.assertEqual(sorted(os.listdir(out)), ["debug.log", "node-stderr.log", "node-stdout.log"])
 
     def test_nothing_sent_after_the_kill(self):
         # The kill reaches the node 2 s late, after its "Done loading": the
@@ -699,6 +955,19 @@ class RunTest(unittest.TestCase):
                            universal_newlines=True)
         self.assertIn("--kill-at-first-invalid-block", p.stdout)
 
+    def test_sigint_ends_the_run_command(self):
+        # SIGINT handled by the default handler (KeyboardInterrupt), for
+        # example after the node exited: exit status 130 and a log line.
+        spec = importlib.util.spec_from_file_location("replay_script", tu.REPLAY_SCRIPT)
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        with mock.patch.object(script.runner, "run", side_effect=KeyboardInterrupt), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(script.main(["run", self.bin, self.source, "out"]), 130)
+        self.assertEqual(stderr.getvalue(), "replay: interrupted by SIGINT\n")
+        self.assertEqual(stdout.getvalue(), "")
+
     def test_output_inside_source_is_refused(self):
         with self.assertRaisesRegex(runner.RunRefused, "inside the source directory"):
             runner.check(self.bin, self.source, os.path.join(self.source, "sub", "out"), *self.ports)
@@ -728,7 +997,7 @@ class RunTest(unittest.TestCase):
     def test_node_arguments_set_by_the_script_are_refused(self):
         for arg in ("-printtoconsole=1", "--datadir=/elsewhere", "-nolisten", "-reindex", "-stopatheight=5",
                     "-conf=x.conf", "-noserver=0", "-dbcache=100", "-loadblock=/x/blk00000.dat", "-regtest",
-                    "-regtest=1", "-noregtest"):
+                    "-regtest=1", "-noregtest", "---datadir=/x", "---noserver"):
             for options in ([], ["--regtest"]):
                 with self.subTest(arg=arg, options=options):
                     code, _, err = self.run_cli("normal", *options, extra=[arg])
@@ -761,6 +1030,35 @@ class RunTest(unittest.TestCase):
         self.assertEqual(rep["command"][0], bad)
         self.assertTrue(os.path.exists(os.path.join(out, "heights.tsv.gz")))
         self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+
+    def test_subprocess_error_when_starting_the_node(self):
+        # Popen raises SubprocessError (as for an exception in preexec_fn):
+        # the report of a node that cannot be started, as for an OSError.
+        spec = importlib.util.spec_from_file_location("replay_script", tu.REPLAY_SCRIPT)
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        error = subprocess.SubprocessError("Exception occurred in preexec_fn.")
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.object(runner.subprocess, "Popen", side_effect=error):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+        self.assertEqual((rep["status"], rep["incomplete_reasons"]),
+                         ("incomplete", ["cannot start the node: Exception occurred in preexec_fn."]))
+        with open(os.path.join(out, "report.json")) as f:
+            self.assertEqual(json.load(f), rep)
+        self.assertIsNone(rep["exit_status"])
+        self.assertIsNone(rep["digest"])
+        self.assertTrue(os.path.isdir(rep["datadir"]))
+        self.assertIs(signal.getsignal(signal.SIGINT), signal.default_int_handler)
+        self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+        self.assertIs(signal.getsignal(signal.SIGHUP), signal.SIG_DFL)
+        self.assert_no_stop_signal_blocked()
+        with mock.patch.object(runner.subprocess, "Popen", side_effect=error), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+                mock.patch("sys.stderr", new_callable=io.StringIO):
+            code = script.main(["run", "--port", str(self.ports[0]), "--rpcport", str(self.ports[1]), self.bin,
+                                self.source, os.path.join(self.tmp, "out2")])
+        self.assertEqual(code, 1)
+        self.assertIn("incomplete: cannot start the node: Exception occurred in preexec_fn.\n", stdout.getvalue())
 
     def test_port_in_use(self):
         with socket.socket() as s:
@@ -877,6 +1175,8 @@ class UpToHeightTest(unittest.TestCase):
         self.assertIsNone(rep["command"])
         self.assertGreaterEqual(rep["phases"]["chain_seconds"], 0)
         self.assertIn("incomplete: 1 heights of the chain are not in the block files", stdout)
+        self.assertEqual(rep["datadir"], os.path.join(self.tmp, "out", "datadir"))
+        self.assertTrue(os.path.isdir(rep["datadir"]))
 
     def test_refusals(self):
         cases = [
@@ -998,7 +1298,7 @@ class SnapshotRunTest(unittest.TestCase):
         # one link, another inode.
         files = self.datadir_file("files.json")
         self.assertEqual(files.pop("yacoin.conf")[0], runner.file_sha256(os.path.join(datadir, "yacoin.conf")))
-        self.assertEqual(sorted(files), sorted(self.meta["manifest"]))
+        self.assertEqual(sorted(files), database_entries(self.meta))
         for path, (sha256, nlink, ino) in files.items():
             self.assertEqual(sha256, self.meta["manifest"][path]["sha256"], path)
             self.assertEqual(nlink, 1, path)
@@ -1027,7 +1327,7 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertEqual(rep["command"], self.datadir_file(os.path.join("regtest", "args.json")))
         # The snapshot's files are restored into the chain directory.
         files = self.datadir_file(os.path.join("regtest", "files.json"))
-        self.assertEqual(sorted(files), sorted(meta["manifest"]))
+        self.assertEqual(sorted(files), database_entries(meta))
         for path, (sha256, nlink, ino) in files.items():
             self.assertEqual(sha256, meta["manifest"][path]["sha256"], path)
         self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
@@ -1100,7 +1400,8 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertEqual(rep["incomplete_reasons"], ["1 heights of the chain are not in the block files, "
                                                      "the first at height 5"])
         self.assertIsNone(rep["exit_status"])
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir", "args.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir")))
+        self.assertIsNone(rep["datadir"])
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
 
     def test_kill_at_first_invalid_block(self):
@@ -1190,10 +1491,70 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertIsNone(rep["exit_status"])
         self.assertIsNone(rep["digest"])
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir", "args.json")))
+        self.assertEqual(rep["datadir"], os.path.join(self.tmp, "out", "datadir"))
+        self.assertTrue(os.path.isdir(rep["datadir"]))
         os.truncate(rev, size)
         os.remove(os.path.join(self.snap, "tokens", "CURRENT"))
         self.assertEqual(self.run_cli("import", out="out2")[0], 1)
         self.assertIn("snapshot file tokens/CURRENT is missing", self.report("out2")["incomplete_reasons"][0])
+
+    def snapshot_with_a_failure(self):
+        """A snapshot of a run with one failure, at height 3."""
+        fail = logscan.Failure(3, tu.fake_hash(3)[::-1].hex(), "script", "d4" * 32, "1", "test-error")
+        run_out = os.path.join(self.tmp, "run-failure")
+        tu.make_run(run_out, heights=3, failures=[fail])
+        snap = os.path.join(self.tmp, "snap-failure")
+        snapshot.make(run_out, snap, log=lambda msg: None)
+        return snap
+
+    def test_changed_failures_file_is_refused(self):
+        snap = self.snapshot_with_a_failure()
+        tu.make_writable(snap)
+        path = os.path.join(snap, "failures.tsv")
+        with open(path) as f:
+            text = f.read()
+        # The same number of rows: a change of the same size and one of
+        # another size.
+        for name, changed in (("same-size", text.replace("test-error", "test-errox")),
+                              ("other-size", text.replace("test-error", "test-error-2"))):
+            with self.subTest(change=name):
+                self.assertEqual(len(changed.splitlines()), len(text.splitlines()))
+                with open(path, "w") as f:
+                    f.write(changed)
+                code, stdout, stderr = self.run_cli("import", snap=snap)
+                self.assertEqual(code, 2, stdout + stderr)
+                self.assertIn("replay: snapshot file failures.tsv differs from the snapshot's manifest\n", stderr)
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+        os.remove(path)
+        code, _, stderr = self.run_cli("import", snap=snap)
+        self.assertEqual(code, 2)
+        self.assertIn("cannot read %s" % path, stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+
+    def test_snapshot_without_a_failures_entry_in_the_manifest_runs(self):
+        # Its failures.tsv is checked by its row count only.
+        snap = self.snapshot_with_a_failure()
+        tu.make_writable(snap)
+        meta_path = os.path.join(snap, "snapshot.json")
+        with open(meta_path) as f:
+            meta = json.load(f)
+        del meta["manifest"]["failures.tsv"]
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+        path = os.path.join(snap, "failures.tsv")
+        with open(path) as f:
+            text = f.read()
+        with open(path, "w") as f:
+            f.write(text.replace("test-error", "test-errox"))
+        code, stdout, stderr = self.run_cli("import", snap=snap)
+        self.assertEqual(code, 0, stdout + stderr)
+        rep = self.report()
+        self.assertEqual((rep["status"], rep["failures"]), ("complete", 3))
+        with open(path, "w") as f:
+            f.write(text.splitlines(True)[0])
+        code, _, stderr = self.run_cli("import", snap=snap, out="out2")
+        self.assertEqual(code, 2)
+        self.assertIn("has 0 rows, snapshot.json 1 failures", stderr)
 
     def test_refusals(self):
         empty = os.path.join(self.tmp, "empty")
@@ -1256,6 +1617,11 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertIn("-loadblock is set by the script", err)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
+
+
+def database_entries(meta):
+    """The database files of the manifest of the snapshot.json meta."""
+    return sorted(p for p in meta["manifest"] if p != "failures.tsv")
 
 
 def _digest_at(d, height):

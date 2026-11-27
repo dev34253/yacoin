@@ -63,20 +63,22 @@ class SnapshotTest(unittest.TestCase):
         self.assertRegex(meta["made"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
         # Only the databases are copied, and the manifest lists every copied
-        # file with its size and SHA-256.
+        # database file and failures.tsv with its size and SHA-256.
         state = tu.tree_state(self.snap)
         files = {p: e for p, e in state.items() if stat.S_ISREG(e[0])}
-        copied = sorted(p for p in files if p not in ("snapshot.json", "report.json", "failures.tsv"))
-        self.assertEqual(sorted(meta["manifest"]), copied)
+        listed = sorted(p for p in files if p not in ("snapshot.json", "report.json"))
+        self.assertEqual(sorted(meta["manifest"]), listed)
+        self.assertIn("failures.tsv", listed)
         for path in DATABASE_FILES:
-            self.assertIn(path, copied)
+            self.assertIn(path, listed)
         for prefix in ("blocks/index/", "chainstate/", "tokens/"):
-            self.assertTrue(any(p.startswith(prefix + "MANIFEST-") for p in copied), prefix)
-        for path in copied:
-            self.assertTrue(path.startswith(("blocks/blk", "blocks/rev", "blocks/index/", "chainstate/", "tokens/")),
-                            path)
+            self.assertTrue(any(p.startswith(prefix + "MANIFEST-") for p in listed), prefix)
+        for path in listed:
+            self.assertTrue(path == "failures.tsv" or path.startswith(
+                ("blocks/blk", "blocks/rev", "blocks/index/", "chainstate/", "tokens/")), path)
             self.assertEqual(meta["manifest"][path], {"size": files[path][1], "sha256": files[path][4]})
-            with open(os.path.join(self.run_out, "datadir", path), "rb") as f:
+            source = path if path == "failures.tsv" else os.path.join("datadir", path)
+            with open(os.path.join(self.run_out, source), "rb") as f:
                 self.assertEqual(runner.file_sha256(os.path.join(self.snap, path)),
                                  hashlib.sha256(f.read()).hexdigest())
         for name in ("debug.log", "yacoin.conf", ".lock", "peers.dat"):
@@ -121,8 +123,9 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(set(meta), set(main_meta) | {"regtest"})
         self.assertEqual(sorted(meta["manifest"]), sorted(main_meta["manifest"]))
         for path, entry in meta["manifest"].items():
-            self.assertEqual(entry["sha256"],
-                             runner.file_sha256(os.path.join(self.run_out, "datadir", "regtest", path)), path)
+            source = os.path.join(self.run_out, *(["failures.tsv"] if path == "failures.tsv"
+                                                  else ["datadir", "regtest", path]))
+            self.assertEqual(entry["sha256"], runner.file_sha256(source), path)
         self.assertNotIn("regtest", os.listdir(self.snap))
 
     def test_snapshot_of_a_run_up_to_a_height(self):
@@ -265,20 +268,30 @@ class SnapshotTest(unittest.TestCase):
                 with self.assertRaisesRegex(snapshot.SnapshotRefused, "has no %s" % key):
                     snapshot.load(bad)
         entry = {"size": 1, "sha256": "00" * 32}
-        for path in ("../outside.dat", "/etc/outside.dat", "debug.log", os.path.join("blocks", "..", "..", "x")):
+        for path in ("../outside.dat", "/etc/outside.dat", "debug.log", os.path.join("blocks", "..", "..", "x"),
+                     "report.json", os.path.join("failures.tsv", "x"), os.path.join("..", "failures.tsv"),
+                     os.path.join(".", "failures.tsv"), os.path.join("blocks", "..", "failures.tsv")):
             with self.subTest(path=path):
                 write(dict(meta, manifest={path: entry}))
                 with self.assertRaisesRegex(snapshot.SnapshotRefused, "file outside the databases"):
                     snapshot.load(bad)
+        write(dict(meta, manifest={"failures.tsv": entry}))
+        self.assertEqual(snapshot.load(bad)["manifest"], {"failures.tsv": entry})
         for key, value, kind in (("height", "3", "number"), ("height", True, "number"), ("hash", 3, "string"),
                                  ("failures", None, "number"), ("manifest", [], "mapping")):
             with self.subTest(key=key, value=value):
                 write(dict(meta, **{key: value}))
                 with self.assertRaisesRegex(snapshot.SnapshotRefused, "%s is not a %s" % (key, kind)):
                     snapshot.load(bad)
+        # failures.tsv differs from its manifest entry; without the entry,
+        # its row count is checked.
         write(meta)
         with open(os.path.join(bad, "failures.tsv"), "w") as f:
             f.write("height\tblock\tcheck\ttx\tinput\tmain\terror\n1\t%s\tscript\t-\t-\t1\ttest-error\n" % ("aa" * 32))
+        with self.assertRaisesRegex(snapshot.SnapshotRefused,
+                                    "^snapshot file failures.tsv differs from the snapshot's manifest$"):
+            snapshot.failures(bad, snapshot.load(bad))
+        write(dict(meta, manifest={k: v for k, v in meta["manifest"].items() if k != "failures.tsv"}))
         with self.assertRaisesRegex(snapshot.SnapshotRefused, "has 1 rows, snapshot.json 0 failures"):
             snapshot.failures(bad, snapshot.load(bad))
         write([1, 2])
