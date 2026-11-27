@@ -40,7 +40,7 @@ Without `--snapshot` (a full replay):
    Without `NODE_ARGS`, the replay node makes no network connections and uses its own ports (defaults 17788 and 17789;
    `--port`, `--rpcport`). Every other setting is the node's default; `NODE_ARGS` after `--` are passed on unchanged,
    for example `-- -par=2`. Options in `NODE_ARGS` can make the node connect to other nodes or read and write files
-   outside `OUT` (for example `-addnode`, `-seednode`, `-pid`). The options the script sets itself are refused after
+   outside `OUT` (for example `-addnode`, `-pid`). The options the script sets itself are refused after
    `--` (also in their `-no` form and with more than one leading dash): `-datadir`, `-conf`, `-daemon`, `-reindex`,
    `-replayvalidation`, `-connect`, `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`,
    `-disablewallet`, `-printtoconsole`, `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
@@ -121,6 +121,8 @@ main chain are not written. When the block of a height is not in the source bloc
 with different content, the run ends before the node starts: the report is incomplete and names the height.
 `--up-to-height` is not taken with `--stop-at-height` or `--snapshot`.
 
+#### Snapshot run
+
 With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
 
 1. Checks as above, and that `OUT` is not inside `SNAPSHOT`, that `SNAPSHOT` has a `snapshot.json` of a known format
@@ -146,8 +148,9 @@ With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
    ```
 
    The node opens the copied block index, chainstate and token database and imports the blocks of the block files.
-   The block files are given to the node twice: a block stored before its parent is imported in the
-   second pass. Blocks still missing after that show in the block-file check.
+   The block files are given to the node twice. The script writes them in height order, each block after its parent
+   (see [The chain](#the-chain)), so the node imports the blocks in the first pass, and the second pass reads the same
+   files again. Blocks still missing after that show in the block-file check.
 5. Stops the node as above, computes the digest, makes the block-file check on `OUT/import/` and writes the same
    report files; after a kill at the first invalid block, it takes neither and deletes `OUT/datadir` and `OUT/import`.
 

@@ -47,9 +47,11 @@ ISOLATION_ARGS = [
     "-printtoconsole=0",
 ]
 
-# The snapshot run gives the node its block files twice: a block stored
-# before its parent is imported in the second pass. Blocks still missing
-# after that show in the block-file check.
+# The snapshot run gives the node its block files twice. The script writes
+# them in height order, each block after its parent
+# (mainchain.write_block_files), so the node imports the blocks in the
+# first pass, and the second pass reads the same files again. Blocks still
+# missing after that show in the block-file check.
 IMPORT_PASSES = 2
 
 CONF_TEXT = "# Written by contrib/replay/replay.py; the options are on the command line.\n"
