@@ -974,7 +974,6 @@ bool ImportWallet(CWallet *pwallet, const string& strLocation)
            CPubKey pubkey = key.GetPubKey();
            assert(key.VerifyPubKey(pubkey));
            CKeyID keyid = pubkey.GetID();
-           int64_t nTime = DecodeDumpTime(vstr[1]);
            CScript scriptP2SH; // for P2SH redeemscript
            std::string strLabel;
            bool fLabel = true;

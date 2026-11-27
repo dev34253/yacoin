@@ -578,8 +578,6 @@ bool fDaemon = false;
 bool fServer = false;
 bool fTestNet = false;
 
-static int64_t nMockTime = 0;  // For unit testing
-
 // Extended DecodeDumpTime implementation, see this page for details:
 // http://stackoverflow.com/questions/3786201/parsing-of-date-time-from-string-boost
 const std::locale formats[] = {
@@ -612,21 +610,6 @@ void ParseString(const string& str, char c, vector<string>& v)
         }
         v.push_back(str.substr(i1, i2-i1));
         i1 = i2+1;
-    }
-}
-
-static void InterpretNegativeSetting(string name, map<string, string>& mapSettingsRet)
-{
-    // interpret -nofoo as -foo=0 (and -nofoo=0 as -foo=1) as long as -foo not set
-    if (name.find("-no") == 0)
-    {
-        std::string positive("-");
-        positive.append(name.begin()+3, name.end());
-        if (mapSettingsRet.count(positive) == 0)
-        {
-            bool value = !gArgs.GetBoolArg(name);
-            mapSettingsRet[positive] = (value ? "1" : "0");
-        }
     }
 }
 

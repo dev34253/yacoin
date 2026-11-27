@@ -987,7 +987,7 @@ BOOST_FIXTURE_TEST_CASE(MempoolRemoveForBlockTokensTest, TokenTestingSetup)
     pool.mapTokenToHash["GONETOKEN"] = hashGone;
 
     ConnectedBlockTokenData blockData;
-    for (const std::string& name : {"POOLTOKEN", "GONETOKEN", "BLOCKONLY"})
+    for (const std::string name : {"POOLTOKEN", "GONETOKEN", "BLOCKONLY"})
         blockData.newTokensToAdd.insert(CTokenCacheNewToken(CNewToken(name, 1000 * COIN, 0, 1, 0, ""), TestTokenAddress(), 1, uint256()));
 
     // The block's own issue is another tx, not in the pool

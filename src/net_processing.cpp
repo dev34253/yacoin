@@ -1552,7 +1552,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, std::vector<C
             std::vector<const CBlockIndex*> vToFetch;
             const CBlockIndex *pindexWalk = pindexLast;
             // Calculate all the blocks we'd need to switch to pindexLast, up to a limit.
-            while (pindexWalk && !chainActive.Contains(pindexWalk) && vToFetch.size() <= MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
+            while (pindexWalk && !chainActive.Contains(pindexWalk) && vToFetch.size() <= static_cast<size_t>(MAX_BLOCKS_IN_TRANSIT_PER_PEER)) {
                 if (!(pindexWalk->nStatus & BLOCK_HAVE_DATA) &&
                         !mapBlocksInFlight.count(pindexWalk->GetBlockHash())) {
                     // We don't have this block, and it's not yet in flight.
@@ -3680,7 +3680,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                     int bestBlockHeight = chainActive.Height();
                     int nSyncHeight = state.pindexBestKnownBlock ? state.pindexBestKnownBlock->nHeight : -1;
 
-                    if ((bestHeaderHeight > bestBlockHeight + HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS) &&
+                    if ((static_cast<unsigned int>(bestHeaderHeight) > bestBlockHeight + HEADER_BLOCK_DIFFERENCES_TRIGGER_GETBLOCKS) &&
                             (nSyncHeight < bestHeaderHeight) &&
                             state.nLastTimeSendingGetBlocks < nNow - 60 * 1000000) // avoid spamming getblocks, just send every 1 minute
                     {

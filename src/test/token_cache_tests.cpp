@@ -775,7 +775,7 @@ BOOST_AUTO_TEST_CASE(token_lookup_order)
     // A pending removal in the cache or in ptokens hides the token
     cache.setNewTokensToRemove.insert(CTokenCacheNewToken(CNewToken("LOOKDB", COIN), addr, 0, uint256()));
     ptokens->setNewTokensToRemove.insert(CTokenCacheNewToken(CNewToken("LOOKPARENT", COIN), addr, 0, uint256()));
-    for (const std::string& name : {"LOOKDB", "LOOKPARENT"}) {
+    for (const std::string name : {"LOOKDB", "LOOKPARENT"}) {
         BOOST_CHECK_MESSAGE(!cache.CheckIfTokenExists(name), name);
         BOOST_CHECK_MESSAGE(!cache.GetTokenMetaDataIfExists(name, token), name);
     }
