@@ -45,6 +45,10 @@ Unreleased
   URI with an `r=` parameter and no valid address, and a payment request file given on the command line, show a
   message that payment requests are not supported; nothing is fetched. `yacoin:` URIs with a valid address still work
   as plain payment URIs (address, amount, label, message); an `r=` parameter in them is ignored.
+- The GUI's payment server no longer has a root certificate store, as Bitcoin Core 0.20 did: it loads no root
+  certificates, and `-rootcertificates` and `-allowselfsignedrootcertificates` are no longer used or listed in the
+  help. `yacoin-qt` started with either option starts as before.
+- The transaction details no longer show a merchant for a transaction paid through a payment request.
 
 ### Build changes
 
