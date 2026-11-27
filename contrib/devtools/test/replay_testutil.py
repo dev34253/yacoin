@@ -349,6 +349,29 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     return hashes
 
 
+def make_mixed_datadir(path, heights=300, side_blocks=3):
+    """make_datadir (with blk) holding every kind of record the digest reads:
+    version 6 headers (32-bit time) below heights // 2 and version 7 from
+    there, proof-of-stake fields on every fifth height above genesis, undo
+    records of three sizes, twelve coins and token records of the token
+    database ('A', 'B', 'C' and others). Returns the block hashes in height
+    order."""
+    def fields(h):
+        f = {"version": 6 if h < heights // 2 else 7, "tx": 1 + h % 3, "stake_modifier": 7919 * h}
+        if h and h % 5 == 0:
+            f.update(flags=BLOCK_PROOF_OF_STAKE, prevout_stake=fake_hash(h, salt=3000) + struct.pack("<I", h % 4),
+                     stake_time=1700000000 + 60 * h - 7, hash_proof_of_stake=fake_hash(h, salt=4000))
+        return f
+
+    coins = [(b"C" + fake_hash(i, salt=5000) + bytes([i % 3]), b"\x03\x00" + bytes([i]) * (1 + i % 4))
+             for i in range(12)]
+    tokens = [(b"A\x03TK" + bytes([65 + i]), b"meta %d" % i) for i in range(3)]
+    tokens += [(b"B\x03TKA\x01a", b"q"), (b"C\x01a\x03TKA", b"q"), (b"U" + b"\x01" * 32, b"undo"), (b"Z", b"z")]
+    return make_datadir(path, heights=heights, coins=coins, tokens=tokens, block_fields=fields,
+                        undo=lambda h: b"\x01\x00" + struct.pack("<I", h) * (1 + h % 3), side_blocks=side_blocks,
+                        blk=True)
+
+
 def make_run(out, heights=3, fields=None, failures=(), regtest=False, **kwargs):
     """The output directory of a complete full run: OUT/datadir (as
     make_datadir with blk, plus debug.log, yacoin.conf, .lock and

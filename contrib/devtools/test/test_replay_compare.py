@@ -20,6 +20,10 @@ from replaylib import compare, logscan, report
 from replaylib.digest import Row
 
 TX = "d4" * 32
+# A stored format-1 report: the report of "replay.py digest" of
+# replay_testutil.make_mixed_datadir(heights=30), its datadir field set to
+# /tmp/replay-fixture/datadir.
+FORMAT_1_REPORT = os.path.join(tu.HERE, "data", "replay-format-1")
 
 
 def h(height, salt=0):
@@ -248,6 +252,21 @@ class CompareTest(unittest.TestCase):
         code, out, err = self.cli(a, os.path.join(self.tmp, "nothing"))
         self.assertEqual(code, 2)
         self.assertIn("report.json", err)
+
+    def test_stored_format_1_report(self):
+        stored = report.load(FORMAT_1_REPORT)
+        self.assertEqual((stored.report["format"], stored.report["kind"], stored.report["datadir"]),
+                         (1, "digest", "/tmp/replay-fixture/datadir"))
+        self.assertEqual(sorted(stored.rows), list(range(31)))
+        self.assertEqual(stored.failures, [])
+        datadir = os.path.join(self.tmp, "datadir")
+        tu.make_mixed_datadir(datadir, heights=30)
+        out = os.path.join(self.tmp, "digest")
+        p = subprocess.run([sys.executable, "-I", tu.REPLAY_SCRIPT, "digest", datadir, out], stdout=subprocess.PIPE,
+                           universal_newlines=True)
+        self.assertEqual(p.returncode, 0)
+        self.assertEqual(report.load(out).rows, stored.rows)
+        self.assertEqual(self.cli(FORMAT_1_REPORT, out), (0, "identical\n", ""))
 
 
 if __name__ == "__main__":

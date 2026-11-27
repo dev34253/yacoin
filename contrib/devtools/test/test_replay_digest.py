@@ -7,13 +7,16 @@ block hashes and heights, written in the node's on-disk formats.
 Run: python3 -I -m unittest discover -s contrib/devtools/test
 """
 
+import gzip
+import hashlib
 import os
 import shutil
+import struct
 import tempfile
 import unittest
 
 import replay_testutil as tu
-from replaylib import chain, digest, ser
+from replaylib import blockfiles, chain, digest, report, ser
 
 VARINTS = [
     (0, "00"), (1, "01"), (127, "7f"), (128, "8000"), (255, "807f"), (256, "8100"),
@@ -261,6 +264,79 @@ class DigestTest(unittest.TestCase):
             holder.wait()
             holder.stdout.close()
         digest.compute(path)
+
+
+def _section_values(d):
+    return {name: (s.count, s.sha256) for name, s in d.sections.items()}
+
+
+class FixedValuesTest(unittest.TestCase):
+    """Digests of synthetic data directories against fixed values of report
+    format 1."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="replay-fixed-test.")
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def heights_text_sha256(self, d):
+        """SHA-256 of the text of heights.tsv.gz as report.write writes it."""
+        out = tempfile.mkdtemp(dir=self.tmp)
+        report.write(out, {}, d.rows, [])
+        with gzip.open(os.path.join(out, "heights.tsv.gz"), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+
+    def test_mixed_data_directory(self):
+        path = os.path.join(self.tmp, "mixed")
+        tu.make_mixed_datadir(path)
+        d = digest.compute(path)
+        # Fixed values of report format 1.
+        self.assertEqual((d.tip_height, d.tip_hash),
+                         (300, "71b6c0f81597027fca38df22335c1efb4b6a1e12325f28f8015002e5713a60d5"))
+        self.assertEqual(d.overall, "52aa3c49e308eb5a564026ab702f4d3d711fbd2612cd355be1ee2bd2e644fbf1")
+        self.assertEqual(_section_values(d), {
+            "chain": (301, "c2cd27a545d945ccddd52bb0b3f7114b27b638fc2d5e3d6c21fef80246dec981"),
+            "undo": (300, "dc401fb78c1921a6460447f467ff82533efea3c0ebe07aa4265fc7d3d85292d7"),
+            "coins": (12, "0d0ab165eda4c63b4fbc2256b5f5765459806f834bc6bbc1f04bba175178ff2a"),
+            "tokens": (3, "8282179b58ccfadafdf27a8711a4361880c2e4670e23e4ef9c700d41d2d44ec0"),
+            "tokenindex": (2, "1926cba9f4fa893aa592d78043889c0da7e8d63ece0d9b0d21727be06b0830ed"),
+        })
+        self.assertEqual(self.heights_text_sha256(d),
+                         "20d9e1629f36ee73c4319b2ea503265c456476915df26dd20d0a6b5bc3357f30")
+        result = blockfiles.check(blockfiles.block_files(os.path.join(path, "blocks")), path, d.tip_height)
+        self.assertEqual(result.fields, {"blocks": 304, "not_in_index": 0, "stored_above_tip": None})
+        self.assertEqual(result.reasons, [])
+
+    def test_genesis_with_an_undo_record(self):
+        # The undo record's checksum covers the previous block hash of the
+        # genesis record, here not zero.
+        content = b"\x00genesis undo"
+        prev = tu.fake_hash(0, salt=77)
+        padding = b"\xd9\xe6\xe7\xe5" + struct.pack("<I", len(content)) + content + tu.sha256d(prev + content)
+        path = os.path.join(self.tmp, "genesis")
+        tu.make_datadir(path, heights=4, rev_padding=padding, block_fields=lambda h: {
+            "status": tu.BLOCK_HAVE_DATA | tu.BLOCK_HAVE_UNDO, "undo_pos": 8, "hash_prev": prev} if h == 0 else {})
+        d = digest.compute(path)
+        # Fixed values of report format 1.
+        self.assertEqual(d.overall, "fa5a6325ca4d08ca2cb13226e11d10598a3e873a2338d740adb1099c6f9c8460")
+        self.assertEqual(_section_values(d)["undo"],
+                         (5, "2d12989e8286e7cae9c12707fc9789fdbf61c56952132961c35a85ef0ece3ed7"))
+        self.assertEqual(self.heights_text_sha256(d),
+                         "0a10a1de4a158537c985b37bed943d4b933d9cb5633c6f91c0979881f5d30666")
+
+    def test_tip_height_far_above_the_records(self):
+        path = os.path.join(self.tmp, "tip")
+        hashes = tu.make_datadir(path, heights=4, block_fields=lambda h: {"height": 2 ** 31 - 1} if h == 4 else {})
+        with self.assertRaises(digest.DigestError) as cm:
+            digest.compute(path)
+        self.assertEqual(str(cm.exception), "block %s has height 3, expected 2147483646" % hashes[3][::-1].hex())
+
+    def test_block_file_numbers_of_any_size(self):
+        for number in (2 ** 40, 2 ** 64):
+            path = os.path.join(self.tmp, "file-%d" % number)
+            tu.make_datadir(path, heights=4, block_fields=lambda h: {"file": number} if h == 2 else {})
+            with self.assertRaises(digest.DigestError) as cm:
+                digest.compute(path)
+            self.assertEqual(str(cm.exception), "cannot read rev%05d.dat: No such file or directory" % number)
 
 
 if __name__ == "__main__":
