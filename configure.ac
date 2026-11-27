@@ -542,6 +542,11 @@ if test x$use_lcov = xyes; then
   dnl scrypt-jane (the scrypt-chacha PoW) is C, so instrument C as well.
   AX_CHECK_COMPILE_FLAG([--coverage],[CXXFLAGS="$CXXFLAGS --coverage"; CFLAGS="$CFLAGS --coverage"],
     [AC_MSG_ERROR("lcov testing requested but --coverage flag does not work")])
+  dnl Several threads of one process update the same profile counters, so the
+  dnl updates are atomic. A compiler that cannot make them atomic only warns,
+  dnl and only in an instrumented compile, so the check adds --coverage -Werror.
+  AX_CHECK_COMPILE_FLAG([-fprofile-update=atomic],[CXXFLAGS="$CXXFLAGS -fprofile-update=atomic"; CFLAGS="$CFLAGS -fprofile-update=atomic"],
+    [AC_MSG_ERROR("lcov testing requested but -fprofile-update=atomic does not work")],[[--coverage -Werror]])
   AX_CHECK_LINK_FLAG([[--coverage]], [LDFLAGS="$LDFLAGS --coverage"],
     [AC_MSG_ERROR("lcov testing requested but --coverage linker flag does not work")])
 fi
