@@ -67,10 +67,14 @@ with the block index by its header fields (version, previous block, merkle root,
 incomplete run are "N blocks of the block files are not in the block index", "stored blocks above the tip, up to
 height X" and, when the block index holds stored blocks, "no block records found in the block files".
 
-If the script gets SIGINT, SIGTERM or SIGHUP while the node runs, it sends the node SIGTERM, waits for it to exit and
-exits with status 128 plus the signal number, without a report. A signal the script was started with ignored (for
-example SIGHUP under `nohup`) stays ignored. If the script is killed with SIGKILL, the node goes on running; stop it
-by hand, for example with `pkill -TERM -f -- "-datadir=OUT/datadir"`.
+If the script gets SIGINT, SIGTERM or SIGHUP while the node runs (or while it starts the node, once the node has
+started), it sends the node SIGTERM, waits for it to exit and exits with status 128 plus the signal number, without a
+report; further such signals are ignored meanwhile. At any other time, for example after the node has exited or when
+the node cannot be started, these signals end the script: SIGINT with exit status 130 (log line "interrupted by
+SIGINT"), SIGTERM and SIGHUP by their default action; report files the script has not finished writing by then are
+missing or incomplete. A signal the script was started with ignored (for example SIGHUP under `nohup`) stays ignored.
+If the script is killed with SIGKILL, the node goes on running; stop it by hand, for example with
+`pkill -TERM -f -- "-datadir=OUT/datadir"`.
 
 The node's output is in `OUT/node-stdout.log` and `OUT/node-stderr.log`, its log in `OUT/datadir/debug.log` (after a
 kill at the first invalid block, in `OUT/debug.log`).
@@ -96,8 +100,8 @@ reason "the node marked block HASH at height N invalid; killed (--kill-at-first-
 when the node ended before the kill), followed by the other reasons of such a run, for example "node ended by signal
 SIGKILL" and "no digest". The report has
 `kill_at_first_invalid_block` and `invalid_block` (see [Report files](#report-files)); `compare` refuses it. If the
-script gets SIGINT, SIGTERM or SIGHUP after the kill, it finishes moving `debug.log` and deleting these directories
-before it exits, without a report.
+script gets SIGINT, SIGTERM or SIGHUP after the kill, it sends the node nothing more, and it finishes moving `debug.log`
+and deleting these directories before it exits, without a report.
 
 The option is taken with `--up-to-height`, `--snapshot` and `--stop-at-height`. A run with the option in which the node
 marks no block invalid before `Done loading` is reported as without it, apart from the two fields.

@@ -68,7 +68,7 @@ class RunRefused(Exception):
 
 class Interrupted(Exception):
     """The script got SIGINT, SIGTERM or SIGHUP while the node ran; the node
-    was stopped with SIGTERM and has exited."""
+    has exited, stopped with SIGTERM unless the script had killed it."""
 
     def __init__(self, signum):
         Exception.__init__(self, "interrupted by %s; the node was stopped" % signal.Signals(signum).name)
@@ -177,16 +177,20 @@ def _wait(pid, follower, marks, start, stop_sent, reaped, log, killed=None):
     its log. With killed (a one-element list), sends SIGKILL instead as
     soon as the log names an invalid block before "Done loading", sets
     killed[0] and sends nothing more. Returns (status, rusage); reaped gets
-    them as soon as the node is reaped."""
+    them as soon as the node is reaped. Returns with the stop signals
+    blocked."""
     while True:
-        # A stop signal is handled after the reap is recorded, not between.
+        # A stop signal is handled after the reap is recorded, not between;
+        # after the reap, the stop signals stay blocked.
         signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+        done = 0
         try:
             done, status, rusage = os.wait4(pid, os.WNOHANG)
             if done:
                 reaped.append((status, rusage))
         finally:
-            signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+            if not done:
+                signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
         follower.poll()
         now = time.monotonic() - start
         s = follower.scanner
@@ -201,8 +205,14 @@ def _wait(pid, follower, marks, start, stop_sent, reaped, log, killed=None):
         if killed is not None and not kill_sent and s.invalid_block is not None:
             log("the node marked block %s at height %d invalid; killing the node" % (
                 s.invalid_block.hash, s.invalid_block.height))
-            killed[0] = True
-            os.kill(pid, signal.SIGKILL)
+            # killed[0] and the kill go together; a stop signal is handled
+            # after both.
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+            try:
+                killed[0] = True
+                os.kill(pid, signal.SIGKILL)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
         elif s.done_loading and not stop_sent[0] and not kill_sent:
             log("start-up done; stopping the node")
             os.kill(pid, signal.SIGTERM)
@@ -386,49 +396,57 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     log("starting the node")
     start = time.monotonic()
 
+    # Set by the first stop signal, or when the run stops the node after
+    # another exception; a stop signal then raises nothing more.
+    stopping = [False]
+
     def interrupt(signum, frame):
+        if stopping[0]:
+            return
+        stopping[0] = True
         raise Interrupted(signum)
 
+    # Stop signals wait while the handlers are installed and the node is
+    # started; the node starts with the signal mask of the caller.
+    caller_mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
     # Signals the caller ignores (for example under nohup) stay ignored.
     old_handlers = {sig: signal.signal(sig, interrupt) for sig in STOP_SIGNALS
                     if signal.getsignal(sig) is not signal.SIG_IGN}
     proc = None
     start_error = None
     reaped = []
-    held_mask = None
+    # After a kill, stop signals wait until the node's files are removed.
+    hold = False
     try:
         try:
             with open(os.path.join(out, "node-stdout.log"), "wb") as stdout, \
                     open(os.path.join(out, "node-stderr.log"), "wb") as stderr:
-                # Stop signals wait until proc is set; the node starts with
-                # the signal mask of the script before the block.
-                old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
                 try:
                     proc = subprocess.Popen(
                         cmd, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, cwd=out,
                         start_new_session=True,
-                        preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, old_mask))
+                        preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, caller_mask))
                 except OSError as e:
                     start_error = e
-                finally:
-                    signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
             if start_error is None:
+                signal.pthread_sigmask(signal.SIG_SETMASK, caller_mask)
                 status, rusage = _wait(proc.pid, follower, marks, start, stop_sent, reaped, log, killed)
-                if killed is not None and killed[0]:
-                    # After a kill, stop signals wait until the node's files
-                    # are removed.
-                    held_mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+                hold = killed is not None and killed[0]
         except BaseException as e:
+            stopping[0] = True
+            hold = False
             if proc is None:
                 raise
-            # Stop the node with SIGTERM and wait for it to exit; stop
-            # signals are ignored meanwhile.
+            # Stop the node with SIGTERM (after a kill, only wait for it);
+            # stop signals are ignored meanwhile.
             for sig in old_handlers:
                 signal.signal(sig, signal.SIG_IGN)
             if not reaped:
-                if not stop_sent[0]:
+                kill_sent = killed is not None and killed[0]
+                if not stop_sent[0] and not kill_sent:
                     os.kill(proc.pid, signal.SIGTERM)
-                log("stopping the node (%s)" % (e if isinstance(e, Interrupted) else type(e).__name__))
+                log("%s the node (%s)" % ("waiting for" if kill_sent else "stopping",
+                                          e if isinstance(e, Interrupted) else type(e).__name__))
                 _, status, rusage = os.wait4(proc.pid, 0)
                 reaped.append((status, rusage))
             status = reaped[0][0]
@@ -438,8 +456,13 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
                 remove_node_files(out, chain_dir)
             raise
     finally:
+        # The caller's handlers are restored with the stop signals blocked; a
+        # stop signal meanwhile goes to the caller's handler afterwards.
+        signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)
+        if not hold:
+            signal.pthread_sigmask(signal.SIG_SETMASK, caller_mask)
     if start_error is not None:
         log("cannot start the node: %s" % start_error)
         return _not_started(out, rep, phases, ["cannot start the node: %s" % start_error])
@@ -450,8 +473,8 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
         if invalid is not None:
             remove_node_files(out, chain_dir)
     finally:
-        if held_mask is not None:
-            signal.pthread_sigmask(signal.SIG_SETMASK, held_mask)
+        if hold:
+            signal.pthread_sigmask(signal.SIG_SETMASK, caller_mask)
     exit_status = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
     exit_signal = signal.Signals(os.WTERMSIG(status)).name if os.WIFSIGNALED(status) else None
     # Reaped by os.wait4 above; tell the Popen object.
