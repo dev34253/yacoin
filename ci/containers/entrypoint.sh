@@ -69,8 +69,9 @@
 #                     (the scripts of functional-tests but the extended ones,
 #                     FTEST_JOBS in parallel; with FTEST_SHARD=K/N only shard
 #                     K of N of them); needs lcov 2.6 or newer
-#   warnings          build the default targets with -O1 -g -Wall -Wextra,
-#                     the output in <builddir>/build.log (make
+#   warnings          build the default targets with -O1 -g and configure's
+#                     warning flags (C files are compiled without configure's
+#                     warning flags), the output in <builddir>/build.log (make
 #                     --output-sync), then contrib/devtools/warning-count.py
 #                     on it with contrib/devtools/warning-counts.json: fails
 #                     when a class of warnings has more unique locations than
@@ -401,7 +402,7 @@ else
             export CONFIG_SITE="$builddir/config.site" ;;
         functional-tests) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
         cov-unit|cov-functional) flags+=(--enable-lcov "CXXFLAGS=-O0 -g" "CFLAGS=-O0 -g") ;;
-        warnings) flags+=("CXXFLAGS=-O1 -g -Wall -Wextra" "CFLAGS=-O1 -g -Wall -Wextra") ;;
+        warnings) flags+=("CXXFLAGS=-O1 -g" "CFLAGS=-O1 -g") ;;
     esac
     (cd "$builddir" && "$SRC/configure" "${flags[@]}")
     export TMPDIR="$builddir/test/tmp"; mkdir -p "$TMPDIR"

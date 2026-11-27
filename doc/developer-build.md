@@ -74,7 +74,7 @@ with this checkout mounted:
 ./dev.sh container functional-tests-asan     # the functional tests of functional-tests except those listed in test/sanitizer_suppressions/asan-excluded-scripts, under ASan/LSan/UBSan (see AddressSanitizer below)
 SANITIZE=undefined ./dev.sh container unit-tests-asan     # one leg of CI's unit-tests-asan: UBSan only (address: ASan and LSan only)
 FTEST_SHARD=2/2 ./dev.sh container functional-tests-asan  # one shard of CI's functional-tests-asan
-./dev.sh container warnings                  # ubuntu.22.04 image: -Wall -Wextra build, its warnings counted per class against contrib/devtools/warning-counts.json
+./dev.sh container warnings                  # ubuntu.22.04 image: build with configure's warning flags, its warnings counted per class against contrib/devtools/warning-counts.json
 ./dev.sh container ubuntu.16.04 build-low-difficulty  # low-difficulty release build, its unit tests and the functional tests that need it (see Functional tests below)
 ./dev.sh container build                     # release build, as the CI release jobs (see below)
 ./dev.sh container windows                   # Windows release build; macos for macOS
