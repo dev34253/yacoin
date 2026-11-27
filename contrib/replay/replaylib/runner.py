@@ -217,10 +217,15 @@ def check_modes(out, snapshot, stop_at_height, up_to_height, chain):
 
 
 def load_chain(chain, meta, stop_at_height, up_to_height):
-    """The mainchain.Chain of the data directory chain; raises RunRefused
-    when it cannot be read or does not hold the blocks the run needs."""
+    """The mainchain.Chain of the data directory chain with the keys of the
+    heights the run writes: 0 to up_to_height, or those above the
+    snapshot's height (meta); raises RunRefused when it cannot be read or
+    does not hold the blocks the run needs."""
     try:
-        c = mainchain.load(chain)
+        if meta is None:
+            c = mainchain.load(chain, 0, up_to_height)
+        else:
+            c = mainchain.load(chain, meta["height"] + 1, None, (meta["height"],))
     except mainchain.ChainError as e:
         raise RunRefused("--chain %s: %s" % (chain, e))
     if up_to_height is not None and c.tip_height < up_to_height:
@@ -228,7 +233,7 @@ def load_chain(chain, meta, stop_at_height, up_to_height):
                          % (chain, c.tip_height, up_to_height))
     if meta is not None:
         height = meta["height"]
-        if c.tip_height < height or c.hashes[height] != meta["hash"]:
+        if c.tip_height < height or c.hashes.get(height) != meta["hash"]:
             raise RunRefused("the chain of %s does not hold the snapshot's block %s at height %d"
                              % (chain, meta["hash"], height))
         if c.tip_height == height:
@@ -437,8 +442,9 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
         "status %s" % exit_status if exit_signal is None else "signal %s" % exit_signal, node_seconds))
 
     t1 = time.monotonic()
+    stored = blockfiles.StoredBlocks()
     try:
-        d = digest_mod.compute(chain_dir)
+        d = digest_mod.compute(chain_dir, stored)
         rep["digest_error"] = None
     except digest_mod.DigestError as e:
         d = None
@@ -469,11 +475,12 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     rep["block_file_check"] = None
     if d is not None:
         t2 = time.monotonic()
-        result = blockfiles.check(block_files(blocks) if imports is None else imports, chain_dir, d.tip_height,
+        result = blockfiles.check(block_files(blocks) if imports is None else imports, stored, d.tip_height,
                                   stop_at_height)
         phases["block_file_check_seconds"] = round(time.monotonic() - t2, 3)
         rep["block_file_check"] = result.fields
         reasons += result.reasons
+    stored = None
     rep["incomplete_reasons"] = reasons
     rep["status"] = "incomplete" if reasons else "complete"
     report.write(out, rep, d.rows if d else [], marked)

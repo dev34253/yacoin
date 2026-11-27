@@ -18,6 +18,7 @@ The fake node is a Python script. Its behaviour comes from FAKE_MODE:
              <datadir>/go exists
   extra      as normal, with a block in its block files that is not in
              its block index
+  index-removed  as normal, without its blocks/index
 
 Modes of a node started on a snapshot's copy (run --snapshot): first it
 records every file of its data directory in <datadir>/files.json (SHA-256,
@@ -135,6 +136,9 @@ if mode == "slow":
     sys.exit(0)
 os.rename(os.path.join(datadir, "blocks"), os.path.join(datadir, "blocks.copied"))
 tu.make_datadir(datadir, heights=3, blk=True)
+if mode == "index-removed":
+    import shutil
+    shutil.rmtree(os.path.join(datadir, "blocks", "index"))
 if mode == "extra":
     with open(os.path.join(datadir, "blocks", "blk00000.dat"), "ab") as f:
         f.write(tu.block_record({"version": 7, "hash_prev": tu.fake_hash(3), "merkle": tu.fake_hash(4, salt=7),
@@ -446,6 +450,24 @@ class RunTest(unittest.TestCase):
         self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
         self.assertIs(signal.getsignal(signal.SIGINT), signal.default_int_handler)
 
+    def test_one_read_of_the_block_index(self):
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.dict(os.environ, FAKE_MODE="normal"), tu.IndexReads() as reads:
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+        self.assertEqual(rep["status"], "complete")
+        self.assertEqual(dict(reads.counts), {os.path.join(out, "datadir", "blocks", "index"): 1})
+        with tu.IndexReads() as reads:
+            runner.digest_only(os.path.join(out, "datadir"), os.path.join(self.tmp, "digest"))
+        self.assertEqual(dict(reads.counts), {os.path.join(out, "datadir", "blocks", "index"): 1})
+
+    def test_unreadable_block_index(self):
+        code, stdout, _ = self.run_cli("index-removed")
+        self.assertEqual(code, 1)
+        rep = self.report()
+        self.assertIn(os.path.join("blocks", "index"), rep["digest_error"])
+        self.assertIsNone(rep["block_file_check"])
+        self.assertEqual(rep["incomplete_reasons"], ["no digest"])
+
     def test_output_inside_source_is_refused(self):
         with self.assertRaisesRegex(runner.RunRefused, "inside the source directory"):
             runner.check(self.bin, self.source, os.path.join(self.source, "sub", "out"), *self.ports)
@@ -587,6 +609,15 @@ class UpToHeightTest(unittest.TestCase):
         with open(os.path.join(copied, "blk00000.dat"), "rb") as f:
             self.assertEqual(f.read(), b"".join(self.records[h] for h in range(4)))
         self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
+
+    def test_one_read_of_each_block_index(self):
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.dict(os.environ, FAKE_MODE="normal"), tu.IndexReads() as reads:
+            rep = runner.run(self.bin, self.source, out, *self.ports, up_to_height=3, chain=self.chain,
+                             log=lambda msg: None)
+        self.assertEqual(rep["status"], "complete")
+        self.assertEqual(dict(reads.counts), {os.path.join(self.chain, "blocks", "index"): 1,
+                                              os.path.join(out, "datadir", "blocks", "index"): 1})
 
     def test_other_tip_is_incomplete(self):
         code, stdout, _ = self.run_cli("normal", "--up-to-height", "4", "--chain", self.chain)
@@ -813,7 +844,7 @@ class SnapshotRunTest(unittest.TestCase):
         compute = runner.digest_mod.compute
         with mock.patch.dict(os.environ, FAKE_MODE="import"), \
                 mock.patch.object(runner.digest_mod, "compute",
-                                  side_effect=lambda d: _digest_at(compute(d), 2)):
+                                  side_effect=lambda *args: _digest_at(compute(*args), 2)):
             rep = runner.run(self.bin, self.source, os.path.join(self.tmp, "out"), *self.ports,
                              snapshot=self.snap, chain=self.chain, log=lambda msg: None)
         self.assertIn("tip height 2 below the snapshot's height 3", rep["incomplete_reasons"])
@@ -832,6 +863,15 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertIsNone(rep["exit_status"])
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir", "args.json")))
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
+
+    def test_one_read_of_each_block_index(self):
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.dict(os.environ, FAKE_MODE="import"), tu.IndexReads() as reads:
+            rep = runner.run(self.bin, self.source, out, *self.ports, snapshot=self.snap, chain=self.chain,
+                             log=lambda msg: None)
+        self.assertEqual(rep["status"], "complete")
+        self.assertEqual(dict(reads.counts), {os.path.join(self.chain, "blocks", "index"): 1,
+                                              os.path.join(out, "datadir", "blocks", "index"): 1})
 
     def test_stop_at_height(self):
         code, stdout, stderr = self.run_cli("import-stop", "--stop-at-height", "5")

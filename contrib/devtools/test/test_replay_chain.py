@@ -45,13 +45,36 @@ class ChainTest(unittest.TestCase):
     def test_load(self):
         chain = mainchain.load(self.chain_dir)
         self.assertEqual((chain.tip_height, chain.tip_hash), (7, self.hashes[7][::-1].hex()))
-        self.assertEqual(chain.hashes, [h[::-1].hex() for h in self.hashes])
+        self.assertEqual(chain.hashes, {7: self.hashes[7][::-1].hex()})
         fields = tu.index_records(self.chain_dir)
-        self.assertEqual(chain.keys, [blockfiles.index_key(fields[h]) for h in self.hashes])
+        self.assertEqual(chain.keys, {blockfiles.index_key(fields[h]): i for i, h in enumerate(self.hashes)})
         # The chain ends at the chainstate's best block.
         other = os.path.join(self.tmp, "other")
         tu.make_datadir(other, heights=7, blk=True, tip=4)
         self.assertEqual(mainchain.load(other).tip_height, 4)
+
+    def test_load_keeps_the_heights_asked_for(self):
+        fields = tu.index_records(self.chain_dir)
+        chain = mainchain.load(self.chain_dir, 2, 5, (3,))
+        self.assertEqual((chain.tip_height, chain.tip_hash), (7, self.hashes[7][::-1].hex()))
+        self.assertEqual(chain.keys, {blockfiles.index_key(fields[self.hashes[h]]): h for h in range(2, 6)})
+        self.assertEqual(chain.hashes, {3: self.hashes[3][::-1].hex(), 7: self.hashes[7][::-1].hex()})
+        # A range past the tip ends at the tip.
+        chain = mainchain.load(self.chain_dir, 6, 20)
+        self.assertEqual(sorted(chain.keys.values()), [6, 7])
+        # The whole chain is walked whatever range is kept.
+        gap = os.path.join(self.tmp, "gap")
+        tu.make_datadir(gap, heights=4, block_fields=lambda h: {"height": 7} if h == 1 else {})
+        with self.assertRaisesRegex(mainchain.ChainError, "has height 7, expected 1"):
+            mainchain.load(gap, 3, 4)
+
+    def test_written_range_of_a_loaded_range(self):
+        chain = mainchain.load(self.chain_dir, 2, 5)
+        self.out = tempfile.mkdtemp(dir=self.tmp)
+        written = mainchain.write_block_files(blockfiles.block_files(self.source), chain, 3, 4, self.out)
+        self.assertEqual((written.missing, written.conflicts), ([], []))
+        with open(written.paths[0], "rb") as f:
+            self.assertEqual(f.read(), self.record[3] + self.record[4])
 
     def test_load_refusals(self):
         with self.assertRaisesRegex(mainchain.ChainError, "no database"):

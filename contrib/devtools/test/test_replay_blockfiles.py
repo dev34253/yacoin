@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 import replay_testutil as tu
-from replaylib import blockfiles
+from replaylib import blockfiles, digest
 
 # A version-6 header (32-bit time) and a version-7 header (64-bit time).
 V6 = {"version": 6, "hash_prev": tu.fake_hash(40), "merkle": tu.fake_hash(41, salt=1000), "time": 1374000000,
@@ -124,13 +124,20 @@ class CheckTest(unittest.TestCase):
     def blk(self, *names):
         return [os.path.join(self.datadir, "blocks", n) for n in names]
 
+    def check(self, paths, tip_height, datadir=None, **kwargs):
+        """blockfiles.check with the stored blocks of the digest's read of
+        the block index."""
+        stored = blockfiles.StoredBlocks()
+        digest.compute(datadir or self.datadir, stored)
+        return blockfiles.check(paths, stored, tip_height, **kwargs)
+
     def append(self, data, name="blk00000.dat"):
         with open(os.path.join(self.datadir, "blocks", name), "ab") as f:
             f.write(data)
 
     def test_every_block_in_the_index(self):
         tu.make_datadir(self.datadir, heights=5, side_blocks=1, blk=True)
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=5)
+        result = self.check(self.blk("blk00000.dat"), tip_height=5)
         self.assertEqual(result.fields, {"blocks": 7, "not_in_index": 0, "stored_above_tip": None})
         self.assertEqual(result.reasons, [])
 
@@ -140,18 +147,18 @@ class CheckTest(unittest.TestCase):
             data = f.read()
         with open(os.path.join(self.datadir, "blocks", "blk00001.dat"), "wb") as f:
             f.write(data[len(data) // 2:] + b"\0" * 64)
-        result = blockfiles.check(self.blk("blk00000.dat", "blk00001.dat"), self.datadir, tip_height=5)
+        result = self.check(self.blk("blk00000.dat", "blk00001.dat"), tip_height=5)
         self.assertEqual(result.fields["blocks"], 6)
         self.assertEqual(result.reasons, [])
 
     def test_block_not_in_the_index(self):
         tu.make_datadir(self.datadir, heights=5, blk=True)
         self.append(tu.block_record(V7))
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=5)
+        result = self.check(self.blk("blk00000.dat"), tip_height=5)
         self.assertEqual(result.fields, {"blocks": 7, "not_in_index": 1, "stored_above_tip": None})
         self.assertEqual(result.reasons, ["1 blocks of the block files are not in the block index"])
         self.append(tu.block_record(V7) + tu.block_record(dict(V7, nonce=0x6b29)))
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=5)
+        result = self.check(self.blk("blk00000.dat"), tip_height=5)
         self.assertEqual(result.reasons, ["2 blocks of the block files are not in the block index"])
 
     def test_record_without_block_data_is_not_stored(self):
@@ -162,25 +169,25 @@ class CheckTest(unittest.TestCase):
         records = tu.index_records(self.datadir)
         f4 = records[tu.fake_hash(4)]
         self.append(tu.block_record(f4))
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=5)
+        result = self.check(self.blk("blk00000.dat"), tip_height=5)
         self.assertEqual(result.fields["not_in_index"], 1)
         self.assertEqual(result.reasons, ["1 blocks of the block files are not in the block index"])
 
     def test_stored_block_above_the_tip(self):
         tu.make_datadir(self.datadir, heights=7, blk=True, tip=4)
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=4)
+        result = self.check(self.blk("blk00000.dat"), tip_height=4)
         self.assertEqual(result.fields, {"blocks": 8, "not_in_index": 0, "stored_above_tip": 7})
         self.assertEqual(result.reasons, ["stored blocks above the tip, up to height 7"])
         # Not with --stop-at-height, where the blocks above it are stored but
         # not connected.
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=4, stop_at_height=4)
+        result = self.check(self.blk("blk00000.dat"), tip_height=4, stop_at_height=4)
         self.assertEqual(result.fields["stored_above_tip"], 7)
         self.assertEqual(result.reasons, [])
 
     def test_both_reasons(self):
         tu.make_datadir(self.datadir, heights=7, blk=True, tip=6)
         self.append(tu.block_record(V6))
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=6)
+        result = self.check(self.blk("blk00000.dat"), tip_height=6)
         self.assertEqual(result.reasons, ["1 blocks of the block files are not in the block index",
                                           "stored blocks above the tip, up to height 7"])
 
@@ -192,25 +199,38 @@ class CheckTest(unittest.TestCase):
             data = f.read()
         with open(path, "wb") as f:
             f.write(b"\0" + data)
-        result = blockfiles.check([path], self.datadir, tip_height=2)
+        result = self.check([path], tip_height=2)
         self.assertEqual(result.fields, {"blocks": 0, "not_in_index": 0, "stored_above_tip": None})
         self.assertEqual(result.reasons, ["no block records found in the block files"])
         # Without stored blocks in the index, no block records is no reason.
         empty = os.path.join(self.tmp, "empty")
         tu.make_datadir(empty, heights=0, block_fields=lambda h: {"status": 0})
-        self.assertEqual(blockfiles.check([path], empty, tip_height=0).reasons, [])
+        self.assertEqual(self.check([path], tip_height=0, datadir=empty).reasons, [])
 
     def test_unreadable_file_or_index(self):
         tu.make_datadir(self.datadir, heights=2, blk=True)
-        result = blockfiles.check(self.blk("blk00000.dat", "blk00009.dat"), self.datadir, tip_height=2)
+        result = self.check(self.blk("blk00000.dat", "blk00009.dat"), tip_height=2)
         self.assertIsNone(result.fields)
         self.assertEqual(len(result.reasons), 1)
         self.assertTrue(result.reasons[0].startswith("block-file check: "), result.reasons)
         self.assertIn("blk00009.dat", result.reasons[0])
-        shutil.rmtree(os.path.join(self.datadir, "blocks", "index"))
-        result = blockfiles.check(self.blk("blk00000.dat"), self.datadir, tip_height=2)
-        self.assertIsNone(result.fields)
-        self.assertTrue(result.reasons[0].startswith("block-file check: "), result.reasons)
+
+    def test_block_index_records_that_do_not_parse(self):
+        # Two records off the main chain with bytes after their fields: the
+        # digest does not read them, the check cannot be made, and the
+        # reason names the first record in key order.
+        def side(salt, extra):
+            block_hash = tu.fake_hash(1, salt)
+            value = tu.block_index_bytes({"height": 1, "hash_prev": tu.fake_hash(0), "block_hash": block_hash})
+            return b"b" + block_hash, value + extra
+
+        first, second = side(606, b"\0"), side(600, b"\0\0")
+        self.assertLess(first[0], second[0])
+        tu.make_datadir(self.datadir, heights=2, blk=True, extra_index=[second, first])
+        stored = blockfiles.StoredBlocks()
+        self.assertEqual(digest.compute(self.datadir, stored).tip_height, 2)
+        result = blockfiles.check(self.blk("blk00000.dat"), stored, 2)
+        self.assertEqual(result, (None, ["block-file check: block index record: 1 bytes after the block index record"]))
 
 
 if __name__ == "__main__":

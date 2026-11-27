@@ -27,19 +27,23 @@ class ChainError(Exception):
     pass
 
 
-def load(datadir):
-    """The Chain of the stopped node's data directory datadir: keys and
-    hashes (display form) of the main-chain blocks by height."""
+def load(datadir, first=0, last=None, heights=()):
+    """The Chain of the stopped node's data directory datadir, its whole
+    main chain checked: keys maps the key of each main-chain block of
+    heights first to last (None: the tip) to its height; hashes maps the
+    heights in heights and the tip's to their block hashes (display
+    form)."""
     try:
         digest_mod.check_not_running(datadir)
         tip = digest_mod.best_block(datadir)
         index = leveldb.read_db(os.path.join(datadir, "blocks", "index"), b"b", b"c", as_dict=True)
     except (digest_mod.DigestError, leveldb.LevelDBError, OSError) as e:
         raise ChainError(str(e))
-    keys = []
-    hashes = []
+    keys = {}
+    hashes = {}
     block_hash = tip
     height = None
+    tip_height = None
     while True:
         value = index.pop(b"b" + block_hash, None)
         if value is None:
@@ -52,30 +56,32 @@ def load(datadir):
             raise ChainError("block %s has height %d, expected %s" % (
                 hash_hex(block_hash), f["height"], "a height of 0 or more" if height is None else height - 1))
         height = f["height"]
-        keys.append(blockfiles.index_key(f))
-        hashes.append(hash_hex(block_hash))
+        if tip_height is None:
+            tip_height = height
+            hashes[height] = hash_hex(block_hash)
+        if first <= height and (last is None or height <= last):
+            keys[blockfiles.index_key(f)] = height
+        if height in heights:
+            hashes[height] = hash_hex(block_hash)
         if height == 0:
             break
         block_hash = f["hash_prev"]
-    keys.reverse()
-    hashes.reverse()
-    return Chain(datadir, len(keys) - 1, hashes[-1], keys, hashes)
+    return Chain(datadir, tip_height, hashes[tip_height], keys, hashes)
 
 
 def write_block_files(source_paths, chain_, first, last, out_dir, max_size=MAX_FILE_SIZE):
-    """Writes the main-chain blocks of heights first to last of chain_ from
-    the block files source_paths (the first is blk00000.dat) into
-    out_dir/blk00000.dat, blk00001.dat, ..., in height order; a file ends
-    before a record would bring it to max_size. A block stored more than
-    once is taken once. Nothing is written when a height is missing in the
-    source files or its block is there more than once with different
-    content (Written.missing, Written.conflicts)."""
-    wanted = {chain_.keys[h]: h for h in range(first, last + 1)}
+    """Writes the main-chain blocks of heights first to last of chain_ (whose
+    keys hold these heights) from the block files source_paths (the first
+    is blk00000.dat) into out_dir/blk00000.dat, blk00001.dat, ..., in
+    height order; a file ends before a record would bring it to max_size.
+    A block stored more than once is taken once. Nothing is written when a
+    height is missing in the source files or its block is there more than
+    once with different content (Written.missing, Written.conflicts)."""
     found = {}  # height -> (path, offset, length)
     conflicts = set()
     for path, offset, length, key in blockfiles.records(source_paths):
-        height = wanted.get(key)
-        if height is None:
+        height = chain_.keys.get(key)
+        if height is None or not first <= height <= last:
             continue
         if height not in found:
             found[height] = (path, offset, length)

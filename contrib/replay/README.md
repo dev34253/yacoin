@@ -322,12 +322,15 @@ and start it. `run` reads only the `blk*.dat` files of the source.
 Disk: `OUT` holds a copy of the block files plus the databases the node rebuilds (`blocks/index`, `chainstate`,
 `tokens`), the `rev` files and `debug.log`. A snapshot holds the block files and these databases; a snapshot run's
 `OUT` holds a copy of the snapshot plus the block files in `OUT/import/`. The digest reads the block index, chainstate
-and token databases into memory, the block-file check the block index, and `--chain` the block index of the chain.
+and token databases into memory; the digest and the block-file check share one read of the block index, and `--chain`
+reads the block index of the chain once. The digest keeps per height 113 bytes (block hash, chain-record and undo
+digests, mint and money supply).
 
 Time and memory: one full run (without `--up-to-height`) took about 65 hours of wall time and about 65 hours of CPU
-time, with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes
-and about 1.5 GB of memory.
+time, with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes.
+On a synthetic regtest data directory of 200,000 heights, the script's own peak memory after the node (digest,
+block-file check and report files) was about 180 MiB on one machine.
 
 A snapshot replay took about 1.2 seconds of wall time per block above H, plus about 4 minutes for reading the chain,
-copying the snapshot, the digest and the block-file check, with a peak memory of about 1.8 GB for the node and about
-2.4 GB for the script; the snapshot took about 1.8 GB on disk. These times and sizes are from one machine.
+copying the snapshot, the digest and the block-file check, with a peak memory of about 1.8 GB for the node; the
+snapshot took about 1.8 GB on disk. These times and sizes are from one machine.

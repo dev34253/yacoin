@@ -286,7 +286,7 @@ def index_records(datadir):
 
 def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                  head_blocks=False, block_fields=None, undo=None, side_blocks=0, rev_padding=b"",
-                 blk=False, tip=None, salt=0):
+                 blk=False, tip=None, salt=0, extra_index=()):
     """A data directory with blocks/index (a chain of heights + 1 'b'
     records and side_blocks records off the chain), blocks/rev00000.dat with
     one undo record per height above 0, chainstate (obfuscated with key,
@@ -295,7 +295,8 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     block_fields(height) adds fields to a record; undo(height) gives its
     undo content; rev_padding comes before the first undo record. With blk,
     blocks/blk00000.dat holds a record (marker MARKER) for every block with
-    data. salt gives the blocks above genesis other hashes. Returns the
+    data. salt gives the blocks above genesis other hashes. extra_index:
+    (key, value) pairs written into the block index as they are. Returns the
     block hashes in height order."""
     os.makedirs(os.path.join(path, "blocks"))
     hashes = [fake_hash(h, salt if h else 0) for h in range(heights + 1)]
@@ -331,6 +332,7 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     with open(os.path.join(path, "blocks", "rev00000.dat"), "wb") as f:
         f.write(bytes(rev))
     index = DBWriter(os.path.join(path, "blocks", "index"))
+    records += list(extra_index)
     index.add_table([(k, i + 1, v) for i, (k, v) in enumerate(records)] + [(b"l", 900, b"\0\0\0\0")])
     index.add_log([(1000, [(b"t" + b"\x44" * 32, b"\0\x08\x01")])])
     index.finish()
@@ -347,6 +349,36 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     tok.add_log([(1, list(tokens) if tokens is not None else [])])
     tok.finish()
     return hashes
+
+
+class IndexReads:
+    """Within the with block, counts the reads of block index databases
+    (leveldb.read_db of a path ending in blocks/index) per path."""
+
+    def __init__(self):
+        from collections import Counter
+        self.counts = Counter()
+
+    def __enter__(self):
+        from unittest import mock
+        real = leveldb.read_db
+
+        def read_db(path, *args, **kwargs):
+            path = os.path.normpath(os.path.abspath(path))
+            if path.endswith(os.path.join("blocks", "index")):
+                self.counts[path] += 1
+            return real(path, *args, **kwargs)
+
+        self._patch = mock.patch.object(leveldb, "read_db", read_db)
+        self._patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._patch.stop()
+
+    def of(self, datadir):
+        """The number of reads of datadir's block index."""
+        return self.counts[os.path.normpath(os.path.abspath(os.path.join(datadir, "blocks", "index")))]
 
 
 def make_mixed_datadir(path, heights=300, side_blocks=3):

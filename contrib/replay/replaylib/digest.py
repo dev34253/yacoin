@@ -16,6 +16,7 @@ The overall digest is the SHA-256 over the sections' counts and digests.
 Nothing in the data directory is changed.
 """
 
+import array
 import collections
 import errno
 import fcntl
@@ -160,15 +161,87 @@ class _UndoFiles:
             f.close()
 
 
-# What the digest keeps of a main-chain block index record.
-_Block = collections.namedtuple("_Block", "hash height row_digest hash_prev file undo_pos mint money_supply")
+class Rows:
+    """The height rows of the main chain, genesis first, kept compactly; an
+    item is a Row, a slice a list of Row. Filled tip first (add)."""
+
+    def __init__(self):
+        self._hashes = bytearray()  # block hashes, internal byte order
+        self._chain = bytearray()  # chain-record digests
+        self._undo = bytearray()  # undo digests, zeros where there is none
+        self._has_undo = bytearray()
+        self._mint = array.array("q")
+        self._money_supply = array.array("q")
+
+    def add(self, block_hash, row_digest, mint, money_supply):
+        """Adds the row of the height below the lowest so far."""
+        self._hashes += block_hash
+        self._chain += row_digest
+        self._undo += bytes(32)
+        self._has_undo.append(0)
+        self._mint.append(mint)
+        self._money_supply.append(money_supply)
+
+    def set_undo(self, height, undo_digest):
+        i = len(self) - 1 - height
+        self._undo[32 * i:32 * i + 32] = undo_digest
+        self._has_undo[i] = 1
+
+    def chain_digest(self, height):
+        """The chain-record digest of the row at height."""
+        i = len(self) - 1 - height
+        return bytes(self._chain[32 * i:32 * i + 32])
+
+    def block_hash(self, height):
+        """The hash of the block at height, internal byte order."""
+        i = len(self) - 1 - height
+        return bytes(self._hashes[32 * i:32 * i + 32])
+
+    def __len__(self):
+        return len(self._mint)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[h] for h in range(*index.indices(len(self)))]
+        n = len(self)
+        if index < 0:
+            index += n
+        if not 0 <= index < n:
+            raise IndexError("row index out of range")
+        i = n - 1 - index
+        undo = self._undo[32 * i:32 * i + 32].hex() if self._has_undo[i] else "-"
+        return Row(index, hash_hex(bytes(self._hashes[32 * i:32 * i + 32])), self._mint[i], self._money_supply[i],
+                   self._chain[32 * i:32 * i + 32].hex(), undo)
+
+    def __iter__(self):
+        for h in range(len(self)):
+            yield self[h]
+
+    def __eq__(self, other):
+        if isinstance(other, (Rows, list)):
+            return len(self) == len(other) and all(a == b for a, b in zip(self, other))
+        return NotImplemented
+
+    __hash__ = None
 
 
-def _main_chain(datadir, tip):
-    """The _Block entries of the main chain ending at tip, tip first. The
-    records are dropped from memory as they are parsed."""
+# Undo positions of the walk: none, or a number outside the range of
+# array('q') (then kept in a dict by height).
+_NO_UNDO = -1
+_WIDE = -2
+
+
+def _main_chain(datadir, tip, stored=None):
+    """The Rows of the main chain ending at tip, and per height (as stored
+    in Rows, tip first) the file number and undo position of its record and
+    the previous block hash of genesis. Each record of the block index is
+    parsed once; with stored (blockfiles.StoredBlocks), every record is
+    given to it."""
     index = _read(os.path.join(datadir, "blocks", "index"), b"b", b"c", as_dict=True)
-    out = []
+    rows = Rows()
+    files = array.array("q")
+    undo_pos = array.array("q")
+    wide = {}
     block_hash = tip
     height = None
     while True:
@@ -183,37 +256,54 @@ def _main_chain(datadir, tip):
             raise DigestError("block %s has height %d, expected %s" % (
                 hash_hex(block_hash), rec["height"], "a height of 0 or more" if height is None else height - 1))
         height = rec["height"]
-        out.append(_Block(block_hash, height, hashlib.sha256(block_hash + chain.chain_row(rec)).digest(),
-                          rec["hash_prev"], rec["file"], rec["undo_pos"], rec["mint"], rec["money_supply"]))
+        if stored is not None:
+            stored.add(rec)
+        rows.add(block_hash, hashlib.sha256(block_hash + chain.chain_row(rec)).digest(), rec["mint"],
+                 rec["money_supply"])
+        if rec["undo_pos"] is None:
+            files.append(0)
+            undo_pos.append(_NO_UNDO)
+        elif rec["file"] < 1 << 63 and rec["undo_pos"] < 1 << 63:
+            files.append(rec["file"])
+            undo_pos.append(rec["undo_pos"])
+        else:
+            files.append(0)
+            undo_pos.append(_WIDE)
+            wide[height] = (rec["file"], rec["undo_pos"])
         if height == 0:
-            return out
+            break
         block_hash = rec["hash_prev"]
+    if stored is not None:
+        for key in sorted(index):
+            stored.add_value(index.pop(key))
+    return rows, files, undo_pos, wide, rec["hash_prev"]
 
 
-def compute(datadir):
-    """The Digest of the stopped node's data directory datadir."""
+def compute(datadir, stored=None):
+    """The Digest of the stopped node's data directory datadir. With stored
+    (blockfiles.StoredBlocks), the same read of the block index fills it."""
     check_not_running(datadir)
     coins, tip = _chainstate(datadir)
-    blocks = _main_chain(datadir, tip)
+    rows, files, undo_pos, wide, genesis_prev = _main_chain(datadir, tip, stored)
     tokens = _read(os.path.join(datadir, "tokens"))
 
     undo_files = _UndoFiles(os.path.join(datadir, "blocks"))
-    rows = []
+    n = len(rows)
     chain_hash = hashlib.sha256()
     undo_hash = hashlib.sha256()
     undo_count = 0
     try:
-        while blocks:
-            b = blocks.pop()  # genesis first
-            row_digest = b.row_digest.hex()
-            chain_hash.update(b"%d %s\n" % (b.height, row_digest.encode()))
-            undo = "-"
-            if b.undo_pos is not None:
-                content = undo_files.read(b.file, b.undo_pos, b.hash_prev, b.height)
-                undo = hashlib.sha256(content).hexdigest()
-                undo_hash.update(b"%d %s\n" % (b.height, undo.encode()))
-                undo_count += 1
-            rows.append(Row(b.height, hash_hex(b.hash), b.mint, b.money_supply, row_digest, undo))
+        for height in range(n):  # genesis first
+            i = n - 1 - height
+            chain_hash.update(b"%d %s\n" % (height, rows.chain_digest(height).hex().encode()))
+            if undo_pos[i] == _NO_UNDO:
+                continue
+            number, pos = wide[height] if undo_pos[i] == _WIDE else (files[i], undo_pos[i])
+            prev_hash = rows.block_hash(height - 1) if height else genesis_prev
+            undo = hashlib.sha256(undo_files.read(number, pos, prev_hash, height)).digest()
+            rows.set_undo(height, undo)
+            undo_hash.update(b"%d %s\n" % (height, undo.hex().encode()))
+            undo_count += 1
     finally:
         undo_files.close()
 
@@ -226,4 +316,4 @@ def compute(datadir):
     overall = hashlib.sha256()
     for name in SECTION_ORDER:
         overall.update(("%s %d %s\n" % (name, sections[name].count, sections[name].sha256)).encode())
-    return Digest(rows[-1].height, rows[-1].hash, rows, sections, overall.hexdigest())
+    return Digest(n - 1, hash_hex(tip), rows, sections, overall.hexdigest())

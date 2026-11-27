@@ -140,14 +140,15 @@ def make(run_out, snap, log=print):
             size, sha256 = copy_file(os.path.join(datadir, rel), os.path.join(snap, rel))
             manifest[rel] = {"size": size, "sha256": sha256}
         log("copied %d files" % len(files))
-        d = digest_mod.compute(snap)
+        stored = blockfiles.StoredBlocks()
+        d = digest_mod.compute(snap, stored)
         tip = {"height": d.tip_height, "hash": d.tip_hash}
         if tip != rep["tip"]:
             raise SnapshotFailed("tip of the copy %d %s differs from the report's %s %s" % (
                 d.tip_height, d.tip_hash, rep["tip"].get("height"), rep["tip"].get("hash")))
         if d.overall != rep["digest"]:
             raise SnapshotFailed("digest of the copy %s differs from the report's %s" % (d.overall, rep["digest"]))
-        result = blockfiles.check(blockfiles.block_files(os.path.join(snap, "blocks")), snap, d.tip_height)
+        result = blockfiles.check(blockfiles.block_files(os.path.join(snap, "blocks")), stored, d.tip_height)
         if result.reasons:
             raise SnapshotFailed("; ".join(result.reasons))
         meta = {

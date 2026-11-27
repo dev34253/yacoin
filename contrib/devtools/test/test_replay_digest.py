@@ -244,6 +244,49 @@ class DigestTest(unittest.TestCase):
         with self.assertRaisesRegex(digest.DigestError, "tokens"):
             digest.compute(path)
 
+    def test_missing_block_index_is_an_error(self):
+        path, _ = self.datadir()
+        shutil.rmtree(os.path.join(path, "blocks", "index"))
+        with self.assertRaisesRegex(digest.DigestError, "no database at .*blocks/index"):
+            digest.compute(path)
+
+    def test_rows(self):
+        undo = {h: b"\x01\x00" + bytes([h]) for h in range(1, 5)}
+        path, hashes = self.datadir(heights=4, side_blocks=1)
+        fields = tu.index_records(path)
+        d = digest.compute(path)
+        expected = [digest.Row(h, hashes[h][::-1].hex(), fields[hashes[h]]["mint"], fields[hashes[h]]["money_supply"],
+                               hashlib.sha256(hashes[h] + chain.chain_row(fields[hashes[h]])).hexdigest(),
+                               hashlib.sha256(undo[h]).hexdigest() if h else "-")
+                    for h in range(5)]
+        self.assertEqual(len(d.rows), 5)
+        self.assertEqual(list(d.rows), expected)
+        self.assertEqual(d.rows, expected)
+        self.assertEqual(expected, d.rows)
+        self.assertNotEqual(d.rows, expected[:4])
+        self.assertEqual(d.rows[2], expected[2])
+        self.assertEqual(d.rows[-1], expected[4])
+        self.assertEqual(d.rows[1:3], expected[1:3])
+        self.assertEqual(d.rows[::-2], expected[::-2])
+        with self.assertRaises(IndexError):
+            d.rows[5]
+        with self.assertRaises(IndexError):
+            d.rows[-6]
+        self.assertEqual(d.rows, digest.compute(path).rows)
+
+    def test_stored_blocks_of_the_same_read(self):
+        # Every record with block data, on the main chain or not, by its
+        # header key.
+        path, hashes = self.datadir(heights=4, side_blocks=2,
+                                    block_fields=lambda h: {"status": tu.BLOCK_HAVE_UNDO} if h == 3 else {})
+        fields = tu.index_records(path)
+        stored = blockfiles.StoredBlocks()
+        digest.compute(path, stored)
+        self.assertEqual(stored.heights, {blockfiles.index_key(f): f["height"] for f in fields.values()
+                                          if f["status"] & tu.BLOCK_HAVE_DATA})
+        self.assertEqual(len(stored.heights), 6)
+        self.assertIsNone(stored.error)
+
     def test_running_node_is_refused(self):
         path, _ = self.datadir()
         lock = os.path.join(path, ".lock")
@@ -302,7 +345,9 @@ class FixedValuesTest(unittest.TestCase):
         })
         self.assertEqual(self.heights_text_sha256(d),
                          "20d9e1629f36ee73c4319b2ea503265c456476915df26dd20d0a6b5bc3357f30")
-        result = blockfiles.check(blockfiles.block_files(os.path.join(path, "blocks")), path, d.tip_height)
+        stored = blockfiles.StoredBlocks()
+        self.assertEqual(digest.compute(path, stored), d)
+        result = blockfiles.check(blockfiles.block_files(os.path.join(path, "blocks")), stored, d.tip_height)
         self.assertEqual(result.fields, {"blocks": 304, "not_in_index": 0, "stored_above_tip": None})
         self.assertEqual(result.reasons, [])
 

@@ -20,17 +20,13 @@ import mmap
 import os
 import struct
 
-from . import chain, leveldb
+from . import chain
 from .ser import DecodeError
 
 MIN_RECORD_SIZE = 80
 MAX_RECORD_SIZE = 1000000
 
 Result = collections.namedtuple("Result", "fields reasons")
-
-
-class BlockFileError(Exception):
-    pass
 
 
 def header_key(version, hash_prev, merkle, time, bits, nonce):
@@ -123,51 +119,62 @@ def scan(paths):
         yield key
 
 
-def stored_blocks(datadir):
-    """header_key -> height of the 'b' records of datadir's block index that
-    have block data."""
-    try:
-        records = leveldb.read_db(os.path.join(datadir, "blocks", "index"), b"b", b"c")
-    except leveldb.LevelDBError as e:
-        raise BlockFileError(str(e))
-    out = {}
-    for _key, value in records:
+class StoredBlocks:
+    """The blocks the block index holds with their data, filled from one
+    read of the index (digest.compute): heights maps the header_key of each
+    such 'b' record to its height; error is why a record could not be read,
+    or None (records given after it are not kept)."""
+
+    def __init__(self):
+        self.heights = {}
+        self.error = None
+
+    def add(self, f):
+        """Takes a parsed 'b' record (chain.parse_block_index)."""
+        if f["status"] & chain.BLOCK_HAVE_DATA:
+            self.heights[index_key(f)] = f["height"]
+
+    def add_value(self, value):
+        """Takes the value of a 'b' record."""
+        if self.error is not None:
+            return
         try:
             f = chain.parse_block_index(value)
         except DecodeError as e:
-            raise BlockFileError("block index record: %s" % e)
-        if f["status"] & chain.BLOCK_HAVE_DATA:
-            out[index_key(f)] = f["height"]
-    return out
+            self.error = "block index record: %s" % e
+            return
+        self.add(f)
 
 
-def check(paths, datadir, tip_height, stop_at_height=None):
-    """The block-file check of the block files paths against the block
-    index of datadir, whose tip is at tip_height. Result.fields: blocks
-    (distinct blocks in the files), not_in_index (of these, the blocks the
-    index does not hold with their data), stored_above_tip (the highest
-    height of a block the index holds with data above tip_height, or
-    None); None when the check could not be made. Result.reasons: why the
-    run is incomplete, also when no block record was found while the
-    index holds stored blocks. With stop_at_height, blocks stored above the tip
-    are not a reason."""
+def check(paths, stored, tip_height, stop_at_height=None):
+    """The block-file check of the block files paths against stored, the
+    StoredBlocks of the block index whose tip is at tip_height; it takes the
+    blocks it finds out of stored.heights. Result.fields: blocks (distinct blocks in the files),
+    not_in_index (of these, the blocks the index does not hold with their
+    data), stored_above_tip (the highest height of a block the index holds
+    with data above tip_height, or None); None when the check could not be
+    made. Result.reasons: why the run is incomplete, also when no block
+    record was found while the index holds stored blocks. With
+    stop_at_height, blocks stored above the tip are not a reason."""
+    if stored.error is not None:
+        return Result(None, ["block-file check: %s" % stored.error])
+    remaining = stored.heights
     try:
-        stored = stored_blocks(datadir)
-        found = {}  # the stored blocks found in the files, moved out of stored
+        found = {}  # the stored blocks found in the files, moved out of remaining
         missing = set()
         for key in scan(paths):
-            height = stored.pop(key, None)
+            height = remaining.pop(key, None)
             if height is not None:
                 found[key] = height
             elif key not in found:
                 missing.add(key)
-    except (OSError, BlockFileError) as e:
+    except OSError as e:
         return Result(None, ["block-file check: %s" % e])
-    heights = list(stored.values()) + list(found.values())
+    heights = list(remaining.values()) + list(found.values())
     above = max((h for h in heights if h > tip_height), default=None)
     fields = {"blocks": len(found) + len(missing), "not_in_index": len(missing), "stored_above_tip": above}
     reasons = []
-    if not found and not missing and stored:
+    if not found and not missing and remaining:
         reasons.append("no block records found in the block files")
     if missing:
         reasons.append("%d blocks of the block files are not in the block index" % len(missing))
