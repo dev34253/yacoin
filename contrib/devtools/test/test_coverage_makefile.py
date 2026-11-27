@@ -5,6 +5,8 @@ parallel on regtest (--chain=regtest) with the scripts of
 test/functional/regtest-excluded-scripts left out, and
 --timeout-factor=$(FTEST_TIMEOUT_FACTOR) passed to every script.
 FTEST_SHARD=K/N passes --shard=K/N; without it the call has no --shard.
+The variables may come from make's environment or its command line; a value
+on the command line wins.
 
 The coverage part of Makefile.am (between "if USE_LCOV" and its "endif")
 is copied into a makefile of its own and printed with "make -n", so no
@@ -23,6 +25,9 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAKEFILE_AM = os.path.join(HERE, "..", "..", "..", "Makefile.am")
 SELECT = "--chain=regtest --exclude-file=/s/test/functional/regtest-excluded-scripts"
+# Left out of make's environment, so the caller's environment changes no case.
+CLEARED_ENV = ("FTEST_JOBS", "FTEST_TIMEOUT_FACTOR", "FTEST_SHARD", "COV_JOBS",
+               "MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES")
 
 
 def coverage_part():
@@ -42,11 +47,14 @@ class CovFunctionalRunnerCallsTests(unittest.TestCase):
         with open(os.path.join(self.dir, "Makefile"), "w") as f:
             f.write("abs_builddir = /b\nabs_top_builddir = /b\nabs_top_srcdir = /s\nall:\n\t@:\n" + coverage_part())
 
-    def runner_calls(self, *variables):
+    def runner_calls(self, *variables, env=None):
         """The test_runner.py calls "make -n cov-functional" prints, each up
-        to its output redirection."""
+        to its output redirection. variables go on make's command line, env
+        is added to make's environment."""
+        environ = {k: v for k, v in os.environ.items() if k not in CLEARED_ENV}
+        environ.update(env or {})
         out = subprocess.run(["make", "-n", "-s", "-C", self.dir, "cov-functional"] + list(variables),
-                             check=True, capture_output=True, text=True).stdout.replace("\\\n", " ")
+                             check=True, capture_output=True, text=True, env=environ).stdout.replace("\\\n", " ")
         return [" ".join(call.split()) for call in re.findall(r"(test/functional/test_runner\.py -j [^>]*)>", out)]
 
     def test_one_call_runs_every_script_with_the_timeout_factor(self):
@@ -58,6 +66,18 @@ class CovFunctionalRunnerCallsTests(unittest.TestCase):
     def test_the_jobs_and_the_timeout_factor_can_be_set(self):
         self.assertEqual(self.runner_calls("FTEST_JOBS=2", "FTEST_TIMEOUT_FACTOR=1.5"), [
             "test/functional/test_runner.py -j 2 %s --timeout-factor=1.5 --tmpdirprefix=/b/test/tmp" % SELECT,
+        ])
+
+    def test_the_jobs_and_the_timeout_factor_can_come_from_the_environment(self):
+        env = {"FTEST_JOBS": "3", "FTEST_TIMEOUT_FACTOR": "2"}
+        self.assertEqual(self.runner_calls(env=env), [
+            "test/functional/test_runner.py -j 3 %s --timeout-factor=2 --tmpdirprefix=/b/test/tmp" % SELECT,
+        ])
+
+    def test_the_command_line_wins_over_the_environment(self):
+        env = {"FTEST_JOBS": "3", "FTEST_TIMEOUT_FACTOR": "2"}
+        self.assertEqual(self.runner_calls("FTEST_JOBS=5", "FTEST_TIMEOUT_FACTOR=1.5", env=env), [
+            "test/functional/test_runner.py -j 5 %s --timeout-factor=1.5 --tmpdirprefix=/b/test/tmp" % SELECT,
         ])
 
     def test_the_shard_reaches_the_call(self):

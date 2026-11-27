@@ -54,3 +54,5 @@ Unreleased
   errors. `configure` stops if the compiler cannot use `-Werror`. The summary's `werror` line shows the setting.
 - `configure` no longer adds `-Wno-implicit-fallthrough` to the warning flags (the last release added it when
   `CXXFLAGS` was unset); gcc warns about `switch` cases that fall through without a marker.
+- `--enable-lcov` also adds `-fprofile-update=atomic` to `CFLAGS` and `CXXFLAGS`; `configure` stops if the C++
+  compiler does not accept it. `make cov-unit` and `make cov-functional` fail when lcov finds a negative count.

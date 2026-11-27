@@ -548,12 +548,11 @@ Notes:
   `contrib/devtools/coverage-lcovrc` (configure passes it with
   `--config-file`), and from no system or user lcovrc.
 - In the build image (`./dev.sh container cov-unit`, `cov-functional`), with
-  the depends packages cached and without ccache, `cov-unit` takes about 11
-  minutes on 8 CPUs (build about 5, tests about 4, captures about 1) and
-  `cov-functional` about 15 (build about 7, the scripts in parallel about 8,
-  captures about 1); with 4 CPUs (`docker run --cpus=4`) about 13 and 17
-  minutes. The unit test time is bounded by
-  `transaction_tests/test_big_transaction` (about 4 minutes).
+  the depends packages cached and no ccache hits, `cov-unit` takes about 15
+  minutes on 8 CPUs (build about 7, tests about 7, captures about 1) and
+  `cov-functional` about 16 (build about 7, the scripts in parallel about 8,
+  captures about 1). The unit test time is bounded by
+  `transaction_tests/test_big_transaction` (about 7 minutes).
 - To keep that time down, the captures run `geninfo --parallel`
   (`contrib/devtools/coverage-capture.sh`), the baseline is captured while
   the tests run, and the unit test suites run in parallel
@@ -574,9 +573,11 @@ Notes:
   a decision whose branches gcc puts on a line without a conditional
   operator (the continuation line of a condition over several lines, a
   `do {` line, a `BOOST_FOREACH` loop).
-- A negative counter (threads updating one counter at the same time; the
-  build does not use `-fprofile-update=atomic`) appears as an lcov warning
-  in the log and is counted as 0, not taken.
+- The coverage build updates its counters atomically (`--enable-lcov` adds
+  `-fprofile-update=atomic`), as several threads of one process update the
+  same counters. A negative count is an lcov error: the capture fails, and
+  the target makes its report from the baseline and then fails with
+  "capturing the ... counters failed".
 - Assembly (`scrypt-x86_64.S`) and the vendored libraries aren't measured.
 - Nodes that the functional tests kill with SIGKILL don't write their
   counters, so code that only those nodes ran is under-reported.
