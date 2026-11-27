@@ -28,8 +28,9 @@ The check fails (exit status 1) if an entry recorded as met is below its target
 under src/) is more than the tolerance below the value recorded. It reports,
 without failing, entries below their target, entries that meet their target
 but are not recorded as met, and recorded values that rose by at least the
-tolerance. Bad input (a missing or malformed file, an unknown key, a file or
-function the tracefiles do not have) exits with status 2.
+tolerance. Bad input (a missing or malformed file, a negative count in a
+tracefile, an unknown key, a file or function the tracefiles do not have) exits
+with status 2.
 
 Function extents come from the JSON files the coverage make targets write next
 to their tracefiles (coverage-functions.py): each function's first and last
@@ -125,13 +126,14 @@ def _ints(text, n, what, where):
 # BRDA:<line>,[e|f][U]<block>,<branch>,<taken>: lcov 2 marks exception (e) and
 # fallthrough (f) branches and excluded ones (U). The branch is an index, or an
 # expression (which may contain commas) for tools other than gcc.
-_BRDA = re.compile(r"BRDA:(?P<line>\d+),[ef]?(?P<excluded>U?)(?P<block>\d+),(?P<branch>.+),(?P<taken>-|\d+)$")
+_BRDA = re.compile(r"BRDA:(?P<line>\d+),[ef]?(?P<excluded>U?)(?P<block>\d+),(?P<branch>.+),(?P<taken>-|-?\d+)$")
 
 
 def parse_tracefile(path, root, files=None):
     """Adds the records of an lcov tracefile to files {relative path: Coverage}.
 
-    Excluded branches are left out; lcov does not count them either."""
+    Excluded branches are left out; lcov does not count them either. A negative
+    count, of an excluded branch too, is an InputError."""
     files = {} if files is None else files
     cur = None
     with open(path, encoding="utf8", errors="replace") as f:
@@ -146,6 +148,8 @@ def parse_tracefile(path, root, files=None):
                 if cur is None:
                     raise InputError("%s: DA record outside a file record" % where)
                 (ln, count), _ = _ints(line[3:], 2, "DA", where)
+                if count < 0:
+                    raise InputError("%s: negative count: %s" % (where, line))
                 cur.lines[ln] = cur.lines.get(ln, 0) + count
             elif line.startswith("BRDA:"):
                 if cur is None:
@@ -153,11 +157,13 @@ def parse_tracefile(path, root, files=None):
                 m = _BRDA.match(line)
                 if not m:
                     raise InputError("%s: malformed BRDA record: %s" % (where, line))
+                taken = m.group("taken")
+                if taken.startswith("-") and taken != "-":
+                    raise InputError("%s: negative count: %s" % (where, line))
                 if m.group("excluded"):
                     continue
                 branch = m.group("branch")
                 key = (int(m.group("line")), int(m.group("block")), int(branch) if branch.isdigit() else branch)
-                taken = m.group("taken")
                 cur.branches[key] = cur.branches.get(key, 0) + (0 if taken == "-" else int(taken))
     return files
 

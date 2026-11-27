@@ -121,6 +121,24 @@ class TracefileTest(TempDirTest):
         with self.assertRaises(cc.InputError):
             cc.read_tracefiles([path], "/src")
 
+    def test_negative_counts_are_errors(self):
+        # Excluded branches (U) are not counted, but a negative count is bad
+        # input there too.
+        for rec in ("DA:5,-1", "BRDA:5,0,1,-1", "BRDA:5,U0,1,-1"):
+            with self.subTest(record=rec):
+                path = self.write("n.info", "SF:/src/src/a.cpp\n%s\nend_of_record\n" % rec)
+                with self.assertRaises(cc.InputError) as ctx:
+                    cc.read_tracefiles([path], "/src")
+                self.assertIn("%s:2:" % path, str(ctx.exception))
+                self.assertIn("negative count", str(ctx.exception))
+                self.assertIn(rec, str(ctx.exception))
+
+    def test_zero_counts_are_accepted(self):
+        path = self.write("z.info", "SF:/src/src/a.cpp\nDA:5,0\nBRDA:5,0,0,0\nBRDA:5,0,1,-\nend_of_record\n")
+        cov = cc.read_tracefiles([path], "/src")["src/a.cpp"]
+        self.assertEqual(cov.lines, {5: 0})
+        self.assertEqual(cov.branches, {(5, 0, 0): 0, (5, 0, 1): 0})
+
     def test_stats_inside_line_ranges(self):
         cov = cc.Coverage()
         cov.lines.update({1: 1, 5: 0, 6: 2, 9: 1})
@@ -498,6 +516,14 @@ class CommandLineTest(TempDirTest):
         self.assertEqual(status, 2)
         status, out, err = self.main("--unit", self.unit)
         self.assertEqual(status, 2)
+
+    def test_negative_count_exits_with_2(self):
+        bad = self.write("bad.info", "TN:\nSF:/src/src/a.cpp\nDA:1,1\nDA:2,-1\nDA:3,0\nend_of_record\n")
+        status, out, err = self.main("--root", "/src", "--unit", self.unit, "--all", bad,
+                                     "--functions", self.functions, "--targets", self.targets_file(False))
+        self.assertEqual(status, 2)
+        self.assertIn("%s:4:" % bad, err)
+        self.assertIn("negative count", err)
 
     def test_per_function_mode(self):
         status, out, err = self.main("--root", "/src", "--unit", self.unit, "--all", self.all,
