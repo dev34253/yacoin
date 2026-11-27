@@ -426,7 +426,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
                         cmd, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, cwd=out,
                         start_new_session=True,
                         preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, caller_mask))
-                except OSError as e:
+                except (OSError, subprocess.SubprocessError) as e:
                     start_error = e
             if start_error is None:
                 signal.pthread_sigmask(signal.SIG_SETMASK, caller_mask)

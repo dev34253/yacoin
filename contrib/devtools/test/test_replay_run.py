@@ -1031,6 +1031,35 @@ class RunTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(out, "heights.tsv.gz")))
         self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
 
+    def test_subprocess_error_when_starting_the_node(self):
+        # Popen raises SubprocessError (as for an exception in preexec_fn):
+        # the report of a node that cannot be started, as for an OSError.
+        spec = importlib.util.spec_from_file_location("replay_script", tu.REPLAY_SCRIPT)
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        error = subprocess.SubprocessError("Exception occurred in preexec_fn.")
+        out = os.path.join(self.tmp, "out")
+        with mock.patch.object(runner.subprocess, "Popen", side_effect=error):
+            rep = runner.run(self.bin, self.source, out, *self.ports, log=lambda msg: None)
+        self.assertEqual((rep["status"], rep["incomplete_reasons"]),
+                         ("incomplete", ["cannot start the node: Exception occurred in preexec_fn."]))
+        with open(os.path.join(out, "report.json")) as f:
+            self.assertEqual(json.load(f), rep)
+        self.assertIsNone(rep["exit_status"])
+        self.assertIsNone(rep["digest"])
+        self.assertTrue(os.path.isdir(rep["datadir"]))
+        self.assertIs(signal.getsignal(signal.SIGINT), signal.default_int_handler)
+        self.assertIs(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)
+        self.assertIs(signal.getsignal(signal.SIGHUP), signal.SIG_DFL)
+        self.assert_no_stop_signal_blocked()
+        with mock.patch.object(runner.subprocess, "Popen", side_effect=error), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+                mock.patch("sys.stderr", new_callable=io.StringIO):
+            code = script.main(["run", "--port", str(self.ports[0]), "--rpcport", str(self.ports[1]), self.bin,
+                                self.source, os.path.join(self.tmp, "out2")])
+        self.assertEqual(code, 1)
+        self.assertIn("incomplete: cannot start the node: Exception occurred in preexec_fn.\n", stdout.getvalue())
+
     def test_port_in_use(self):
         with socket.socket() as s:
             s.bind(("0.0.0.0", self.ports[0]))
