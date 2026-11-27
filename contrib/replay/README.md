@@ -41,9 +41,9 @@ Without `--snapshot` (a full replay):
    `--port`, `--rpcport`). Every other setting is the node's default; `NODE_ARGS` after `--` are passed on unchanged,
    for example `-- -par=2`. Options in `NODE_ARGS` can make the node connect to other nodes or read and write files
    outside `OUT` (for example `-addnode`, `-seednode`, `-pid`). The options the script sets itself are refused after
-   `--` (also in their `-no` form): `-datadir`, `-conf`, `-daemon`, `-reindex`, `-replayvalidation`, `-connect`,
-   `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`,
-   `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
+   `--` (also in their `-no` form and with more than one leading dash): `-datadir`, `-conf`, `-daemon`, `-reindex`,
+   `-replayvalidation`, `-connect`, `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`,
+   `-disablewallet`, `-printtoconsole`, `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
    exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1. With
    `--kill-at-first-invalid-block` the script kills the node at the first block it marks invalid (see

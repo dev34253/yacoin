@@ -997,7 +997,7 @@ class RunTest(unittest.TestCase):
     def test_node_arguments_set_by_the_script_are_refused(self):
         for arg in ("-printtoconsole=1", "--datadir=/elsewhere", "-nolisten", "-reindex", "-stopatheight=5",
                     "-conf=x.conf", "-noserver=0", "-dbcache=100", "-loadblock=/x/blk00000.dat", "-regtest",
-                    "-regtest=1", "-noregtest"):
+                    "-regtest=1", "-noregtest", "---datadir=/x", "---noserver"):
             for options in ([], ["--regtest"]):
                 with self.subTest(arg=arg, options=options):
                     code, _, err = self.run_cli("normal", *options, extra=[arg])
