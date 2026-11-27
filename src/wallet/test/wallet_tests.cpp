@@ -379,7 +379,6 @@ BOOST_FIXTURE_TEST_CASE(rescan, TestChain100Setup)
     CBlockIndex* oldTip = chainActive.Tip();
     GetBlockFileInfo(oldTip->GetBlockPos().nFile)->nSize = MAX_BLOCKFILE_SIZE;
     CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
-    CBlockIndex* newTip = chainActive.Tip();
 
     // Verify ScanForWalletTransactions picks up transactions in both the old
     // and new block files.

@@ -3207,7 +3207,6 @@ bool CWallet::SignTransaction(CTransaction &tx)
             return false;
         }
         const CScript& scriptPubKey = mi->second.tx->vout[input.prevout.n].scriptPubKey;
-        const CAmount& amount = mi->second.tx->vout[input.prevout.n].nValue;
         SignatureData sigdata;
         if (!ProduceSignature(TransactionSignatureCreator(this, &txNewConst, nIn, SIGHASH_ALL), scriptPubKey, sigdata)) {
             return false;
@@ -3405,8 +3404,6 @@ bool CWallet::CreateTransactionAll(
     wtxNew.BindWallet(this);
     CTransaction txNew;
 
-    CAmount nFeeNeeded;
-    unsigned int nBytes;
     {
         std::set<CInputCoin> setCoins;
         std::set<CInputCoin> setTokens;
@@ -3889,7 +3886,7 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
 
         // Delete destdata tuples associated with address
         std::string strAddress = CBitcoinAddress(address).ToString();
-        for (const std::pair<std::string, std::string> &item : mapAddressBook[address].destdata)
+        for (const auto& item : mapAddressBook[address].destdata)
         {
             CWalletDB(*dbw).EraseDestData(strAddress, item.first);
         }
@@ -4278,7 +4275,7 @@ std::set<CTxDestination> CWallet::GetAccountAddresses(const std::string& strAcco
 {
     LOCK(cs_wallet);
     std::set<CTxDestination> result;
-    for (const std::pair<CTxDestination, CAddressBookData>& item : mapAddressBook)
+    for (const auto& item : mapAddressBook)
     {
         const CTxDestination& address = item.first;
         const std::string& strName = item.second.name;

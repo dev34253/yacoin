@@ -1102,7 +1102,7 @@ BOOST_FIXTURE_TEST_CASE(util_LogCategories, LogStateSetup)
     BOOST_CHECK(!GetLogCategory(nullptr, &net));
     BOOST_CHECK(!GetLogCategory(&flag, nullptr));
     // Unknown names (matching is exact and case sensitive) leave the flag untouched
-    for (const std::string& bad : {"NET", "foo", " net", "net "}) {
+    for (const std::string bad : {"NET", "foo", " net", "net "}) {
         BOOST_CHECK(!GetLogCategory(&flag, &bad));
         BOOST_CHECK_EQUAL(flag, 0xDEADBEEF);
     }

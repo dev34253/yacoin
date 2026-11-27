@@ -1887,7 +1887,7 @@ BOOST_AUTO_TEST_CASE(get_transaction_from_mempool_and_tx_index)
     const CBlockIndex* pindex = AtHeight(6);
     CDiskTxPos postx;
     BOOST_REQUIRE(pblocktree->ReadTxIndex(hash, postx));
-    BOOST_REQUIRE(postx.nFile == pindex->nFile && postx.nPos == pindex->nDataPos);
+    BOOST_REQUIRE(static_cast<uint32_t>(postx.nFile) == pindex->nFile && postx.nPos == pindex->nDataPos);
     uint256 hashRecorded;
     BOOST_REQUIRE(ReadBlockHash(pindex, hashRecorded));
     BOOST_REQUIRE(hashRecorded == pindex->GetBlockHash());

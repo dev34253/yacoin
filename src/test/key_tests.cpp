@@ -74,8 +74,7 @@ BOOST_AUTO_TEST_CASE(key_test1)
     BOOST_CHECK(!key2C.VerifyPubKey(pubkey2));
     BOOST_CHECK(key2C.VerifyPubKey(pubkey2C));
 
-    CKeyID testAddr1 = boost::get<CKeyID>(addr1.Get());
-    CKeyID testPubkey1 = pubkey1.GetID();
+    BOOST_CHECK_NO_THROW(boost::get<CKeyID>(addr1.Get()));
     BOOST_CHECK(addr1.Get()  == CTxDestination(pubkey1.GetID()));
     BOOST_CHECK(addr2.Get()  == CTxDestination(pubkey2.GetID()));
     BOOST_CHECK(addr1C.Get() == CTxDestination(pubkey1C.GetID()));

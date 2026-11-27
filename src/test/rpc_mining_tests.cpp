@@ -147,7 +147,7 @@ BOOST_FIXTURE_TEST_SUITE(rpc_mining_tests, TestChain100Setup)
 BOOST_AUTO_TEST_CASE(help_and_argument_count)
 {
     const UniValue none(UniValue::VARR);
-    for (const std::string& method : {"gethashespersec", "getgenerate", "setgenerate", "getsubsidy",
+    for (const std::string method : {"gethashespersec", "getgenerate", "setgenerate", "getsubsidy",
                                       "generatetoaddress", "getmininginfo", "getblocktemplate", "submitblock"}) {
         BOOST_TEST_MESSAGE(method);
         CheckRPCHelp(method, none, true);

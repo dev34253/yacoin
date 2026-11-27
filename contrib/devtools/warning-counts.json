@@ -6,12 +6,12 @@
   "-Wmaybe-uninitialized": 3,
   "-Wnonnull": 3,
   "-Wparentheses": 2,
-  "-Wrange-loop-construct": 21,
+  "-Wrange-loop-construct": 4,
   "-Wreorder": 5,
-  "-Wsign-compare": 38,
+  "-Wsign-compare": 35,
   "-Wstack-protector": 0,
   "-Wswitch": 2,
-  "-Wunused-but-set-variable": 4,
-  "-Wunused-function": 4,
-  "-Wunused-variable": 22
+  "-Wunused-but-set-variable": 2,
+  "-Wunused-function": 3,
+  "-Wunused-variable": 12
 }
