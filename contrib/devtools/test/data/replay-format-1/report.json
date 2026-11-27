@@ -1,0 +1,38 @@
+{
+  "datadir": "/tmp/replay-fixture/datadir",
+  "digest": "0d8391fc19bd0b9c47a2f59de1c8bc225414bdef4f95575f5f332dabf53725c1",
+  "end_time": "2026-11-27T09:11:14Z",
+  "format": 1,
+  "kind": "digest",
+  "phases": {
+    "digest_seconds": 0.004
+  },
+  "sections": {
+    "chain": {
+      "count": 31,
+      "sha256": "c60fbc70c8ab967e4b1c8609574ffd6c390df46891f1d12c7db1bc24ea916adc"
+    },
+    "coins": {
+      "count": 12,
+      "sha256": "0d0ab165eda4c63b4fbc2256b5f5765459806f834bc6bbc1f04bba175178ff2a"
+    },
+    "tokenindex": {
+      "count": 2,
+      "sha256": "1926cba9f4fa893aa592d78043889c0da7e8d63ece0d9b0d21727be06b0830ed"
+    },
+    "tokens": {
+      "count": 3,
+      "sha256": "8282179b58ccfadafdf27a8711a4361880c2e4670e23e4ef9c700d41d2d44ec0"
+    },
+    "undo": {
+      "count": 30,
+      "sha256": "84ad842e2058f121aa68210d735ec06d8872f535ffada15e98d6d1564d1b0799"
+    }
+  },
+  "start_time": "2026-11-27T09:11:14Z",
+  "status": "complete",
+  "tip": {
+    "hash": "7a6d7414da4e683113499209cb82f55a78f9bc00ee81b6bd46cb0e6d1bc6d7db",
+    "height": 30
+  }
+}

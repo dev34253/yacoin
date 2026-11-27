@@ -286,7 +286,7 @@ def index_records(datadir):
 
 def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                  head_blocks=False, block_fields=None, undo=None, side_blocks=0, rev_padding=b"",
-                 blk=False, tip=None, salt=0):
+                 blk=False, tip=None, salt=0, extra_index=()):
     """A data directory with blocks/index (a chain of heights + 1 'b'
     records and side_blocks records off the chain), blocks/rev00000.dat with
     one undo record per height above 0, chainstate (obfuscated with key,
@@ -295,7 +295,8 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     block_fields(height) adds fields to a record; undo(height) gives its
     undo content; rev_padding comes before the first undo record. With blk,
     blocks/blk00000.dat holds a record (marker MARKER) for every block with
-    data. salt gives the blocks above genesis other hashes. Returns the
+    data. salt gives the blocks above genesis other hashes. extra_index:
+    (key, value) pairs written into the block index as they are. Returns the
     block hashes in height order."""
     os.makedirs(os.path.join(path, "blocks"))
     hashes = [fake_hash(h, salt if h else 0) for h in range(heights + 1)]
@@ -331,6 +332,7 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     with open(os.path.join(path, "blocks", "rev00000.dat"), "wb") as f:
         f.write(bytes(rev))
     index = DBWriter(os.path.join(path, "blocks", "index"))
+    records += list(extra_index)
     index.add_table([(k, i + 1, v) for i, (k, v) in enumerate(records)] + [(b"l", 900, b"\0\0\0\0")])
     index.add_log([(1000, [(b"t" + b"\x44" * 32, b"\0\x08\x01")])])
     index.finish()
@@ -347,6 +349,59 @@ def make_datadir(path, heights=3, coins=None, tokens=None, key=b"\x01\x02\x03\x0
     tok.add_log([(1, list(tokens) if tokens is not None else [])])
     tok.finish()
     return hashes
+
+
+class IndexReads:
+    """Within the with block, counts the reads of block index databases
+    (leveldb.read_db of a path ending in blocks/index) per path."""
+
+    def __init__(self):
+        from collections import Counter
+        self.counts = Counter()
+
+    def __enter__(self):
+        from unittest import mock
+        real = leveldb.read_db
+
+        def read_db(path, *args, **kwargs):
+            path = os.path.normpath(os.path.abspath(path))
+            if path.endswith(os.path.join("blocks", "index")):
+                self.counts[path] += 1
+            return real(path, *args, **kwargs)
+
+        self._patch = mock.patch.object(leveldb, "read_db", read_db)
+        self._patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._patch.stop()
+
+    def of(self, datadir):
+        """The number of reads of datadir's block index."""
+        return self.counts[os.path.normpath(os.path.abspath(os.path.join(datadir, "blocks", "index")))]
+
+
+def make_mixed_datadir(path, heights=300, side_blocks=3):
+    """make_datadir (with blk) holding every kind of record the digest reads:
+    version 6 headers (32-bit time) below heights // 2 and version 7 from
+    there, proof-of-stake fields on every fifth height above genesis, undo
+    records of three sizes, twelve coins and token records of the token
+    database ('A', 'B', 'C' and others). Returns the block hashes in height
+    order."""
+    def fields(h):
+        f = {"version": 6 if h < heights // 2 else 7, "tx": 1 + h % 3, "stake_modifier": 7919 * h}
+        if h and h % 5 == 0:
+            f.update(flags=BLOCK_PROOF_OF_STAKE, prevout_stake=fake_hash(h, salt=3000) + struct.pack("<I", h % 4),
+                     stake_time=1700000000 + 60 * h - 7, hash_proof_of_stake=fake_hash(h, salt=4000))
+        return f
+
+    coins = [(b"C" + fake_hash(i, salt=5000) + bytes([i % 3]), b"\x03\x00" + bytes([i]) * (1 + i % 4))
+             for i in range(12)]
+    tokens = [(b"A\x03TK" + bytes([65 + i]), b"meta %d" % i) for i in range(3)]
+    tokens += [(b"B\x03TKA\x01a", b"q"), (b"C\x01a\x03TKA", b"q"), (b"U" + b"\x01" * 32, b"undo"), (b"Z", b"z")]
+    return make_datadir(path, heights=heights, coins=coins, tokens=tokens, block_fields=fields,
+                        undo=lambda h: b"\x01\x00" + struct.pack("<I", h) * (1 + h % 3), side_blocks=side_blocks,
+                        blk=True)
 
 
 def make_run(out, heights=3, fields=None, failures=(), regtest=False, **kwargs):

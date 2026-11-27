@@ -16,8 +16,8 @@ The script runs under `python3 -I`.
 
 ```
 contrib/replay/replay.py run [--up-to-height H --chain DATADIR | --snapshot SNAPSHOT --chain DATADIR] [--regtest]
-                             [--stop-at-height N] [--dbcache MB] [--port P] [--rpcport R]
-                             YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
+                             [--stop-at-height N] [--kill-at-first-invalid-block] [--dbcache MB] [--port P]
+                             [--rpcport R] YACOIND SOURCE_BLOCKS OUT [-- NODE_ARGS...]
 ```
 
 Without `--snapshot` (a full replay):
@@ -45,14 +45,17 @@ Without `--snapshot` (a full replay):
    `-listen`, `-dnsseed`, `-discover`, `-upnp`, `-listenonion`, `-server`, `-disablewallet`, `-printtoconsole`,
    `-port`, `-rpcport`, `-dbcache`, `-stopatheight`, `-loadblock`, `-regtest`.
 4. Follows `OUT/datadir/debug.log`. When the node logs `Done loading`, the script sends it SIGTERM and waits for it to
-   exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1.
-5. Computes the digest of `OUT/datadir` (as `digest` does), reads the failure lines of `-replayvalidation` from
-   `debug.log`, makes the block-file check (below) on `OUT/datadir/blocks/blk*.dat` and writes the report files into
-   `OUT`.
+   exit. With `--stop-at-height N` the node stops itself at height N (`-stopatheight`) and exits with status 1. With
+   `--kill-at-first-invalid-block` the script kills the node at the first block it marks invalid (see
+   [Kill at the first invalid block](#kill-at-the-first-invalid-block)).
+5. Computes the digest of `OUT/datadir` (as `digest` does) and makes the block-file check (below) on
+   `OUT/datadir/blocks/blk*.dat`, unless the node's log named an invalid block with `--kill-at-first-invalid-block`;
+   reads the failure lines of `-replayvalidation` from `debug.log` and writes the report files into `OUT`.
 
 The run is **complete** when the node exited with status 0 (with `--stop-at-height N`: 0 or 1, and the tip is at height
-N), `debug.log` has `Reindexing finished`, the digest could be computed, the block-file check passes and, with
-`--up-to-height H`, the tip is at height H; otherwise it
+N), `debug.log` has `Reindexing finished`, the digest could be computed, the block-file check passes, with
+`--up-to-height H` the tip is at height H, and with `--kill-at-first-invalid-block` the node marked no block invalid
+before `Done loading`; otherwise it
 is **incomplete**, with the reasons in the report (also when the node cannot be started: "cannot start the node: …").
 The exit status is 0 for a complete run and 1 for an incomplete one.
 
@@ -69,7 +72,8 @@ exits with status 128 plus the signal number, without a report. A signal the scr
 example SIGHUP under `nohup`) stays ignored. If the script is killed with SIGKILL, the node goes on running; stop it
 by hand, for example with `pkill -TERM -f -- "-datadir=OUT/datadir"`.
 
-The node's output is in `OUT/node-stdout.log` and `OUT/node-stderr.log`, its log in `OUT/datadir/debug.log`.
+The node's output is in `OUT/node-stdout.log` and `OUT/node-stderr.log`, its log in `OUT/datadir/debug.log` (after a
+kill at the first invalid block, in `OUT/debug.log`).
 
 With `--regtest` the node runs on regtest: its command line has `-regtest` after `-daemon=0`, and its chain files are
 in the data directory's `regtest` subdirectory, as for every regtest node. The block files are copied into
@@ -77,6 +81,26 @@ in the data directory's `regtest` subdirectory, as for every regtest node. The b
 are taken on `OUT/datadir/regtest`, and the report has `"regtest": true`; `yacoin.conf` stays in `OUT/datadir`. The
 rules the node checks under (activation heights and the other regtest options) are given as `NODE_ARGS`. A run without
 `--regtest` has the node command line and the report fields described above.
+
+#### Kill at the first invalid block
+
+With `--kill-at-first-invalid-block` the script kills the node (SIGKILL) as soon as `debug.log` has the node's first
+`InvalidChainFound: invalid block=HASH  height=N` line before `Done loading`; such a line after `Done loading` changes
+nothing. The option watches only the node's `InvalidChainFound: invalid block=` lines; a block the node refuses without
+such a line does not trigger it, and the run goes on as without the option. Failure lines of `-replayvalidation` do not
+trigger it.
+
+After the kill the script takes no digest and makes no block-file check. It moves the node's `debug.log` to
+`OUT/debug.log` and deletes `OUT/datadir` and, for a snapshot run, `OUT/import`. The report is incomplete, its first
+reason "the node marked block HASH at height N invalid; killed (--kill-at-first-invalid-block)" (without "; killed"
+when the node ended before the kill), followed by the other reasons of such a run, for example "node ended by signal
+SIGKILL" and "no digest". The report has
+`kill_at_first_invalid_block` and `invalid_block` (see [Report files](#report-files)); `compare` refuses it. If the
+script gets SIGINT, SIGTERM or SIGHUP after the kill, it finishes moving `debug.log` and deleting these directories
+before it exits, without a report.
+
+The option is taken with `--up-to-height`, `--snapshot` and `--stop-at-height`. A run with the option in which the node
+marks no block invalid before `Done loading` is reported as without it, apart from the two fields.
 
 #### The chain
 
@@ -118,7 +142,7 @@ With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
    The block files are given to the node twice: a block stored before its parent is imported in the
    second pass. Blocks still missing after that show in the block-file check.
 5. Stops the node as above, computes the digest, makes the block-file check on `OUT/import/` and writes the same
-   report files.
+   report files; after a kill at the first invalid block, it takes neither and deletes `OUT/datadir` and `OUT/import`.
 
 The snapshot run is **complete** when the node exited as above, `debug.log` has `Done loading`, an `Importing blocks
 file` line for every `-loadblock` file and no `Could not open blocks file` line, the digest could be computed, the
@@ -185,7 +209,8 @@ contrib/replay/replay.py compare [--expected-failures FILE] REPORT_A REPORT_B
 `REPORT_A` and `REPORT_B` are output directories of `run` or `digest` (or their `report.json`); any other path is an
 error (exit status 2). Prints `identical` and
 exits with status 0 when both reports are complete, their tips, every section and every height row agree, and neither
-has a failure other than the expected failures (below). Otherwise it exits with status 1 and prints:
+has a failure other than the expected failures (below). It refuses (exit status 2) the report of a run killed at the
+first invalid block ("killed at the first invalid block; no digest"). Otherwise it exits with status 1 and prints:
 
 - `first difference at height H: …`: the lowest height with a row that differs (naming the columns, with both values),
   a row present in one report only, or a failure that is not expected;
@@ -220,6 +245,7 @@ line is an error (exit status 2).
 | `up_to_height`, `chain` | run: `--up-to-height`, or null; the chain's `datadir` and the `height` and `hash` of its tip, or null without `--chain` |
 | `block_file_check` | run: `blocks` (distinct blocks in the block files), `not_in_index` (of these, the blocks the block index does not hold with their data), `stored_above_tip` (the highest height of a stored block above the tip, or null); null when the check was not made |
 | `stop_at_height` | run: `--stop-at-height`, or null |
+| `kill_at_first_invalid_block`, `invalid_block` | run with `--kill-at-first-invalid-block` only: `true`; the `height` and `hash` of the block the node marked invalid, or null. With `invalid_block` set, `digest`, `digest_error`, `tip` and `block_file_check` are null, `sections` is empty and `phases` has no `digest_seconds` |
 | `exit_status`, `exit_signal` | run: the node's exit status, or the signal that ended it |
 | `wall_seconds`, `cpu_seconds`, `user_seconds`, `system_seconds`, `peak_rss_kib` | run: the node process from start to exit (CPU time and peak resident memory from `wait4`) |
 | `phases` | run: `copy_seconds`, `reindex_finished_seconds` and `done_loading_seconds` (from the node's start), `node_seconds`, `digest_seconds`, `block_file_check_seconds`; with `--chain`, `chain_seconds` (reading the chain) |
@@ -322,12 +348,15 @@ and start it. `run` reads only the `blk*.dat` files of the source.
 Disk: `OUT` holds a copy of the block files plus the databases the node rebuilds (`blocks/index`, `chainstate`,
 `tokens`), the `rev` files and `debug.log`. A snapshot holds the block files and these databases; a snapshot run's
 `OUT` holds a copy of the snapshot plus the block files in `OUT/import/`. The digest reads the block index, chainstate
-and token databases into memory, the block-file check the block index, and `--chain` the block index of the chain.
+and token databases into memory; the digest and the block-file check share one read of the block index, and `--chain`
+reads the block index of the chain once. The digest keeps per height 113 bytes (block hash, chain-record and undo
+digests, mint and money supply).
 
 Time and memory: one full run (without `--up-to-height`) took about 65 hours of wall time and about 65 hours of CPU
-time, with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes
-and about 1.5 GB of memory.
+time, with a peak memory of about 1.7 GB for the node (`peak_rss_kib`); the digest of the result took under two minutes.
+On a synthetic regtest data directory of 200,000 heights, the script's own peak memory after the node (digest,
+block-file check and report files) was about 180 MiB on one machine.
 
 A snapshot replay took about 1.2 seconds of wall time per block above H, plus about 4 minutes for reading the chain,
-copying the snapshot, the digest and the block-file check, with a peak memory of about 1.8 GB for the node and about
-2.4 GB for the script; the snapshot took about 1.8 GB on disk. These times and sizes are from one machine.
+copying the snapshot, the digest and the block-file check, with a peak memory of about 1.8 GB for the node; the
+snapshot took about 1.8 GB on disk. These times and sizes are from one machine.

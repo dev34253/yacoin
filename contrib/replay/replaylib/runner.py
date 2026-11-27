@@ -9,7 +9,13 @@ With --up-to-height H the data directory gets block files holding only the
 main-chain blocks 0 to H of the chain (--chain). The snapshot run copies a
 snapshot's databases into the new data directory instead and gives the
 node block files holding the main-chain blocks above the snapshot with
--loadblock."""
+-loadblock.
+
+With kill_at_first_invalid_block the node is killed (SIGKILL) as soon as
+its log names the first block it marked invalid before "Done loading";
+the report of such a run has no digest and no block-file check, and the
+data directory (and a snapshot run's block files) are deleted, the node's
+debug.log moved to OUT/debug.log."""
 
 import errno
 import hashlib
@@ -166,10 +172,12 @@ def check(binary, source, out, port, rpcport, extra=()):
             raise RunRefused("port %d is in use" % p)
 
 
-def _wait(pid, follower, marks, start, stop_sent, reaped, log):
+def _wait(pid, follower, marks, start, stop_sent, reaped, log, killed=None):
     """Waits for the node to exit; sends SIGTERM once "Done loading" is in
-    its log. Returns (status, rusage); reaped gets them as soon as the
-    node is reaped."""
+    its log. With killed (a one-element list), sends SIGKILL instead as
+    soon as the log names an invalid block before "Done loading", sets
+    killed[0] and sends nothing more. Returns (status, rusage); reaped gets
+    them as soon as the node is reaped."""
     while True:
         # A stop signal is handled after the reap is recorded, not between.
         signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
@@ -189,7 +197,13 @@ def _wait(pid, follower, marks, start, stop_sent, reaped, log):
             marks["done_loading_seconds"] = round(now, 3)
         if done:
             return status, rusage
-        if s.done_loading and not stop_sent[0]:
+        kill_sent = killed is not None and killed[0]
+        if killed is not None and not kill_sent and s.invalid_block is not None:
+            log("the node marked block %s at height %d invalid; killing the node" % (
+                s.invalid_block.hash, s.invalid_block.height))
+            killed[0] = True
+            os.kill(pid, signal.SIGKILL)
+        elif s.done_loading and not stop_sent[0] and not kill_sent:
             log("start-up done; stopping the node")
             os.kill(pid, signal.SIGTERM)
             stop_sent[0] = True
@@ -217,10 +231,15 @@ def check_modes(out, snapshot, stop_at_height, up_to_height, chain):
 
 
 def load_chain(chain, meta, stop_at_height, up_to_height):
-    """The mainchain.Chain of the data directory chain; raises RunRefused
-    when it cannot be read or does not hold the blocks the run needs."""
+    """The mainchain.Chain of the data directory chain with the keys of the
+    heights the run writes: 0 to up_to_height, or those above the
+    snapshot's height (meta); raises RunRefused when it cannot be read or
+    does not hold the blocks the run needs."""
     try:
-        c = mainchain.load(chain)
+        if meta is None:
+            c = mainchain.load(chain, 0, up_to_height)
+        else:
+            c = mainchain.load(chain, meta["height"] + 1, None, (meta["height"],))
     except mainchain.ChainError as e:
         raise RunRefused("--chain %s: %s" % (chain, e))
     if up_to_height is not None and c.tip_height < up_to_height:
@@ -228,7 +247,7 @@ def load_chain(chain, meta, stop_at_height, up_to_height):
                          % (chain, c.tip_height, up_to_height))
     if meta is not None:
         height = meta["height"]
-        if c.tip_height < height or c.hashes[height] != meta["hash"]:
+        if c.tip_height < height or c.hashes.get(height) != meta["hash"]:
             raise RunRefused("the chain of %s does not hold the snapshot's block %s at height %d"
                              % (chain, meta["hash"], height))
         if c.tip_height == height:
@@ -268,12 +287,15 @@ def _copy_block_files(files, directory):
 
 
 def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache=None, stop_at_height=None,
-        extra=(), log=print, snapshot=None, up_to_height=None, chain=None, regtest=False):
+        extra=(), log=print, snapshot=None, up_to_height=None, chain=None, regtest=False,
+        kill_at_first_invalid_block=False):
     """Runs the replay: a full one, up to height up_to_height of the main
     chain of the data directory chain if given, or from the snapshot
     directory snapshot with the main-chain blocks of chain above it; with
-    regtest, on a regtest node. Returns the report dict. Raises RunRefused
-    before anything is created when a precondition does not hold."""
+    regtest, on a regtest node; with kill_at_first_invalid_block, the node
+    is killed at the first block it marks invalid. Returns the report dict.
+    Raises RunRefused before anything is created when a precondition does
+    not hold."""
     binary = os.path.abspath(binary)
     source = os.path.abspath(source)
     out = os.path.abspath(out)
@@ -360,6 +382,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     follower = logscan.LogFollower(os.path.join(chain_dir, "debug.log"))
     marks = {"reindex_finished_seconds": None, "done_loading_seconds": None}
     stop_sent = [False]
+    killed = [False] if kill_at_first_invalid_block else None
     log("starting the node")
     start = time.monotonic()
 
@@ -372,6 +395,7 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     proc = None
     start_error = None
     reaped = []
+    held_mask = None
     try:
         try:
             with open(os.path.join(out, "node-stdout.log"), "wb") as stdout, \
@@ -389,7 +413,11 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
                 finally:
                     signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
             if start_error is None:
-                status, rusage = _wait(proc.pid, follower, marks, start, stop_sent, reaped, log)
+                status, rusage = _wait(proc.pid, follower, marks, start, stop_sent, reaped, log, killed)
+                if killed is not None and killed[0]:
+                    # After a kill, stop signals wait until the node's files
+                    # are removed.
+                    held_mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
         except BaseException as e:
             if proc is None:
                 raise
@@ -406,6 +434,8 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
             status = reaped[0][0]
             proc.returncode = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -os.WTERMSIG(status)
             follower.finish()
+            if killed is not None and killed[0]:
+                remove_node_files(out, chain_dir)
             raise
     finally:
         for sig, handler in old_handlers.items():
@@ -414,7 +444,14 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
         log("cannot start the node: %s" % start_error)
         return _not_started(out, rep, phases, ["cannot start the node: %s" % start_error])
     node_seconds = time.monotonic() - start
-    follower.finish()
+    try:
+        follower.finish()
+        invalid = follower.scanner.invalid_block if kill_at_first_invalid_block else None
+        if invalid is not None:
+            remove_node_files(out, chain_dir)
+    finally:
+        if held_mask is not None:
+            signal.pthread_sigmask(signal.SIG_SETMASK, held_mask)
     exit_status = os.WEXITSTATUS(status) if os.WIFEXITED(status) else None
     exit_signal = signal.Signals(os.WTERMSIG(status)).name if os.WIFSIGNALED(status) else None
     # Reaped by os.wait4 above; tell the Popen object.
@@ -435,20 +472,24 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     phases["node_seconds"] = round(node_seconds, 3)
     log("node exited (%s) after %.0f s" % (
         "status %s" % exit_status if exit_signal is None else "signal %s" % exit_signal, node_seconds))
+    if kill_at_first_invalid_block:
+        rep["kill_at_first_invalid_block"] = True
+        rep["invalid_block"] = None if invalid is None else {"height": invalid.height, "hash": invalid.hash}
 
-    t1 = time.monotonic()
-    try:
-        d = digest_mod.compute(chain_dir)
-        rep["digest_error"] = None
-    except digest_mod.DigestError as e:
-        d = None
-        rep["digest_error"] = str(e)
-        log("digest: %s" % e)
-    except Exception as e:  # the report of the run is written in any case
-        d = None
-        rep["digest_error"] = "%s: %s" % (type(e).__name__, e)
-        log("digest: %s" % rep["digest_error"])
-    phases["digest_seconds"] = round(time.monotonic() - t1, 3)
+    stored = blockfiles.StoredBlocks()
+    d = None
+    rep["digest_error"] = None
+    if invalid is None:
+        t1 = time.monotonic()
+        try:
+            d = digest_mod.compute(chain_dir, stored)
+        except digest_mod.DigestError as e:
+            rep["digest_error"] = str(e)
+            log("digest: %s" % e)
+        except Exception as e:  # the report of the run is written in any case
+            rep["digest_error"] = "%s: %s" % (type(e).__name__, e)
+            log("digest: %s" % rep["digest_error"])
+        phases["digest_seconds"] = round(time.monotonic() - t1, 3)
     rep["phases"] = phases
 
     # A snapshot run's failures include those of the run the snapshot was
@@ -466,18 +507,38 @@ def run(binary, source, out, port=DEFAULT_PORT, rpcport=DEFAULT_RPCPORT, dbcache
     reasons = incomplete_reasons(exit_status, exit_signal, follower.scanner, d, stop_at_height,
                                  None if meta is None else meta["height"], loadblock_files(imports or ()),
                                  up_to_height)
+    if invalid is not None:
+        reasons.insert(0, "the node marked block %s at height %d invalid%s (--kill-at-first-invalid-block)" % (
+            invalid.hash, invalid.height, "; killed" if killed[0] and exit_signal == "SIGKILL" else ""))
     rep["block_file_check"] = None
     if d is not None:
         t2 = time.monotonic()
-        result = blockfiles.check(block_files(blocks) if imports is None else imports, chain_dir, d.tip_height,
+        result = blockfiles.check(block_files(blocks) if imports is None else imports, stored, d.tip_height,
                                   stop_at_height)
         phases["block_file_check_seconds"] = round(time.monotonic() - t2, 3)
         rep["block_file_check"] = result.fields
         reasons += result.reasons
+    stored = None
     rep["incomplete_reasons"] = reasons
     rep["status"] = "incomplete" if reasons else "complete"
     report.write(out, rep, d.rows if d else [], marked)
     return rep
+
+
+def remove_node_files(out, chain_dir):
+    """Moves the node's debug.log to out/debug.log and deletes out/datadir
+    and out/import; a stop signal is handled when this is done."""
+    old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+    try:
+        log_path = os.path.join(chain_dir, "debug.log")
+        if os.path.exists(log_path):
+            os.replace(log_path, os.path.join(out, "debug.log"))
+        for name in ("datadir", "import"):
+            path = os.path.join(out, name)
+            if os.path.lexists(path):
+                shutil.rmtree(path)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
 
 
 def _not_started(out, rep, phases, reasons):

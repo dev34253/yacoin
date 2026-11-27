@@ -8,6 +8,9 @@ only, a failure that is not expected), what differs there, the status if a
 report is incomplete, the tips if they differ, and the sections that
 differ.
 
+A report of a run killed at the first invalid block
+(--kill-at-first-invalid-block) is not compared.
+
 Expected failures: a text file with one "block check tx input" entry per
 line; "#" starts a comment. An entry matches a failure by block hash,
 check, transaction and input.
@@ -50,6 +53,14 @@ def load_expected(path):
             raise ExpectedFailuresError("%s line %d: input is neither a number nor -: %s" % (path, n, inp))
         entries.add((block, check, tx, inp))
     return entries
+
+
+def refusal(loaded):
+    """Why the report.Loaded loaded cannot be compared, or None: a run
+    whose node was killed at the first invalid block has no digest."""
+    if loaded.report.get("invalid_block"):
+        return "%s: killed at the first invalid block; no digest" % loaded.path
+    return None
 
 
 def _describe_row(a, b):

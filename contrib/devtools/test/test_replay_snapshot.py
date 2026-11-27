@@ -95,6 +95,12 @@ class SnapshotTest(unittest.TestCase):
         # The run directory is unchanged.
         self.assertEqual(tu.tree_state(self.run_out), before)
 
+    def test_one_read_of_the_block_index(self):
+        tu.make_run(self.run_out, heights=6, side_blocks=1)
+        with tu.IndexReads() as reads:
+            snapshot.make(self.run_out, self.snap, log=lambda msg: None)
+        self.assertEqual(dict(reads.counts), {os.path.join(self.snap, "blocks", "index"): 1})
+
     def test_snapshot_of_a_regtest_run(self):
         main_out = os.path.join(self.tmp, "main-run")
         tu.make_run(main_out, heights=4)

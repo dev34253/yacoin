@@ -1,8 +1,9 @@
 """The scan of a node's debug.log: the failure lines of -replayvalidation,
 the markers of the reindex ("Reindexing finished") and of the end of the
-start-up ("Done loading"), and the files of -loadblock the node imported
-("Importing blocks file") or could not open. The log is read in chunks,
-never whole."""
+start-up ("Done loading"), the files of -loadblock the node imported
+("Importing blocks file") or could not open, and the first block the node
+marked invalid before "Done loading" ("InvalidChainFound: invalid
+block="). The log is read in chunks, never whole."""
 
 import codecs
 import collections
@@ -10,6 +11,7 @@ import os
 import re
 
 Failure = collections.namedtuple("Failure", "height block check tx input error")
+InvalidBlock = collections.namedtuple("InvalidBlock", "height hash")
 
 FAILURE_RE = re.compile(r"replayvalidation: failure height=(\d+) block=([0-9a-f]{64}) "
                         r"check=(\S+) tx=(\S+) input=(\S+) error=(.*)$")
@@ -17,13 +19,17 @@ REINDEX_FINISHED = "Reindexing finished"
 IMPORTING_RE = re.compile(r"Importing blocks file (.*)\.\.\.$")
 NOT_OPENED_RE = re.compile(r"Warning: Could not open blocks file (.*)$")
 DONE_LOADING = "Done loading"
+INVALID_BLOCK = "InvalidChainFound: invalid block="
+INVALID_BLOCK_RE = re.compile(r"InvalidChainFound: invalid block=([0-9a-f]{64})\s+height=(\d+)(?=\s|$)")
 CHUNK = 1 << 20
 
 
 class LogScanner:
     """Takes the log text in pieces of any size (feed) and collects the
     failures and markers of its complete lines; finish() takes a last line
-    without a newline."""
+    without a newline. invalid_block: the InvalidBlock of the first
+    well-formed "InvalidChainFound: invalid block=" line before "Done
+    loading", or None."""
 
     def __init__(self):
         self.failures = []
@@ -31,6 +37,7 @@ class LogScanner:
         self.done_loading = False
         self.imported = []
         self.not_opened = []
+        self.invalid_block = None
         self._partial = ""
 
     def feed(self, text):
@@ -51,6 +58,11 @@ class LogScanner:
             m = FAILURE_RE.search(line)
             if m:
                 self.failures.append(Failure(int(m.group(1)), *m.group(2, 3, 4, 5, 6)))
+        elif INVALID_BLOCK in line:
+            if self.invalid_block is None and not self.done_loading:
+                m = INVALID_BLOCK_RE.search(line)
+                if m:
+                    self.invalid_block = InvalidBlock(int(m.group(2)), m.group(1))
         elif line.endswith(REINDEX_FINISHED):
             self.reindex_finished = True
         elif line.endswith(DONE_LOADING):
