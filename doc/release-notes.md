@@ -52,3 +52,5 @@ Unreleased
 - Windows builds configured without `CXXFLAGS` no longer get `-w`.
 - New `configure` option `--enable-werror` (default no): treats compiler warnings in those C++ compiles as
   errors. `configure` stops if the compiler cannot use `-Werror`. The summary's `werror` line shows the setting.
+- `configure` no longer adds `-Wno-implicit-fallthrough` to the warning flags (the last release added it when
+  `CXXFLAGS` was unset); gcc warns about `switch` cases that fall through without a marker.

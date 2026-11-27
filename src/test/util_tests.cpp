@@ -519,6 +519,19 @@ BOOST_AUTO_TEST_CASE(strprintf_numbers)
 #undef B
 #undef E
 
+BOOST_AUTO_TEST_CASE(strprintf_uppercase_conversions)
+{
+    BOOST_CHECK_EQUAL(strprintf("%X", 255), "FF");
+    BOOST_CHECK_EQUAL(strprintf("%x", 255), "ff");
+    BOOST_CHECK_EQUAL(strprintf("%E", 1.5), "1.500000E+00");
+    BOOST_CHECK_EQUAL(strprintf("%e", 1.5), "1.500000e+00");
+    BOOST_CHECK_EQUAL(strprintf("%F", 1.5), "1.500000");
+    BOOST_CHECK_EQUAL(strprintf("%f", 1.5), "1.500000");
+    BOOST_CHECK_EQUAL(strprintf("%G", 1e-10), "1E-10");
+    BOOST_CHECK_EQUAL(strprintf("%g", 1e-10), "1e-10");
+    BOOST_CHECK_EQUAL(strprintf("%X %x", 255, 255), "FF ff");
+}
+
 BOOST_AUTO_TEST_CASE(strprintf_int64_format_macros)
 {
     const int64_t s64min = std::numeric_limits<int64_t>::min();

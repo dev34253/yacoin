@@ -90,7 +90,7 @@ std::vector<std::string> Dump(CDBWrapper& db, char prefix)
     for (it->Seek(prefix); it->Valid(); it->Next()) {
         std::pair<char, K> key;
         if (!it->GetKey(key) || key.first != prefix) break;
-        V value;
+        V value{};
         BOOST_REQUIRE(it->GetValue(value));
         out.push_back(Str(key.second, value));
     }
