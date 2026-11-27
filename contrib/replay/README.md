@@ -238,7 +238,7 @@ line is an error (exit status 2).
 | `blocks_above_snapshot` | snapshot run: the tip's height minus the snapshot's height H (null for a full run and without a digest); also in the summary line `run` prints |
 | `status`, `incomplete_reasons` | `complete` or `incomplete`, and why |
 | `start_time`, `end_time` | UTC |
-| `datadir` | the data directory the digest was taken from; for a run with `--regtest`, the node's data directory, whose `regtest` subdirectory the digest was taken from |
+| `datadir` | the data directory the digest was taken from; for a run with `--regtest`, the node's data directory, whose `regtest` subdirectory the digest was taken from; null for a run that ended before it created the data directory |
 | `regtest` | run with `--regtest`: `true`; absent otherwise |
 | `tip` | `height` and `hash` of the chainstate's best block |
 | `sections`, `digest`, `digest_error` | `count` and `sha256` per section; the overall digest; the error if there is no digest |

@@ -1175,6 +1175,8 @@ class UpToHeightTest(unittest.TestCase):
         self.assertIsNone(rep["command"])
         self.assertGreaterEqual(rep["phases"]["chain_seconds"], 0)
         self.assertIn("incomplete: 1 heights of the chain are not in the block files", stdout)
+        self.assertEqual(rep["datadir"], os.path.join(self.tmp, "out", "datadir"))
+        self.assertTrue(os.path.isdir(rep["datadir"]))
 
     def test_refusals(self):
         cases = [
@@ -1398,7 +1400,8 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertEqual(rep["incomplete_reasons"], ["1 heights of the chain are not in the block files, "
                                                      "the first at height 5"])
         self.assertIsNone(rep["exit_status"])
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir", "args.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir")))
+        self.assertIsNone(rep["datadir"])
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
 
     def test_kill_at_first_invalid_block(self):
@@ -1488,6 +1491,8 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertIsNone(rep["exit_status"])
         self.assertIsNone(rep["digest"])
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out", "datadir", "args.json")))
+        self.assertEqual(rep["datadir"], os.path.join(self.tmp, "out", "datadir"))
+        self.assertTrue(os.path.isdir(rep["datadir"]))
         os.truncate(rev, size)
         os.remove(os.path.join(self.snap, "tokens", "CURRENT"))
         self.assertEqual(self.run_cli("import", out="out2")[0], 1)

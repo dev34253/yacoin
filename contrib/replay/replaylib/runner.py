@@ -566,8 +566,11 @@ def remove_node_files(out, chain_dir):
 
 def _not_started(out, rep, phases, reasons):
     """The report of a run whose node was not started or could not be
-    started, for the reasons given."""
+    started, for the reasons given; its datadir is null when the run did
+    not create the data directory."""
     rep.setdefault("command", None)
+    if not os.path.isdir(rep["datadir"]):
+        rep["datadir"] = None
     rep.update({
         "end_time": utc_now(), "exit_status": None, "exit_signal": None, "wall_seconds": None,
         "user_seconds": None, "system_seconds": None, "cpu_seconds": None, "peak_rss_kib": None,
