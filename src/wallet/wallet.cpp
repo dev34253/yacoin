@@ -3001,13 +3001,12 @@ bool CWallet::SelectTokensMinConf(const CAmount& nTargetValue,
 
   // List of values less than target
   boost::optional<CInputCoin> coinLowestLarger;
-  boost::optional<CAmount> coinLowestLargerAmount;
+  boost::optional<CAmount> coinLowestLargerAmount = boost::make_optional(false, CAmount());
   std::vector<std::pair<CInputCoin, CAmount> > vValue;
   std::map<COutPoint, CAmount> mapValueAmount;
   CAmount nTotalLower = 0;
   random_shuffle(vCoins.begin(), vCoins.end(), GetRandInt);
 
-  #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
   for (const COutput& output : vCoins) {
     if (!output.fSpendable)
         continue;
@@ -3088,8 +3087,6 @@ bool CWallet::SelectTokensMinConf(const CAmount& nTargetValue,
       if (!coinLowestLarger || !coinLowestLargerAmount)
           return false;
       setCoinsRet.insert(coinLowestLarger.get());
-
-      #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
       nValueRet += coinLowestLargerAmount.get();
       return true;
   }
