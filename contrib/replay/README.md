@@ -125,13 +125,16 @@ With `--snapshot SNAPSHOT --chain DATADIR` (a snapshot replay):
 
 1. Checks as above, and that `OUT` is not inside `SNAPSHOT`, that `SNAPSHOT` has a `snapshot.json` of a known format
    and was made from a run on the same chain (with `--regtest` from a run with `--regtest`, without it from one
-   without),
-   that the chain of `DATADIR` holds the snapshot's block at its height H and goes above it, and that
-   `--stop-at-height N`, if given, is above H and not above the chain's tip.
+   without), that `SNAPSHOT/failures.tsv` can be read, has the number of failures of `snapshot.json` and matches its
+   entry in the snapshot's manifest, that the chain of `DATADIR` holds the snapshot's block at its height H and goes
+   above it, and that `--stop-at-height N`, if given, is above H and not above the chain's tip. The manifest lists
+   `failures.tsv`; a snapshot run refuses (exit status 2) a snapshot whose `failures.tsv` differs from that entry, with
+   the same message as for a database file. A snapshot whose manifest has no `failures.tsv` entry is accepted; its
+   `failures.tsv` is checked by its row count only.
 2. Writes the main-chain blocks from H + 1 to the chain's tip into `OUT/import/` (see [The chain](#the-chain)).
-3. Copies the files of the snapshot into `OUT/datadir` (with `--regtest`, `OUT/datadir/regtest`; copies, never links),
-   checking each against the snapshot's manifest. A file that is missing or differs ends the run before the node starts: the report is incomplete and
-   names the file.
+3. Copies the database files of the snapshot's manifest into `OUT/datadir` (with `--regtest`, `OUT/datadir/regtest`;
+   copies, never links), checking each against the manifest. A file that is missing or differs ends the run before
+   the node starts: the report is incomplete and names the file.
 4. Starts
 
    ```
@@ -176,7 +179,8 @@ Makes the snapshot `SNAPSHOT` of the data directory of the full run in `RUN_OUT`
    `command`, `binary` (path and SHA-256), `source`, `up_to_height` and `chain`, its `failures`, `failure_blocks` and
    `failures_off_main_chain`, the run directory (`run`), the time it was made (`made`), the `manifest`, and for a run
    with `--regtest` `"regtest": true`; copies the
-   run's `report.json` and `failures.tsv` beside it; and makes every file and directory of `SNAPSHOT` read-only.
+   run's `report.json` and `failures.tsv` beside it, `failures.tsv` with its size and SHA-256 in the manifest too; and
+   makes every file and directory of `SNAPSHOT` read-only.
 
 ### `digest`
 
@@ -313,8 +317,9 @@ coins or undo data, and before a release, run a full replay without `--up-to-hei
 as they are. `snapshot` also takes a full run without `--up-to-height`, at its tip.
 
 The `snapshot` command checks the copy against the run's report (tip and digest) and its block files against its
-block index; every snapshot run checks each file against the manifest while copying it. A snapshot is stored
-read-only and never written to: each run works on its own copy. Deleting a snapshot needs write permission first:
+block index; every snapshot run checks the snapshot's `failures.tsv` against the manifest when the manifest lists it,
+before it creates anything, and each database file while copying it. A snapshot is stored read-only and never written
+to: each run works on its own copy. Deleting a snapshot needs write permission first:
 `chmod -R u+w /data/snapshot && rm -rf /data/snapshot`.
 
 Comparing two builds from the same snapshot, on the same block files:

@@ -1298,7 +1298,7 @@ class SnapshotRunTest(unittest.TestCase):
         # one link, another inode.
         files = self.datadir_file("files.json")
         self.assertEqual(files.pop("yacoin.conf")[0], runner.file_sha256(os.path.join(datadir, "yacoin.conf")))
-        self.assertEqual(sorted(files), sorted(self.meta["manifest"]))
+        self.assertEqual(sorted(files), database_entries(self.meta))
         for path, (sha256, nlink, ino) in files.items():
             self.assertEqual(sha256, self.meta["manifest"][path]["sha256"], path)
             self.assertEqual(nlink, 1, path)
@@ -1327,7 +1327,7 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertEqual(rep["command"], self.datadir_file(os.path.join("regtest", "args.json")))
         # The snapshot's files are restored into the chain directory.
         files = self.datadir_file(os.path.join("regtest", "files.json"))
-        self.assertEqual(sorted(files), sorted(meta["manifest"]))
+        self.assertEqual(sorted(files), database_entries(meta))
         for path, (sha256, nlink, ino) in files.items():
             self.assertEqual(sha256, meta["manifest"][path]["sha256"], path)
         self.assertEqual(sorted(os.listdir(datadir)), ["regtest", "yacoin.conf"])
@@ -1498,6 +1498,64 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertEqual(self.run_cli("import", out="out2")[0], 1)
         self.assertIn("snapshot file tokens/CURRENT is missing", self.report("out2")["incomplete_reasons"][0])
 
+    def snapshot_with_a_failure(self):
+        """A snapshot of a run with one failure, at height 3."""
+        fail = logscan.Failure(3, tu.fake_hash(3)[::-1].hex(), "script", "d4" * 32, "1", "test-error")
+        run_out = os.path.join(self.tmp, "run-failure")
+        tu.make_run(run_out, heights=3, failures=[fail])
+        snap = os.path.join(self.tmp, "snap-failure")
+        snapshot.make(run_out, snap, log=lambda msg: None)
+        return snap
+
+    def test_changed_failures_file_is_refused(self):
+        snap = self.snapshot_with_a_failure()
+        tu.make_writable(snap)
+        path = os.path.join(snap, "failures.tsv")
+        with open(path) as f:
+            text = f.read()
+        # The same number of rows: a change of the same size and one of
+        # another size.
+        for name, changed in (("same-size", text.replace("test-error", "test-errox")),
+                              ("other-size", text.replace("test-error", "test-error-2"))):
+            with self.subTest(change=name):
+                self.assertEqual(len(changed.splitlines()), len(text.splitlines()))
+                with open(path, "w") as f:
+                    f.write(changed)
+                code, stdout, stderr = self.run_cli("import", snap=snap)
+                self.assertEqual(code, 2, stdout + stderr)
+                self.assertIn("replay: snapshot file failures.tsv differs from the snapshot's manifest\n", stderr)
+                self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+        os.remove(path)
+        code, _, stderr = self.run_cli("import", snap=snap)
+        self.assertEqual(code, 2)
+        self.assertIn("cannot read %s" % path, stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+
+    def test_snapshot_without_a_failures_entry_in_the_manifest_runs(self):
+        # Its failures.tsv is checked by its row count only.
+        snap = self.snapshot_with_a_failure()
+        tu.make_writable(snap)
+        meta_path = os.path.join(snap, "snapshot.json")
+        with open(meta_path) as f:
+            meta = json.load(f)
+        del meta["manifest"]["failures.tsv"]
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+        path = os.path.join(snap, "failures.tsv")
+        with open(path) as f:
+            text = f.read()
+        with open(path, "w") as f:
+            f.write(text.replace("test-error", "test-errox"))
+        code, stdout, stderr = self.run_cli("import", snap=snap)
+        self.assertEqual(code, 0, stdout + stderr)
+        rep = self.report()
+        self.assertEqual((rep["status"], rep["failures"]), ("complete", 3))
+        with open(path, "w") as f:
+            f.write(text.splitlines(True)[0])
+        code, _, stderr = self.run_cli("import", snap=snap, out="out2")
+        self.assertEqual(code, 2)
+        self.assertIn("has 0 rows, snapshot.json 1 failures", stderr)
+
     def test_refusals(self):
         empty = os.path.join(self.tmp, "empty")
         os.makedirs(empty)
@@ -1559,6 +1617,11 @@ class SnapshotRunTest(unittest.TestCase):
         self.assertIn("-loadblock is set by the script", err)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
         self.assertEqual(tu.tree_state(self.snap), self.snap_state)
+
+
+def database_entries(meta):
+    """The database files of the manifest of the snapshot.json meta."""
+    return sorted(p for p in meta["manifest"] if p != "failures.tsv")
 
 
 def _digest_at(d, height):

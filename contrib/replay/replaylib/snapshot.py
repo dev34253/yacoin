@@ -6,7 +6,9 @@ blocks/index), chainstate/ and tokens/ as the run left them, the run's
 report.json and failures.tsv, and snapshot.json: format, height, hash,
 digest and section digests of the state, the run's node command line,
 binary, source and directory, its failure counts, the time it was made,
-and the manifest (size and SHA-256 of every copied file). A directory
+and the manifest (size and SHA-256 of every database file and of
+failures.tsv). A snapshot whose manifest has no failures.tsv entry is
+accepted; its failures.tsv is checked by its row count only. A directory
 without snapshot.json is not a snapshot. The snapshot of a run on regtest
 (run --regtest) holds the databases of its chain directory, the data
 directory's regtest subdirectory, and its snapshot.json has "regtest":
@@ -26,6 +28,7 @@ from . import report
 
 FORMAT = 1
 META = "snapshot.json"
+FAILURES = "failures.tsv"
 DATABASE_DIRS = (os.path.join("blocks", "index"), "chainstate", "tokens")
 BLOCK_FILE_RE = re.compile(r"(blk|rev)\d{5}\.dat")
 CHUNK = 1 << 20
@@ -151,6 +154,8 @@ def make(run_out, snap, log=print):
         result = blockfiles.check(blockfiles.block_files(os.path.join(snap, "blocks")), stored, d.tip_height)
         if result.reasons:
             raise SnapshotFailed("; ".join(result.reasons))
+        size, sha256 = copy_file(failures_path, os.path.join(snap, FAILURES))
+        manifest[FAILURES] = {"size": size, "sha256": sha256}
         meta = {
             "format": FORMAT,
             "height": d.tip_height,
@@ -172,7 +177,6 @@ def make(run_out, snap, log=print):
         if rep.get("regtest"):
             meta["regtest"] = True
         shutil.copyfile(os.path.join(run_out, "report.json"), os.path.join(snap, "report.json"))
-        shutil.copyfile(failures_path, os.path.join(snap, "failures.tsv"))
         make_read_only(snap, top=False)
         _write_meta(snap, meta)
     except (OSError, digest_mod.DigestError) as e:
@@ -236,6 +240,8 @@ def load(snap):
             raise SnapshotRefused("%s: %s is not a %s" % (path, key, {int: "number", str: "string",
                                                                        dict: "mapping"}[kind]))
     for rel in meta["manifest"]:
+        if rel == FAILURES:
+            continue
         parts = rel.split(os.sep)
         if os.path.isabs(rel) or ".." in parts or parts[0] not in ("blocks", "chainstate", "tokens"):
             raise SnapshotRefused("%s: file outside the databases in the manifest: %s" % (path, rel))
@@ -244,11 +250,21 @@ def load(snap):
 
 def failures(snap, meta):
     """The failures of the run the snapshot snap was made from (its
-    failures.tsv). Raises SnapshotRefused when they cannot be read or their
-    number differs from snapshot.json's."""
-    path = os.path.join(snap, "failures.tsv")
+    failures.tsv). Raises SnapshotRefused when they cannot be read, the
+    file differs from its manifest entry, or their number differs from
+    snapshot.json's."""
+    path = os.path.join(snap, FAILURES)
     try:
-        rows = report.read_failures(path)
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        raise SnapshotRefused("cannot read %s: %s" % (path, e))
+    entry = meta["manifest"].get(FAILURES)
+    if entry is not None and (len(data) != entry.get("size")
+                              or hashlib.sha256(data).hexdigest() != entry.get("sha256")):
+        raise SnapshotRefused("snapshot file %s differs from the snapshot's manifest" % FAILURES)
+    try:
+        rows = report.read_failures(path, data)
     except report.ReportError as e:
         raise SnapshotRefused(str(e))
     if len(rows) != meta["failures"]:
@@ -257,11 +273,13 @@ def failures(snap, meta):
 
 
 def copy_into(snap, meta, datadir):
-    """Copies the files of the snapshot snap into datadir, checking each
-    against the manifest; returns (number of files, bytes). Raises
-    SnapshotMismatch at the first file that is missing or differs."""
+    """Copies the database files of the snapshot snap (the manifest's
+    entries but failures.tsv) into datadir, checking each against the
+    manifest; returns (number of files, bytes). Raises SnapshotMismatch at
+    the first file that is missing or differs."""
     total = 0
-    for rel in sorted(meta["manifest"]):
+    database = sorted(rel for rel in meta["manifest"] if rel != FAILURES)
+    for rel in database:
         entry = meta["manifest"][rel]
         src = os.path.join(snap, rel)
         if not os.path.isfile(src):
@@ -272,4 +290,4 @@ def copy_into(snap, meta, datadir):
         if size != entry.get("size") or sha256 != entry.get("sha256"):
             raise SnapshotMismatch("snapshot file %s differs from the snapshot's manifest" % rel)
         total += size
-    return len(meta["manifest"]), total
+    return len(database), total
