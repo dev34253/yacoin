@@ -41,6 +41,10 @@ Unreleased
 - Windows: the `modifier` field of `getblock` and `getblockbynumber` is 16 hex digits, and the 64-bit values in the
   `ComputeNextStakeModifier` and `CheckStakeKernelHash` debug-log lines and in the `-printcreation` reward lines
   print as their format says (hex after `0x`), without a trailing `64d`, `64u` or `64x`.
+- The GUI no longer supports BIP70 payment requests or payment request files, as Bitcoin Core 0.20 did. A `yacoin:`
+  URI with an `r=` parameter and no valid address, and a payment request file given on the command line, show a
+  message that payment requests are not supported; nothing is fetched. `yacoin:` URIs with a valid address still work
+  as plain payment URIs (address, amount, label, message); an `r=` parameter in them is ignored.
 
 ### Build changes
 
