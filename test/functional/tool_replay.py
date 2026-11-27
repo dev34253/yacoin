@@ -111,6 +111,9 @@ class ToolReplayTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.block_fork_1_0 = 1
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
+
     def setup_replay(self):
         src = self.config["environment"]["SRCDIR"]
         self.script = os.path.join(src, "contrib", "replay", "replay.py")
