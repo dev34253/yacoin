@@ -157,10 +157,6 @@ PaymentServer::PaymentServer(QObject* parent, bool startLocalServer) :
     saveURIs(true),
     uriServer(0)
 {
-    // Verify that the version of the library that we linked against is
-    // compatible with the version of the headers we compiled against.
-    GOOGLE_PROTOBUF_VERIFY_VERSION;
-
     // Install global event filter to catch QFileOpenEvents
     // on Mac: sent when you click yacoin: links
     // other OSes: helpful when dealing with payment request files
@@ -189,7 +185,6 @@ PaymentServer::PaymentServer(QObject* parent, bool startLocalServer) :
 
 PaymentServer::~PaymentServer()
 {
-    google::protobuf::ShutdownProtobufLibrary();
 }
 
 //
@@ -289,16 +284,4 @@ void PaymentServer::handleURIConnection()
     in >> msg;
 
     handleURIOrFile(msg);
-}
-
-bool PaymentServer::verifyExpired(const payments::PaymentDetails& requestDetails)
-{
-    bool fVerified = (requestDetails.has_expires() && (int64_t)requestDetails.expires() < GetTime());
-    if (fVerified) {
-        const QString requestExpires = QString::fromStdString(DateTimeStrFormat("%Y-%m-%d %H:%M:%S", (int64_t)requestDetails.expires()));
-        qWarning() << QString("PaymentServer::%1: Payment request expired \"%2\".")
-            .arg(__func__)
-            .arg(requestExpires);
-    }
-    return fVerified;
 }

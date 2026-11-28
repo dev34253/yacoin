@@ -5,6 +5,7 @@
 #include <qt/multisiginputentry.h>
 #include <qt/sendcoinsentry.h>
 
+#include <base58.h>
 #include <wallet/wallet.h>
 #include <policy/policy.h>
 #include <validation.h>
