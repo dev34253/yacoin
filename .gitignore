@@ -15,7 +15,6 @@ src/yacoin
 src/yacoind
 src/test_yacoin
 src/build.h
-src/miniupnpc
 .*.swp
 *.*~*
 *.bak

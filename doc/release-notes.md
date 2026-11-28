@@ -77,3 +77,6 @@ Unreleased
   `configure` no longer checks for protobuf or `protoc`, and depends no longer builds them. `configure` no longer
   has the `--with-protoc-bindir` option and ignores it when it is given (it warns about it only with
   `--enable-option-checking`).
+- depends no longer builds miniupnpc and no longer has the `NO_UPNP` option. `configure` no longer looks for
+  miniupnpc, no longer has the `--with-miniupnpc` and `--enable-upnp-default` options and ignores them when they are
+  given (it warns about them only with `--enable-option-checking`); its summary no longer has the `with upnp` line.

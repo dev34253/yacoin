@@ -48,7 +48,7 @@
 #           pass; depends skipping make unless its stamp's inputs changed
 #           (every line of the compilers' versions, ar, ranlib, strip, the
 #           tools of another host, the make arguments, and DEBUG,
-#           HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET, NO_UPNP and NO_QT from
+#           HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET and NO_QT from
 #           the environment; not JOBS or the copy's path),
 #           one set of paths for every spelling of DEV_CACHE (trailing slash,
 #           symlink, .., not yet created), a refused build directory naming
@@ -641,7 +641,7 @@ make_container_copy() {
 devsh_depends_ran() {
     local tree="$1" arg="$2" before; shift 2
     before=$(grep -c '^start' "$slog" 2>/dev/null) || before=0
-    env -u DEBUG -u HOST_ID_SALT -u BUILD_ID_SALT -u NO_WALLET -u NO_UPNP -u NO_QT -u DEV_HOST \
+    env -u DEBUG -u HOST_ID_SALT -u BUILD_ID_SALT -u NO_WALLET -u NO_QT -u DEV_HOST \
         PATH="$tools:$bin:$PATH" STUB_LOG="$slog" STUB_MAKE_SLEEP=0 DEV_CACHE="$cs" "$@" \
         "$tree/dev.sh" depends ${arg:+"$arg"} > "$work/devsh/s/out.txt" 2>&1 || { echo "failed"; return; }
     if [[ "$(grep -c '^start' "$slog")" != "$before" ]]; then echo yes; else echo no; fi
@@ -684,9 +684,9 @@ devsh_stamp() {
     got+=" $(devsh_depends_ran "$s" "" DEV_HOST=x86_64-w64-mingw32)"
     [[ "$got" == "yes no yes" ]] && pass "devsh: depends for another host runs make after a new version of its ar" ||
         fail "devsh: depends for another host ran make (first, again, after a new ar): $got"
-    # DEBUG, HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET, NO_UPNP and NO_QT from
+    # DEBUG, HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET and NO_QT from
     # the environment, set, set empty and unset again.
-    for v in DEBUG HOST_ID_SALT BUILD_ID_SALT NO_WALLET NO_UPNP NO_QT; do
+    for v in DEBUG HOST_ID_SALT BUILD_ID_SALT NO_WALLET NO_QT; do
         got="$(devsh_depends_ran "$s" "" "$v=1") $(devsh_depends_ran "$s" "" "$v=") $(devsh_depends_ran "$s" "")"
         [[ "$got" == "yes yes yes" ]] && pass "devsh: depends runs make when $v is set, set empty and unset" ||
             fail "devsh: depends with $v set, set empty and unset ran make: $got"
@@ -964,9 +964,9 @@ step_devsh() {
         fail "devsh: ignored files under depends/ changed the prefix to $pb"
     # A recipe file not yet added to git counts, also when it changes.
     local pn
-    mkdir -p "$b/depends/patches/miniupnpc"; echo "a" > "$b/depends/patches/miniupnpc/new.patch"
+    mkdir -p "$b/depends/patches/example"; echo "a" > "$b/depends/patches/example/new.patch"
     pn=$(depends_prefix "$b" "$c")
-    echo "b" > "$b/depends/patches/miniupnpc/new.patch"
+    echo "b" > "$b/depends/patches/example/new.patch"
     pb=$(depends_prefix "$b" "$c")
     [[ "$pn" =~ $want && "$pb" =~ $want && "$pn" != "$pa" && "$pb" != "$pn" ]] &&
         pass "devsh: an untracked patch, and a change to it, give a new prefix" ||
