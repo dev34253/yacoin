@@ -24,15 +24,6 @@ MultisigDialog::MultisigDialog(const PlatformStyle *_platformStyle, QWidget *par
     ui->setupUi(this);
     platformStyle = _platformStyle;
 
-#ifdef Q_WS_MAC // Icons on push buttons are very uncommon on Mac
-    ui->addPubKeyButton->setIcon(QIcon());
-    ui->clearButton->setIcon(QIcon());
-    ui->addInputButton->setIcon(QIcon());
-    ui->addOutputButton->setIcon(QIcon());
-    ui->signTransactionButton->setIcon(QIcon());
-    ui->sendTransactionButton->setIcon(QIcon());
-#endif
-
     addPubKey();
     addPubKey();
 
