@@ -80,3 +80,5 @@ Unreleased
 - depends no longer builds miniupnpc and no longer has the `NO_UPNP` option. `configure` no longer looks for
   miniupnpc, no longer has the `--with-miniupnpc` and `--enable-upnp-default` options and ignores them when they are
   given (it warns about them only with `--enable-option-checking`); its summary no longer has the `with upnp` line.
+- `configure` no longer supports Qt 4: `--with-gui` accepts `yes`, `no`, `qt5` and `auto` (the default), and
+  `--with-gui=qt4` or any other value stops `configure` with an error that names these values. The GUI needs Qt 5.
