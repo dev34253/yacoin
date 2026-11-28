@@ -134,8 +134,8 @@ int ScriptCheckThreadsForCores(int nCores)
     return std::min(nCores, MAX_SCRIPTCHECK_THREADS);
 }
 
-// The help text. The parts that depend on the machine (the core count) or on
-// the build configuration (UPnP) are made in ExpectedHelp().
+// The help text. The parts that depend on the machine (the core count) are
+// made in ExpectedHelp().
 const std::string HELP_OPTIONS = R"HELP(Options:
 
   -?
@@ -178,7 +178,7 @@ const std::string HELP_BEFORE_PAR = R"HELP(  -datadir=<dir>
 
 )HELP";
 
-const std::string HELP_BEFORE_UPNP = R"HELP(  -reindex-fast
+const std::string HELP_BEFORE_HASHCALCTHREADS = R"HELP(  -reindex-fast
        Rebuild chain state and block index from the blk*.dat files on disk
        without recalculating block hash
 
@@ -280,9 +280,7 @@ Connection options:
   -torpassword=<pass>
        Tor control port password (default: empty)
 
-)HELP";
-
-const std::string HELP_BEFORE_HASHCALCTHREADS = R"HELP(  -whitebind=<addr>
+  -whitebind=<addr>
        Bind to given address and whitelist peers connecting to it. Use
        [host]:port notation for IPv6
 
@@ -493,18 +491,10 @@ Other options:
 
 std::string ExpectedHelp(HelpMessageMode mode)
 {
-    std::string upnp;
-#ifdef USE_UPNP
-#if USE_UPNP
-    upnp = HelpMessageOpt("-upnp", "Use UPnP to map the listening port (default: 1 when listening and no -proxy)");
-#else
-    upnp = HelpMessageOpt("-upnp", "Use UPnP to map the listening port (default: 0)");
-#endif
-#endif
     return HELP_OPTIONS + (mode == HMM_BITCOIND ? HELP_DAEMON : "") + HELP_BEFORE_PAR +
            HelpMessageOpt("-par=<n>", strprintf("Set the number of script verification threads (%d to 16, 0 = auto, "
                                                 "<0 = leave that many cores free, default: 0)", -GetNumCores())) +
-           HELP_BEFORE_UPNP + upnp + HELP_BEFORE_HASHCALCTHREADS +
+           HELP_BEFORE_HASHCALCTHREADS +
            HelpMessageOpt("-hashcalcthreads=N", strprintf("Set the number of threads which calculate hash (maximum "
                                                           "threads = number of cpu cores, default: %d)",
                                                           (int)boost::thread::hardware_concurrency() - 1));
@@ -516,13 +506,16 @@ BOOST_FIXTURE_TEST_SUITE(init_tests, InitTestingSetup)
 
 BOOST_AUTO_TEST_CASE(help_message_bitcoind)
 {
-    BOOST_CHECK_EQUAL(HelpMessage(HMM_BITCOIND), ExpectedHelp(HMM_BITCOIND));
+    const std::string strHelp = HelpMessage(HMM_BITCOIND);
+    BOOST_CHECK_EQUAL(strHelp, ExpectedHelp(HMM_BITCOIND));
+    BOOST_CHECK(strHelp.find("-upnp") == std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(help_message_qt)
 {
     const std::string strQt = HelpMessage(HMM_BITCOIN_QT);
     BOOST_CHECK_EQUAL(strQt, ExpectedHelp(HMM_BITCOIN_QT));
+    BOOST_CHECK(strQt.find("-upnp") == std::string::npos);
 
     // The daemon's text is the same with -daemon added.
     std::string strDaemon = HelpMessage(HMM_BITCOIND);
@@ -570,9 +563,9 @@ BOOST_AUTO_TEST_CASE(init_parameter_interaction_connect)
     BOOST_CHECK_EQUAL(gArgs.GetArg("-dnsseed", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-listen", ""), "0");
     // Not listening then sets the options of the next case.
-    BOOST_CHECK_EQUAL(gArgs.GetArg("-upnp", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-discover", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-listenonion", ""), "0");
+    BOOST_CHECK(!gArgs.IsArgSet("-upnp"));
 
     // Options set explicitly are kept.
     SetArgs({"-connect=127.0.0.1", "-dnsseed=1", "-listen=1"});
@@ -586,6 +579,7 @@ BOOST_AUTO_TEST_CASE(init_parameter_interaction_connect)
     InitParameterInteraction();
     BOOST_CHECK_EQUAL(gArgs.GetArg("-dnsseed", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-listen", ""), "0");
+    BOOST_CHECK(!gArgs.IsArgSet("-upnp"));
 }
 
 BOOST_AUTO_TEST_CASE(init_parameter_interaction_proxy)
@@ -593,20 +587,20 @@ BOOST_AUTO_TEST_CASE(init_parameter_interaction_proxy)
     SetArgs({"-proxy=127.0.0.1:9050"});
     InitParameterInteraction();
     BOOST_CHECK_EQUAL(gArgs.GetArg("-listen", ""), "0");
-    BOOST_CHECK_EQUAL(gArgs.GetArg("-upnp", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-discover", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-listenonion", ""), "0");
     BOOST_CHECK(!gArgs.IsArgSet("-dnsseed"));
+    BOOST_CHECK(!gArgs.IsArgSet("-upnp"));
 }
 
 BOOST_AUTO_TEST_CASE(init_parameter_interaction_listen_off)
 {
     SetArgs({"-listen=0"});
     InitParameterInteraction();
-    BOOST_CHECK_EQUAL(gArgs.GetArg("-upnp", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-discover", ""), "0");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-listenonion", ""), "0");
     BOOST_CHECK(!gArgs.IsArgSet("-dnsseed"));
+    BOOST_CHECK(!gArgs.IsArgSet("-upnp"));
 }
 
 BOOST_AUTO_TEST_CASE(init_parameter_interaction_externalip)
@@ -616,6 +610,18 @@ BOOST_AUTO_TEST_CASE(init_parameter_interaction_externalip)
     BOOST_CHECK_EQUAL(gArgs.GetArg("-discover", ""), "0");
     BOOST_CHECK(!gArgs.IsArgSet("-listen"));
     BOOST_CHECK(!gArgs.IsArgSet("-upnp"));
+}
+
+BOOST_AUTO_TEST_CASE(init_parameter_interaction_upnp_given)
+{
+    // -upnp given explicitly is left as given.
+    SetArgs({"-upnp=1", "-listen=0"});
+    InitParameterInteraction();
+    BOOST_CHECK_EQUAL(gArgs.GetArg("-upnp", ""), "1");
+
+    SetArgs({"-upnp=1", "-proxy=127.0.0.1:9050"});
+    InitParameterInteraction();
+    BOOST_CHECK_EQUAL(gArgs.GetArg("-upnp", ""), "1");
 }
 
 BOOST_AUTO_TEST_CASE(init_parameter_interaction_bind_before_connect)
@@ -778,6 +784,19 @@ BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_unsupported_options)
     SetArgs({"-tor=1"});
     BOOST_CHECK(!AppInitParameterInteraction());
     BOOST_CHECK_EQUAL(Lines(errors), "Unsupported argument -tor found, use -onion.\n");
+}
+
+BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_upnp_ignored)
+{
+    // -upnp with any value: one warning, and the node starts.
+    for (const char* arg : {"-upnp=1", "-upnp=0", "-noupnp", "-upnp"}) {
+        warnings.clear();
+        errors.clear();
+        SetArgs({arg});
+        BOOST_CHECK_MESSAGE(AppInitParameterInteraction(), arg);
+        BOOST_CHECK_MESSAGE(Lines(warnings) == "Unsupported argument -upnp ignored.\n", arg << ": " << Lines(warnings));
+        BOOST_CHECK_MESSAGE(Lines(errors) == "", arg << ": " << Lines(errors));
+    }
 }
 
 BOOST_AUTO_TEST_CASE(app_init_parameter_interaction_checkblockindex)
