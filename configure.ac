@@ -111,18 +111,6 @@ AC_ARG_ENABLE([wallet],
   [enable_wallet=$enableval],
   [enable_wallet=yes])
 
-AC_ARG_WITH([miniupnpc],
-  [AS_HELP_STRING([--with-miniupnpc],
-  [enable UPNP (default is yes if libminiupnpc is found)])],
-  [use_upnp=$withval],
-  [use_upnp=auto])
-
-AC_ARG_ENABLE([upnp-default],
-  [AS_HELP_STRING([--enable-upnp-default],
-  [if UPNP is enabled, turn it on at startup (default is no)])],
-  [use_upnp_default=$enableval],
-  [use_upnp_default=no])
-
 AC_ARG_ENABLE(tests,
     AS_HELP_STRING([--disable-tests],[do not compile tests (default is to compile)]),
     [use_tests=$enableval],
@@ -766,15 +754,6 @@ if test x$enable_wallet != xno; then
     BITCOIN_FIND_BDB48
 fi
 
-dnl Check for libminiupnpc (optional)
-if test x$use_upnp != xno; then
-  AC_CHECK_HEADERS(
-    [miniupnpc/miniwget.h miniupnpc/miniupnpc.h miniupnpc/upnpcommands.h miniupnpc/upnperrors.h],
-    [AC_CHECK_LIB([miniupnpc], [main],[MINIUPNPC_LIBS=-lminiupnpc], [have_miniupnpc=no])],
-    [have_miniupnpc=no]
-  )
-fi
-
 BITCOIN_QT_INIT
 
 if test x$enable_fuzz$use_bench = xyesyes; then
@@ -1154,33 +1133,6 @@ else
   AC_MSG_RESULT(no)
 fi
 
-dnl enable upnp support
-AC_MSG_CHECKING([whether to build with support for UPnP])
-if test x$have_miniupnpc = xno; then
-  if test x$use_upnp = xyes; then
-     AC_MSG_ERROR("UPnP requested but cannot be built. use --without-miniupnpc")
-  fi
-  AC_MSG_RESULT(no)
-else
-  if test x$use_upnp != xno; then
-    AC_MSG_RESULT(yes)
-    AC_MSG_CHECKING([whether to build with UPnP enabled by default])
-    use_upnp=yes
-    upnp_setting=0
-    if test x$use_upnp_default != xno; then
-      use_upnp_default=yes
-      upnp_setting=1
-    fi
-    AC_MSG_RESULT($use_upnp_default)
-    AC_DEFINE_UNQUOTED([USE_UPNP],[$upnp_setting],[UPnP support not compiled if undefined, otherwise value (0 or 1) determines default state])
-    if test x$TARGET_OS = xwindows; then
-      MINIUPNPC_CPPFLAGS="-DSTATICLIB -DMINIUPNP_STATICLIB"
-    fi
-  else
-    AC_MSG_RESULT(no)
-  fi
-fi
-
 dnl these are only used when qt is enabled
 BUILD_TEST_QT=""
 if test x$bitcoin_enable_qt != xno; then
@@ -1299,14 +1251,11 @@ AC_SUBST(PIC_FLAGS)
 AC_SUBST(PIE_FLAGS)
 AC_SUBST(SSE42_CXXFLAGS)
 AC_SUBST(LIBTOOL_APP_LDFLAGS)
-AC_SUBST(USE_UPNP)
 AC_SUBST(USE_QRCODE)
 AC_SUBST(BOOST_LIBS)
 AC_SUBST(TESTDEFS)
 AC_SUBST(FUZZ_CXXFLAGS)
 AC_SUBST(LEVELDB_TARGET_FLAGS)
-AC_SUBST(MINIUPNPC_CPPFLAGS)
-AC_SUBST(MINIUPNPC_LIBS)
 AC_SUBST(CRYPTO_LIBS)
 AC_SUBST(SSL_LIBS)
 AC_SUBST(EVENT_LIBS)
@@ -1380,7 +1329,6 @@ echo "  with zmq      = $use_zmq"
 echo "  with test     = $use_tests"
 echo "  with fuzz     = $enable_fuzz"
 echo "  with bench    = $use_bench"
-echo "  with upnp     = $use_upnp"
 echo "  debug enabled = $enable_debug"
 echo "  werror        = $enable_werror"
 echo 

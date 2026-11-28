@@ -20,7 +20,8 @@ the other checks on the framework's regtest node.
 - A regtest node without height options mines blocks and has them after a
   restart.
 - Warnings for unknown -debug/-debugexclude categories and the removed
-  -debugnet/-benchmark.
+  -debugnet/-benchmark/-upnp (-upnp with any value, on the command line or
+  in the config file).
 - -pid, -rpcbind without -rpcallowip, -rpcworkqueue/-rpcthreads below 1,
   -printtoconsole.
 - -detachdb, -btcyacprovider and -usdbtcprovider, which no code reads: the
@@ -166,14 +167,23 @@ class ConfArgsTest(BitcoinTestFramework):
             node.assert_start_raises_init_error(args, message, match=ErrorMatch.FULL_TEXT)
 
     def test_warnings(self):
-        self.log.info("Warnings for unknown debug categories and removed debug options")
-        self.start_node(0, ['-debug=foo', '-debugexclude=foo', '-debugnet=1', '-benchmark=1'])
+        node = self.nodes[0]
+        self.log.info("Warnings for unknown debug categories and removed options")
+        self.start_node(0, ['-debug=foo', '-debugexclude=foo', '-debugnet=1', '-benchmark=1', '-upnp=1'])
         self.stop_node(0, expected_stderr='\n'.join([
             "Warning: Unsupported logging category -debug=foo.",
             "Warning: Unsupported logging category -debugexclude=foo.",
             "Warning: Unsupported argument -debugnet ignored, use -debug=net.",
             "Warning: Unsupported argument -benchmark ignored, use -debug=bench.",
+            "Warning: Unsupported argument -upnp ignored.",
         ]))
+
+        self.log.info("-upnp=0 on the command line and upnp=1 in the config file")
+        self.start_node(0, ['-upnp=0'])
+        self.stop_node(0, expected_stderr="Warning: Unsupported argument -upnp ignored.")
+        self.write_conf(node, 'upnp.conf', extra=['upnp=1'])
+        self.start_node(0, ['-conf=upnp.conf'])
+        self.stop_node(0, expected_stderr="Warning: Unsupported argument -upnp ignored.")
 
     def test_options(self):
         node = self.nodes[0]

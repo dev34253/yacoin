@@ -410,7 +410,6 @@ def initialize_datadir(dirname, n, chain, epochinterval=10):
         if chain == 'regtest':
             f.write("maxtipage=%d\n" % REGTEST_MAX_TIP_AGE)
         f.write("printtoconsole=0\n")
-        f.write("upnp=0\n")
         # No Tor control: a node stopped before its Tor control thread has
         # entered its event loop can hang in shutdown, and test nodes must not
         # talk to a Tor control port on the machine. feature_torcontrol.py

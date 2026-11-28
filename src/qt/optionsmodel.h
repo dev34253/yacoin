@@ -27,7 +27,6 @@ public:
         StartAtStartup,         // bool
         HideTrayIcon,           // bool
         MinimizeToTray,         // bool
-        MapPortUPnP,            // bool
         MinimizeOnClose,        // bool
         ProxyUse,               // bool
         ProxyIP,                // QString

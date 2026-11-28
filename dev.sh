@@ -159,15 +159,15 @@ cmd_depends() {
     # again, under the builds of other checkouts with the same recipes. So
     # make is skipped when the last successful run had the same inputs (the
     # recipes are in the key): the make arguments (not the checkout and the
-    # job count), DEBUG, HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET, NO_UPNP and
-    # NO_QT from the environment (set, empty or unset), and the full --version
+    # job count), DEBUG, HOST_ID_SALT, BUILD_ID_SALT, NO_WALLET and NO_QT
+    # from the environment (set, empty or unset), and the full --version
     # output of the build and host tools in depends' build ids (all of it,
     # as depends takes it; a missing tool gives an empty one). A skipped run
     # does not recheck the cached packages; removing the stamp (or the cache)
     # forces a full run.
     local stamp="$DEPENDS_DIR/depends.stamp" inputs="" t v
     for v in "${margs[@]}"; do inputs+="make $v"$'\n'; done
-    for v in DEBUG HOST_ID_SALT BUILD_ID_SALT NO_WALLET NO_UPNP NO_QT; do
+    for v in DEBUG HOST_ID_SALT BUILD_ID_SALT NO_WALLET NO_QT; do
         inputs+="env $v=${!v+set:}${!v-}"$'\n'
     done
     for t in gcc g++ ar ranlib strip "$DEV_HOST"-{gcc,g++,ar,ranlib,strip}; do

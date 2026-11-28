@@ -227,8 +227,8 @@ the same paths. To clear the cache, remove the directory; the next
   So `./dev.sh depends` skips depends when the last successful run for these
   recipes had the same inputs, recorded in `depends/<key>/depends.stamp`:
   the make arguments (the Qt choice among them; not the checkout or `JOBS`),
-  `DEBUG`, `HOST_ID_SALT`, `BUILD_ID_SALT`, `NO_WALLET`, `NO_UPNP` and
-  `NO_QT` from the environment, and the full versions of the compilers,
+  `DEBUG`, `HOST_ID_SALT`, `BUILD_ID_SALT`, `NO_WALLET` and `NO_QT` from
+  the environment, and the full versions of the compilers,
   `ar`, `ranlib` and `strip`, for the build machine and the host. A skipped run does not recheck
   the cached packages; removing the stamp (or the cache) forces a full run.
   The last `./dev.sh depends` or `./dev.sh depends qt` decides
