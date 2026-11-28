@@ -98,6 +98,7 @@ BITCOIN_TESTS =\
   test/script_standard_tests.cpp \
   test/scriptnum_tests.cpp \
   test/scrypt_tests.cpp \
+  test/sendcoinsrecipient_tests.cpp \
   test/serialize_tests.cpp \
   test/shutdown_tests.cpp \
   test/sighash_tests.cpp \

@@ -27,8 +27,6 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *par
     ui->addressBookButton->setIcon(platformStyle->SingleColorIcon(":/icons/address-book"));
     ui->pasteButton->setIcon(platformStyle->SingleColorIcon(":/icons/editpaste"));
     ui->deleteButton->setIcon(platformStyle->SingleColorIcon(":/icons/remove"));
-    ui->deleteButton_is->setIcon(platformStyle->SingleColorIcon(":/icons/remove"));
-    ui->deleteButton_s->setIcon(platformStyle->SingleColorIcon(":/icons/remove"));
 
     setCurrentWidget(ui->SendCoins);
 
@@ -40,15 +38,11 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *par
 
     // normal bitcoin address field
     GUIUtil::setupAddressWidget(ui->payTo, this);
-    // just a label for displaying bitcoin address(es)
-    ui->payTo_is->setFont(GUIUtil::fixedPitchFont());
 
     // Connect signals
     connect(ui->payAmount, SIGNAL(valueChanged()), this, SIGNAL(payAmountChanged()));
     connect(ui->checkboxSubtractFeeFromAmount, SIGNAL(toggled(bool)), this, SIGNAL(subtractFeeFromAmountChanged()));
     connect(ui->deleteButton, SIGNAL(clicked()), this, SLOT(deleteClicked()));
-    connect(ui->deleteButton_is, SIGNAL(clicked()), this, SLOT(deleteClicked()));
-    connect(ui->deleteButton_s, SIGNAL(clicked()), this, SLOT(deleteClicked()));
 }
 
 SendCoinsEntry::~SendCoinsEntry()
@@ -97,7 +91,6 @@ void SendCoinsEntry::setRemoveEnabled(bool enabled)
 
 void SendCoinsEntry::clear()
 {
-    // clear UI elements for normal payment
     ui->payTo->clear();
     ui->addAsLabel->clear();
     ui->payAmount->clear();
@@ -105,14 +98,6 @@ void SendCoinsEntry::clear()
     ui->messageTextLabel->clear();
     ui->messageTextLabel->hide();
     ui->messageLabel->hide();
-    // clear UI elements for unauthenticated payment request
-    ui->payTo_is->clear();
-    ui->memoTextLabel_is->clear();
-    ui->payAmount_is->clear();
-    // clear UI elements for authenticated payment request
-    ui->payTo_s->clear();
-    ui->memoTextLabel_s->clear();
-    ui->payAmount_s->clear();
 
     // update the display unit, to not use the default ("BTC")
     updateDisplayUnit();
@@ -130,10 +115,6 @@ bool SendCoinsEntry::validate()
 
     // Check input validity
     bool retval = true;
-
-    // Skip checks for payment request
-    if (recipient.paymentRequest.IsInitialized())
-        return retval;
 
     if (!model->validateAddress(ui->payTo->text()))
     {
@@ -164,11 +145,6 @@ bool SendCoinsEntry::validate()
 
 SendCoinsRecipient SendCoinsEntry::getValue()
 {
-    // Payment request
-    if (recipient.paymentRequest.IsInitialized())
-        return recipient;
-
-    // Normal payment
     recipient.address = ui->payTo->text();
     recipient.label = ui->addAsLabel->text();
     recipient.amount = ui->payAmount->value();
@@ -193,27 +169,6 @@ QWidget *SendCoinsEntry::setupTabChain(QWidget *prev)
 void SendCoinsEntry::setValue(const SendCoinsRecipient &value)
 {
     recipient = value;
-
-    if (recipient.paymentRequest.IsInitialized()) // payment request
-    {
-        if (recipient.authenticatedMerchant.isEmpty()) // unauthenticated
-        {
-            ui->payTo_is->setText(recipient.address);
-            ui->memoTextLabel_is->setText(recipient.message);
-            ui->payAmount_is->setValue(recipient.amount);
-            ui->payAmount_is->setReadOnly(true);
-            setCurrentWidget(ui->SendCoins_UnauthenticatedPaymentRequest);
-        }
-        else // authenticated
-        {
-            ui->payTo_s->setText(recipient.authenticatedMerchant);
-            ui->memoTextLabel_s->setText(recipient.message);
-            ui->payAmount_s->setValue(recipient.amount);
-            ui->payAmount_s->setReadOnly(true);
-            setCurrentWidget(ui->SendCoins_AuthenticatedPaymentRequest);
-        }
-    }
-    else // normal payment
     {
         // message
         ui->messageTextLabel->setText(recipient.message);
@@ -236,7 +191,7 @@ void SendCoinsEntry::setAddress(const QString &address)
 
 bool SendCoinsEntry::isClear()
 {
-    return ui->payTo->text().isEmpty() && ui->payTo_is->text().isEmpty() && ui->payTo_s->text().isEmpty();
+    return ui->payTo->text().isEmpty();
 }
 
 void SendCoinsEntry::setFocus()
@@ -250,8 +205,6 @@ void SendCoinsEntry::updateDisplayUnit()
     {
         // Update payAmount with the current unit
         ui->payAmount->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
-        ui->payAmount_is->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
-        ui->payAmount_s->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
     }
 }
 

@@ -33,7 +33,6 @@
 // sends them to the server.
 //
 
-#include "paymentrequestplus.h"
 #include "walletmodel.h"
 
 #include <QObject>
@@ -61,9 +60,6 @@ public:
     // parent should be QApplication object
     PaymentServer(QObject* parent, bool startLocalServer = true);
     ~PaymentServer();
-
-    // Verify if the payment request is expired
-    static bool verifyExpired(const payments::PaymentDetails& requestDetails);
 
 Q_SIGNALS:
     // Fired when a valid payment request is received

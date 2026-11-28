@@ -6,6 +6,7 @@
 #include <qt/walletmodel.h>
 #include <qt/addresstablemodel.h>
 
+#include <base58.h>
 #include <utilstrencodings.h>
 
 #include <QClipboard>

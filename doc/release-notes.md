@@ -49,6 +49,10 @@ Unreleased
   certificates, and `-rootcertificates` and `-allowselfsignedrootcertificates` are no longer used or listed in the
   help. `yacoin-qt` started with either option starts as before.
 - The transaction details no longer show a merchant for a transaction paid through a payment request.
+- The send dialog no longer has pages for payment requests, and *File > Open URI...* no longer has a button to select
+  a payment request file. Payment request entries already stored with wallet transactions stay in the wallet, and
+  the GUI ignores them. Saved receive requests keep their stored format: requests saved by earlier versions are
+  listed, and requests saved now are listed by earlier versions.
 
 ### Build changes
 
