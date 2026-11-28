@@ -61,6 +61,7 @@ Unreleased
 
 ### Build changes
 
+- The Windows binaries are built on Ubuntu 22.04 with gcc 10.3 and MinGW-w64 8.0.0.
 - `configure` adds its compiler warning flags to the C++ compiles of the node's sources and LevelDB also when
   `CXXFLAGS` is set, as in builds with depends' `config.site`; the configure summary lists them in its
   `warning flags` line. The UniValue and libsecp256k1 sub-builds keep their own flags; C files and the macOS

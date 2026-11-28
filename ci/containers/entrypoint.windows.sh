@@ -32,10 +32,20 @@ safe_dirs=$(git config --global --get-all safe.directory 2>/dev/null) || safe_di
 grep -qx "$SRC" <<< "$safe_dirs" ||
     git config --global --add safe.directory "$SRC"
 
-# Before the depends build: depends package ids include the compiler's
-# version string, which differs between the posix and win32 variants.
+# Before the depends build, as depends package ids include the compiler's
+# version string: select the posix-thread compilers, the only variant the
+# image installs; this fails if they are missing.
 update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+
+# The compiler and MinGW-w64 versions of the image. The version output is
+# captured first, as head at the end of a pipe under pipefail can fail it.
+echo "== Compiler and MinGW-w64 versions =="
+for tool in x86_64-w64-mingw32-g++ x86_64-w64-mingw32-ld; do
+    version=$("$tool" --version)
+    echo "${version%%$'\n'*}"
+done
+dpkg-query -W -f='${Package} ${Version}\n' g++-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 mingw-w64-x86-64-dev
 
 depends_args=(-C depends -j"$JOBS" HOST="$HOST_TRIPLET")
 if [[ -d "$CACHE" ]]; then

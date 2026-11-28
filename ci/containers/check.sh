@@ -66,7 +66,10 @@
 #           output and exit status passed on
 #   build   docker build of each image (tagged with this clone's tag,
 #           run.sh --print-tag <image>)
-#   smoke   tools present, unknown modes and arguments rejected, the modes
+#   smoke   tools present, unknown modes and arguments rejected, the
+#           Windows image's apt sources (at least one deb or deb-src line,
+#           each naming the Ubuntu snapshot of its Dockerfile, no other
+#           line and no .sources file), the modes
 #           that run tests stop early on a tree without the scripts,
 #           targets and files they need, the Linux release build modes
 #           (build, build-low-difficulty), the sanitizer modes
@@ -1205,6 +1208,60 @@ expect_status() {
     if [[ "$status" == "$want" ]]; then pass "$what"; else cat "$work/out.txt"; fail "$what (exit status $status, want $want)"; fi
 }
 
+# check_snapshot_sources <image> <tag>: the image's apt sources have at
+# least one deb or deb-src line, every line is one, each names the Ubuntu
+# snapshot of Dockerfile.<image> (with or without a trailing slash), and
+# there is no deb822 .sources file.
+check_snapshot_sources() {
+    local image="$1" tag="$2" want="" out line uri bad="" n=0 i
+    local -a words
+    want=$(grep -o 'https://snapshot\.ubuntu\.com/ubuntu/[0-9]\{8\}T[0-9]\{6\}Z' "$HERE/Dockerfile.$image" | sort -u) || want=""
+    if [[ -z "$want" ]]; then
+        fail "smoke: $image: Dockerfile.$image names no Ubuntu snapshot"; return
+    elif [[ "$want" == *$'\n'* ]]; then
+        fail "smoke: $image: Dockerfile.$image names more than one Ubuntu snapshot: ${want//$'\n'/ }"; return
+    fi
+    # shellcheck disable=SC2016 # expanded inside the container
+    if ! out=$(docker run --rm --entrypoint bash "$tag" -c '
+            shopt -s nullglob
+            for f in /etc/apt/sources.list.d/*.sources; do echo "deb822 file $f"; done
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+                # A newline after each file, so that a last line without one
+                # is not joined to the first line of the next file.
+                if [ -e "$f" ]; then cat "$f" || exit 1; echo; fi
+            done' 2>&1); then
+        echo "$out"
+        fail "smoke: $image: the apt sources could not be read"
+        return
+    fi
+    while IFS= read -r line; do
+        read -r -a words <<< "${line%%#*}"
+        (( ${#words[@]} > 0 )) || continue
+        uri=""
+        if [[ "${words[0]}" == deb || "${words[0]}" == deb-src ]]; then
+            # Options in brackets come before the URI.
+            i=1
+            if [[ "${words[1]:-}" == '['* ]]; then
+                while (( i < ${#words[@]} )) && [[ "${words[i]}" != *']' ]]; do i=$((i + 1)); done
+                i=$((i + 1))
+            fi
+            uri="${words[i]:-}"
+        fi
+        if [[ "$uri" == "$want" || "$uri" == "$want/" ]]; then
+            n=$((n + 1))
+        else
+            bad+="${bad:+; }$line"
+        fi
+    done <<< "$out"
+    if [[ -n "$bad" ]]; then
+        fail "smoke: $image: apt sources other than the snapshot ${want##*/}: $bad"
+    elif (( n == 0 )); then
+        fail "smoke: $image: no apt source names the snapshot ${want##*/}"
+    else
+        pass "smoke: $image: apt source lines: $n, all name the snapshot ${want##*/}"
+    fi
+}
+
 step_smoke() {
     local image tag mode status fake="$work/fake-src"
     rm -rf "$fake"; mkdir -p "$fake"; printf 'all:\n' > "$fake/Makefile.am"
@@ -1217,6 +1274,7 @@ step_smoke() {
             bison --version | head -1
             bash -n "$(ls /entrypoint*.sh)"
             if [ "$YACOIN_BUILD_IMAGE" = ubuntu.22.04 ]; then lcov --version; fi'
+        [[ "$image" != windows ]] || check_snapshot_sources "$image" "$tag"
         if is_cross "$image"; then
             expect_status 2 "smoke: $image: an argument is rejected" docker run --rm "$tag" build
             continue

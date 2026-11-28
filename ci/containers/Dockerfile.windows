@@ -1,18 +1,23 @@
-# ubuntu:18.04 as published on 2023-05-30, the base of the published image. Pinned by
-# digest so the base cannot change without a change here.
-FROM ubuntu:18.04@sha256:152dc042452c496007f07ca9127571cb9c29697f42acbfad72324b2bb2e43c98
+# ubuntu:22.04 as published on 2026-10-02. Pinned by digest so the base
+# cannot change without a change here.
+FROM ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
 ENV DEBIAN_FRONTEND=noninteractive
 ENV YACOIN_BUILD_IMAGE=windows
 
-RUN apt-get update && \
-    apt install -y build-essential libtool \
-    autotools-dev automake pkg-config bsdmainutils \
-    curl git ca-certificates \
-    python3 g++ gperf zip unzip \
-    qtbase5-dev qttools5-dev-tools qttools5-dev \
-    g++-multilib python3-setuptools python3-distutils \
-    g++-mingw-w64-x86-64 mingw-w64-x86-64-dev
-    
+# The apt packages come from the Ubuntu snapshot of 2026-11-27, so a rebuild
+# installs the same versions. The base image has no CA certificates;
+# ca-certificates is installed from the snapshot first, then the build tools.
+RUN snapshot=https://snapshot.ubuntu.com/ubuntu/20261127T000000Z && \
+    printf 'deb %s %s main universe\n' \
+        "$snapshot" jammy "$snapshot" jammy-updates "$snapshot" jammy-security > /etc/apt/sources.list && \
+    apt-get -o Acquire::https::Verify-Peer=false update && \
+    apt-get -o Acquire::https::Verify-Peer=false install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends build-essential libtool \
+        autotools-dev automake pkg-config bsdmainutils \
+        curl git python3 \
+        g++-mingw-w64-x86-64-posix mingw-w64-x86-64-dev && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY entrypoint.windows.sh /entrypoint.windows.sh
 
 RUN chmod +x /entrypoint.windows.sh
