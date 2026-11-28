@@ -53,6 +53,11 @@ Unreleased
   a payment request file. Payment request entries already stored with wallet transactions stay in the wallet, and
   the GUI ignores them. Saved receive requests keep their stored format: requests saved by earlier versions are
   listed, and requests saved now are listed by earlier versions.
+- UPnP support is removed, as Bitcoin Core 29.0 did: the node and the GUI no longer map the listening port with UPnP.
+  The help no longer lists `-upnp`; a node started with `-upnp` (with any value, on the command line or in the
+  configuration file) starts and gives the warning "Unsupported argument -upnp ignored." The options dialog no longer
+  has the *Map port using UPnP* check box, and the setting saved by earlier versions is ignored. The licence notice no
+  longer credits the UPnP library's author.
 
 ### Build changes
 

@@ -64,12 +64,6 @@ static const int MAX_OUTBOUND_CONNECTIONS = 16; // Changed from 8 to 16
 static const int MAX_ADDNODE_CONNECTIONS = 16; // Changed from 8 to 16
 /** -listen default */
 static const bool DEFAULT_LISTEN = true;
-/** -upnp default */
-#ifdef USE_UPNP
-static const bool DEFAULT_UPNP = USE_UPNP;
-#else
-static const bool DEFAULT_UPNP = false;
-#endif
 /** The maximum number of entries in mapAskFor */
 static const size_t MAPASKFOR_MAX_SZ = MAX_INV_SZ;
 /** The maximum number of entries in setAskFor (larger due to getdata latency)*/
@@ -445,7 +439,6 @@ private:
 };
 extern std::unique_ptr<CConnman> g_connman;
 void Discover(boost::thread_group& threadGroup);
-void MapPort(bool fUseUPnP);
 unsigned short GetListenPort();
 bool BindListenPort(const CService &bindAddr, std::string& strError, bool fWhitelisted = false);
 
@@ -481,7 +474,7 @@ enum
     LOCAL_NONE,   // unknown
     LOCAL_IF,     // address a local interface listens on
     LOCAL_BIND,   // address explicit bound to
-    LOCAL_UPNP,   // address reported by UPnP
+    LOCAL_UPNP,   // unused; keeps the values of the entries after it
     LOCAL_MANUAL, // address explicitly specified (-externalip=)
 
     LOCAL_MAX
