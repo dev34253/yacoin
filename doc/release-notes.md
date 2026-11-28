@@ -68,3 +68,7 @@ Unreleased
   `CXXFLAGS` was unset); gcc warns about `switch` cases that fall through without a marker.
 - `--enable-lcov` also adds `-fprofile-update=atomic` to `CFLAGS` and `CXXFLAGS`; `configure` stops if the C++
   compiler does not accept it. `make cov-unit` and `make cov-functional` fail when lcov finds a negative count.
+- The GUI no longer needs protobuf, and depends builds Qt without OpenSSL support, as Bitcoin Core 0.20 did:
+  `configure` no longer checks for protobuf or `protoc`, and depends no longer builds them. `configure` no longer
+  has the `--with-protoc-bindir` option and ignores it when it is given (it warns about it only with
+  `--enable-option-checking`).
