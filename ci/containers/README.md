@@ -1,7 +1,7 @@
 # YaCoin Build Environment
 
 This directory holds the definitions of the Docker build images that CI uses. CI runs each image under a tag computed from the files that go
-into it, `ghcr.io/dev34253/yacoin-build:<image>-<hash>` (`image-tag.sh`; see [GitHub Actions](#github-actions)). The base images are pinned by digest, the macOS toolchain inputs and the lcov release of the Ubuntu 22.04 image are pinned and checked, and
+into it, `ghcr.io/dev34253/yacoin-build:<image>-<hash>` (`image-tag.sh`; see [GitHub Actions](#github-actions)). The base images are pinned by digest, the Windows image's apt packages come from a dated snapshot, the macOS toolchain inputs and the lcov release of the Ubuntu 22.04 image are pinned and checked, and
 the entrypoints create the ccache config before the build.
 
 | File | What it is |
@@ -48,7 +48,10 @@ the files it wrote back to the caller afterwards.
   and clang 14 with libFuzzer and LLVM 14 (`llvm-symbolizer`) from Ubuntu's archive for the `fuzz-corpus` mode
 
 ### Cross-Platform Builds
-- `Dockerfile.windows` - Windows cross-compilation environment
+- `Dockerfile.windows` - Windows cross-compilation environment on Ubuntu 22.04 with MinGW-w64 8.0.0, gcc 10.3 (posix threads) and
+  binutils 2.38; its packages are `build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git python3
+  g++-mingw-w64-x86-64-posix mingw-w64-x86-64-dev` and `ca-certificates`, without recommended packages, all from the Ubuntu
+  snapshot the Dockerfile names (`check.sh`'s smoke step checks that the image's apt sources name only that snapshot)
 - `Dockerfile.macos` - macOS cross-compilation environment using osxcross
 
 ## Usage
@@ -155,7 +158,7 @@ docker run -v /path/to/yacoin:/src -v /path/to/cache:/cache "$(ci/containers/ima
 ```
 
 Ubuntu 16.04 and 18.04 are end of life. The 16.04 image is built because the
-release matrix uses it; the Windows and macOS images are based on 18.04.
+release matrix uses it; the macOS image is based on 18.04.
 
 ## macOS Build Notes
 

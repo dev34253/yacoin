@@ -3,7 +3,7 @@ CROSS COMPILATION BUILD NOTES
 
 Below are some notes on how to build Yacoin Core for Linux, Windows, and macOS using the depends system.
 
-These notes use Ubuntu 16.04 Docker to build executables for Linux, and Ubuntu 18.04 Docker to build executables for Windows and macOS.
+These notes use Ubuntu 16.04 Docker to build executables for Linux, Ubuntu 22.04 Docker to build executables for Windows, and Ubuntu 18.04 Docker to build executables for macOS.
 
 # Building for Linux
 
@@ -46,20 +46,19 @@ After building, the executables are in release-root/bin directory
 
 # Building for Windows
 
-The following steps use Ubuntu 18.04 Docker and the depends system to build the executables for 64-bit Windows
+The following steps use Ubuntu 22.04 Docker and the depends system to build the executables for 64-bit Windows
 
-After running Ubuntu 18.04 Docker, do following commands to install necessary package
+After running Ubuntu 22.04 Docker, do following commands to install necessary package
 ```
 apt update
-apt install -y \
+apt install -y --no-install-recommends \
   build-essential libtool autotools-dev automake pkg-config bsdmainutils \
-  curl git ca-certificates \
-  python3 g++ gperf zip unzip \
-  qtbase5-dev qttools5-dev-tools qttools5-dev \
-  g++-multilib \
-  python3-setuptools python3-distutils \
-  g++-mingw-w64-x86-64 mingw-w64-x86-64-dev
+  curl git ca-certificates python3 \
+  g++-mingw-w64-x86-64-posix mingw-w64-x86-64-dev
 ```
+
+`ci/containers/Dockerfile.windows` installs the same packages from a dated Ubuntu snapshot: MinGW-w64 8.0.0 with gcc 10.3 and
+binutils 2.38.
 
 Run below two commands to select the 'posix' variant for the toolchain, to work around issues with mingw-w64
 ```
